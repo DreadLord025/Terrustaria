@@ -3771,6 +3771,194 @@ pub fn try_toggle_light(
     }
     true
 }
+// The mass wire operation (`Wiring.MassWireOperation` family) — W4-g50's 109
+// host apply, CONSTANTS-COPY of W4-c42's fold-133 fix-family 6 (79b81ae77
+// lineage, `origin/task/W4-c42-wiring-device-arms`
+// `crates/tr-core/src/wiring.rs:3381-3552`): the two fns and the outcome type
+// below are copied verbatim (only this provenance note added) — KEEP-ONE at
+// the union merge (identical bodies, c42's copy is the survivor).
+
+/// One cell's outcome inside `MassWireOperationStep` (`Wiring.cs:3329-3421`):
+/// the C# `bool?` — `None` skips the cell (out of world / null tile / the
+/// `CanDoWireStuffHere` refusal), `Some(false)` halts the whole walk (the
+/// resource ran dry), `Some(true)` continues.
+pub type MassStepOutcome = Option<bool>;
+
+/// `Wiring.MassWireOperationStep` (`Wiring.cs:3329-3421`): one rectangle
+/// cell under the multi-tool mode bits (`crate::smart_cursor::multi_tool_mode`,
+/// the `WiresUI.Settings.MultiToolMode` flags). The placement half runs when
+/// the Cutter bit is OFF, in the C#'s Red → Green → Blue → Yellow → Actuator
+/// order (NOT the colour-pass order); each missing channel burns one wire
+/// (530) and a missing actuator one actuator (849), and a dry stock returns
+/// `Some(false)` — the walk stops there. The cut half runs when the Cutter
+/// bit is ON and never bills. `can_place` is the caller's
+/// `Player.CanDoWireStuffHere` (`Player.cs:46921-46943`) resolved over the
+/// world being edited (the port's gate reads the tile's wall +
+/// `World.downed_golem`). The `SendData(17, …)` per-edit broadcasts and the
+/// `PlaySound(0)` inside `Place*`/`Kill*` are the caller's seams (the port's
+/// `edit::place_wire` family is silent). `cut_cache` accumulates the C#'s
+/// `Item.StartCachingType`/`DropCache` counts (`Wiring.cs:3244-3245`/
+/// `:3325-3326`): every successful `Kill*`'s `Item.NewItem` (530/849,
+/// `WorldGen.cs:58130`/`:58030`) lands in the cache instead of the world;
+/// the caller drops the totals at the player's centre after the walk.
+pub fn mass_wire_operation_step(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    mode: u8,
+    wires_left: &mut i32,
+    actuators_left: &mut i32,
+    can_place: &dyn Fn(&World, i32, i32) -> bool,
+    cut_cache: &mut (i32, i32),
+) -> MassStepOutcome {
+    use crate::smart_cursor::multi_tool_mode as m;
+    // `InWorld(pt.X, pt.Y, 1)` (`:3331`) — fluff 1.
+    if x < 1 || y < 1 || x >= world.width - 1 || y >= world.height - 1 {
+        return None;
+    }
+    if world.tile(x, y).is_none() {
+        return None;
+    }
+    if !can_place(world, x, y) {
+        return None;
+    }
+    let colors = [
+        (m::RED, WireColor::Red),
+        (m::GREEN, WireColor::Green),
+        (m::BLUE, WireColor::Blue),
+        (m::YELLOW, WireColor::Yellow),
+    ];
+    if mode & m::CUTTER == 0 {
+        for (bit, color) in colors {
+            if mode & bit != 0 && !world.wires.get(x, y, color) {
+                if *wires_left <= 0 {
+                    return Some(false);
+                }
+                *wires_left -= 1;
+                crate::edit::place_wire(world, x, y, color); // `:3353` etc.
+            }
+        }
+        if mode & m::ACTUATOR != 0
+            && world
+                .tile(x, y)
+                .is_some_and(|t| t.flags & crate::tile::FLAG_ACTUATOR == 0)
+        {
+            if *actuators_left <= 0 {
+                return Some(false);
+            }
+            *actuators_left -= 1;
+            crate::edit::place_actuator(world, x, y); // `:3393`
+        }
+    }
+    if mode & m::CUTTER != 0 {
+        for (bit, color) in colors {
+            if mode & bit != 0
+                && world.wires.get(x, y, color)
+                && crate::edit::kill_wire(world, x, y, color)
+            {
+                cut_cache.0 += 1; // `KillWire`'s cached `NewItem(530)` (`:3399` etc.)
+            }
+        }
+        if mode & m::ACTUATOR != 0 && crate::edit::kill_actuator(world, x, y) {
+            cut_cache.1 += 1; // `KillActuator`'s cached `NewItem(849)` (`:3415`)
+        }
+    }
+    Some(true)
+}
+
+/// `Wiring.MassWireOperationInner` (`Wiring.cs:3235-3327`): the L-shaped
+/// rectangle walk — `dir` true walks the ps column first (ps.Y → pe.Y at
+/// ps.X), then the pe row (ps.X → pe.X at pe.Y); false mirrors it. The
+/// endpoint `pe` runs once more after both legs unless a dry stock halted
+/// the walk (`flag`). The corner `ps` is NOT re-walked (the legs are
+/// half-open `i != num4`), and a zero-length leg skips straight to the
+/// endpoint — the Multicolor Wrench's single-cell click. The caller bills
+/// the `wires_left`/`actuators_left` decrements and drops the `cut_cache`
+/// totals (`Item.DropCache`, `:3325-3326`).
+pub fn mass_wire_operation_inner(
+    world: &mut World,
+    ps: (i32, i32),
+    pe: (i32, i32),
+    dir: bool,
+    mode: u8,
+    wires_left: &mut i32,
+    actuators_left: &mut i32,
+    can_place: &dyn Fn(&World, i32, i32) -> bool,
+    cut_cache: &mut (i32, i32),
+) {
+    let num = (pe.0 - ps.0).signum();
+    let num2 = (pe.1 - ps.1).signum();
+    let mut pt = (0i32, 0i32);
+    let mut halted = false;
+    let step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
+        let outcome = mass_wire_operation_step(
+            world,
+            pt.0,
+            pt.1,
+            mode,
+            wires_left,
+            actuators_left,
+            can_place,
+            cut_cache,
+        );
+        if outcome == Some(false) {
+            *halted = true;
+        }
+    };
+    // The first leg (`:3250-3284`).
+    let (mut i, end, stride) = if dir {
+        pt.0 = ps.0;
+        (ps.1, pe.1, num2)
+    } else {
+        pt.1 = ps.1;
+        (ps.0, pe.0, num)
+    };
+    while i != end {
+        if halted {
+            break;
+        }
+        if dir {
+            pt.1 = i;
+        } else {
+            pt.0 = i;
+        }
+        step(world, pt, &mut halted);
+        i += stride;
+    }
+    // The second leg (`:3285-3319`).
+    let (mut i, end, stride) = if dir {
+        pt.1 = pe.1;
+        (ps.0, pe.0, num)
+    } else {
+        pt.0 = pe.0;
+        (ps.1, pe.1, num2)
+    };
+    while i != end {
+        if halted {
+            break;
+        }
+        if !dir {
+            pt.1 = i;
+        } else {
+            pt.0 = i;
+        }
+        step(world, pt, &mut halted);
+        i += stride;
+    }
+    // `if (!flag) MassWireOperationStep(user, pe, …)` (`:3320-3323`).
+    if !halted {
+        mass_wire_operation_step(
+            world,
+            pe.0,
+            pe.1,
+            mode,
+            wires_left,
+            actuators_left,
+            can_place,
+            cut_cache,
+        );
+    }
+}
 
 /// W4-d6 witnesses for the light-toggle family — WRITTEN NOT RUN
 /// (code-only mode). Every expected value is hand-derived from the cited

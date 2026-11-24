@@ -109,6 +109,15 @@ pub enum SetFlag {
     /// the "Holy Protection" strike-grant (`Player.OnHit` `:6938-6941`).
     /// W4-d115.
     OnHitDodge,
+    /// W4-e1 — `Benefits.Solar` (`ArmorSetBonuses.cs:37-40`): the Solar Flare
+    /// set's shield-charge machine (`ApplySetBonus_Solar`,
+    /// `Player.cs:16366-16439`, dust site 16389). The machine runs in
+    /// `player.rs::apply_set_bonus_solar` (it queues dust); the flag here is
+    /// `setSolar`.
+    Solar,
+    /// W4-e1 — `Benefits.Vortex` (`ArmorSetBonuses.cs:42-45`): `setVortex`
+    /// (the stealth ring dust sites 25877/25887, `Player.cs:25826-25894`).
+    Vortex,
 }
 
 /// One `ArmorSetBonuses.All` entry (`ArmorSetBonus.cs:128-142`): the
@@ -339,6 +348,26 @@ pub const SETS: &[ArmorSetRow] = &[
     ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
     ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
     ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    // W4-e1 — `:479` Benefits.Solar (the shield-charge machine, dust 16389).
+    ArmorSetRow {
+        name: "Solar",
+        text_key: "ArmorSetBonus.Solar",
+        head: 2763,
+        body: 2764,
+        legs: 2765,
+        primary: PrimaryPart::None,
+        flags: &[SetFlag::Solar],
+    },
+    // W4-e1 — `:480` Benefits.Vortex (the stealth rings, dust 25877/25887).
+    ArmorSetRow {
+        name: "Vortex",
+        text_key: "ArmorSetBonus.Vortex",
+        head: 2757,
+        body: 2758,
+        legs: 2759,
+        primary: PrimaryPart::None,
+        flags: &[SetFlag::Vortex],
+    },
 ];
 
 /// `ArmorSetBonus.QueryResult` (`ArmorSetBonus.cs:43-50`).
@@ -445,6 +474,13 @@ pub fn apply_armor_set_bonuses(p: &mut Player) {
             // flag; `Player.OnHit` (`Player.cs:6938-6941`) consumes it.
             // W4-d115.
             SetFlag::OnHitDodge => p.on_hit_dodge = true,
+            // W4-e1 — `:37-40` Benefits.Solar: the shield-charge machine
+            // (`ApplySetBonus_Solar` `Player.cs:16366-16439`, dust 16389).
+            // The machine queues the gain burst; the drain replays it.
+            SetFlag::Solar => p.apply_set_bonus_solar(),
+            // W4-e1 — `:42-45` Benefits.Vortex: `setVortex` (the stealth
+            // rings, dust 25877/25887).
+            SetFlag::Vortex => p.set_vortex = true,
         }
     }
 }

@@ -157,6 +157,12 @@ pub struct ShopEntry {
     /// deplete (`ItemSlot.cs:2090-2093`); the plain stock rows keep the
     /// `SetDefaults` 1 and buy forever.
     pub stack: u32,
+    /// `Item.value` — the instance's store value. `None` on the fresh
+    /// `SetDefaults` stock rows (the kind default prices them); the `104`
+    /// ShopOverride wire sets it explicitly (`MessageBuffer.cs:3731`,
+    /// W4-g50). `GetStoreValue` prefers `shopCustomPrice` over it
+    /// (`Item.cs:49901-49908`).
+    pub value: Option<i32>,
 }
 
 /// The gate kinds (`Chest.cs`'s `if` arms around the `SetDefaults` rows).
@@ -682,7 +688,7 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
     // `:1282`: the slot count `Main.rand.Next(4, 7)`.
     let mut num = rng.next_range(4, 7);
     // `:1283-1298`: the four `RollLuck` rows (the expert-mode `RollLuck(2)`
-    // at `:1299` and the satchel/tenth-anniversary rows sit constants-off).
+    // at `:1299` and the tenth-anniversary rows sit constants-off).
     if roll_luck(luck, 4, rng) == 0 {
         num += 1;
     }
@@ -693,6 +699,12 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
         num += 1;
     }
     if roll_luck(luck, 32, rng) == 0 {
+        num += 1;
+    }
+    // `:1303-1306` — the Peddler's Satchel's permanent extra slot (W4-a6:
+    // the 5343 use raises the flag, `powerups::use_peddlers_satchel`). No
+    // draw — a straight `num++`.
+    if world.peddlers_satchel_was_used {
         num += 1;
     }
     // `:1317-1318`: the base rarity denominators, rarest tier first.
@@ -1210,6 +1222,7 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         is_a_shop_item: false,
         prefix: 0,
         stack: 1, // `Item.SetDefaults`'s default stack (`Item.cs:49022`)
+        value: None,
     }
 }
 
@@ -1372,7 +1385,10 @@ pub fn get_item_expected_price(
 /// kind default (`SetupShop` rows are fresh `SetDefaults` instances,
 /// prefix 0).
 fn row_prices(entry: &ShopEntry, discount_available: bool, price_adjustment: f32) -> (i64, i64) {
-    let store = get_store_value(ITEMS[entry.item as usize].value, entry.shop_custom_price);
+    // The instance value the `104` override sets wins over the kind default
+    // (`Item.value`); `shopCustomPrice` still wins over both.
+    let instance_value = entry.value.unwrap_or(ITEMS[entry.item as usize].value);
+    let store = get_store_value(instance_value, entry.shop_custom_price);
     get_item_expected_price(
         store,
         entry.buy_once,
@@ -1862,6 +1878,7 @@ pub fn add_item_to_shop(
         is_a_shop_item: false,
         prefix: item.prefix,
         stack: num2,
+        value: None,
     };
     if let Some(e) = stock.iter_mut().take(39).find(|e| e.item == 0 || e.stack == 0) {
         *e = clone;
@@ -2090,6 +2107,33 @@ mod tests {
         assert_eq!(lucky_rows, 7, "seed 7's luck rolls all miss");
     }
 
+    /// W4-a6 — `Chest.cs:1303-1306`: the Peddler's Satchel's permanent
+    /// extra stock slot. The flag adds NO draw (a straight `num++`), so the
+    /// same seed's prefix rows stay identical and the stock grows by one
+    /// generated row ahead of the painting tail (the painting roll itself
+    /// shifts with the extra iteration's draws — only the count is pinned).
+    #[test]
+    fn the_peddlers_satchel_adds_one_stock_slot() {
+        let mut w = World::new("t".into(), 200, 200);
+        w.peddlers_satchel_was_used = true;
+        let stock = setup_travel_shop(&w, 0.0, &mut UnifiedRandom::new(7));
+        // The plain band's first 6 generated rows keep their ids and order
+        // (the satchel draws nothing before the main loop, and the loop's
+        // per-iteration draws are identical up to the extra 7th add).
+        assert_eq!(
+            &stock[..6],
+            &[2274, 4420, 2281, 2266, 3118, 3099],
+            "the prefix rows are draw-identical"
+        );
+        // One MORE generated row + the painting tail = 8 live slots.
+        assert_eq!(stock[..8].iter().filter(|v| **v != 0).count(), 8);
+        assert!(stock[8..].iter().all(|v| *v == 0), "the tail is empty");
+        let seen: Vec<u16> = stock.iter().copied().filter(|v| *v != 0).collect();
+        for (i, id) in seen.iter().enumerate() {
+            assert!(!seen[i + 1..].contains(id), "the duplicate {id}");
+        }
+    }
+
     /// `Luck.RollLuck`'s two-draw hit path (`Luck.cs:5-16`), pinned directly:
     /// with a strong positive luck the seed-42 prefix hits on the first call
     /// — `NextFloat() < luck` (draw 1), the narrowed `Next(range/2, range)`
@@ -2242,6 +2286,7 @@ mod tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 1,
+            value: None,
         };
         assert_eq!(buy_price_row(&custom, false, 1.0), 50);
         assert_eq!(
@@ -2570,6 +2615,7 @@ mod s1_p_i44_tests {
                 is_a_shop_item: false,
                 prefix: 0,
                 stack: 0,
+                value: None,
             },
         ];
         let mut memo = SellbackHelper::default();

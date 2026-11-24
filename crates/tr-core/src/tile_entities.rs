@@ -177,11 +177,17 @@ impl TeKind {
     }
 
     /// Whether the entity holds an item slot (`TEItemFrame`/`TEWeaponsRack`/
-    /// `TEFoodPlatter` — one slot each; the HatRack pair via its own variant).
+    /// `TEFoodPlatter`/`TEDeadCellsDisplayJar` — one slot each; the HatRack
+    /// pair via its own variant). The jar joined in W4-g51 id-149: its
+    /// `TryPlacing` writes `result.item` exactly like the frame's
+    /// (`TEDeadCellsDisplayJar.cs:69-86`).
     pub fn has_item_slot(self) -> bool {
         matches!(
             self,
-            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter
+            TeKind::ItemFrame
+                | TeKind::WeaponsRack
+                | TeKind::FoodPlatter
+                | TeKind::DeadCellsDisplayJar
         )
     }
 }
@@ -345,8 +351,7 @@ impl TeData {
                 misc,
                 pose,
             } => display_doll_write(equip, dye, misc, *pose, w),
-            // `TileEntity.cs:209-211`: the pylon and the Dead Cells jar
-            // carry no extra data.
+            // `TileEntity.cs:209-211`: the pylon carries no extra data.
             TeData::None => {}
         }
     }
@@ -357,9 +362,13 @@ impl TeData {
     pub fn read(r: &mut Reader<'_>, kind: TeKind) -> Option<Self> {
         Some(match kind {
             // `TEItemFrame.cs:47-53` / `TEWeaponsRack.cs:60-66` /
-            // `TEFoodPlatter.cs:48-54`: the triple, behind the port's
-            // presence byte.
-            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter => {
+            // `TEFoodPlatter.cs:48-54` / `TEDeadCellsDisplayJar.cs:47-53`:
+            // the triple, behind the port's presence byte. The jar joined
+            // in W4-g51 id-149 (its `TryPlacing` writes `result.item`).
+            TeKind::ItemFrame
+            | TeKind::WeaponsRack
+            | TeKind::FoodPlatter
+            | TeKind::DeadCellsDisplayJar => {
                 if r.u8()? != 0 {
                     TeData::Item(Some(TeItem::read(r)?))
                 } else {
@@ -395,11 +404,59 @@ impl TeData {
                     pose,
                 }
             }
-            // `TileEntity.cs:209-211`: DisplayDoll 3, TeleportationPylon 7 and
-            // DeadCellsDisplayJar 8 write no extra data
-            // (`TileEntitiesManager.cs:27-40`'s ids run 0..=10;
+            // `TileEntity.cs:209-211`: TeleportationPylon 7 writes no extra
+            // data (`TileEntitiesManager.cs:27-40`'s ids run 0..=10;
             // `TeKind::from_id` refuses anything past them).
             _ => TeData::None,
+        })
+    }
+
+    /// `WriteExtraData(writer, networkSend: true)` (W4-g50, the `86`
+    /// TileEntitySharing wire; lifted for the W4-g51 TE apply arms): the C#
+    /// network shape differs from the save shape in three arms — the
+    /// one-slot item kinds write the raw triple with NO presence byte (the
+    /// C# always carries a live `Item`, an empty frame writes type 0), the
+    /// dummy's npc is a `(short)` (not the save's widened int), and the
+    /// logic sensor writes NOTHING (`TELogicSensor.cs:380-387`'s
+    /// `!networkSend` gate). The HatRack, DisplayDoll and anchor arms are
+    /// networkSend-independent.
+    pub fn write_net(&self, w: &mut Writer) {
+        match self {
+            // `TEItemFrame.cs:40-45` / `TEWeaponsRack.cs:53-58` /
+            // `TEFoodPlatter.cs:41-46` / `TEDeadCellsDisplayJar.cs:40-45`:
+            // `short type, byte prefix, short stack` — an empty slot is the
+            // air triple (0, 0, 0).
+            TeData::Item(item) => item.unwrap_or_default().write(w),
+            // `TETrainingDummy.cs:119-122`: `(short)this.npc`.
+            TeData::Dummy(npc) => w.i16(*npc as i16),
+            // `TELogicSensor.cs:380-387`: the network send writes nothing.
+            TeData::Logic { .. } => {}
+            // The networkSend-independent arms ride the save shape.
+            _ => self.write(w),
+        }
+    }
+
+    /// `ReadExtraData(reader, gameVersion, networkSend: true)` — the inverse
+    /// of [`TeData::write_net`]. The one-slot kinds read the raw triple (an
+    /// air triple folds back to `None`), the dummy reads a `(short)`, and
+    /// the logic sensor keeps its ctor state (check 0 / off / counted 0 —
+    /// the C# `GenerateInstance` default, `TELogicSensor.cs:389-396`).
+    pub fn read_net(r: &mut Reader<'_>, kind: TeKind) -> Option<Self> {
+        Some(match kind {
+            TeKind::ItemFrame
+            | TeKind::WeaponsRack
+            | TeKind::FoodPlatter
+            | TeKind::DeadCellsDisplayJar => {
+                let item = TeItem::read(r)?;
+                TeData::Item(if item.is_air() { None } else { Some(item) })
+            }
+            TeKind::TrainingDummy => TeData::Dummy(r.i16()? as i32),
+            TeKind::LogicSensor => TeData::Logic {
+                check: 0,
+                on: false,
+                counted: 0,
+            },
+            _ => Self::read(r, kind)?,
         })
     }
 }
@@ -441,6 +498,37 @@ impl TileEntity {
         let y = r.i16()?;
         let data = TeData::read(r, kind)?;
         Some(Self { id, x, y, kind, data })
+    }
+
+    /// `TileEntity.Write(writer, ent, networkSend: true)`
+    /// (`TileEntity.cs:173-177` + `WriteInner`'s network half, `:188-197`):
+    /// the type byte, the position, the extra data — NO id (the `86` body's
+    /// leading int carries it instead, `NetMessage.cs:1216-1225`).
+    /// W4-g50 seam, lifted for the W4-g51 TE apply arms.
+    pub fn write_net(&self, w: &mut Writer) {
+        w.u8(self.kind as u8);
+        w.i16(self.x);
+        w.i16(self.y);
+        self.data.write_net(w);
+    }
+
+    /// `TileEntity.Read(reader, gameVersion, networkSend: true)`
+    /// (`TileEntity.cs:179-186` + `ReadInner`'s network half, `:199-207`):
+    /// the type byte, the position, the extra data — the id is assigned by
+    /// the caller from the `86` body's leading int
+    /// (`MessageBuffer.cs:3288-3289`).
+    pub fn read_net(r: &mut Reader<'_>) -> Option<Self> {
+        let kind = TeKind::from_id(r.u8()?)?;
+        let x = r.i16()?;
+        let y = r.i16()?;
+        let data = TeData::read_net(r, kind)?;
+        Some(Self {
+            id: 0,
+            x,
+            y,
+            kind,
+            data,
+        })
     }
 }
 
@@ -484,7 +572,10 @@ impl TileEntities {
     /// worldgen paths that pre-validate.
     pub fn place_unchecked(&mut self, kind: TeKind, x: i16, y: i16) -> u32 {
         let data = match kind {
-            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter => TeData::Item(None),
+            TeKind::ItemFrame
+            | TeKind::WeaponsRack
+            | TeKind::FoodPlatter
+            | TeKind::DeadCellsDisplayJar => TeData::Item(None),
             TeKind::HatRack => TeData::HatRack([None, None], [None, None]),
             TeKind::TrainingDummy => TeData::Dummy(-1),
             TeKind::LogicSensor => TeData::Logic {
@@ -494,6 +585,14 @@ impl TileEntities {
             },
             // `TELeashedEntityAnchorWithItem`'s ctor: no item held.
             TeKind::KiteAnchor | TeKind::CritterAnchor => TeData::Anchor(0),
+            // `TEDisplayDoll`'s ctor: the empty arrays + pose 0
+            // (`TEDisplayDoll.cs:113-155`, W4-g51 id-121).
+            TeKind::DisplayDoll => TeData::DisplayDoll {
+                equip: [None; 9],
+                dye: [None; 9],
+                misc: None,
+                pose: 0,
+            },
             _ => TeData::None,
         };
         let id = self.next_id;
@@ -568,7 +667,10 @@ impl TileEntities {
             return None;
         }
         let data = match kind {
-            TeKind::ItemFrame | TeKind::WeaponsRack | TeKind::FoodPlatter => TeData::Item(None),
+            TeKind::ItemFrame
+            | TeKind::WeaponsRack
+            | TeKind::FoodPlatter
+            | TeKind::DeadCellsDisplayJar => TeData::Item(None),
             TeKind::HatRack => TeData::HatRack([None, None], [None, None]),
             // `TETrainingDummy`'s ctor: `npc = -1`.
             TeKind::TrainingDummy => TeData::Dummy(-1),
@@ -580,6 +682,14 @@ impl TileEntities {
             },
             // `TELeashedEntityAnchorWithItem`'s ctor: no item held.
             TeKind::KiteAnchor | TeKind::CritterAnchor => TeData::Anchor(0),
+            // `TEDisplayDoll`'s ctor: the empty arrays + pose 0
+            // (`TEDisplayDoll.cs:113-155`, W4-g51 id-121).
+            TeKind::DisplayDoll => TeData::DisplayDoll {
+                equip: [None; 9],
+                dye: [None; 9],
+                misc: None,
+                pose: 0,
+            },
             _ => TeData::None,
         };
         let id = self.next_id;
@@ -603,6 +713,54 @@ impl TileEntities {
         let out = (entity.kind, entity.data.clone());
         self.by_id[id as usize].data = TeData::None;
         Some(out)
+    }
+
+    /// `TileEntity.Remove(entity)` by id (`TileEntity.cs:118-133`, the `86`
+    /// reader's `!present` arm, `MessageBuffer.cs:3281-3284`; W4-g50 seam,
+    /// lifted for the W4-g51 TE apply arms): the id book slot tombstones
+    /// like [`Self::remove_at`] and the position book drops the cell only
+    /// when it still maps to this id.
+    pub fn remove_by_id(&mut self, id: u32) -> Option<(TeKind, TeData)> {
+        let entity = self.by_id.get(id as usize)?;
+        // A tombstoned slot is not a live entity (the C# `TryGet` fails on
+        // the removed `ByID` entry).
+        if self.by_position.get(&(entity.x, entity.y)) != Some(&id) {
+            return None;
+        }
+        let (x, y) = (entity.x, entity.y);
+        let out = (entity.kind, entity.data.clone());
+        self.by_position.remove(&(x, y));
+        self.by_id[id as usize].data = TeData::None;
+        Some(out)
+    }
+
+    /// `TileEntity.Add(ent)` (`TileEntity.cs:78-89`) with the `86` reader's
+    /// forced id (`MessageBuffer.cs:3288-3290`: `tileEntity.ID = num114`):
+    /// the record lands at exactly that id slot — the books grow with
+    /// tombstones when the id runs ahead, and a slot already in use is
+    /// overwritten (the C# `ByID[ent.ID] = ent` indexer). The position book
+    /// maps the cell to the id. Returns false when the id is past the
+    /// port's sane bound (a corrupt frame, not a placement). W4-g50 seam,
+    /// lifted for the W4-g51 TE apply arms.
+    pub fn add_net(&mut self, mut entity: TileEntity) -> bool {
+        let id = entity.id;
+        if id > 1_000_000 {
+            return false;
+        }
+        while self.by_id.len() <= id as usize {
+            self.by_id.push(TileEntity {
+                id: self.by_id.len() as u32,
+                x: 0,
+                y: 0,
+                kind: TeKind::TrainingDummy,
+                data: TeData::None,
+            });
+        }
+        self.by_id[id as usize] = entity;
+        self.next_id = self.next_id.max(id + 1);
+        let (x, y) = (self.by_id[id as usize].x, self.by_id[id as usize].y);
+        self.by_position.insert((x, y), id);
+        true
     }
 
     /// The one-slot entities' item write (`TEItemFrame.item = …`).
@@ -1053,6 +1211,143 @@ mod tests {
         assert_eq!(TeKind::CritterAnchor as u8, 10);
         assert_eq!(TeKind::from_id(10), Some(TeKind::CritterAnchor));
         assert_eq!(TeKind::from_id(11), None);
+    }
+
+    // ---- W4-g51 (S1-I-1 final): the g50 86 networkSend seams ----
+    // Lifted from origin/task/W4-g50-net-apply-arms-3 549819cb for the
+    // TE-family apply arms (121/122/123/124/133/149/156).
+    // WRITTEN NOT RUN (code-only swarm, no compiler).
+
+    /// The `networkSend: true` shape differs from the save shape: the
+    /// one-slot item kinds drop the presence byte, the dummy narrows to a
+    /// short, the logic sensor writes nothing (`TELogicSensor.cs:380-396`).
+    #[test]
+    fn w4_g51_the_net_codec_differs_from_the_save_codec() {
+        // Item frame: the raw triple, no presence byte.
+        let e = TileEntity {
+            id: 3,
+            x: 10,
+            y: 10,
+            kind: TeKind::ItemFrame,
+            data: TeData::Item(Some(TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut net = Writer::new();
+        e.write_net(&mut net);
+        let net = net.into_inner();
+        // type 1 + x + y + triple = 1 + 2 + 2 + 5 = 10 bytes, no id.
+        assert_eq!(net.len(), 10);
+        assert_eq!(net[0], 1);
+        let back = TileEntity::read_net(&mut Reader::new(&net)).expect("decode");
+        assert_eq!(back.data, e.data);
+        // The save shape carries the id + the presence byte.
+        let mut save = Writer::new();
+        e.write(&mut save);
+        assert_eq!(save.into_inner().len(), 15);
+        // An empty frame writes the air triple, reads back as None.
+        let empty = TileEntity {
+            data: TeData::Item(None),
+            ..e.clone()
+        };
+        let mut w = Writer::new();
+        empty.write_net(&mut w);
+        let bytes = w.into_inner();
+        assert_eq!(&bytes[5..], &[0, 0, 0, 0, 0]);
+        let back = TileEntity::read_net(&mut Reader::new(&bytes)).expect("decode");
+        assert_eq!(back.data, TeData::Item(None));
+        // The Dead Cells jar rides the same one-slot net shape
+        // (`TEDeadCellsDisplayJar.cs:40-53`).
+        let jar = TileEntity {
+            id: 0,
+            x: 4,
+            y: 5,
+            kind: TeKind::DeadCellsDisplayJar,
+            data: TeData::Item(Some(TeItem {
+                kind: 5334,
+                prefix: 0,
+                stack: 1,
+            })),
+        };
+        let mut w = Writer::new();
+        jar.write_net(&mut w);
+        let bytes = w.into_inner();
+        assert_eq!(bytes.len(), 10);
+        let back = TileEntity::read_net(&mut Reader::new(&bytes)).expect("decode");
+        assert_eq!(back.data, jar.data);
+        // The dummy: a short on the wire, not the save's int.
+        let dummy = TileEntity {
+            id: 0,
+            x: 4,
+            y: 5,
+            kind: TeKind::TrainingDummy,
+            data: TeData::Dummy(17),
+        };
+        let mut w = Writer::new();
+        dummy.write_net(&mut w);
+        let bytes = w.into_inner();
+        assert_eq!(bytes.len(), 1 + 2 + 2 + 2);
+        assert_eq!(&bytes[5..], &17i16.to_le_bytes());
+        let back = TileEntity::read_net(&mut Reader::new(&bytes)).expect("decode");
+        assert_eq!(back.data, TeData::Dummy(17));
+        // The logic sensor: nothing on the wire, the ctor state on read.
+        let sensor = TileEntity {
+            id: 1,
+            x: 6,
+            y: 7,
+            kind: TeKind::LogicSensor,
+            data: TeData::Logic {
+                check: 3,
+                on: true,
+                counted: 9,
+            },
+        };
+        let mut w = Writer::new();
+        sensor.write_net(&mut w);
+        let bytes = w.into_inner();
+        assert_eq!(bytes.len(), 1 + 2 + 2);
+        let back = TileEntity::read_net(&mut Reader::new(&bytes)).expect("decode");
+        assert_eq!(
+            back.data,
+            TeData::Logic {
+                check: 0,
+                on: false,
+                counted: 0
+            }
+        );
+    }
+
+    /// `add_net` lands the record at the forced id (`MessageBuffer.cs:3289`)
+    /// and `remove_by_id` tombstones it (`TileEntity.Remove`, `:118-133`).
+    #[test]
+    fn w4_g51_add_net_forces_the_id_and_remove_tombstones() {
+        let mut book = TileEntities::default();
+        let e = TileEntity {
+            id: 5,
+            x: 10,
+            y: 10,
+            kind: TeKind::ItemFrame,
+            data: TeData::Item(Some(TeItem {
+                kind: 29,
+                prefix: 0,
+                stack: 1,
+            })),
+        };
+        assert!(book.add_net(e.clone()));
+        assert_eq!(book.get_by_id(5).map(|x| x.kind), Some(TeKind::ItemFrame));
+        assert_eq!(book.get_at(10, 10).map(|x| x.id), Some(5));
+        assert_eq!(book.next_id(), 6);
+        // The removal drops both books; the id slot tombstones.
+        let out = book.remove_by_id(5).expect("removed");
+        assert_eq!(out.0, TeKind::ItemFrame);
+        assert!(book.get_at(10, 10).is_none());
+        assert_eq!(book.live_entities().count(), 0);
+        // A removal of an unknown id is a no-op (the C# TryGet gate); the
+        // tombstoned slot is no longer live either.
+        assert!(book.remove_by_id(99).is_none());
+        assert!(book.remove_by_id(5).is_none());
     }
 
     #[test]

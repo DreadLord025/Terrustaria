@@ -69,6 +69,16 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
             let mut secs = apply_item_time_secs(app, true);
+            // `Player.cs:41681` — `SoundEngine.PlaySound(7)`: UNPOSITIONED
+            // (the int overload's x/y default -1), one case-7
+            // `Next(-10, 11) * 0.01` pitch on `UpdatePlayers`
+            // (`PlaceThing_ItemInExtractinator` runs in `Player.ItemCheck`
+            // under the `Main.cs:17754` swap), the Grab voice Stop/re-create.
+            app.audio.play_grab_sound(
+                -1.0,
+                -1.0,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             // `context.SkipItemConsumption = true` (`:41683`) + the trader's
             // own decrement (`:41684-41688`) — the standard consumable path is
             // skipped so it cannot double-spend.
@@ -92,6 +102,21 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
     if mode < 0 {
         return None;
     }
+    // The roll arm (`Player.cs:41691-41696`): the C# order is
+    // `ApplyItemTime(item, num)` → `SoundEngine.PlaySound(7)` →
+    // `ExtractinatorUse(...)` — the UNPOSITIONED int-overload Grab (the
+    // x/y default -1, `SoundEngine.cs:102`), NOT a tile-positioned cue.
+    // W4-d79: the case-7 `Next(-10, 11) * 0.01` pitch draw
+    // (`LegacySoundPlayer.cs:725`) rides the `UpdatePlayers` stream BEFORE
+    // the roll chain (both run under the `Main.cs:17754` swap), and the
+    // Grab voice is Stop()ed + re-created (`:718-722`, the single-voice
+    // pool). `apply_item_time_secs` is a pure read — its C# position ahead
+    // of the sound is observationally the same.
+    app.audio.play_grab_sound(
+        -1.0,
+        -1.0,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     // The roll spends the `UpdatePlayers` stream (`PlaceThing_ItemInExtractinator`
     // runs in `Player.ItemCheck` under the `UpdatePlayers` swap —
     // `Player.cs:39591`/`:41665`, `Main.cs:17754`), so the stream order is the
@@ -376,11 +401,16 @@ mod tests {
         // `LegacySoundPlayer.cs:725` — after the gate, before the drop),
         // then the spawn's velocity triplet + prefix — the exact order
         // `use_extractinator` runs.
+        // The twin: the case-7 Grab pitch draw FIRST (the C# plays
+        // `PlaySound(7)` before `ExtractinatorUse`, `Player.cs:41694-41695` —
+        // W4-d79 re-pin), then the roll chain, then the spawn's velocity
+        // triplet + prefix — the exact order `use_extractinator` runs.
         let (mut twin, _, _) = extract_world(219);
         let held = twin.inventory[twin.selected].kind;
         let tile = twin.world.tile(tx, ty).unwrap();
         let mode = tr_core::extract::extractinator_mode(held);
         let mut rng = tr_core::UnifiedRandom::new(4242);
+        let _ = rng.next_range(-10, 11); // `LegacySoundPlayer.cs:725`
         let (it, stack) =
             tr_core::extract::roll_extractinator_drop(mode, tile.kind, twin.world.hard_mode, &mut rng);
         let _pitch = rng.next_range(-10, 11); // the Grab chime's case-7 draw

@@ -681,6 +681,61 @@ pub fn body_landing_burst(
         let _kick_x = rng.next_range(-20, 21) as f32 * 0.1;
         l += 20;
     }
+/// W4-e2 — sites 31576/31579: the free head's two type-228 emitters
+/// (`NPC.cs:31572-31585`), the arm's LAST block before the caller's
+/// integration, gated `!Main.getGoodWorld` (the port's seed-only fold
+/// passes false — the emitter runs; an FTW world skips it whole).
+/// Draw order per emitter (C# argument evaluation, then internals):
+/// 1. `num734 = Next(2)*2 - 1`; the first `NewDustPerfect` at
+///    `Bottom + (num734*22*scale, -22*scale)` with velocity
+///    `(π/2 - π/2*num734 + NextFloatDirection()*π/4).ToRotationVector2()
+///    * (2 + NextFloat())`; post: `velocity += base.velocity`, noGravity.
+/// 2. The second at `Bottom + (NextFloatDirection()*6*scale,
+///    (NextFloat()*-4 - 8)*scale)`, velocity `UnitY * (2 + NextFloat())`;
+///    post: fadeIn 0, `scale = 0.7 + NextFloat()*0.5`, noGravity,
+///    `velocity += base.velocity`. `NewDustPerfect` is the 0×0-box
+///    spawn whose position/velocity the caller overwrites
+///    (`Dust.cs:54-63` — the pool's sentinel writes included).
+pub fn free_head_dust(
+    bottom: (f32, f32),
+    scale: f32,
+    vel: (f32, f32),
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::World,
+) {
+    use tr_core::particles::Color;
+    let num734 = (rng.next_max(2) * 2 - 1) as f32;
+    let ang = std::f32::consts::FRAC_PI_2
+        - std::f32::consts::FRAC_PI_2 * num734
+        + rng.next_float_direction() * (std::f32::consts::PI / 4.0);
+    let sp = 2.0 + rng.next_float();
+    let idx = dust.new_dust_perfect(
+        rng, ctx, world,
+        glam::Vec2::new(bottom.0 + num734 * 22.0 * scale, bottom.1 - 22.0 * scale),
+        228,
+        Some(glam::Vec2::new(ang.cos() * sp, ang.sin() * sp)),
+        0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity += glam::Vec2::new(vel.0, vel.1);
+    d.no_gravity = true;
+    let ox = rng.next_float_direction() * 6.0 * scale;
+    let oy = (rng.next_float() * -4.0 - 8.0) * scale;
+    let sy = 2.0 + rng.next_float();
+    let idx = dust.new_dust_perfect(
+        rng, ctx, world,
+        glam::Vec2::new(bottom.0 + ox, bottom.1 + oy),
+        228,
+        Some(glam::Vec2::new(0.0, sy)),
+        0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.fade_in = 0.0;
+    d.scale = 0.7 + rng.next_float() * 0.5;
+    d.no_gravity = true;
+    d.velocity += glam::Vec2::new(vel.0, vel.1);
 }
 
 #[cfg(test)]

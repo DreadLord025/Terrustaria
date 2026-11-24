@@ -32,6 +32,7 @@
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
+use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::tiledata as td;
 use tr_core::{UnifiedRandom, World};
 
@@ -351,6 +352,8 @@ pub fn destroyer_step(
     players: &[TargetCandidate],
     rng: &mut UnifiedRandom,
     ticker: u64,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) -> DestroyerEvents {
     let mut ev = DestroyerEvents::default();
     let npc_type = ctx.npc_type;
@@ -416,7 +419,25 @@ pub fn destroyer_step(
         if npc_type == 134 || parent_alpha < 128 {
             if npcs[me].alpha != 0 {
                 // `:49799-49804` — 2× dust 182, noGravity/noLight, scale 2.
+                // W4-f4 (site 49801): the fade burst now rolls the live
+                // pool on the caller's UpdateNPCs stream — ZERO explicit
+                // rand draws (type 182 hits no per-type tweak). The
+                // position is the pre-integration box (the family driver
+                // integrates AFTER this step, the C#'s AI-before-move
+                // order). `ev.fade_dust` stays the count for the witnesses.
                 ev.fade_dust = 2;
+                let (fw, fh) = npcs[me].size();
+                for _ in 0..2 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world,
+                        glam::Vec2::new(npcs[me].x, npcs[me].y),
+                        fw as i32, fh as i32, 182, 0.0, 0.0, 100,
+                        Color::default(), 2.0,
+                    );
+                    let dd = dust.slot_mut(idx);
+                    dd.no_gravity = true;
+                    dd.no_light = true;
+                }
             }
             // `:49806-49810` — `alpha -= 42`, floored at 0 (the port's u8
             // saturates identically for a non-negative start).
@@ -1076,6 +1097,8 @@ pub fn destroyer_family_step(
     rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
     ticker: u64,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) -> Vec<(usize, DestroyerEvents)> {
     // 1. The chain spawn (the head's first tick, `ai[0] == 0`).
     let head_idx = npcs
@@ -1193,7 +1216,7 @@ pub fn destroyer_family_step(
         // the AI runs (the roar's cooldown decay).
         scratch[me].sound_delay = (scratch[me].sound_delay - 1).max(0);
         ctx.sound_delay = scratch[me].sound_delay;
-        let ev = destroyer_step(&mut scratch, me, &mut ctx, world, players, rng, ticker);
+        let ev = destroyer_step(&mut scratch, me, &mut ctx, world, players, rng, ticker, dust, dust_ctx);
         scratch[me].sound_delay = ctx.sound_delay;
         // `noTileCollide` (`NPC.cs:10670-10671`): the direct integration
         // (`NPC.cs:90495-90498`, the `integrate_no_tile_collide` shape).
@@ -1277,7 +1300,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let mut pool = [head(500.0, 500.0)];
         let mut ctx = DestroyerCtx::head(0);
-        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool[0].alpha, 213, "255 - 42 (:49806)");
         assert_eq!(ev.fade_dust, 2);
         // The body behind an opaque parent keeps its alpha.
@@ -1285,13 +1308,83 @@ mod tests {
         pool2[1].ai[1] = 0.0; // parent slot 0, alpha 255
         let mut ctx2 = DestroyerCtx::head(1);
         ctx2.npc_type = 135;
-        let ev2 = destroyer_step(&mut pool2, 1, &mut ctx2, &w, &players, &mut rng, 0);
+        let ev2 = destroyer_step(&mut pool2, 1, &mut ctx2, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool2[1].alpha, 255, "the parent is not half-visible yet");
         assert_eq!(ev2.fade_dust, 0);
         // Once the parent drops below 128 the body fades too.
         pool2[0].alpha = 127;
-        destroyer_step(&mut pool2, 1, &mut ctx2, &w, &players, &mut rng, 0);
+        destroyer_step(&mut pool2, 1, &mut ctx2, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool2[1].alpha, 213);
+    }
+
+    /// W4-f4 — site 49801 (`NPC.cs:49799-49804`): the fade burst rolls the
+    /// live pool on the caller's stream. A fading body (parent alpha 100 <
+    /// 128) draws 2× new_dust internals (type 182, no per-type tweak) THEN
+    /// the cadence Next(4)+Next(1400,26000) — the fade block (`:49792`)
+    /// precedes the type-135 laser arm (`:49856`). The mirror replays
+    /// exactly that; the dust records match the mirrored pool draw-for-
+    /// draw, with the noGravity/noLight posts. The opaque-parent gate
+    /// spawns NOTHING (the cadence draws alone). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_destroyer_fade_dust_mirrors_site_49801() {
+        let w = air();
+        let players = [cand(1000.0, 1000.0)];
+        let mut pool = [head(500.0, 500.0), head(500.0, 548.0)];
+        pool[0].alpha = 100; // the parent is half-visible
+        pool[1].ai[1] = 0.0; // parent slot 0
+        let mut ctx = DestroyerCtx::head(1);
+        ctx.npc_type = 135;
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let (bw, bh) = pool[1].size();
+        let mut rng = UnifiedRandom::new(23);
+        let mut witness = rng.clone();
+        let mut mirror = DustPool::new();
+        for _ in 0..2 {
+            let idx = mirror.new_dust(
+                &mut witness, &dctx, &w,
+                glam::Vec2::new(pool[1].x, pool[1].y),
+                bw as i32, bh as i32, 182, 0.0, 0.0, 100,
+                Color::default(), 2.0,
+            );
+            let dd = mirror.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.no_light = true;
+        }
+        let _ = witness.next_max(4);
+        let _ = witness.next_range(1400, 26000);
+        let mut dust = DustPool::new();
+        let ev = destroyer_step(&mut pool, 1, &mut ctx, &w, &players, &mut rng, 0, &mut dust, &dctx);
+        assert_eq!(rng, witness, "2 fade bursts then the cadence, in source order");
+        assert_eq!(ev.fade_dust, 2);
+        assert_eq!(pool[1].alpha, 213, "the fade still steps 42");
+        assert_eq!(pool[0].alpha, 100, "the parent is untouched");
+        let active: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(active.len(), 2, "the 2-dust burst");
+        for (j, &i) in active.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 182);
+            assert!(d.no_gravity && d.no_light);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity);
+            assert_eq!(d.scale, m.scale);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.color, Color::default());
+        }
+        // The opaque-parent gate: no fade, no dust — the cadence alone.
+        let mut pool2 = [head(500.0, 500.0), head(500.0, 548.0)];
+        pool2[1].ai[1] = 0.0; // parent slot 0, alpha 255
+        let mut ctx2 = DestroyerCtx::head(1);
+        ctx2.npc_type = 135;
+        let mut rng2 = UnifiedRandom::new(23);
+        let mut witness2 = rng2.clone();
+        let _ = witness2.next_max(4);
+        let _ = witness2.next_range(1400, 26000);
+        let mut dust2 = DustPool::new();
+        let ev2 = destroyer_step(&mut pool2, 1, &mut ctx2, &w, &players, &mut rng2, 0, &mut dust2, &dctx);
+        assert_eq!(rng2, witness2, "the gated fade draws nothing");
+        assert_eq!(ev2.fade_dust, 0);
+        assert!((0..6000).all(|i| !dust2.slot(i).active), "no dust behind an opaque parent");
     }
 
     /// `NPC.cs:49858-49859` — the cadence draws `Next(4)` then
@@ -1310,7 +1403,7 @@ mod tests {
         let mut witness = rng.clone();
         let d1 = witness.next_max(4);
         let d2 = witness.next_range(1400, 26000);
-        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(rng, witness, "exactly Next(4) + Next(1400,26000), in order");
         assert_eq!(pool[0].local_ai[0], d1 as f32);
         assert!(ev.laser.is_none(), "the accumulator starts far below the threshold");
@@ -1336,7 +1429,7 @@ mod tests {
         for _ in 0..4 {
             let _ = witness.next_range(-20, 21);
         }
-        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(rng, witness, "2 cadence + 4 jitter draws, in source order");
         let shot = ev.laser.expect("the sight line is clear");
         assert_eq!(shot.proj_type, 100);
@@ -1362,7 +1455,7 @@ mod tests {
         pool[1].ai[1] = 0.0;
         let mut ctx = DestroyerCtx::head(1);
         ctx.npc_type = 135;
-        let ev = destroyer_step(&mut pool, 1, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 1, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(ev.wants_death);
         assert_eq!(pool[1].hp, 0);
     }
@@ -1383,7 +1476,7 @@ mod tests {
         pool[0].alpha = 0; // skip the fade noise
         let mut ctx = DestroyerCtx::head(0);
         ctx.npc_type = 135;
-        destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         // num24 = (int)(44 * 1.25) = 55; the parent centre is (1024, 1024)
         // (the port's 48-box integer halves), the link sits 55 px short of
         // it along the +X axis from (1224, 1024).
@@ -1414,13 +1507,13 @@ mod tests {
         // Above the surface: one sink tick.
         let mut pool = [head(500.0, 100.0)];
         let mut ctx = DestroyerCtx::head(0);
-        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(pool[0].vy >= 1.0);
         assert!(!ev.despawn_family);
         // Below the rock layer: the despawn flag.
         let mut pool2 = [head(500.0, 1000.0)];
         let mut ctx2 = DestroyerCtx::head(0);
-        let ev2 = destroyer_step(&mut pool2, 0, &mut ctx2, &w, &players, &mut rng, 0);
+        let ev2 = destroyer_step(&mut pool2, 0, &mut ctx2, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(ev2.despawn_family);
         assert!(pool2[0].vy >= 2.0, "the double sink below the surface");
     }
@@ -1440,7 +1533,7 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut pool = [head(500.0, 500.0)];
         let mut ctx = DestroyerCtx::head(0);
-        destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool[0].local_ai[1], 0.0, "in tiles (:49956)");
         // Shallow liquid (64) does not count; deep (65) does.
         let mut w2 = air();
@@ -1448,12 +1541,12 @@ mod tests {
         w2.tiles[j].liquid = 64;
         let mut pool2 = [head(500.0, 500.0)];
         let mut ctx2 = DestroyerCtx::head(0);
-        destroyer_step(&mut pool2, 0, &mut ctx2, &w2, &players, &mut rng, 0);
+        destroyer_step(&mut pool2, 0, &mut ctx2, &w2, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool2[0].local_ai[1], 1.0, "liquid 64 is not > 64 (:49912)");
         w2.tiles[j].liquid = 65;
         let mut pool3 = [head(500.0, 500.0)];
         let mut ctx3 = DestroyerCtx::head(0);
-        destroyer_step(&mut pool3, 0, &mut ctx3, &w2, &players, &mut rng, 0);
+        destroyer_step(&mut pool3, 0, &mut ctx3, &w2, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(pool3[0].local_ai[1], 0.0);
     }
 
@@ -1483,12 +1576,12 @@ mod tests {
         let mut rng = UnifiedRandom::new(11);
         let mut pool = [head(500.0, 500.0)];
         let mut ctx = DestroyerCtx::head(3);
-        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(ev.spawn_segments, Some(80));
         assert_eq!(pool[0].ai[3], 3.0);
         assert_eq!(ev.real_life, Some(3));
         pool[0].ai[0] = 4.0; // the first child's slot, as the caller writes
-        let ev2 = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
+        let ev2 = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0, &mut DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(ev2.spawn_segments, None);
     }
 
@@ -1607,25 +1700,48 @@ mod tests {
         let mut npcs = vec![h];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
+        let mut dust = DustPool::new();
+        let dctx = crate::npc::permissive_dust_ctx(&w);
         // Tick 1: the spawn draws NOTHING (the C# NewNPC has no rand).
-        let mut spawn_witness = rng.clone();
         let events = destroyer_family_step(
             &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+            &mut dust, &dctx,
         );
         assert_eq!(npcs.len(), 82, "head + 80 bodies + tail");
         assert_eq!(npcs[81].kind, NpcKind::TheDestroyerTail);
-        // The 80 bodies each drew Next(4)+Next(1400,26000) in pool order
-        // (the head/tail draw nothing) — the witness replays exactly that.
-        for _ in 0..80 {
-            let _ = spawn_witness.next_max(4);
-            let _ = spawn_witness.next_range(1400, 26000);
+        // W4-f4: the fade-in dust (site 49801) rolls the live pool. Every
+        // segment that fades reports fade_dust == 2 and spawns exactly 2
+        // type-182 dusts (noGravity/noLight, scale 2). The head always
+        // fades; a link fades only while its parent is half-visible. The
+        // total active dust is 2× the fading-segment count.
+        let fading: usize = events.iter().filter(|(_, ev)| ev.fade_dust == 2).count();
+        assert!(fading >= 1, "the head always fades");
+        let active: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(active.len(), fading * 2, "2 dusts per fading segment");
+        for &i in &active {
+            assert_eq!(dust.slot(i).dust_type, 182);
+            assert!(dust.slot(i).no_gravity && dust.slot(i).no_light);
+            // new_dust rolls scale = (1 + Next(-20,21)*0.01) * 2.0 —
+            // the 2f argument times the jitter band [0.8, 1.2].
+            let s = dust.slot(i).scale;
+            assert!((1.6..=2.4).contains(&s), "the 2f scale band ({s})");
+            assert_eq!(dust.slot(i).alpha, 100, "the 100 alpha argument");
+            assert_eq!(dust.slot(i).color, Color::default(), "default(Color)");
         }
-        assert_eq!(rng, spawn_witness, "the cadence order: 2 draws per body");
+        // The 80 bodies each drew Next(4)+Next(1400,26000) (the cadence);
+        // the fade adds pool-internal draws. The stream advanced past the
+        // cadence-only baseline (the dust rolls are real).
+        let mut cadence_only = UnifiedRandom::new(5);
+        for _ in 0..80 {
+            let _ = cadence_only.next_max(4);
+            let _ = cadence_only.next_range(1400, 26000);
+        }
+        assert_ne!(rng, cadence_only, "the fade dust advanced the stream beyond the cadence");
         assert_eq!(events.len(), 82);
         // The pool mirror: a strike on a body lands on the head's pool.
         npcs[40].pending_pool_damage = 100;
         let hp_before = npcs[0].hp;
-        destroyer_family_step(&mut npcs, &w, &players, &mut rng, &mut next_id, 0);
+        destroyer_family_step(&mut npcs, &w, &players, &mut rng, &mut next_id, 0, &mut dust, &dctx);
         assert_eq!(npcs[0].hp, hp_before - 100);
         assert_eq!(npcs[40].hp, npcs[0].hp, "the mirror (:81377-81378)");
         // The once-only gate: no re-spawn on the later ticks.

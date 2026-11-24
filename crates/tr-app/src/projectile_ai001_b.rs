@@ -174,8 +174,10 @@ fn finish_flight(p: &mut Projectile, world: &World) {
                 p.time_left = 0;
             }
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap rides here too (the
+            // replica stays byte-identical): `:20441`'s `wet ? wetVelocity :
+            // velocity` via `wet_velocity` (the `:17612-17655` drag wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;

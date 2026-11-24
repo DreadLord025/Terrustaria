@@ -94,11 +94,12 @@ pub fn cancel(app: &mut App, quiet: bool) {
         p.hair_color = app.old_hair_color; // `:43671`
     }
     app.hair_window = false; // `:43672`
-    // `:43673-43676` — the Stylist-only talk close.
+    // `:43673-43676` — the Stylist-only talk close. batch-L: routed through
+    // the `set_talk_npc` seam (resets BOTH latches — `shop_mood` + the g58
+    // `shopping_settings` NotInShop, research/68 §6).
     if let Some(i) = app.talk_npc {
         if app.npcs.get(i).is_some_and(|n| n.kind == NpcKind::Stylist) {
-            app.talk_npc = None;
-            app.shop_mood = 1.0; // `SetTalkNPC(-1)` → NotInShop
+            app.set_talk_npc(None); // `SetTalkNPC(-1)` → NotInShop
         }
     }
     if !quiet {
@@ -113,10 +114,9 @@ pub fn cancel(app: &mut App, quiet: bool) {
 /// (`:43691`) is the MP player-sync, unported; `FixItemsUsingPlayerColours`
 /// (`:43692`) as above.
 pub fn buy(app: &mut App) {
-    app.audio.play("Coins"); // `:43687` — sound 18
+    app.audio.play_single_voice("Coins", -1.0, -1.0); // `:43687` — sound 18 (d79 case-18 pool path, no draws/no Stop)
     app.hair_window = false; // `:43688`
-    app.talk_npc = None; // `:43689` — SetTalkNPC(-1)
-    app.shop_mood = 1.0; // NotInShop
+    app.set_talk_npc(None); // `:43689` — SetTalkNPC(-1), both latches reset
     // `:43690` — npcChatCornerItem = 0 (the port carries no corner item).
 }
 
@@ -160,7 +160,10 @@ pub fn restyle_price(app: &App) -> i64 {
     crate::shop::hair_restyle_cost(
         style_changed,
         color_changed,
-        app.shop_mood,
+        // `Main.cs:43799` reads the TALK latch (research/241 §4: "when it
+        // lands its read is the latch too" — the window IS live on this
+        // tree, batch-L repoint).
+        app.shopping_settings.price_adjustment,
         app.discount_available,
     )
 }
@@ -316,6 +319,7 @@ mod tests {
         app.player.as_mut().unwrap().hair = 9;
         app.player.as_mut().unwrap().hair_color = [99, 99, 99];
         app.shop_mood = 0.8;
+        app.shopping_settings.price_adjustment = 0.8; // the seam resets both
         let before = app.audio.played_count();
         cancel(&mut app, false);
         assert!(!app.hair_window);
@@ -323,6 +327,7 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().hair_color, [10, 20, 30]);
         assert_eq!(app.talk_npc, None, "the Stylist talk ends");
         assert_eq!(app.shop_mood, 1.0, "NotInShop");
+        assert_eq!(app.shopping_settings.price_adjustment, 1.0, "the settings latch resets too");
         assert_eq!(app.audio.played_count(), before + 1, "sound 11");
         // A quiet cancel plays nothing.
         let mut app2 = stylist_app();
@@ -399,8 +404,9 @@ mod tests {
         app.player.as_mut().unwrap().hair_color = [99, 99, 99];
         assert_eq!(restyle_price(&app), 120000);
         // The mood latch scales: 0.95 → 110000 (int(120000*0.95)=114000,
-        // 114000/10000=11.4 → banker's 11 → 110000).
-        app.shop_mood = 0.95;
+        // 114000/10000=11.4 → banker's 11 → 110000). batch-L: the price
+        // reads the TALK latch (research/241 §4).
+        app.shopping_settings.price_adjustment = 0.95;
         assert_eq!(restyle_price(&app), 110000);
         // The Discount Card: int(120000*0.8)=96000, int(96000*0.95)=91200,
         // 91200/10000=9.12 → banker's 9 → 90000.

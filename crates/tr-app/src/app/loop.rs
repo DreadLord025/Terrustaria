@@ -266,12 +266,26 @@ impl ApplicationHandler for App {
                                 KeyCode::Backspace => {
                                     self.journey.search.pop();
                                 }
+                        // The bestiary search bar's input latch
+                        // (`UISearchBar.DrawSelf:145-167`): while writing,
+                        // Enter/Escape end the input (NOT the screen),
+                        // Backspace trims and printable text appends —
+                        // `PlayerInput.WritingText` gates the chat-open
+                        // and the world keys the same way.
+                        if self.bestiary_open && self.bestiary_ui.search.bar.is_writing_text {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape => {
+                                    self.bestiary_search_end_input();
+                                }
+                                KeyCode::Backspace => self.bestiary_search_backspace(),
                                 _ => {}
                             }
                             if let Some(text) = event.text.as_ref() {
                                 for ch in text.chars() {
                                     if !ch.is_control() && self.journey.search.chars().count() < 50 {
                                         self.journey.search.push(ch);
+                                    if !ch.is_control() {
+                                        self.bestiary_search_character(ch);
                                     }
                                 }
                             }
@@ -382,6 +396,16 @@ impl ApplicationHandler for App {
                 if tr_debug::in_rect(self.mouse_pos, self.debug_panel.layout(Vec2::ZERO).panel)
                     && crate::debug_panel::handle_scroll(self, d)
                 {
+                    return;
+                }
+                // `UIBestiaryTest.ScrollWheel` (`:846-850`): the wheel goes
+                // to the info page's scrollbar while the screen is open
+                // (`_infoSpace.UpdateScrollbar`), never the hotbar. The
+                // notch is consumed either way (W4-e23 remainder: the
+                // info page now scrolls — `ViewPosition -= wheel`,
+                // `UIBestiaryEntryInfoPage.cs:59-65`).
+                if self.bestiary_open {
+                    self.scroll_bestiary_info(d);
                     return;
                 }
                 // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel
@@ -533,7 +557,7 @@ impl ApplicationHandler for App {
                             self.selection.hotbar as i32 - step,
                         );
                         if self.selection.select(self.selected, target, false) {
-                            self.audio.play("Menu_Tick");
+                            self.audio.play_menu("Menu_Tick");
                         }
                     }
                 }
@@ -596,6 +620,11 @@ impl ApplicationHandler for App {
                                 // `:3256`), g21's site.
                                 if let Some(cue) = m.take_cue() {
                                     self.audio.play(cue);
+                                // Bug 17: the legacy menu's click tick —
+                                // `Main.DoStatefulTickSound` (`Main.cs:3244`,
+                                // `:3256`) / the settings rows' activation.
+                                if !matches!(action, menu::Action::None) {
+                                    self.audio.play_menu("Menu_Tick");
                                 }
                                 self.apply_menu_action(action, event_loop);
                             }
@@ -684,6 +713,10 @@ impl ApplicationHandler for App {
                             // clears `Main.blockMouse`, so the next press
                             // arms `controlUseItem` again.
                             self.block_mouse = false;
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the bestiary info-page thumb's drag latch clears
+                            // on release. W4-e23 remainder.
+                            self.bestiary_ui.info_scroll_drag = None;
                         }
                         self.mine_down = pressed;
                         if !pressed {
@@ -745,7 +778,7 @@ impl ApplicationHandler for App {
                     m.update_hover(pointer);
                     // Bug 17: the legacy menu's hover tick (`DoStatefulTickSound`).
                     if m.hover != before && m.hover.is_some() {
-                        self.audio.play("Menu_Tick");
+                        self.audio.play_menu("Menu_Tick");
                     }
                 }
                 // `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`):
@@ -763,6 +796,8 @@ impl ApplicationHandler for App {
                     if hit != self.front_hover_hit {
                         if hit.is_some_and(|h| self.front_hit_sounds(h)) {
                             self.audio.play("Menu_Tick");
+                        if hit.is_some() {
+                            self.audio.play_menu("Menu_Tick");
                         }
                         self.front_hover_hit = hit;
                     }
@@ -782,7 +817,7 @@ impl ApplicationHandler for App {
                     );
                     if hit != self.emotes.hover {
                         if hit.is_some() {
-                            self.audio.play("Menu_Tick");
+                            self.audio.play_menu("Menu_Tick");
                         }
                         self.emotes.hover = hit;
                     }
@@ -845,7 +880,7 @@ impl App {
     /// those overlays eat the key before `world_key` runs.
     fn hotbar_digit(&mut self, slot: usize) {
         if self.selection.select(self.selected, slot, false) {
-            self.audio.play("Menu_Tick");
+            self.audio.play_menu("Menu_Tick");
         }
     }
 
@@ -1215,6 +1250,8 @@ impl App {
                 // covers the pair (the hold mode's state tracks the key, the
                 // release arm in `window_event` clears it).
                 self.audio.play("Menu_Tick");
+                // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
+                self.audio.play_menu("Menu_Tick");
                 if self.settings.smart_cursor_toggle {
                     self.smart_cursor_used = !self.smart_cursor_used;
                 } else {

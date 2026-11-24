@@ -125,6 +125,43 @@ pub trait GoreCollision {
     ) -> (Vec2, Vec2);
 }
 
+/// W4-d79 PITCH SEAL — the case-39 Drip sound seam (`Gore.cs:953`/`:965`).
+/// The pool draws the tile-hit arm's `Main.rand.Next(2)` STYLE pick itself
+/// (the C# call-argument position — BEFORE the PlaySound gate, so a refused
+/// play still spends it) and hands the seam the picked style; the wet arm
+/// (`:965`) passes style 2 with NO style draw. `pitch_rng` is the caller's
+/// `UpdateGores` stream as a `Next(min, max)` closure — the case's own
+/// `Next(-30, 31) * 0.01` pitch draw (`LegacySoundPlayer.cs:1356`) rides it
+/// INSIDE the play, only past the attenuation gate. Called at the C#
+/// statement position (mid-walk, between gore slots) so the stream order
+/// stays the source's — an after-walk queue would move the pitch draw.
+pub trait GoreSound {
+    /// One `SoundEngine.PlaySound(39, x, y, style)` (`Gore.cs:953`/`:965`).
+    fn play_drip(
+        &mut self,
+        x: i32,
+        y: i32,
+        style: i32,
+        pitch_rng: &mut dyn FnMut(i32, i32) -> i32,
+    );
+}
+
+/// The no-sound seam: [`GorePool::update`]'s default (the pool's own tests
+/// and any caller without an audio borrow). The style draw still happens —
+/// it is the C# call argument, not the play's.
+pub struct NoGoreSound;
+
+impl GoreSound for NoGoreSound {
+    fn play_drip(
+        &mut self,
+        _x: i32,
+        _y: i32,
+        _style: i32,
+        _pitch_rng: &mut dyn FnMut(i32, i32) -> i32,
+    ) {
+    }
+}
+
 /// `Gore.goreTime`'s static-constructor value (`Gore.cs:1507-1510`).
 pub const GORE_TIME_DEFAULT: i32 = 600;
 
@@ -627,29 +664,34 @@ fn rect_intersects(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
 impl GorePool {
     /// `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`) — the per-frame walk
     /// over the 600 live slots (the sentinel 600 is never updated).
+    /// `sound` is the case-39 Drip seam ([`GoreSound`]); pass
+    /// [`NoGoreSound`] when no audio borrow exists (the style draw still
+    /// rides `rng` — it is the C# call argument).
     pub fn update<R: GoreRng>(
         &mut self,
         rng: &mut R,
         world: &World,
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
+        sound: &mut dyn GoreSound,
     ) {
         for num in 0..GORE_SLOTS {
             if !self.slots[num].active {
                 continue;
             }
-            self.update_slot(rng, world, collision, wind_for_visuals, num);
+            self.update_slot(rng, world, collision, wind_for_visuals, num, sound);
         }
     }
 
     /// `Gore.Update` (`Gore.cs:308-1083`) — one gore's frame.
     ///
-    /// Documented drops (the port has no texture tracking, no entity lights
-    /// and no player/dust/sound seams in `tr-core`): the texture-gated
-    /// position/light/player/dust writes (`Gore.cs:794-806`, `:825-841`,
-    /// `:850-864`, `:883-911`, `:1064-1082`) and the drip's sound and ripple
-    /// (`:953`, `:965-968`). None of them draws a random number, so the
-    /// stream order is untouched.
+    /// Documented drops (the port has no texture tracking and no entity
+    /// lights in `tr-core`): the texture-gated position/light/player/dust
+    /// writes (`Gore.cs:794-806`, `:825-841`, `:850-864`, `:883-911`,
+    /// `:1064-1082`) and the drip's ripple (`:967`). None of them draws a
+    /// random number. The drip's SOUND (`:953`/`:965`, case 39) is ported
+    /// via the [`GoreSound`] seam (W4-d79 PITCH SEAL) — the tile-hit arm's
+    /// `Next(2)` style pick draws on `rng` at the C# argument position.
     fn update_slot<R: GoreRng>(
         &mut self,
         rng: &mut R,
@@ -657,6 +699,7 @@ impl GorePool {
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
         num: usize,
+        sound: &mut dyn GoreSound,
     ) {
         // `Gore.cs:314-325`: the sticky clamp — the world check first, then
         // the speed cap.
@@ -854,7 +897,7 @@ impl GorePool {
                 && crate::gore_id::is_drip(gore_type as usize)
             {
                 // `Gore.cs:915-977`: the drip's collision pass.
-                self.update_drip_collision(world, collision, num);
+                self.update_drip_collision(rng, world, collision, num, sound);
             } else if self.slots[num].sticky {
                 // `Gore.cs:978-1019`: the sticky gore rests and fades.
                 self.update_sticky(world, collision, flag, num);
@@ -1134,10 +1177,27 @@ impl GorePool {
 
     /// `Gore.Update`'s drip collision pass (`Gore.cs:915-977`). Documented
     /// drops: the 716/1383 shimmer light (`:917-941`, needs
-    /// `LiquidRenderer.GetShimmerBaseColor`), the `SoundEngine` hits (`:953`,
-    /// `:965`) and the water-shader ripple (`:967`) — none draws a random
-    /// number.
-    fn update_drip_collision(&mut self, world: &World, collision: &dyn GoreCollision, num: usize) {
+    /// `LiquidRenderer.GetShimmerBaseColor`) and the water-shader ripple
+    /// (`:967`) — neither draws a random number. The case-39 sound
+    /// (`:953`/`:965`) is PORTED (W4-d79 PITCH SEAL) via [`GoreSound`]:
+    /// the `flag4` quiet kinds (716/717/943/1160-1162, `:942`) skip both
+    /// arms; the tile-hit arm draws ONE `Next(2)` style pick at the C#
+    /// argument position (before the gate), the wet arm passes style 2
+    /// draw-free.
+    fn update_drip_collision<R: GoreRng>(
+        &mut self,
+        rng: &mut R,
+        world: &World,
+        collision: &dyn GoreCollision,
+        num: usize,
+        sound: &mut dyn GoreSound,
+    ) {
+        // `:942` — the quiet drip kinds play neither arm.
+        let gore_type = self.slots[num].gore_type;
+        let flag4 = gore_type == 716
+            || gore_type == 717
+            || gore_type == 943
+            || (1160..=1162).contains(&gore_type);
         let before = self.slots[num].velocity;
         let after = collision.tile_collision(world, self.slots[num].position, before, 16.0, 14.0);
         self.slots[num].velocity = after;
@@ -1145,11 +1205,29 @@ impl GorePool {
             if self.slots[num].frame.current_row < 10 {
                 self.slots[num].frame.current_row = 10;
                 self.slots[num].frame_counter = 0;
+                if !flag4 {
+                    // `:953` — `PlaySound(39, (int)X + 8, (int)Y + 8,
+                    // Main.rand.Next(2))`: the style pick is the call
+                    // ARGUMENT (drawn even when the gate refuses); the
+                    // casts truncate toward zero.
+                    let x = self.slots[num].position.x as i32 + 8;
+                    let y = self.slots[num].position.y as i32 + 8;
+                    let style = rng.next_max(2);
+                    sound.play_drip(x, y, style, &mut |lo, hi| rng.next_range(lo, hi));
+                }
             }
         } else if collision.wet_collision(world, self.slots[num].position + after, 16.0, 14.0) {
             if self.slots[num].frame.current_row < 10 {
                 self.slots[num].frame.current_row = 10;
                 self.slots[num].frame_counter = 0;
+                if !flag4 {
+                    // `:965` — the wet arm's fixed style 2, NO style draw.
+                    let x = self.slots[num].position.x as i32 + 8;
+                    let y = self.slots[num].position.y as i32 + 8;
+                    sound.play_drip(x, y, 2, &mut |lo, hi| rng.next_range(lo, hi));
+                }
+                // `:967` — the water-shader ripple stays dropped (no
+                // WaterDistortion filter in the port; draw-free).
             }
             // `:969-975` — the drip settles on the liquid surface.
             let num34 = (self.slots[num].position.x + 8.0) as i32 / 16;
@@ -1646,6 +1724,110 @@ mod tests {
         assert_eq!(gore.time_left, GORE_TIME_DEFAULT * 3);
     }
 
+    /// W4-d79 PITCH SEAL — a recording [`GoreSound`] seam: every play's
+    /// `(x, y, style)` plus the pitch draws it consumed.
+    struct RecordingDripSound {
+        plays: Vec<(i32, i32, i32)>,
+        pitch_draws: Vec<(i32, i32, i32)>,
+    }
+    impl GoreSound for RecordingDripSound {
+        fn play_drip(
+            &mut self,
+            x: i32,
+            y: i32,
+            style: i32,
+            pitch_rng: &mut dyn FnMut(i32, i32) -> i32,
+        ) {
+            self.plays.push((x, y, style));
+            // The façade's shape: ONE Next(-30, 31) pitch draw per play.
+            let v = pitch_rng(-30, 31);
+            self.pitch_draws.push((-30, 31, v));
+        }
+    }
+
+    /// A seam whose tile collision always alters the velocity (the
+    /// tile-hit arm) or never does (the wet arm), with a configurable wet
+    /// probe — the drip collision's two branches in isolation.
+    struct DripCollision { hit: bool, wet: bool }
+    impl GoreCollision for DripCollision {
+        fn tile_collision(
+            &self, _world: &World, _position: Vec2, velocity: Vec2, _w: f32, _h: f32,
+        ) -> Vec2 {
+            if self.hit { Vec2::new(velocity.x, 0.0) } else { velocity }
+        }
+        fn wet_collision(&self, _world: &World, _position: Vec2, _w: f32, _h: f32) -> bool {
+            self.wet
+        }
+        fn slope_collision(
+            &self, _world: &World, position: Vec2, velocity: Vec2,
+            _w: f32, _h: f32, _gravity: f32, _fall: bool,
+        ) -> (Vec2, Vec2) {
+            (position, velocity)
+        }
+    }
+
+    /// W4-d79 PITCH SEAL — `Gore.cs:953`: the tile-hit arm draws ONE
+    /// `Next(2)` style pick at the argument position, then the seam's
+    /// `Next(-30, 31)` pitch draw, in that order, on the walk's stream;
+    /// the frame jumps to 10 and the play lands at `(int)pos + 8`.
+    #[test]
+    fn w4_d79_the_drip_tile_hit_draws_style_then_pitch_in_order() {
+        let mut pool = GorePool::new();
+        // The spawn's two velocity kicks, then the style pick (1), then
+        // the pitch draw (-7).
+        let mut rng = VecRng::new(vec![10, 20, 1, -7]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(100.0, 200.0), Vec2::new(0.0, 3.0), 706, 1.0);
+        assert_eq!(idx, 0);
+        // Park the drip mid-fall so the collision pass runs with frame < 10.
+        pool.slot_mut(0).frame.current_row = 7;
+        pool.slot_mut(0).frame_counter = 0;
+        let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
+        pool.update(&mut rng, &world, &DripCollision { hit: true, wet: false }, 0.0, &mut sound);
+        assert_eq!(sound.plays, vec![(108, 208, 1)], "the style pick is the Next(2) argument");
+        assert_eq!(sound.pitch_draws, vec![(-30, 31, -7)], "one pitch draw, after the style");
+        assert_eq!(rng.idx, 4, "exactly two draws past the spawn pair");
+        assert_eq!(pool.slot(0).frame.current_row, 10, "the hit jumps the sheet to 10");
+    }
+
+    /// W4-d79 PITCH SEAL — `Gore.cs:965`: the wet arm passes the FIXED
+    /// style 2 with NO style draw — only the pitch draw rides the stream.
+    #[test]
+    fn w4_d79_the_drip_wet_arm_plays_style_two_without_a_style_draw() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20, 12]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(100.0, 200.0), Vec2::new(0.0, 3.0), 706, 1.0);
+        assert_eq!(idx, 0);
+        pool.slot_mut(0).frame.current_row = 7;
+        pool.slot_mut(0).frame_counter = 0;
+        let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
+        pool.update(&mut rng, &world, &DripCollision { hit: false, wet: true }, 0.0, &mut sound);
+        assert_eq!(sound.plays, vec![(108, 208, 2)], "the wet arm's fixed style");
+        assert_eq!(sound.pitch_draws, vec![(-30, 31, 12)]);
+        assert_eq!(rng.idx, 3, "ONE draw past the spawn pair — no Next(2)");
+    }
+
+    /// W4-d79 PITCH SEAL — `Gore.cs:942`: the quiet kinds (716/717/943/
+    /// 1160-1162) skip BOTH arms — zero plays, zero draws, the frame still
+    /// jumps to 10.
+    #[test]
+    fn w4_d79_the_quiet_drip_kinds_play_nothing_and_draw_nothing() {
+        for kind in [716, 717, 943, 1160, 1161, 1162] {
+            let mut pool = GorePool::new();
+            let mut rng = VecRng::new(vec![10, 20]);
+            let world = world();
+            pool.new_gore(&mut rng, &world, Vec2::new(100.0, 200.0), Vec2::new(0.0, 3.0), kind, 1.0);
+            pool.slot_mut(0).frame.current_row = 7;
+            pool.slot_mut(0).frame_counter = 0;
+            let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
+            pool.update(&mut rng, &world, &DripCollision { hit: true, wet: true }, 0.0, &mut sound);
+            assert!(sound.plays.is_empty(), "kind {kind} is flag4-quiet");
+            assert_eq!(rng.idx, 2, "kind {kind} draws nothing past the spawn pair");
+            assert_eq!(pool.slot(0).frame.current_row, 10);
+        }
+    }
+
     /// `Gore.cs:1391-1402` — `SpecialAI == 3`: the two `NextFloat` velocity
     /// draws come first, then the sheet row, then the frame counter.
     #[test]
@@ -1785,7 +1967,7 @@ mod tests {
         // (`Gore.cs:1017`): 2 + 255 ticks to the `alpha >= 255` kill
         // (`:1055-1058`).
         for tick in 0..257 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
             if tick < 2 {
                 assert_eq!(pool.slot(0).time_left, 1 - tick as i32);
                 assert_eq!(pool.slot(0).alpha, 0, "the life runs out before the fade");
@@ -1795,7 +1977,7 @@ mod tests {
         }
         assert!(!pool.slot(0).active, "alpha 255 deactivates the gore");
         // The inactive slot is skipped from now on (`Gore.cs:310-313`).
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
         assert_eq!(pool.slot(0).alpha, 255);
     }
 
@@ -1813,11 +1995,11 @@ mod tests {
         pool.slot_mut(0).sticky = false;
         let collisions = NoCollision;
         for _ in 0..127 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
         }
         assert!(pool.slot(0).active);
         assert_eq!(pool.slot(0).alpha, 254);
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
         assert!(!pool.slot(0).active);
     }
 
@@ -1840,12 +2022,12 @@ mod tests {
         pool.slot_mut(0).alpha = 0;
         pool.slot_mut(0).time_left = 2;
         let collisions = NoCollision;
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound);
         let gore = pool.slot(0);
         assert_eq!(gore.velocity.x, 0.4 * 2.5);
         assert_eq!(gore.time_left, 1);
         assert!(gore.active);
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound);
         assert_eq!(pool.slot(0).time_left, 0);
         assert!(!pool.slot(0).active, "an empty timeLeft deactivates the cloud");
     }

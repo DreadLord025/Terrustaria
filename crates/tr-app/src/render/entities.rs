@@ -935,6 +935,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SNAIL_SHEETS)
             .chain(W4_D43_SHEETS)
             .chain(D36_SHEETS)
+            .chain(TOWN_PET_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -2816,6 +2817,8 @@ pub(crate) const W4_D43_SHEETS: &[u32] = &[
 /// E4 batch 3: 168/170/171/180/181; E4 batch 4: 185/197/198/199;
 /// E4 batch 5 (the SEAL): 201/202/203/204/206.
 pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199, 201, 202, 203, 204, 206];
+
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a

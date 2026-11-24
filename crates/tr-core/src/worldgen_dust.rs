@@ -193,6 +193,12 @@ pub fn unlock_door_dust(
 fn paint_color(color: u8) -> Color {
     let [r, g, b] = crate::tile_light::paint_color_bytes(color);
     Color::new(r, g, b, 255)
+/// the C# starts from `Color.White` (alpha 255) and the ONLY alpha arm
+/// is color 30's `white.A = 150` (`:44026-44032`, research/66 §2 —
+/// d54's `paint_color_full` had it right; g14's forced 255 fixed).
+fn paint_color(color: u8) -> Color {
+    let [r, g, b] = crate::tile_light::paint_color_bytes(color);
+    Color::new(r, g, b, if color == 30 { 150 } else { 255 })
 }
 
 
@@ -536,6 +542,28 @@ mod tests {
         paint_coat_effect_dust(2, 2, 1, &old, &mut rng2, &mut gen2, &mut pool2, &c, &w);
         for i in 0..10 {
             assert_eq!(pool2.slot(i).color, coating_color(1));
+        }
+    }
+
+    /// W4-d54 (research/66 §3 — neither lane had one) — the color-30
+    /// alpha-150 paint arm (`WorldGen.cs:44026-44032`): `paintColor(30)`
+    /// is (200,200,200,150), every other colour keeps White's alpha
+    /// 255; the `color == 0` fold takes `oldColor` first, so
+    /// `paintEffect(0, old=30)` spawns ten alpha-150-coloured dusts.
+    #[test]
+    fn w4_d54_paint_color30_alpha150() {
+        assert_eq!(paint_color(30), Color::new(200, 200, 200, 150));
+        assert_eq!(paint_color(1), Color::new(255, 0, 0, 255));
+        assert_eq!(paint_color(0), Color::new(255, 255, 255, 255));
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(11);
+        let mut gen = UnifiedRandom::new(23);
+        paint_effect_dust(3, 4, 0, 30, &mut rng, &mut gen, &mut pool, &c, &w);
+        assert_eq!(active(&pool).len(), 10);
+        for i in 0..10 {
+            assert_eq!(pool.slot(i).color, Color::new(200, 200, 200, 150));
         }
     }
 

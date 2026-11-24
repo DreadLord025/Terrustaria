@@ -312,7 +312,7 @@ fn pet_chat(ctx: &mut ChatContext, pet: &str) -> String {
 
 /// `Lang.GetSlimeType` (`Lang.cs:375-406`): the town-slime type → the
 /// chatter category's colour word. The default (and 670) is "Blue".
-fn slime_chat_colour(ty: u16) -> &'static str {
+pub(crate) fn slime_chat_colour(ty: u16) -> &'static str {
     match ty {
         678 => "Green",
         679 => "Old",
@@ -1082,12 +1082,17 @@ fn golfer(ctx: &mut ChatContext) -> String {
 /// PURE (`:93753-93764`, no draws) and short-circuits the event text —
 /// `HasSpecialEventText` fires at most ONCE per chat.
 fn zoologist(ctx: &mut ChatContext) -> String {
-    // `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`).
-    let lycantrope = if !ctx.blood_moon || ctx.day_time {
-        ctx.moon_phase == 0 && !ctx.day_time
-    } else {
-        true
-    };
+    // `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`) - the
+    // shared derivation the happiness report's `Transformed` suffix reads
+    // (`happiness.rs`, `ShopHelper.cs:191-194`); g58's shared-fn form is
+    // the batch-L keep-one (d120's inline twin, identical predicate).
+    let lycantrope = crate::happiness::should_bestiary_girl_be_lycantrope(
+        ctx.blood_moon,
+        ctx.day_time,
+        ctx.moon_phase,
+    );
+    // d120's event-text leg (the merged superset): the human form checks
+    // `HasSpecialEventText` FIRST — the check is pure and short-circuits.
     if !lycantrope {
         if let Some(text) = special_event_text(ctx, "BestiaryGirl", 633) {
             return text;
@@ -1109,6 +1114,12 @@ fn princess(ctx: &mut ChatContext) -> String {
         None => chatter(ctx, "PrincessChatter"),
     }
 }
+
+// W4-g10 lane 3 FINAL keep-one EXECUTED (batch-L): the kind-keyed
+// `slime_chat_colour(NpcKind)` twin deduped onto d120's type-keyed
+// `slime_chat_colour(ty: u16)` above (the GetChat dispatch owner per
+// research/360 §5 + d120's retire item 2 — identical words; the g10
+// witness re-pins ride `kind.cs_id()`, the bridge both bibles name).
 
 /// 37 — the Old Man (`NPC.cs:94017-94037`). NO event text — the arm has
 /// no `HasSpecialEventText` call. Night OR remix answers the stat band
@@ -1586,6 +1597,68 @@ mod tests {
             crate::npc_chat::format_chat_lines("short line", 460),
             vec!["short line".to_string()]
         );
+    }
+
+    /// W4-g10 lane 3 FINAL — `Lang.GetSlimeType` (`Lang.cs:375-406`): the
+    /// colour-per-kind mapping over the LANDED town-slime kinds. Each kind
+    /// answers its C# switch word, the composed `Slime{colour}Chatter`
+    /// category ships its chatter rows, and the kind's `cs_id` (the vanilla
+    /// type d120's type-keyed `GetChat` arm reads) matches the switch case.
+    /// batch-L re-pin: the calls ride d120's type-keyed survivor through
+    /// the `kind.cs_id()` bridge (the g10 kind-keyed twin deduped).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_g10_the_town_slime_kinds_answer_their_colour_words() {
+        init_lang();
+        // (kind, vanilla type, colour word) — the C# switch's eight cases.
+        let table: [(NpcKind, u16, &str); 8] = [
+            (NpcKind::TownSlimeBlue, 670, "Blue"),
+            (NpcKind::TownSlimeGreen, 678, "Green"),
+            (NpcKind::TownSlimeOld, 679, "Old"),
+            (NpcKind::TownSlimePurple, 680, "Purple"),
+            (NpcKind::TownSlimeRainbow, 681, "Rainbow"),
+            (NpcKind::TownSlimeRed, 682, "Red"),
+            (NpcKind::TownSlimeYellow, 683, "Yellow"),
+            (NpcKind::TownSlimeCopper, 684, "Copper"),
+        ];
+        for (kind, ty, colour) in table {
+            // The colour word the kind answers (through the cs_id bridge).
+            assert_eq!(slime_chat_colour(kind.cs_id()), colour, "{kind:?} colour");
+            // The kind's vanilla type is the switch case (d120's arm keys
+            // on `cs_id`, so the type-keyed and kind-keyed maps agree).
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            // The dispatch guard (`NPCID.Sets.IsTownSlime`, NPCID.cs:10119).
+            assert!(crate::npc_ai_town::is_town_slime(ty as i32), "{kind:?} in the set");
+            // The composed category ships its three chatter rows (the
+            // shipped en-US Town.json carries Chatter_1..3 for every
+            // colour, plus a NoHome row the housing path reads).
+            let category = format!("Slime{colour}Chatter");
+            for i in 1..=3 {
+                assert!(
+                    crate::lang::exists(&format!("{category}.Chatter_{i}")),
+                    "{category}.Chatter_{i} ships"
+                );
+            }
+            // The colour's OWN first line resolves (not a shared pool).
+            let first = crate::lang::text(&format!("{category}.Chatter_1"));
+            assert!(!first.is_empty(), "{category}.Chatter_1 resolves");
+            assert_ne!(first, format!("{category}.Chatter_1"), "not the bare key");
+        }
+        // The default arm: a non-town-slime kind answers Blue (the switch's
+        // `result = "Blue"` initializer, Lang.cs:377).
+        assert_eq!(slime_chat_colour(NpcKind::Slime.cs_id()), "Blue", "the wild slime default");
+        assert_eq!(slime_chat_colour(NpcKind::Guide.cs_id()), "Blue", "the switch default");
+        // The eight first lines are pairwise distinct (each colour owns its
+        // lines — the witness that the mapping is not a constant).
+        let mut firsts: Vec<String> = table
+            .iter()
+            .map(|(_, _, c)| crate::lang::text(&format!("Slime{c}Chatter.Chatter_1")))
+            .collect();
+        let n = firsts.len();
+        firsts.sort();
+        firsts.dedup();
+        assert_eq!(firsts.len(), n, "every colour's first line is distinct");
     }
 
     // ---- W4-d120: the chatter re-pin witnesses --------------------------

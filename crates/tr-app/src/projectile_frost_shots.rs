@@ -153,8 +153,9 @@ fn move_tile_collide(p: &mut Projectile, world: &World) {
             p.active = false;
             p.time_left = 0;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap (`:20441`'s wet arm via
+            // `wet_velocity`; dry byte-identical).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;
@@ -329,7 +330,10 @@ fn spear_core(p: &mut Projectile, world: &World) {
             }
         }
     }
-    p.pos += p.vel;
+    // S1-P-i57 — `:20441`'s wet swap on the aiStyle-14 integrate (the
+    // `wet_velocity` helper; the row's `tileCollide = false` keeps it
+    // un-scaled, dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 /// **346 Ornament** — `Projectile.cs:24867-24897` (the per-type hook) +
@@ -400,8 +404,9 @@ fn present(p: &mut Projectile, world: &World) {
     // `:28936` — the rotation.
     p.rot = p.vel.y.atan2(p.vel.x) + 1.57;
     // `UpdatePosition` (`:20445`) — the raw integrate (tileCollide false).
-    let _ = world;
-    p.pos += p.vel;
+    // S1-P-i57 — `:20441`'s wet swap via `wet_velocity` (the `:17476` gate
+    // keeps it un-scaled; dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 // =====================================================================

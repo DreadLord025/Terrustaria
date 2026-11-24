@@ -10,6 +10,7 @@ use crate::world::World;
 mod place;
 pub use place::{place_alch, place_item_tile, place_tile, place_tile_forced, place_torch};
 pub use place::{place_alch, place_chest, place_item_tile, place_tile, place_torch};
+pub use place::{place_alch, place_chest, place_item_tile, place_object, place_tile, place_torch};
 mod wall;
 // S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
 // the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives
@@ -40,6 +41,16 @@ pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope,
     solid_tile_allow_left_slope, solid_tile_allow_right_slope, solid_tile_allow_top_slope,
     square_tile_frame_gen,
+mod replace;
+// W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
+// (`WorldGen.cs:62558-62775`), the smart-cursor block swap.
+pub use replace::{
+    is_tile_replaceable, replace_tile, replace_tile_commit, replace_tile_prepare,
+    would_tile_replacement_work, ReplaceOutcome,
+};
+pub use kill::solid_tile;
+pub(crate) use kill::{
+    remove_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
 };
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon

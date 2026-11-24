@@ -244,7 +244,7 @@ impl App {
         }
         job.queue_abort();
         // `SoundEngine.PlaySound(11)` (`:57`).
-        self.audio.play("Menu_Close");
+        self.audio.play_menu("Menu_Close");
         // The screen's own flag mirrors the controller's (`:86`'s read).
         if let Some(FrontScreen::WorldLoad(state)) = self.front.as_mut() {
             state.queued_abort = true;
@@ -288,7 +288,7 @@ impl App {
             // select (`Main.cs:49468-49472`); `SoundEngine.PlaySound(10)`
             // (`:6603`).
             self.world_gen_job = None;
-            self.audio.play("Menu_Open");
+            self.audio.play_menu("Menu_Open");
             self.front_backup = None;
             self.front = None;
             self.enter_front(FrontScreen::WorldSelect);

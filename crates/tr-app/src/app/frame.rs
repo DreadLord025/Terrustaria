@@ -182,7 +182,9 @@ impl App {
         // the front-end pointer machine's `left_held`, which only tracks the
         // 888 screens' presses.
         if let Some(cue) = crate::ui::ingame_options::update(self, self.mine_down) {
-            self.audio.play(cue);
+            // W4-d79 — the options-screen hover/animation cues (cases 10/12)
+            // ride the single-voice pool (draw-free).
+            self.audio.play_menu(cue);
         }
         // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
         // Settings button's position, its `exitScale` hover animation and the
@@ -485,6 +487,20 @@ impl App {
         focus_paused
     }
 
+    /// `IngameFancyUI.OpenUIState` → `UIBestiaryTest.OnOpenPage`
+    /// (`UIBestiaryTest.cs:63-66`): the env-driven open (`TR_BESTIARY`)
+    /// builds its working set on the first open frame; the click-open
+    /// already ran `on_open`. Closing re-arms the latch. W4-e23.
+    fn bestiary_open_latch(&mut self, screen: Vec2) {
+        if self.bestiary_open {
+            if !self.bestiary_ui.opened {
+                self.bestiary_ui.on_open(&self.bestiary, screen);
+            }
+        } else {
+            self.bestiary_ui.opened = false;
+        }
+    }
+
     pub(crate) fn frame(&mut self) {
         // The frame's wall-clock stamp: the head derives `dt` from it (the
         // `TR_SHOT` pin aside) and the draw half's filter/render passes
@@ -514,6 +530,11 @@ impl App {
             if let Some(p) = self.player.as_mut() {
                 p.cursor_item_icon_enabled = false;
             }
+            // `IngameFancyUI.OpenUIState` → `UIBestiaryTest.OnOpenPage`
+            // (`:63-66`): the env-driven open (`TR_BESTIARY`) builds its
+            // working set on the first open frame; the click-open already
+            // ran `on_open`. Closing re-arms the latch.
+            self.bestiary_open_latch(screen);
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update
@@ -553,6 +574,14 @@ impl App {
             Some(pair) => pair,
             None => return,
         };
+        // `WorldUpdateStepper.DrawnThisUpdate = true` (`Main.cs:62478`): the
+        // END-of-Draw mark, after the passes ran. The W4-g13 dust emitters read
+        // `FocusHelper.Allow*` (= `!DrawnThisUpdate`) DURING `draw_region`, so
+        // the flag stays clear through the draw and is set here — the C#
+        // position (it was at the draw-half head, which pre-marked the draw).
+        if self.menu.is_none() && self.front.is_none() {
+            self.stepper.drawn_this_update = true;
+        }
         self.tile_stats = tile_stats;
         if self.stats_on {
             self.stats_acc.add(&tile_stats);

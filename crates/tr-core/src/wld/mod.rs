@@ -1718,8 +1718,11 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
-        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394,
-        // v217) ride the round-trip at non-default values.
+        // W4-a6: the combat book vol.2 byte (WorldFile.cs:1407, v259) and
+        // the peddler's satchel byte (`:1408`, v260).
+        world.combat_book_volume_two_was_used = true;
+        world.peddlers_satchel_was_used = true;
+        // W4-a6: the three bought-pet bytes (WorldFile.cs:1392-1394, v217).
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
@@ -1731,6 +1734,13 @@ mod tests {
         world.dd2_downed_t3 = true;
         // W4-g15 lane 5: the copper slime unlock (`WorldFile.cs:1415`, v261)
         // rides the round-trip at a non-default value too.
+        world.unlocked_slime_old_spawn = true;
+        // W4-f43b: the six-flag slime widening (WorldFile.cs:1398 + :1409-
+        // 1415, v250/v261) — the rainbow/red pair ride above (S1-P-i35).
+        world.unlocked_slime_blue_spawn = true;
+        world.unlocked_slime_green_spawn = true;
+        world.unlocked_slime_purple_spawn = true;
+        world.unlocked_slime_yellow_spawn = true;
         world.unlocked_slime_copper_spawn = true;
         world
     }
@@ -1963,7 +1973,17 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
-        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394).
+        // W4-a6: the combat book vol.2 byte.
+        assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        // W4-a6: the peddler's satchel byte.
+        assert_eq!(
+            got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
+            "{context}: peddlersSatchelWasUsed"
+        );
+        // W4-a6: the three bought-pet bytes.
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
@@ -1973,6 +1993,29 @@ mod tests {
         assert_eq!(got.dd2_downed_t2, want.dd2_downed_t2, "{context}: DownedInvasionT2");
         assert_eq!(got.dd2_downed_t3, want.dd2_downed_t3, "{context}: DownedInvasionT3");
         // W4-g15 lane 5: the copper slime unlock byte.
+        // W4-g51 id-140: the old/copper slime unlock bytes.
+        // W4-f43b: the six-flag slime widening (the rainbow/red pair ride
+        // the Gate-V3 rows above).
+        assert_eq!(
+            got.unlocked_slime_blue_spawn, want.unlocked_slime_blue_spawn,
+            "{context}: unlockedSlimeBlueSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_green_spawn, want.unlocked_slime_green_spawn,
+            "{context}: unlockedSlimeGreenSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_old_spawn, want.unlocked_slime_old_spawn,
+            "{context}: unlockedSlimeOldSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_purple_spawn, want.unlocked_slime_purple_spawn,
+            "{context}: unlockedSlimePurpleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_yellow_spawn, want.unlocked_slime_yellow_spawn,
+            "{context}: unlockedSlimeYellowSpawn"
+        );
         assert_eq!(
             got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
             "{context}: unlockedSlimeCopperSpawn"
@@ -2119,6 +2162,10 @@ mod tests {
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
         tail[2024] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-d125)
+        // The pets (WorldFile.cs:1392-1394) sit at 2021/2022/2023 (W4-a6).
+        tail[2021] = u8::from(world.bought_cat);
+        tail[2022] = u8::from(world.bought_dog);
+        tail[2023] = u8::from(world.bought_bunny);
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
         // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
         // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
@@ -2131,11 +2178,25 @@ mod tests {
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // W4-f43b: the blue slime byte (WorldFile.cs:1398) sits between the
+        // deerclops and the merchant-unlock run.
+        tail[2027] = u8::from(world.unlocked_slime_blue_spawn);
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042, yellow@2043,
         // copper@2044 (gate V3, i35; copper W4-g15 lane 5).
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        // green@2038, old@2039, purple@2040, rainbow@2041, red@2042,
+        // yellow@2043, copper@2044 (gate V3, i35; old/copper W4-g51 id-140).
+        tail[2039] = u8::from(world.unlocked_slime_old_spawn);
+        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
+        tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
+        // W4-f43b: the other five owned too (green@2038, old@2039,
+        // purple@2040, yellow@2043, copper@2044).
+        tail[2038] = u8::from(world.unlocked_slime_green_spawn);
+        tail[2040] = u8::from(world.unlocked_slime_purple_spawn);
+        tail[2043] = u8::from(world.unlocked_slime_yellow_spawn);
         tail[2044] = u8::from(world.unlocked_slime_copper_spawn);
         // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
         // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
@@ -2150,6 +2211,10 @@ mod tests {
         tail[1931] = u8::from(world.dd2_downed_t1); // DownedInvasionT1
         tail[1932] = u8::from(world.dd2_downed_t2); // DownedInvasionT2
         tail[1933] = u8::from(world.dd2_downed_t3); // DownedInvasionT3
+        // combatBookVolumeTwoWasUsed (`WorldFile.cs:1407`): the unlocks end
+        // at princess@2035, +1 (W4-a6); the satchel (`:1408`) follows at 2037.
+        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
+        tail[2037] = u8::from(world.peddlers_satchel_was_used);
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
@@ -4004,9 +4069,37 @@ mod tests {
         // v260: the slime block does not exist yet (the satchel byte is last).
         let mut data = synthetic_file(260, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 260);
-        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed — skipped
+        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed (W4-a6: owned)
         let w = parse(&data).expect("v260 loads");
         assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
+        assert!(w.peddlers_satchel_was_used, "peddlersSatchelWasUsed reads from 260 (W4-a6)");
+        let w = parse(&synthetic_file(259, &[2, 144], 160, 11)).expect("v259 loads");
+        assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
+        // W4-a6: the bought-pet trio reads from v217 (WorldFile.cs:2358-
+        // 2363) — the LAST three tail bytes at 217 (the post-1.4 bosses
+        // need 223). Below the gate they stay false.
+        let w = parse(&synthetic_file(216, &[2, 144], 160, 10)).expect("v216 loads");
+        assert!(!w.bought_cat, "below 217: boughtCat stays false");
+        let mut data = synthetic_file(217, &[2, 144], 160, 10);
+        let tail_at = tail_offset_in_synthetic(&data, 217);
+        let end = flags_tail(217).len();
+        data[tail_at + end - 3] = 1; // boughtCat
+        data[tail_at + end - 2] = 1; // boughtDog
+        data[tail_at + end - 1] = 1; // boughtBunny
+        let w = parse(&data).expect("v217 loads");
+        assert!(w.bought_cat, "boughtCat reads from 217");
+        assert!(w.bought_dog, "boughtDog reads from 217");
+        assert!(w.bought_bunny, "boughtBunny reads from 217");
+        // W4-a6: combatBookVolumeTwoWasUsed reads from v259 — below the gate
+        // it stays false; at 259 it is the LAST tail byte (the satchel needs
+        // 260, the slime run 261).
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: book2 stays false");
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        data[tail_at + flags_tail(259).len() - 1] = 1; // combatBookVolumeTwoWasUsed
+        let w = parse(&data).expect("v259 loads");
+        assert!(w.combat_book_volume_two_was_used, "combatBookVolumeTwoWasUsed reads from 259");
         // v261: green/old/purple(3) rainbow(1) red(1) yellow/copper(2) — the
         // red byte sits 3 from the tail end (2 skip + 1 red).
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
@@ -4018,6 +4111,15 @@ mod tests {
         assert!(!w.unlocked_slime_rainbow_spawn, "the rainbow byte before it stays 0");
         // W4-g15 lane 5: the copper byte is LAST in the v261 slime block
         // (green/old/purple(3) rainbow(1) red(1) yellow(1) copper(1)).
+        // W4-g51 id-140: the old byte (2nd of the 7) and the copper byte
+        // (last) read from the same v261 block.
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        let old_at = flags_tail(261).len() - 6; // green, OLD, purple, rainbow, red, yellow, copper
+        data[tail_at + old_at] = 1;
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_old_spawn, "unlockedSlimeOldSpawn reads from 261");
+        assert!(!w.unlocked_slime_copper_spawn, "the copper byte stays 0");
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 261);
         let copper_at = flags_tail(261).len() - 1;
@@ -4025,6 +4127,25 @@ mod tests {
         let w = parse(&data).expect("v261 loads (copper)");
         assert!(w.unlocked_slime_copper_spawn, "unlockedSlimeCopperSpawn reads from 261");
         assert!(!w.unlocked_slime_red_spawn, "the red byte before it stays 0");
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_copper_spawn, "unlockedSlimeCopperSpawn reads from 261");
+        assert!(!w.unlocked_slime_old_spawn, "the old byte stays 0");
+        // W4-f43b: the six-flag widening — green leads the v261 run (7 from
+        // the tail end), copper closes it (the LAST byte); the blue byte
+        // reads from its own v250 gate (the LAST tail byte at 250).
+        let end = flags_tail(261).len();
+        data[tail_at + end - 7] = 1; // unlockedSlimeGreenSpawn
+        data[tail_at + end - 1] = 1; // unlockedSlimeCopperSpawn
+        assert!(w.unlocked_slime_green_spawn, "green reads from 261 (W4-f43b)");
+        assert!(w.unlocked_slime_copper_spawn, "copper reads from 261 (W4-f43b)");
+        assert!(!w.unlocked_slime_old_spawn, "the untouched bytes stay 0");
+        let w = parse(&synthetic_file(249, &[2, 144], 160, 10)).expect("v249 loads");
+        assert!(!w.unlocked_slime_blue_spawn, "below 250: blue stays false");
+        let mut data = synthetic_file(250, &[2, 144], 160, 10);
+        let tail_at = tail_offset_in_synthetic(&data, 250);
+        data[tail_at + flags_tail(250).len() - 1] = 1; // unlockedSlimeBlueSpawn
+        let w = parse(&data).expect("v250 loads");
+        assert!(w.unlocked_slime_blue_spawn, "blue reads from 250 (W4-f43b)");
         // v326 (the writer's version): both round-trip at their pinned tail
         // offsets — the DW-2.2 owned-fields sweep covers the values; here the
         // raw bytes prove the offsets (book@1939, red@2042).
@@ -4035,6 +4156,17 @@ mod tests {
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
         // W4-g15 lane 5: the copper byte at tail 2044 (yellow@2043 stays 0).
+        assert_eq!(buf[tail_at + 2039], 1, "unlockedSlimeOldSpawn at tail 2039");
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036 (W4-a6)");
+        assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037 (W4-a6)");
+        assert_eq!(buf[tail_at + 2021], 1, "boughtCat at tail 2021 (W4-a6)");
+        assert_eq!(buf[tail_at + 2022], 1, "boughtDog at tail 2022 (W4-a6)");
+        assert_eq!(buf[tail_at + 2023], 1, "boughtBunny at tail 2023 (W4-a6)");
+        // W4-f43b: the six slime bytes at their pinned offsets.
+        assert_eq!(buf[tail_at + 2027], 1, "unlockedSlimeBlueSpawn at tail 2027");
+        assert_eq!(buf[tail_at + 2038], 1, "unlockedSlimeGreenSpawn at tail 2038");
+        assert_eq!(buf[tail_at + 2040], 1, "unlockedSlimePurpleSpawn at tail 2040");
+        assert_eq!(buf[tail_at + 2043], 1, "unlockedSlimeYellowSpawn at tail 2043");
         assert_eq!(buf[tail_at + 2044], 1, "unlockedSlimeCopperSpawn at tail 2044");
     }
 

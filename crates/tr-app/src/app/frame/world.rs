@@ -33,6 +33,36 @@ impl App {
     // before the chest/crafting/inventory handlers see it.
     self.handle_debug_commands_clicks();
     self.handle_debug_loadouts_clicks();
+    // The bestiary info-page scrollbar's drag frame (`UIScrollbar.DrawSelf`,
+    // `UIScrollbar.cs:109-112`): while the thumb is grabbed and the left
+    // button is held, the view follows the pointer. W4-e23 remainder.
+    if self.bestiary_open && self.mine_down && self.bestiary_ui.info_scroll_drag.is_some() {
+        let (sw, sh) = self.screen_size();
+        self.bestiary_info_scrollbar_drag(Vec2::new(sw, sh), self.mouse_pos.y);
+    }
+    // The bestiary's hover-sound ticks (W4-e23 remainder 4): the
+    // `GroupOptionButton.DrawSelf:212-223` / `UIImageButton.MouseOver:61`
+    // per-hover `PlaySound(12)` edges, once per open frame.
+    if self.bestiary_open {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let options = self.bestiary_ui.options;
+        let at = self.bestiary_ui.at;
+        let fired = crate::ui::bestiary_hover::tick(
+            &mut self.bestiary_ui.hover_sounds,
+            screen,
+            self.mouse_pos,
+            options,
+            &self.bestiary,
+            &self.bestiary_ui.working,
+            at,
+        );
+        if fired {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+        }
+    } else {
+        self.bestiary_ui.hover_sounds.reset();
+    }
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
@@ -318,11 +348,17 @@ impl App {
         {
             let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
             let wind_for_visuals = self.wind.speed_current;
+            // W4-d79 PITCH SEAL — the case-39 Drip seam: the pool draws
+            // the `Next(2)` style argument and the façade's pitch draw on
+            // the SAME `UpdateGores` stream, at the C# statement position
+            // (`Gore.cs:953`/`:965` — the `Main.cs:17771` swap wraps both).
+            let mut sound = crate::gore_seam::AppGoreSound(&mut self.audio);
             self.gore.update(
                 rng,
                 &self.world,
                 &crate::gore_seam::AppGoreCollision,
                 wind_for_visuals,
+                &mut sound,
             );
         }
     }
@@ -414,6 +450,12 @@ impl App {
     // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
     // runs after the entity half, never before it.
     self.phase("time");
+    // `CreditsRollEvent.UpdateTime` (`Main.cs:64968` →
+    // `CreditsRollEvent.cs:35-38`): one decrement per UpdateTime call,
+    // independent of the day rate — the C# runs UpdateTime even while
+    // the creative freeze holds `Main.time` (dayRate 0), so the tick
+    // sits OUTSIDE the port's rate gate (W4-g51 id-140).
+    self.world.tick_credits_roll();
     if !crate::env::day_pinned() {
         // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
         // `:1441`): the powers' multiplier folds into the clock tick
@@ -747,9 +789,11 @@ impl App {
     /// statements are state-disjoint from them, so the consolidation is a
     /// no-op (the screenshot pairs prove it).
     pub(super) fn draw_half_pre_snapshots(&mut self, dt: f32) {
-    if self.menu.is_none() && self.front.is_none() {
-        self.stepper.drawn_this_update = true;
-    }
+    // `WorldUpdateStepper.DrawnThisUpdate = true` (`Main.cs:62478`) sits at
+    // the END of `DoDraw`, AFTER the draw passes — not at the draw-half head.
+    // The W4-g13 dust emitters read `FocusHelper.Allow*` (= `!DrawnThisUpdate`)
+    // DURING the draw, so the mark must stay clear until the passes finish;
+    // `frame()` sets it right after `draw_region` returns (the C# position).
     if self.is_client() && self.frame_count == 90 {
         if let Some((x, y)) = crate::env::net_edit() {
             self.request_edit(x, y, 0, 0);

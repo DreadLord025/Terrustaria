@@ -30,6 +30,18 @@ pub struct RegenState {
     pub mana_regen: i32,
     pub mana_regen_delay: f32,
     pub mana_regen_count: i32,
+    /// W4-e1 — the second-batch dust event counters (the engine records them;
+    /// `player.rs::update_survival` drains them into the dust queues). NOT
+    /// C# fields — the C# spawns inline; the port's queue convention needs the
+    /// event count. `shiny_gate_time` is the `lifeRegenTime` at the sparkle
+    /// gate (`:19271`); `crimson_heal_bursts` counts the crimson heal chunks
+    /// (`:19292-19305`, one 10-dust burst each).
+    pub shiny_gate_time: Option<f32>,
+    pub crimson_heal_bursts: u32,
+    /// `Player.nebulaManaCounter` (`Player.cs:928`): the Nebula Mana booster's
+    /// 6-point cadence (`ApplyNebulaBuffMana` `:19565-19585`) — zeroed
+    /// whenever the tier is 0 (`:19583`), NOT by `ResetEffects`.
+    pub nebula_mana_counter: i32,
 }
 
 /// The drain lanes' death attribution — the `PlayerDeathReason.ByOther(N)`
@@ -97,13 +109,35 @@ pub struct RegenInputs {
     /// to the base `statManaMax2 / 3 + 1` line).
     pub mana_regen_bonus: i32,
     pub mana_regen_buff: bool,
+    /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
+    /// tier 0..3 — `UpdateBuffs_NebulaBuffs` (`:12070-12079`) derives it from
+    /// the live 176-178 slot each tick (the buff-scan lane), the grant is
+    /// `NebulaLevelup` (`:57050-57053`). `ApplyNebulaBuffMana` (`:19421`)
+    /// reads it BEFORE the delay countdown. W4-d117.
+    pub nebula_level_mana: i32,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the permanent Arcane
+    /// Crystal (5339) — −0.05 off the delay per delay tick (`:19430-19433`)
+    /// and `statManaMax2 / 50` extra regen inside the expired-delay window
+    /// (`:19453-19456`). The use arm
+    /// (`ItemCheck_UseShimmerPermanentItems` `:45399-45404`) is W4-a6's
+    /// `powerups::use_shimmer_permanent`; the engine reads the flag.
+    pub used_arcane_crystal: bool,
     // — items / misc states (M3-EQUIP) —
     /// soulDrain / heartyMeal / honey / shinyStone-still regen adds
     /// (`:19156-19168`), folded by the owner.
     pub extra_regen: i32,
-    /// aegis +0.2, soulDrain +2, shinyStone-still +4, honey +2 time adds
-    /// (`:19112-19137`).
+    /// soulDrain +2, shinyStone-still +4, honey +2 time adds
+    /// (`:19121-19137`), folded by the owner (the aegis +0.2 has its OWN
+    /// slot below — the C# adds it BETWEEN the base +1 and these).
     pub extra_time: f32,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 permanent
+    /// `lifeRegenTime += 0.2f` (`:19113-19116`) — its own slot so the add
+    /// runs BETWEEN the base `+1` (`:19112`) and the crimson `+1`
+    /// (`:19117-19120`)/soulDrain adds folded into `extra_time`, the C#'s
+    /// f32 accumulation order (W4-a6 reconcile: the g90 lane-7 shape,
+    /// research/138 §2 — pre-summing 0.2+1.0 into `extra_time` reorders
+    /// the f32 adds).
+    pub aegis_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
     /// palladium's +4 straight into the counter (`:19264`).
@@ -114,12 +148,20 @@ pub struct RegenInputs {
     pub expert_mode: bool,
     pub well_fed: bool,
     // — movement —
-    /// `velocity.X != 0f && grappling[0] < 0` (`:19246`).
+    /// `velocity.X != 0f && grappling[0] < 0` (`:19241`).
     pub moving_x: bool,
     /// `IsConsideredStandingStill` (`:3323`): |v.X| < 0.05 && |v.Y| < 0.05.
     pub standing_still: bool,
     /// `grappling[0] >= 0` — hooked onto the grapple system (M2-PHYS-6).
     pub grappling: bool,
+    // — W4-e1 second-batch dust gates —
+    /// `flag` (`:18944-18948`): `shinyStone && IsConsideredStandingStill &&
+    /// itemAnimation == 0`. Gates the regen sparkle (site 19273) and the
+    /// `lifeRegenCount++` (`:19270`).
+    pub shiny_stone_still: bool,
+    /// `crimsonRegen` (`:19292`): each heal chunk spawns a 10-dust burst
+    /// (site 19296).
+    pub crimson_regen: bool,
 }
 
 impl Default for RegenInputs {
@@ -136,8 +178,11 @@ impl Default for RegenInputs {
             heart_lantern: false,
             mana_regen_bonus: 0,
             mana_regen_buff: false,
+            nebula_level_mana: 0,
+            used_arcane_crystal: false,
             extra_regen: 0,
             extra_time: 0.0,
+            aegis_crystal: false,
             extra_ramp_scale: 1.0,
             extra_count: 0,
             sitting_or_sleeping: false,
@@ -146,6 +191,8 @@ impl Default for RegenInputs {
             moving_x: false,
             standing_still: false,
             grappling: false,
+            shiny_stone_still: false,
+            crimson_regen: false,
         }
     }
 }
@@ -175,6 +222,12 @@ pub fn update_life_regen(
         state.life_regen_time = 0.0;
     }
     state.life_regen_time += 1.0; // (`:19112`)
+    // `:19113-19116` — the Aegis Crystal's +0.2, between the base +1 and
+    // the crimson/soulDrain adds folded into `extra_time` (W4-a6 reconcile,
+    // the g90 lane-7 slot — the C#'s f32 accumulation order).
+    if in_.aegis_crystal {
+        state.life_regen_time += 0.2;
+    }
     state.life_regen_time += in_.extra_time;
     state.life_regen += in_.extra_regen;
     if in_.campfire {
@@ -218,10 +271,27 @@ pub fn update_life_regen(
         round_bankers((num3 * (in_.max_life as f32 / 400.0f32 * 0.85f32 + 0.15f32)) as f64) as i32;
     state.life_regen_count += state.life_regen;
     state.life_regen_count += in_.extra_count;
+    // W4-e1 — `:19268-19284`: the shiny-stone still-regen sparkle. `flag`
+    // (shinyStone && still && no item animation) adds one counter tick and
+    // records the gate moment (`lifeRegenTime` at `:19271`); the drain rolls
+    // `Next(30000) < time || Next(30)==0` and spawns the type-55 sparkle
+    // (site 19273). The gate draws ride the UpdatePlayers stream AFTER the
+    // regen chunk loop below — the C# order (`:19271` precedes `:19286`, but
+    // the dust spawn is a visual the port defers to the drain; the counter
+    // increment is the sim half and stays here).
+    if in_.shiny_stone_still && state.life_regen > 0 && *life < in_.max_life {
+        state.life_regen_count += 1;
+        state.shiny_gate_time = Some(state.life_regen_time);
+    }
     while state.life_regen_count >= LIFE_CHUNK {
         state.life_regen_count -= LIFE_CHUNK;
         if *life < in_.max_life {
             *life += 1;
+            // W4-e1 — `:19292-19305`: the crimson heal chunk spawns a 10-dust
+            // burst (site 19296); the engine counts it, the drain replays.
+            if in_.crimson_regen {
+                state.crimson_heal_bursts += 1;
+            }
         }
         if *life > in_.max_life {
             *life = in_.max_life;
@@ -350,22 +420,57 @@ pub fn check_mana(
     false
 }
 
+/// `Player.ApplyNebulaBuffMana` (`Player.cs:19565-19585`): the Nebula Mana
+/// booster's direct grant — `UpdateManaRegen` calls it FIRST (`:19421`),
+/// before the delay countdown and the regen line. The counter accrues the
+/// tier per tick and yields ONE mana point per 6 (a single `if`, not a loop —
+/// tier 3 still grants at most +1/tick), clamped at the max with `>=`
+/// (`:19575`). Tier 0 zeroes the counter (`:19583`).
+fn apply_nebula_buff_mana(state: &mut RegenState, level: i32, mana: &mut i32, max_mana: i32) {
+    if level > 0 {
+        state.nebula_mana_counter += level; // `:19570`
+        if state.nebula_mana_counter >= 6 {
+            state.nebula_mana_counter -= 6; // `:19573`
+            *mana += 1; // `:19574`
+            if *mana >= max_mana {
+                *mana = max_mana; // `:19575-19578`
+            }
+        }
+    } else {
+        state.nebula_mana_counter = 0; // `:19583`
+    }
+}
+
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
-/// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
-/// source (`:18656` is its only write) and the arcane crystal is unported —
-/// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
-/// (`:19420`) feeding the ManaV2 animation gate.
+/// C# — W4-d79 wired the cue + burst through `Player::take_mana_refill`).
+/// `manaRegenDelayBonus` has no grant source in the source (`:18656` is
+/// its only write, 0f) — folded out (noted in ANALYSIS). The
+/// `DebugOptions.DrawManaEstimates` block (`:19486-19531`, flag TRUE at
+/// `DebugOptions.cs:84`) computes a sustain estimate whose only use is a
+/// discarded `f.ToString("F2")` — zero state writes, folded out (ANALYSIS,
+/// W4-d117). The Arcane Crystal's two rows ride
+/// `RegenInputs::used_arcane_crystal` (W4-a6). `flags.item_in_use` is the
+/// C# `flag` (`:19420`) feeding the ManaV2 animation gate. The caller
+/// applies the `Player.Update` tail clamps (`:25996-26003`: negative
+/// count → 0, over-max mana → max) after this call.
 pub fn update_mana_regen(
     state: &mut RegenState,
     in_: &RegenInputs,
     mana: &mut i32,
     flags: ManaRegenFlags,
 ) -> bool {
+    apply_nebula_buff_mana(state, in_.nebula_level_mana, mana, in_.max_mana); // `:19421`
     if state.mana_regen_delay > 0.0 {
         state.mana_regen_delay -= 1.0;
+        // `:19425`: `-= manaRegenDelayBonus` — always 0 (no grant source).
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen_delay -= 1.0;
+        }
+        // `:19430-19433` — the Arcane Crystal's permanent −0.05 per delay
+        // tick (inside the `> 0` guard, after the still/grapple extra).
+        if in_.used_arcane_crystal {
+            state.mana_regen_delay -= 0.05;
         }
     }
     // `:19435-19441`: the ManaV2 sub-4 window counts as expired (flag3) and
@@ -383,6 +488,11 @@ pub fn update_mana_regen(
         state.mana_regen = num5;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen += num5;
+        }
+        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` extra
+        // (integer division), after the still/grapple double.
+        if in_.used_arcane_crystal {
+            state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
         let num9: f32 = if in_.mana_regen_buff { 1.0 } else { 0.5 };
@@ -628,6 +738,50 @@ mod tests {
         assert!(st.mana_regen > 0);
     }
 
+    /// W4-a6 — the Arcane Crystal's two rows (`Player.cs:19430-19433`,
+    /// `:19453-19456`): −0.05 off the delay per delay tick (after the
+    /// still/grapple extra) and `statManaMax2 / 50` extra regen inside the
+    /// expired-delay window.
+    #[test]
+    fn the_arcane_crystal_shaves_the_delay_and_adds_regen() {
+        let mut st = RegenState::default();
+        let mut mana = 100;
+        let mut in_ = inputs(400, 200);
+        in_.standing_still = true;
+        in_.used_arcane_crystal = true;
+        apply_mana_regen_delay(&mut st, 200, mana, false); // 4
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        // −1 base −1 still −0.05 crystal = 1.95 (the plain path lands 2.0).
+        assert!((st.mana_regen_delay - 1.95).abs() < 1e-5);
+        // Drain the delay, then pin the regen line: base 200/3+1 = 67,
+        // doubled while still → 134, + 200/50 = 4 → 138, ×(0.5+0.5·0.5).
+        st.mana_regen_delay = 0.0;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen, (138.0 * 0.75) as i32, "the +max/50 row");
+    }
+
+    /// W4-a6 reconcile — the Aegis Crystal's +0.2 rides its OWN input slot
+    /// (`Player.cs:19113-19116`), added BETWEEN the base +1 (`:19112`) and
+    /// the crimson +1 folded into `extra_time` (`:19117-19120`) — the C#'s
+    /// f32 accumulation order (the g90 lane-7 shape, research/138 §2).
+    #[test]
+    fn the_aegis_crystal_adds_between_the_base_and_the_crimson() {
+        let mut st = RegenState::default();
+        let mut life = 100;
+        let mut in_ = inputs(400, 200);
+        in_.aegis_crystal = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!(
+            (st.life_regen_time - 1.2).abs() < 1e-5,
+            "base +1 then crystal +0.2 (`:19112-19116`)"
+        );
+        // With the crimson row: +1 base, +0.2 crystal, +1 crimson = 2.2 —
+        // the crystal's add lands BEFORE the extra_time fold, verbatim.
+        in_.extra_time = 1.0;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!((st.life_regen_time - 3.4).abs() < 1e-5, "1.2 + 1.0 + 1.2");
+    }
+
     #[test]
     fn mana_regen_floor_and_refill_per_120() {
         // Nearly full bar, not still: 67 × (0.5 + 0.5·0.99) ≈ 66 → floor n/a;
@@ -802,6 +956,214 @@ mod tests {
         let refilled = update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
         assert_eq!(mana, 20);
         assert!(!refilled, "already full — no trigger");
+    }
+
+    /// W4-f49 lane 12 census — the Mana Regeneration Potion (item 293,
+    /// buffType 6 / buffTime 28800, `Item.cs:4872-4885`) ladder, end to end
+    /// on the engine. Buff 6 (`:9964-9967` → `RegenInputs::mana_regen_buff`)
+    /// acts at FOUR sites, all pinned here against the no-buff twin at the
+    /// same bar fraction (moving, so `standing_still`/`grappling` cannot
+    /// masquerade as the buff):
+    /// 1. the delay cap 20 (`:19399-19402`, pre-V2 — under the shipped V2
+    ///    cap both land at 4, the i19 witness pins that);
+    /// 2. the extra delay decrement (`:19426-19429`);
+    /// 3. the regen-line doubling (`:19449-19452`);
+    /// 4. `num9 = 1` (`:19462-19465`) — the mana-fraction scaler pins at
+    ///    1.0 instead of ramping 0.5→1.0 with the bar.
+    /// There is NO per-tier ladder: buff 6 is a single boolean, one slot.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_buff_six_ladder_doubles_the_line_and_pins_the_scaler() {
+        // Site 2 — the countdown: delay 4, moving. Without the buff −1 → 3
+        // (inside the V2 sub-4 window, ×0.05); with it −1 −1 → 2.
+        let mut off = RegenState { mana_regen_delay: 4.0, ..Default::default() };
+        let mut on = RegenState { mana_regen_delay: 4.0, ..Default::default() };
+        let in_off = inputs(400, 200);
+        let mut in_on = inputs(400, 200);
+        in_on.mana_regen_buff = true;
+        let mut mana = 100;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen_delay, 3.0);
+        assert_eq!(on.mana_regen_delay, 2.0, "the buff's extra decrement");
+        // Both are inside the (0,4) window → the ×0.05 floor arm: base 67,
+        // off 67 × 0.75 × 0.05 = 2.5125 → 2; on 134 × 1.0 × 0.05 = 6.7 → 6.
+        assert_eq!(off.mana_regen, 2);
+        assert_eq!(on.mana_regen, 6, "doubled line × pinned scaler, floored");
+        // Sites 3+4 — the expired-delay line at the SAME fraction (0.5):
+        // off 67 × (0.5 + 0.5·0.5) = 50.25 → 50; on (67×2) × 1.0 = 134.
+        let mut off = RegenState::default();
+        let mut on = RegenState::default();
+        let mut mana = 100;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen, 50, "the 0.5-base fraction ramp");
+        assert_eq!(on.mana_regen, 134, "the doubling + the 1.0 scaler");
+        // The scaler pin holds at an EMPTY bar too (num6 = 0): off would
+        // halve (67 × 0.5 = 33.5 → 33), the buff keeps the full 134.
+        let mut off = RegenState::default();
+        let mut on = RegenState::default();
+        let mut mana = 0;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen, 33, "0.5 at the empty bar");
+        assert_eq!(on.mana_regen, 134, "num9 = 1 ignores the fraction");
+        // The buff does NOT stack per slot: `manaRegenBuff` is a bool assign
+        // (`:9966`), two 6-slots leave the same ladder (the scan witness in
+        // player.rs pins the flag; here the engine takes one bool).
+    }
+
+    // ---- W4-d117: the mana-regen census fill --------------------------------
+
+    #[test]
+    fn w4_d117_nebula_counter_grants_one_mana_per_six_and_zeroes_at_tier_zero() {
+        // `ApplyNebulaBuffMana` (`Player.cs:19565-19585`): tier accrual, the
+        // single-if ≥6 grant (at most +1/tick even at tier 3), the ≥max clamp
+        // (`:19575`) and the tier-0 counter wipe (`:19583`).
+        let mut st = RegenState::default();
+        let mut mana = 10;
+        let mut in_ = inputs(400, 200);
+        in_.nebula_level_mana = 1;
+        st.mana_regen_delay = 100.0; // the regen line stays off — pure nebula
+        for _ in 0..5 {
+            update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        }
+        assert_eq!(st.nebula_mana_counter, 5);
+        assert_eq!(mana, 10); // 5 < 6 — nothing yet
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(mana, 11); // counter 6 → −6 → +1 (`:19571-19574`)
+        assert_eq!(st.nebula_mana_counter, 0);
+        // Tier 3: counter 0→3→6 grants at tick 2, then 3→6 grants again at
+        // tick 4 — ONE point per crossing, never a loop of multiple grants.
+        let mut st = RegenState {
+            mana_regen_delay: 100.0,
+            ..Default::default()
+        };
+        let mut mana = 10;
+        in_.nebula_level_mana = 3;
+        let mut gains = 0;
+        for _ in 0..4 {
+            let before = mana;
+            update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+            let gain = mana - before;
+            assert!(gain <= 1, "single-if grant, got {gain}");
+            gains += gain;
+        }
+        assert_eq!(gains, 2);
+        assert_eq!(st.nebula_mana_counter, 0); // 3×4 = 12 = two clean chunks
+        // The ≥max clamp fires on the grant tick (`:19575-19578`).
+        let mut st = RegenState {
+            nebula_mana_counter: 5,
+            ..Default::default()
+        };
+        let mut mana = 200;
+        in_.nebula_level_mana = 1;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(mana, 200); // +1 → 201 → clamped back to max
+        assert_eq!(st.nebula_mana_counter, 0);
+        // Tier 0 zeroes a partial counter (`:19583`) — NOT ResetEffects.
+        in_.nebula_level_mana = 0;
+        st.nebula_mana_counter = 4;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.nebula_mana_counter, 0);
+    }
+
+    #[test]
+    fn w4_d117_nebula_runs_before_the_delay_countdown() {
+        // `Player.cs:19421`: the FIRST statement of UpdateManaRegen — a
+        // primed counter grants even while the delay still blocks the line.
+        let mut st = RegenState {
+            nebula_mana_counter: 5,
+            mana_regen_delay: 4.0,
+            ..Default::default()
+        };
+        let mut mana = 10;
+        let mut in_ = inputs(400, 200);
+        in_.nebula_level_mana = 1;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(mana, 11); // the nebula point landed
+        assert_eq!(st.mana_regen_delay, 3.0); // countdown ran after
+        // The sub-4 window opened this same tick (flag3) — the line runs at
+        // ×0.05 with the floor of 2 (`:19437-19441`, `:19477-19480`).
+        assert_eq!(st.mana_regen, 2);
+    }
+
+    #[test]
+    fn w4_d117_arcane_crystal_shaves_the_delay_by_five_hundredths() {
+        // `Player.cs:19430-19433`: −0.05 per tick, stacked on the base −1 and
+        // the still/grapple/buff −1, ONLY while the delay is positive.
+        let mut st = RegenState {
+            mana_regen_delay: 4.0,
+            ..Default::default()
+        };
+        let mut mana = 100;
+        let mut in_ = inputs(400, 200);
+        in_.standing_still = true;
+        in_.used_arcane_crystal = true;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert!(
+            (st.mana_regen_delay - 1.95).abs() < 1e-6,
+            "4 −1 −1 −0.05 = 1.95, got {}",
+            st.mana_regen_delay
+        );
+        // Without the crystal the same tick leaves 2.0.
+        let mut st = RegenState {
+            mana_regen_delay: 4.0,
+            ..Default::default()
+        };
+        in_.used_arcane_crystal = false;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen_delay, 2.0);
+        // An expired delay is not decremented at all (`:19422`).
+        let mut st = RegenState::default();
+        in_.used_arcane_crystal = true;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen_delay, 0.0);
+    }
+
+    #[test]
+    fn w4_d117_arcane_crystal_adds_max_over_fifty_to_the_regen_line() {
+        // `Player.cs:19453-19456`: +statManaMax2/50 AFTER the still doubling
+        // and BEFORE the bar-fraction scale.
+        let tick = |crystal: bool, still: bool| -> i32 {
+            let mut st = RegenState::default();
+            let mut mana = 100;
+            let mut in_ = inputs(400, 200);
+            in_.used_arcane_crystal = crystal;
+            in_.standing_still = still;
+            update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+            st.mana_regen
+        };
+        // Moving, no crystal: 67 × (0.5+0.5·0.5) = 50.25 → 50.
+        assert_eq!(tick(false, false), 50);
+        // Moving, crystal: (67+4) × 0.75 = 53.25 → 53.
+        assert_eq!(tick(true, false), 53);
+        // Still, crystal: (134+4) × 0.75 = 103.5 → 103 — the +4 rides AFTER
+        // the doubling (before it: (67+4)×2 × 0.75 = 106.5 → 106), so the
+        // still arm is the order witness.
+        assert_eq!(tick(true, true), 103);
+    }
+
+    #[test]
+    fn w4_d117_expert_halving_uses_the_world_difficulty() {
+        // `Player.cs:19254`: `Main.expertMode && !wellFed` — the WORLD flag,
+        // not a player buff. The caller wires `buffs.expert_mode` into the
+        // input; without it the expert world never halves the ramp.
+        let ramp = |expert: bool, fed: bool| -> i32 {
+            let mut st = RegenState {
+                life_regen_time: 3000.0,
+                ..Default::default()
+            };
+            let mut life = 300;
+            let mut in_ = inputs(400, 20);
+            in_.expert_mode = expert;
+            in_.well_fed = fed;
+            let _ = update_life_regen(&mut st, &in_, &mut life);
+            st.life_regen
+        };
+        assert_eq!(ramp(false, false), 10); // 8 × 1.25 → banker's 10
+        assert_eq!(ramp(true, false), 5); // ÷2 → 5
+        assert_eq!(ramp(true, true), 10); // well fed cancels the halving
     }
 
     #[test]

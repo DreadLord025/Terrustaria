@@ -560,6 +560,100 @@ pub(crate) fn eel_whip_dot(
     Some(50)
 }
 
+/// `NPC.PendingDamage` (`NPC.cs:39-57`): one client-side predicted strike
+/// awaiting the host's `162 DamageNPCAck`. `Matches` compares the slot AND
+/// the generation (`:49-56`) — a recycled slot's stale entry never matches.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PendingDamage {
+    /// `index` — the host's NPC slot (`(short)struck.whoAmI`, `:90680`).
+    pub index: i16,
+    /// `generation` — the slot's spawn generation (`:90681`).
+    pub generation: u8,
+    /// `damage` — the accumulated predicted damage (`AddStrikeDamage`,
+    /// `:90687-90693`).
+    pub damage: i32,
+    /// `phaseChange` — a phase transition fired during the strike
+    /// (`SetStrikePhaseChange`, `:90695-90701`); the `23` reader then keeps
+    /// the LOCAL ai instead of the wire's (`MessageBuffer.cs:1669-1676`).
+    pub phase_change: bool,
+}
+
+impl PendingDamage {
+    /// `PendingDamage.Matches` (`NPC.cs:49-56`).
+    pub(crate) fn matches(&self, slot: i16, generation: u8) -> bool {
+        self.index == slot && self.generation == generation
+    }
+}
+
+/// `NPC.PushPendingDamage` (`NPC.cs:90672-90685`): append a fresh entry for
+/// the struck slot (the `realLife` redirect `:90674-90677` is the caller's —
+/// the port resolves the carrier before pushing). Returns the new entry's
+/// index in the queue (the `_currentStrikePendingDamage` handle).
+pub(crate) fn push_pending_damage(
+    queue: &mut Vec<PendingDamage>,
+    slot: i16,
+    generation: u8,
+) -> usize {
+    queue.push(PendingDamage {
+        index: slot,
+        generation,
+        damage: 0,
+        phase_change: false,
+    });
+    queue.len() - 1
+}
+
+/// `NPC.AddStrikeDamage` (`NPC.cs:90687-90693`): the landed damage folds
+/// into the CURRENT strike's entry when it matches the target (the client
+/// gate `netMode == 1` is the caller's).
+pub(crate) fn add_strike_damage(
+    queue: &mut [PendingDamage],
+    current: Option<usize>,
+    slot: i16,
+    generation: u8,
+    damage: i32,
+) {
+    if let Some(i) = current {
+        if let Some(p) = queue.get_mut(i) {
+            if p.matches(slot, generation) {
+                p.damage += damage; // `:90691`
+            }
+        }
+    }
+}
+
+/// `NPC.AckDamage` (`NPC.cs:90703-90713`): the `162` reader pops the OLDEST
+/// entry (FIFO — the host acks in strike order). An empty queue is the C#'s
+/// `Invariant.Assert(false)` (`:90707`); the port logs and no-ops (a stray
+/// ack must not panic the client).
+pub(crate) fn ack_damage(queue: &mut Vec<PendingDamage>) {
+    if queue.is_empty() {
+        log::debug!("NPCDamageAck with no pending damage?"); // `:90707`
+        return;
+    }
+    queue.remove(0); // `:90711`
+}
+
+/// `NPC.GetPendingDamage` (`NPC.cs:90715-90727`): the summed predicted
+/// damage + the OR of the phase flags over every entry matching the slot.
+/// The `23` reader subtracts the damage from the wire life and skips the ai
+/// copy on a phase change (`MessageBuffer.cs:1668-1676`).
+pub(crate) fn get_pending_damage(
+    queue: &[PendingDamage],
+    slot: i16,
+    generation: u8,
+) -> (i32, bool) {
+    let mut damage = 0;
+    let mut phase_change = false;
+    for p in queue {
+        if p.matches(slot, generation) {
+            damage += p.damage;
+            phase_change |= p.phase_change;
+        }
+    }
+    (damage, phase_change)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1027,6 +1121,46 @@ mod tests {
         dead.life = 0;
         client_strike(&mut st, &dead, 3, 1, &mut out);
         assert!(out.is_empty(), "NPC.cs:81199-81202 blocks a dead target");
+    }
+
+    // --- the 162 pending-damage queue (NPC.cs:90672-90727, W4-g51 id-162) ---
+
+    /// `PushPendingDamage` + `AddStrikeDamage` + `GetPendingDamage`: two
+    /// strikes on one slot sum; a generation bump breaks the match; a second
+    /// slot's entry is independent.
+    #[test]
+    fn w4_g51_the_pending_queue_sums_per_slot_and_generation() {
+        let mut q = Vec::new();
+        let a = push_pending_damage(&mut q, 3, 1);
+        add_strike_damage(&mut q, Some(a), 3, 1, 40);
+        let b = push_pending_damage(&mut q, 3, 1);
+        add_strike_damage(&mut q, Some(b), 3, 1, 25);
+        assert_eq!(get_pending_damage(&q, 3, 1), (65, false));
+        // A recycled slot (generation 2) matches nothing.
+        assert_eq!(get_pending_damage(&q, 3, 2), (0, false));
+        // A mismatched current handle folds nothing (`Matches` gate).
+        add_strike_damage(&mut q, Some(b), 9, 1, 99);
+        assert_eq!(get_pending_damage(&q, 3, 1), (65, false));
+        assert_eq!(get_pending_damage(&q, 9, 1), (0, false));
+        // The phase flag ORs across entries.
+        q[b].phase_change = true;
+        assert_eq!(get_pending_damage(&q, 3, 1), (65, true));
+    }
+
+    /// `AckDamage` pops FIFO; an empty queue is the C#'s assert (the port
+    /// no-ops, `NPC.cs:90705-90708`).
+    #[test]
+    fn w4_g51_the_ack_pops_fifo_and_an_empty_queue_no_ops() {
+        let mut q = Vec::new();
+        push_pending_damage(&mut q, 3, 1);
+        push_pending_damage(&mut q, 7, 2);
+        ack_damage(&mut q);
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].index, 7, "the OLDEST (slot 3) popped");
+        ack_damage(&mut q);
+        assert!(q.is_empty());
+        ack_damage(&mut q); // the stray ack must not panic
+        assert!(q.is_empty());
     }
 
     #[test]

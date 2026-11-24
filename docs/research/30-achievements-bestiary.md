@@ -214,6 +214,10 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 4 | ~~`kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 with zero kills.~~ **FIXED (S1-F-15, re-verified W4-c36)** — the default arm returns 50 (`ItemID_Sets_DefaultKillsForBannerNeeded`), pinned by `the_family_banner_chain` + the override test. | behavioural | Resolved (S1-F-15) |
 | 5 | `quick_unlock` on 24 entries (W4-c36 re-probe count) instead of every boss + the override rows; the town `Guide` no longer carries it. The salamander/HighestOfMultiple overrides ride c37's provider enum. | behavioural | Partly — c37 owns the provider fold |
 | 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. | behavioural | Yes — `tr-core/src/bestiary.rs:124-130`, ANALYSIS "the sightings/chats stay empty until the recording behaviour lands" |
+| 3 | Notify wrappers and additional sites landed (S1-E-18), but many progression/custom rows remain unreachable because their owning systems/paths are not ported (e.g. 17 partial, 18, 19/20, nurse `Pay`, and most other progression/custom flags). Progression 29 is explicitly blocked on S1-F-15. | behavioural | Partly — expanded, not complete |
+| 4 | ~~`kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 (`CanShowDropsWithDropRates`) with zero kills. The C# default is 50.~~ **FIXED (S1-F-15 + W4-c37)** — the full banner chain (`npc_to_banner`/`banner_to_item`/`kills_to_banner_item`) with the 50 default; the fresh-world witness pins every roster entry at `NotKnownAtAll`. | behavioural | Resolved |
+| 5 | ~~`quick_unlock` on 5 entries instead of every boss + the override rows; the town NPC `Guide` wrongly carries it (the C# uses the chat provider).~~ **FIXED (W4-c37)** — the flag census matches the `SetDefaults` boss rows + `ShouldBeCountedAsBossForBestiary`; the per-entry providers (`bestiary_data::gate`) carry the town chat / critter sight / DD2 quick rows / boss-credit folds / Skeletron Highest-of-two. | behavioural | Resolved |
+| 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. **Providers DONE (W4-c37)** — `Gate::Town`/`Gate::Critter` read the trackers; the RECORDING (`ScanWorldForFinds:102-130` + the chat hook) stays open. | behavioural | Partly — providers landed, recording still state-only (`tr-core/src/bestiary.rs:124-130`) |
 | 7 | `ReportDroprates` / the drop-rate tables are absent: the bestiary's drop list is a 4-row hand-written table, so the tier-3/tier-4 drop lines are empty for 168 of 172 entries. | behavioural / pixel | Yes — ANALYSIS.md:2969 "not ported — M4-BEST-1 territory" |
 | 8 | ~~`TryGrantingBestiary100PercentAchievement` (→ progression event 29 → `BOOK_WORM`) never fires.~~ **FIRES (S1-E-18p29)** — the death-seam hook (`world_sim/npcs.rs:5274` → `try_grant_bestiary_100_net`) + the `98` MP wire; the gate is the completion fraction (see #12). | behavioural | Resolved (S1-E-18p29) |
 | 9 | The achievement save format is plain text (`achievements.trdat`), not the vanilla Rijndael-CBC+BSON `"RELOGIC-TERRARIA"`. | behavioural (interop) | Yes — `achievements.rs:390-394` |
@@ -221,6 +225,8 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 11 | ~~`notify` returns only the last completed achievement; the C# fires `OnCompleted` (and a save) for every one.~~ **FIXED (S1-E-26 wave A)** — `notify_with` queues every completing row into `completed_events` (save + event per row); the return value keeps the last-name shape for the existing callers. Pinned by `one_event_completing_two_rows_queues_both`. | behavioural (minor) | Resolved |
 | 12 | `completion_percent` divides by the port's 249-entry roster (W4-c36 re-probe), not the C#'s full roster; the #4 tier-4 inflation is FIXED so a fresh world reads 0% (pinned). The residual early-100% risk is the flat kill-ladder fold for town/critter entries (one kill = portrait tier where the C# needs a chat/sight) — c37's provider enum owns it. The Zoologist shop (`Chest.cs:3265`) reads the fraction. | behavioural | Partly — denominator documented, provider fold c37's |
 | 13 | `ENTRIES` (249) vs `BESTIARY_NPC_SHEET_IDS` (181) — W4-c36 re-probe: the entries now EXCEED the sheet (the DD2/moon families carry rows without sheet slots); the old "2 sheet slots have no entry" skew inverted. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
+| 12 | `completion_percent` divides by the port's 172-entry roster, not the C#'s full roster; ~~combined with #4 it reads ~95% at start~~ — with #4 fixed it reads 0 at start (W4-c37's fresh-world witness); the roster-denominator half stays until the roster waves land. | behavioural | Partly — the start-value bug resolved (W4-c37), the denominator is the port roster |
+| 13 | `ENTRIES` (172) vs `BESTIARY_NPC_SHEET_IDS` (174) — 2 sheet slots have no entry row. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
 | 14 | The kill-count and sight/chat sets iterate in sorted order vs the C#'s unspecified `Dictionary`/`HashSet` order — deterministic, but a different byte order in the save. | determinism | Yes — documented in `tr-core/src/bestiary.rs:96-100, 132-136` |
 | 15 | ~~`banner_to_item` keeps only 3 bands (276+/88+/default).~~ **FIXED (re-verified W4-c36)** — the port now carries the 292/291/290/289 specials, the 276+/274-275/273/267+/257+/252+/251/249+/186+/88+ bands and the default (`tr-core/src/bestiary.rs:1043-1087`, the full `BannerSystem.cs:341-401` shape). | behavioural (latent) | Resolved |
 | 16 | ~~No MP sync of the bestiary kill counts (NetBestiaryModule).~~ **PORTED (S1-I-5)** - module 4 carries the kill count, the 97/98 wires carry the credit and the progression id; the Sight/Chat halves are still open. | behavioural (MP) | Yes - pp/netmodules.rs::BestiaryKill, pp/netglue.rs |
@@ -1154,6 +1160,19 @@ RETIRE (3)'s drop-hunk. Nothing on this branch needs a follow-up pass.**
   `Salamander`) and record sightings and chats. Fixes #5, #6. Dep: the S task
   above for the denominator. **OWNED by c37 `3e138525e`** (W4-c36 re-probe:
   its `bestiary_data::Gate` enum + the `WorldBestiary` completion move).
+- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: 17 partial, 18, 19/20, nurse `Pay`, most progression/custom flags; 29 blocked on S1-F-15). Partially done (S1-E-18). Dep: owning systems.
+- ~~**S** — Make `kills_needed_for` fall back to
+  `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
+  regression test that a fresh tracker leaves a non-quick entry at
+  `NotKnownAtAll`. Fixes #4.~~ **DONE (S1-F-15 + W4-c37)** — the full banner
+  chain + the fresh-world census witness.
+- ~~**M** — Replace the `quick_unlock` bool with a per-entry provider enum
+  (`CommonEnemy` / `TownNPC` / `Critter` / `HighestOfMultiple` / `GoldCritter` /
+  `Salamander`) and record sightings and chats. Fixes #5, #6.~~ **Providers DONE
+  (W4-c37)** — `bestiary_data::Gate` (Common/Town/Critter/Highest) over the
+  populator's override walk; the GoldCritter/Salamander/TorturedSoul gates have
+  no port entries yet (recorded in `gate`'s doc). The sight/chat RECORDING stays
+  open (#6's second half).
 - **L** — Port `ReportDroprates`: add a `report_droprates` method to the drop-rule
   traits (`tr-core/src/loot.rs`) and feed the resulting `DropRateInfo` rows into
   the bestiary entries as the C#'s `ItemDropBestiaryInfoElement`. Fixes #7.

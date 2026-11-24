@@ -40,6 +40,93 @@ const LARGE: bool = true;
 /// The row's height — `66 + (16 + 20)` for the large list item.
 pub const ROW_H: f32 = 102.0;
 
+// --- UIAchievementListItem's pure halves (W4-d81 census row 6) ------------------
+//
+// The draw/geometry/hover pair/sort are pre-landed (`draw_row`, `ROW_BG*`,
+// `AchievementManager::sorted_indices` = `CompareTo` `:259-274`). These port
+// the remaining stateless pieces: the small-language layout branch, the icon
+// frame pick, the description's vertical scale clamp and the tracker bar's
+// centre-out geometry (the flat-bar draw above is the documented stand-in).
+
+/// The ctor's height (`UIAchievementListItem.cs:49-53`):
+/// `num = 16 + large*20`, `Height = 66 + num` — 102 large, 82 small.
+#[allow(dead_code)] // the port pins LARGE = true; the small branch is ready
+pub fn row_height(large: bool) -> f32 {
+    66.0 + 16.0 + if large { 20.0 } else { 0.0 }
+}
+
+/// The ctor's icon offsets (`UIAchievementListItem.cs:50-51`, `:64-69`):
+/// `num2 = large*6` (icon Left), `num3 = large*12` (icon Top); the borders
+/// ride 4 px out on both axes (`:68-69`).
+#[allow(dead_code)] // the port pins LARGE = true; the small branch is ready
+pub fn icon_offsets(large: bool) -> ([f32; 2], [f32; 2]) {
+    let (n2, n3) = if large { (6.0, 12.0) } else { (0.0, 0.0) };
+    ([n2, n3], [n2 - 4.0, n3 - 4.0])
+}
+
+/// The icon's source rect (`UIAchievementListItem.cs:57-61`,
+/// `UpdateIconFrame` `:155-169`): `x = index % 8 * 66`, `y = index / 8 * 66`,
+/// 64x64; the locked copy shifts `+528` on X.
+#[allow(dead_code)] // draw_icon inlines the same maths; the pure pin is testable
+pub fn icon_frame_rect(icon_index: i32, locked: bool) -> [f32; 4] {
+    let x = (icon_index % 8) as f32 * ICON_STRIDE + if locked { LOCKED_DX } else { 0.0 };
+    let y = (icon_index / 8) as f32 * ICON_STRIDE;
+    [x, y, ICON, ICON]
+}
+
+/// The description's vertical scale clamp (`UIAchievementListItem.cs:101-112`):
+/// the wrap starts at scale 0.92; `num3 = 38 + (large ? 20 : 0)`; when the
+/// wrapped text is taller, `scale.Y *= num3 / size.Y`. The small branch
+/// re-measures the UNWRAPPED description (`:104-107`) — the caller passes the
+/// matching height. Returns the clamped Y scale.
+#[allow(dead_code)] // the port's horizontal shrink-to-fit twin is documented
+pub fn description_scale_y(wrapped_height: f32, large: bool) -> f32 {
+    let cap = 38.0 + if large { 20.0 } else { 0.0 }; // `:108`
+    let mut scale_y = 0.92; // `vector3` (`:101`)
+    if wrapped_height > cap {
+        scale_y *= cap / wrapped_height; // `:109-112`
+    }
+    scale_y
+}
+
+/// The tracker bar's centre-out geometry (`DrawProgressBar`,
+/// `UIAchievementListItem.cs:241-256`), for the row's `Width = 80` call
+/// (`:138`, `:149`): `num = Clamp(progress, 0, 1)`; the fill anchor is
+/// `spot + (1, 8) + ((num - 0.5) * width, 0)` then `X--` (`:245-250`); the
+/// fill is `width * num` wide, the black remainder `width * (1 - num)` from
+/// the same anchor, the 2 px blip draws only when `progress != 0` (`:252`).
+/// Returns `(anchor, fill_w, remainder_w, blip)`.
+#[allow(dead_code)] // the flat-bar draw is the port's documented stand-in
+pub fn tracker_bar_geometry(
+    spot: [f32; 2],
+    width: f32,
+    progress: f32,
+) -> ([f32; 2], f32, f32, bool) {
+    let num = progress.clamp(0.0, 1.0); // `:241`
+    let mut anchor = [spot[0] + 1.0, spot[1] + 8.0]; // `:245`
+    anchor[0] += (num - 0.5) * width; // `:249`
+    anchor[0] -= 1.0; // `position.X--` (`:250`)
+    (anchor, width * num, width * (1.0 - num), progress != 0.0)
+}
+
+/// The tracker readout's colours (`UIAchievementListItem.cs:139-148`):
+/// fill `(100, 255, 100)`, track White, both `Lerp(c, Black, 0.25)` when not
+/// hovered; the blip is the fill at alpha 0.5 (`:149`'s `MultiplyRGBA`).
+#[allow(dead_code)] // the flat-bar draw keeps its own float pins
+pub fn tracker_bar_colors(hovered: bool) -> ([u8; 4], [u8; 4], [u8; 4]) {
+    let dim = |c: [u8; 4]| {
+        if hovered {
+            c
+        } else {
+            super::char_creation::lerp_rgb(c, [0, 0, 0, 255], 0.25)
+        }
+    };
+    let fill = dim([100, 255, 100, 255]); // `:139-143`
+    let track = dim([255, 255, 255, 255]); // `:144-148`
+    let blip = [fill[0], fill[1], fill[2], 127]; // alpha 0.5 (`:149`)
+    (track, fill, blip)
+}
+
 /// `UIAchievementListItem._iconSize` = 64 (`_iconSize`).
 pub const ICON: f32 = 64.0;
 
@@ -936,6 +1023,71 @@ mod tests {
         // The secret row has no toggle (`AchievementCategory.None`) and the
         // port keeps it visible rather than indexing -1.
         assert!(filter_visible(&none, Category::None));
+    }
+
+    #[test]
+    fn the_row_height_and_icon_offsets_split_on_large() {
+        // `UIAchievementListItem.cs:49-53`: 66 + 16 + large*20.
+        assert_eq!(row_height(true), 102.0);
+        assert_eq!(row_height(false), 82.0);
+        assert_eq!(row_height(LARGE), ROW_H);
+        // `:50-51`, `:64-69`: icon (6, 12) large, borders 4 px out.
+        assert_eq!(icon_offsets(true), ([6.0, 12.0], [2.0, 8.0]));
+        assert_eq!(icon_offsets(false), ([0.0, 0.0], [-4.0, -4.0]));
+    }
+
+    #[test]
+    fn the_icon_frame_walks_the_8_by_66_sheet() {
+        // `:57-61`: index 9 -> col 1, row 1; locked shifts +528.
+        assert_eq!(icon_frame_rect(0, false), [0.0, 0.0, 64.0, 64.0]);
+        assert_eq!(icon_frame_rect(9, false), [66.0, 66.0, 64.0, 64.0]);
+        assert_eq!(icon_frame_rect(9, true), [594.0, 66.0, 64.0, 64.0]);
+    }
+
+    #[test]
+    fn the_description_scale_clamps_at_the_language_cap() {
+        // `:101-112`: cap 58 large / 38 small, scale 0.92 * cap/height.
+        assert_eq!(description_scale_y(40.0, true), 0.92);
+        assert_eq!(description_scale_y(58.0, true), 0.92);
+        assert_eq!(description_scale_y(116.0, true), 0.92 * 0.5);
+        assert_eq!(description_scale_y(76.0, false), 0.92 * 0.5);
+    }
+
+    #[test]
+    fn the_tracker_bar_grows_from_the_centre_out() {
+        // `DrawProgressBar` `:241-256` with Width 80 (`:138`): the anchor is
+        // spot + (1, 8) + ((num - 0.5) * 80) - 1 on X.
+        let spot = [100.0, 50.0];
+        let (anchor, fill, rest, blip) = tracker_bar_geometry(spot, 80.0, 0.5);
+        assert_eq!(anchor, [100.0, 58.0]);
+        assert_eq!((fill, rest, blip), (40.0, 40.0, true));
+        // Zero progress: no blip (`:252`), the anchor at the left edge.
+        let (anchor, fill, rest, blip) = tracker_bar_geometry(spot, 80.0, 0.0);
+        assert_eq!(anchor, [60.0, 58.0]);
+        assert_eq!((fill, rest, blip), (0.0, 80.0, false));
+        // The clamp (`:241`): 1.5 -> 1.
+        let (anchor, fill, rest, _) = tracker_bar_geometry(spot, 80.0, 1.5);
+        assert_eq!(anchor, [140.0, 58.0]);
+        assert_eq!((fill, rest), (80.0, 0.0));
+    }
+
+    #[test]
+    fn the_tracker_colors_dim_by_a_quarter_when_idle() {
+        // `:139-148`: Lerp(c, Black, 0.25) — (100,255,100) -> (75,191,75),
+        // White -> (191,191,191); the blip is the fill at alpha 127 (`:149`).
+        let (track, fill, blip) = tracker_bar_colors(true);
+        assert_eq!(
+            (track, fill, blip),
+            (
+                [255, 255, 255, 255],
+                [100, 255, 100, 255],
+                [100, 255, 100, 127]
+            )
+        );
+        let (track, fill, blip) = tracker_bar_colors(false);
+        assert_eq!(track, [191, 191, 191, 255]);
+        assert_eq!(fill, [75, 191, 75, 255]);
+        assert_eq!(blip, [75, 191, 75, 127]);
     }
 
     #[test]

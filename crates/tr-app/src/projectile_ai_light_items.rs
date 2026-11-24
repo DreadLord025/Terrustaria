@@ -394,8 +394,11 @@ fn light_movement(p: &mut Projectile, world: &World, rng: &mut dyn tr_core::loot
         // The per-type bounce arms (the blocked-move chain).
         light_bounce(p, last_velocity);
     }
-    // `UpdatePosition` (`:20445`) — the dry integrate.
-    p.pos += p.vel;
+    // `UpdatePosition` (`:20439-20446`) — `wet ? wetVelocity : velocity`.
+    // S1-P-i57: the wet arm rides `wet_velocity` (the `:17612-17655` factor
+    // on the POST-collision velocity — the collision pass above resolved
+    // `p.vel`; the dry arm stays byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 /// `HandleMovement`'s blocked-move bounce arms for the glowsticks. The
@@ -749,9 +752,11 @@ fn flare_movement(p: &mut Projectile, world: &World, rng: &mut dyn tr_core::loot
         // `:17948` — the consumed Next(3).
         let _ = rng.next_range(0, 3);
         // `:18619-18634` — the aiStyle-33 stick: only while still in flight
-        // (`localAI[0] == 0`); the wet half folds dry (module doc).
+        // (`localAI[0] == 0`). S1-P-i57 — the wet half ports VERBATIM:
+        // `base.wet ? lastVelocity / 2f : lastVelocity` (`:18623-18630`,
+        // the stick's own halving — NOT the `wet_velocity` factor pick).
         if p.local_ai[0] == 0.0 {
-            p.pos += last_velocity;
+            p.pos += if p.wet { last_velocity / 2.0 } else { last_velocity };
             p.vel = Vec2::ZERO;
             p.local_ai[0] = 1.0;
             // The stick consumed the move — UpdatePosition would add the
@@ -759,8 +764,10 @@ fn flare_movement(p: &mut Projectile, world: &World, rng: &mut dyn tr_core::loot
             return;
         }
     }
-    // `UpdatePosition` (`:20445`) — the dry integrate.
-    p.pos += p.vel;
+    // `UpdatePosition` (`:20439-20446`) — `wet ? wetVelocity : velocity`.
+    // S1-P-i57: the wet arm rides `wet_velocity` (the `:17612-17655` factor
+    // on the POST-collision velocity; dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 #[cfg(test)]

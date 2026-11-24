@@ -118,6 +118,18 @@ impl PettingInfo {
             npc: -1,
             proj: who_am_i,
             kind: kind as i32,
+    /// The PROJECTILE constructor (`PlayerPettingInfo.cs:32-41`) — d21's
+    /// K1 half, spliced S1 at the batch-L merge (the 13-DROP/10-KEEP
+    /// compose contract, d21 ANALYSIS "Fold-2 keep-one adjudication"):
+    /// the Pal-projectile petting path (foxsparks/digtoise/cattiva) keys
+    /// on the projectile slot + type; the `get_petting_info` proj ladder
+    /// (`projectile_ai_201_210.rs`, d21's lane) builds this.
+    pub fn from_projectile(slot: i32, proj_type: i32, offset: (f32, f32), small: bool) -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: slot,
+            kind: proj_type,
             mount: false,
             offset_from_pet: offset,
             is_pet_small: small,
@@ -209,6 +221,38 @@ impl Player {
         self.petting.is_petting = false;
     }
 
+    /// `Player.ChangeDir` (`Player.cs:42091-42116`) — d21's K4 half,
+    /// spliced S2 at the batch-L merge (the compose contract): the
+    /// pulley-2 reposition (the tile-centre snap + the SolidCollision
+    /// refusal) + the composite-arm/itemRotation MIRRORS the bare
+    /// `facing = num` assign missed. `PetAnimal:33390` calls THIS.
+    /// Deviations (recorded): the `Main.cameraX` compensation is the
+    /// camera lane's (the caller's smooth follow re-derives it); the
+    /// `itemLocation.X` mirror is draw-derived per frame in the port
+    /// (`render/player_layers.rs::item_location`) — no persistent field
+    /// to flip, the mirror re-derives from the new facing.
+    pub fn change_dir(&mut self, world: &World, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        // `:42096-42110` — the pulley-2 reposition.
+        if self.pulley && self.pulley_dir == 2 {
+            let num =
+                ((self.x + self.width / 2.0) as i32) / 16 * 16 + 8 - self.width as i32 / 2;
+            let num = num as f32;
+            if Self::solid_collision(world, num, self.y, self.width, self.height) {
+                return;
+            }
+            self.pulley_dir = 1;
+            self.x = num;
+        }
+        // `:42111-42115` — the facing + the mirrors.
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
+    }
+
     /// `Player.PetAnimal` (`Player.cs:33358-33399`): the target gate, the
     /// floor-snapped bottom (`(target.Bottom + offset).Floor()`), the
     /// `CanSnapToPosition` + `SolidTileAllowBottomSlope` gates, the repeat
@@ -216,17 +260,41 @@ impl Player {
     /// velocity zero + gravDir 1, then the petting latch. The achievement
     /// rides the outcome (the caller completes `PET_THE_PET`/`Do`).
     ///
+    /// S2 (the d21 compose contract): `proj_bottom` is the resolved
+    /// PROJECTILE-lane target bottom (`TryGetTarget`'s proj arm,
+    /// `PlayerPettingInfo.cs:70-75` — the caller checks slot active + same
+    /// type; `None` = no live proj target). The NPC arm keeps
+    /// `npc_snap_point`; the mount arm keeps the player's own bottom.
+    /// The facing change rides [`Self::change_dir`] (`:33390`), not a
+    /// bare assign.
+    ///
     /// Deviations (recorded): `CanSnapToPosition` rides the port's
     /// `can_snap_to` (the `Collision.CanHit` reach half is the standing
     /// stand-in, `player.rs:3027`); `RemoveAllGrapplingHooks` rides the
     /// `release_grappling_hooks` request (the pool drain owns the hooks);
     /// `gravDir` is always 1 in the port so the `:33392` write is a no-op.
-    pub fn pet_animal(&mut self, world: &World, npcs: &[Npc], info: PettingInfo) -> PetAnimalOutcome {
+    pub fn pet_animal(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        info: PettingInfo,
+        proj_bottom: Option<(f32, f32)>,
+    ) -> PetAnimalOutcome {
         // `:33360-33363` — TryGetTarget; the mount arm (target null) keeps
-        // the player's own bottom, the NPC arm snaps to the pet.
+        // the player's own bottom, the NPC/proj arms snap to the target.
         let mut bottom = (self.x + self.width * 0.5, self.y + self.height);
         if !info.mount {
-            let Some(snap) = info.npc_snap_point(npcs) else {
+            // The proj lane (S2): the resolved projectile BOTTOM (raw —
+            // the offset applies here like the C# `target.Bottom +
+            // info.offsetFromPet`); the NPC lane: the roster snap point
+            // (offset already folded by `npc_snap_point`). Neither → the
+            // C#'s TryGetTarget-false early return.
+            let target_bottom = if info.proj >= 0 {
+                proj_bottom.map(|b| (b.0 + info.offset_from_pet.0, b.1 + info.offset_from_pet.1))
+            } else {
+                info.npc_snap_point(npcs)
+            };
+            let Some(snap) = target_bottom else {
                 return PetAnimalOutcome::Refused;
             };
             // `:33367` — `.Floor()` (both components).
@@ -267,7 +335,9 @@ impl Player {
         if num == 0 {
             num = self.facing;
         }
-        self.facing = num;
+        // `:33390` — ChangeDir (S2/K4: the pulley-2 reposition + the
+        // composite/itemRotation mirrors), NOT the bare facing assign.
+        self.change_dir(world, num);
         self.vx = 0.0;
         self.vy = 0.0;
         // `:33393-33394` — the latch.
@@ -302,15 +372,39 @@ impl Player {
     /// movement control / pulley / a non-mount petting while mounted / the
     /// facing flipped off the pet side. `talk_npc` is the App's talk latch
     /// (`Option<usize>`, None = -1).
-    pub fn update_petting_animal(&mut self, npcs: &[Npc], talk_npc: Option<usize>) {
+    ///
+    /// S3 (the d21 compose contract): `proj_target` is the proj-lane
+    /// `TryGetTarget` result (`PlayerPettingInfo.cs:70-75` — slot active +
+    /// same type; the caller resolves it off the projectile pool, d21's
+    /// `petting_target_bottom` feed): `Some(bottom)` = live proj target,
+    /// `None` = gone/swapped. The `target != null` drift gate applies to
+    /// the proj lane too (the C# checks any non-null target); the talk
+    /// gate is NPC-only (`target is NPC`). The NPC/talk/mount arms stay
+    /// g10's.
+    pub fn update_petting_animal(
+        &mut self,
+        npcs: &[Npc],
+        talk_npc: Option<usize>,
+        proj_target: Option<(f32, f32)>,
+    ) {
         if !self.petting.is_petting {
             return;
         }
         // `:33476` — TryGetTarget + the talk gate + the 2 px drift.
+        let is_proj = !self.petting.mount && self.petting.proj >= 0;
         let snap = if self.petting.mount {
             // The mount arm's target is null → the drift check is skipped
             // (`target != null` gate), TryGetTarget returns true.
             None
+        } else if is_proj {
+            // S3 — the proj-lane TryGetTarget arm: gone/swapped stops.
+            match proj_target {
+                Some(b) => Some((b.0 + self.petting.offset_from_pet.0, b.1 + self.petting.offset_from_pet.1)),
+                None => {
+                    self.stop_petting_animal();
+                    return;
+                }
+            }
         } else {
             match self.petting.npc_snap_point(npcs) {
                 Some(s) => Some(s),
@@ -320,19 +414,21 @@ impl Player {
                 }
             }
         };
-        if !self.petting.mount {
+        // The talk gate is NPC-only (`target is NPC`, `:33476`).
+        if !self.petting.mount && !is_proj {
             let talk_matches = talk_npc.is_some_and(|t| t as i32 == self.petting.npc);
             if !talk_matches {
                 self.stop_petting_animal();
                 return;
             }
-            if let Some(s) = snap {
-                let bottom = (self.x + self.width * 0.5, self.y + self.height);
-                let d = ((bottom.0 - s.0).powi(2) + (bottom.1 - s.1).powi(2)).sqrt();
-                if d > 2.0 {
-                    self.stop_petting_animal();
-                    return;
-                }
+        }
+        // The drift gate applies to ANY non-null target (NPC or proj).
+        if let Some(s) = snap {
+            let bottom = (self.x + self.width * 0.5, self.y + self.height);
+            let d = ((bottom.0 - s.0).powi(2) + (bottom.1 - s.1).powi(2)).sqrt();
+            if d > 2.0 {
+                self.stop_petting_animal();
+                return;
             }
         }
         // `:33481-33489` — the control/facing exit mask.
@@ -471,7 +567,7 @@ mod tests {
         let cat = cat_at(24.0 * 16.0);
         let npcs = [cat];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        let out = p.pet_animal(&w, &npcs, info);
+        let out = p.pet_animal(&w, &npcs, info, None);
         assert_eq!(out, PetAnimalOutcome::Started);
         assert!(p.petting.is_petting);
         // The cat's bottom-centre x = 24*16 + 9 = 393; offset -28 → 365.
@@ -492,10 +588,10 @@ mod tests {
         let mut p = resting_player(&w);
         let npcs = [cat_at(24.0 * 16.0)];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         // The same info again: the bottom already sits at the snap point.
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Stopped);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Stopped);
         assert!(!p.petting.is_petting);
         assert!(!p.take_pet_achievement(), "no achievement on the stop");
     }
@@ -508,11 +604,11 @@ mod tests {
         let npcs = [cat_at(24.0 * 16.0)];
         let mut info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
         info.kind = 638; // the slot holds a cat, the info says dog
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Refused);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Refused);
         assert!(!p.petting.is_petting);
         // An empty roster refuses too.
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        assert_eq!(p.pet_animal(&w, &[], info), PetAnimalOutcome::Refused);
+        assert_eq!(p.pet_animal(&w, &[], info, None), PetAnimalOutcome::Refused);
     }
 
     /// `Player.cs:33470-33490` — the per-tick stop gates: the talk latch
@@ -523,27 +619,27 @@ mod tests {
         let mut p = resting_player(&w);
         let npcs = [cat_at(24.0 * 16.0)];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         // The talk latch on the pet: the petting survives a calm tick.
-        p.update_petting_animal(&npcs, Some(0));
+        p.update_petting_animal(&npcs, Some(0), None);
         assert!(p.petting.is_petting, "calm tick keeps the petting");
         // The talk latch moved off: stop.
-        p.update_petting_animal(&npcs, None);
+        p.update_petting_animal(&npcs, None, None);
         assert!(!p.petting.is_petting, "the talk gate stops it");
         // Re-latch, then a movement control stops it.
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         p.control_left = true;
-        p.update_petting_animal(&npcs, Some(0));
+        p.update_petting_animal(&npcs, Some(0), None);
         assert!(!p.petting.is_petting, "controlLeft stops it");
         p.control_left = false;
         // Re-latch, then the target dies: stop.
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         let mut dead = npcs;
         dead[0].hp = 0;
-        p.update_petting_animal(&dead, Some(0));
+        p.update_petting_animal(&dead, Some(0), None);
         assert!(!p.petting.is_petting, "the dead target stops it");
     }
 
@@ -554,10 +650,10 @@ mod tests {
         let mut p = resting_player(&w);
         let npcs = [cat_at(24.0 * 16.0)];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         p.x += 3.0; // 3 px off the snap point
-        p.update_petting_animal(&npcs, Some(0));
+        p.update_petting_animal(&npcs, Some(0), None);
         assert!(!p.petting.is_petting, "the drift stops it");
     }
 
@@ -608,7 +704,7 @@ mod tests {
         // `petting.mount` gate) — the mount-petting flag is false.
         let npcs = [cat_at(24.0 * 16.0)];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        let _ = p.pet_animal(&w, &npcs, info);
+        let _ = p.pet_animal(&w, &npcs, info, None);
         let _ = p.take_pet_achievement();
         p.set_mount(10, false);
         p.dismount(&w, true);
@@ -651,7 +747,7 @@ mod tests {
         let mut p = resting_player(&w);
         let npcs = [cat_at(24.0 * 16.0)];
         let info = get_petting_info(&npcs[0], 0, p.x + p.width * 0.5);
-        assert_eq!(p.pet_animal(&w, &npcs, info), PetAnimalOutcome::Started);
+        assert_eq!(p.pet_animal(&w, &npcs, info, None), PetAnimalOutcome::Started);
         let _ = p.take_pet_achievement();
         // A calm tick with the talk latch on the pet keeps it.
         p.update_with_grapple(
@@ -675,5 +771,153 @@ mod tests {
             Some(0),
         );
         assert!(!p.petting.is_petting, "the jump press stops the petting");
+    }
+
+    // ---- batch-L: the d21 compose-contract splices (S1/S2/S3/S5) --------
+    // The 13-DROP/10-KEEP adjudication (d21 ANALYSIS "Fold-2 keep-one"):
+    // g10's host keeps the machine; d21's unique proj-lane halves splice
+    // in here. d21's own projectile wiring (try_petting, the 204 state-5
+    // joy, the proj ladder) lands with batch-D — these witnesses pin the
+    // g10-side seats it composes onto. WRITTEN NOT RUN.
+
+    /// S1 — `from_projectile` (`PlayerPettingInfo.cs:32-41`): the ctor
+    /// keys the proj slot + type, npc -1, mount false.
+    #[test]
+    fn batch_l_s1_from_projectile_seeds_the_proj_lane() {
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert_eq!(info.proj, 7);
+        assert_eq!(info.npc, -1);
+        assert_eq!(info.kind, 1098);
+        assert!(!info.mount);
+        assert!(!info.is_petting);
+        assert_eq!(info.offset_from_pet, (-48.0, 0.0));
+        assert!(info.is_pet_small);
+    }
+
+    /// S2 — `pet_animal`'s proj-lane target input: the resolved bottom +
+    /// offset snaps like the NPC arm; a None feed refuses (TryGetTarget
+    /// false); the mount arm ignores the feed.
+    #[test]
+    fn batch_l_s2_pet_animal_snaps_to_the_proj_bottom() {
+        let w = floor_world();
+        let mut p = resting_player(&w);
+        // A digtoise-like proj bottom at (400, 470), offset -48 → 352.
+        let info = PettingInfo::from_projectile(0, 1098, (-48.0, 0.0), true);
+        assert_eq!(
+            p.pet_animal(&w, &[], info, None),
+            PetAnimalOutcome::Refused,
+            "no live proj target refuses"
+        );
+        assert_eq!(
+            p.pet_animal(&w, &[], info, Some((400.0, 470.0))),
+            PetAnimalOutcome::Started
+        );
+        assert_eq!(p.x + p.width * 0.5, 352.0);
+        assert_eq!(p.y + p.height, 470.0);
+        assert_eq!(p.facing, 1, "sign(-offset.X) toward the proj");
+        assert!(p.petting.is_petting);
+        assert_eq!(p.petting.proj, 0);
+    }
+
+    /// S2/K4 — `change_dir` (`Player.cs:42091-42116`): the same-dir no-op,
+    /// the composite/itemRotation mirrors, the pulley-2 tile-centre
+    /// reposition + the SolidCollision refusal.
+    #[test]
+    fn batch_l_s2_change_dir_mirrors_and_repositions() {
+        let w = floor_world();
+        let mut p = resting_player(&w);
+        p.facing = 1;
+        p.composite_back.rotation = 0.5;
+        p.composite_front.rotation = -0.25;
+        p.item_rotation = 0.75;
+        // The same direction: NOTHING flips.
+        p.change_dir(&w, 1);
+        assert_eq!(p.composite_back.rotation, 0.5);
+        assert_eq!(p.item_rotation, 0.75);
+        // The flip mirrors all three.
+        p.change_dir(&w, -1);
+        assert_eq!(p.facing, -1);
+        assert_eq!(p.composite_back.rotation, -0.5);
+        assert_eq!(p.composite_front.rotation, 0.25);
+        assert_eq!(p.item_rotation, -0.75);
+        // Pulley-2: the tile-centre snap (`(int)(X + w/2)/16*16 + 8 - w/2`).
+        let mut q = resting_player(&w);
+        q.facing = 1;
+        q.pulley = true;
+        q.pulley_dir = 2;
+        q.x = 330.0; // centre 340 → tile 21 → 21*16+8-10 = 334
+        q.y = 200.0; // airborne, no solids
+        q.change_dir(&w, -1);
+        assert_eq!(q.pulley_dir, 1);
+        assert_eq!(q.x, 334.0);
+        assert_eq!(q.facing, -1);
+        // The refusal: a solid box at the snap point keeps everything.
+        let mut s = floor_world();
+        for y in 12..16 {
+            for x in 20..23 {
+                let i = s.index(x, y);
+                s.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                s.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut r = resting_player(&s);
+        r.facing = 1;
+        r.pulley = true;
+        r.pulley_dir = 2;
+        r.x = 330.0;
+        r.y = 200.0; // the snap box overlaps the solid patch
+        r.change_dir(&s, -1);
+        assert_eq!(r.facing, 1, "the SolidCollision refusal keeps the dir");
+        assert_eq!(r.pulley_dir, 2);
+        assert_eq!(r.x, 330.0);
+    }
+
+    /// S3 — `update_petting_animal`'s proj TryGetTarget arm: the live
+    /// proj bottom keeps the petting (NO talk gate — `target is NPC`
+    /// only), the None feed stops it, the > 2 px drift applies.
+    #[test]
+    fn batch_l_s3_update_petting_reads_the_proj_target() {
+        let w = floor_world();
+        let mut p = resting_player(&w);
+        let info = PettingInfo::from_projectile(0, 1098, (-48.0, 0.0), true);
+        assert_eq!(
+            p.pet_animal(&w, &[], info, Some((400.0, 470.0))),
+            PetAnimalOutcome::Started
+        );
+        let _ = p.take_pet_achievement();
+        // The live proj target keeps it — talk_npc None is NOT a stop
+        // (the talk gate is NPC-only).
+        p.update_petting_animal(&[], None, Some((400.0, 470.0)));
+        assert!(p.petting.is_petting, "the proj lane has no talk gate");
+        // The drift gate applies to the proj target too.
+        p.x += 3.0;
+        p.update_petting_animal(&[], None, Some((400.0, 470.0)));
+        assert!(!p.petting.is_petting, "the 2 px drift stops the proj lane");
+        // Re-latch; the gone target stops it.
+        assert_eq!(
+            p.pet_animal(&w, &[], info, Some((403.0, 470.0))),
+            PetAnimalOutcome::Started
+        );
+        p.update_petting_animal(&[], None, None);
+        assert!(!p.petting.is_petting, "TryGetTarget false stops it");
+    }
+
+    /// S5 — `math_sign`'s zero-at-zero (the C# `Math.Sign`): the offset-0
+    /// facing pick keeps the player's own direction (d21's `signum`
+    /// +1-at-zero deviation died with its D7/D8 twins).
+    #[test]
+    fn batch_l_s5_math_sign_is_zero_at_zero() {
+        assert_eq!(math_sign(0.0), 0);
+        assert_eq!(math_sign(-0.0), 0);
+        assert_eq!(math_sign(0.5), 1);
+        assert_eq!(math_sign(-0.5), -1);
+        // The offset-0 pet_animal keeps the player's facing.
+        let w = floor_world();
+        let mut p = resting_player(&w);
+        p.facing = -1;
+        let info = PettingInfo::from_mount(10, false);
+        // The mount arm: offset Zero → num 0 → the own direction stands.
+        assert_eq!(p.pet_animal(&w, &[], info, None), PetAnimalOutcome::Started);
+        assert_eq!(p.facing, -1, "offset 0 keeps the player's direction");
     }
 }

@@ -1256,6 +1256,7 @@ impl NpcKind {
             NpcKind::LadyBug => 604,
             NpcKind::GoldLadyBug => 605,
             // W4-g10 lane 3 РІР‚вЂќ the town pets ride their VANILLA ids (the
+            // W4-g10 lane 3 — the town pets ride their VANILLA ids (the
             // pumpkin/frost precedent): 637/638/656/670/678-684 are all
             // free in the protocol space (the port-local bands stop at
             // 353) and the housing/bestiary/`net_id` consumers key on the
@@ -1389,8 +1390,6 @@ impl NpcKind {
             NpcKind::Crimera => 781,
             NpcKind::MossHornet => 782,
             NpcKind::Moth => 793,
-        }
-    
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
             // exist in the enum via d23's style-14 wave, but g8 (757-762)
             // and d43 (666) are NOT in main yet, so d23 carries their id
@@ -1403,7 +1402,8 @@ impl NpcKind {
             NpcKind::VampireBat => 405,
             NpcKind::Vampire => 400,
             NpcKind::VileSpitEoW => 411,
-}
+        }
+    }
 
     /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
     /// bijection over the whole kind roster (`S1-F-1`); the unmatched ids
@@ -2171,7 +2171,7 @@ impl NpcKind {
             744 => NpcKind::Frog,
             604 => NpcKind::LadyBug,
             605 => NpcKind::GoldLadyBug,
-            // W4-g10 lane 3 РІР‚вЂќ the town pets decode at their vanilla ids
+            // W4-g10 lane 3 — the town pets decode at their vanilla ids
             // (`to_u16` above; `NPCID.cs:11951`/`:11953`/`:11989`/
             // `:12017`/`:12033-12043`).
             637 => NpcKind::TownCat,
@@ -3635,6 +3635,7 @@ impl NpcKind {
             // NPCHit1 (`NPC.cs:17587`).
             NpcKind::Shimmerfly => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
+            NpcKind::BartenderUnconscious => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -4579,6 +4580,8 @@ impl NpcKind {
             NpcKind::Shimmerfly => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
+            }
+            NpcKind::BartenderUnconscious => "NPC_Killed_6",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -7819,6 +7822,12 @@ impl NpcKind {
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody4
             | NpcKind::CultistDragonTail => (32.0, 32.0),
+            // W4-d120 — SetDefaults width/height rows: the four town kinds
+            // 18x40 (`NPC.cs:10795-10796`/`:11007-11008`/`:11256-11257`/
+            // `:11686-11687`), the bound Tavernkeep 34x8 (`:16558-16559`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+                (18.0, 40.0)
+            }
         }
     }
 
@@ -8621,8 +8630,9 @@ impl NpcKind {
             NpcKind::SantaClaus | NpcKind::Steampunker => 9,
             NpcKind::Cyborg => 10,
             // W4-g10 lane 3 — the town pets' `ExtraFramesCount` rows
+            // W4-g10 lane 3 - the town pets' `ExtraFramesCount` rows
             // (`NPCID.cs:10464`): 637 = 18, 638 = 11, 656 = 20, the town
-            // slimes = 6 — the reserved bottom rows the pet idle poses
+            // slimes = 6 - the reserved bottom rows the pet idle poses
             // (`NPC.cs:68680-68917`'s state-20/21/22 arms) animate through.
             NpcKind::TownCat => 18,
             NpcKind::TownDog => 11,
@@ -8635,6 +8645,10 @@ impl NpcKind {
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
             | NpcKind::TownSlimeCopper => 6,
+            // W4-d120 - Santa/Steampunker 9, the Cyborg 10
+            // (`NPCID.cs:10464`'s ExtraFramesCount rows).
+            NpcKind::SantaClaus | NpcKind::Steampunker => 9,
+            NpcKind::Cyborg => 10,
             _ => 0,
         }
     }
@@ -9592,6 +9606,7 @@ impl NpcKind {
             // (`NPC.cs:13607` / `:16770`).
             NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 5,
             // W4-g10 lane 3 — the town pets' `lifeMax = 250` rows: the
+            // W4-g10 lane 3 - the town pets' `lifeMax = 250` rows: the
             // 637/638 arm (`NPC.cs:17220`), 656 (`:17304`), 670
             // (`:17490`), the 678-684 arm (`:17603`).
             NpcKind::TownCat
@@ -9710,6 +9725,11 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody4
+            // W4-d120 - SetDefaults lifeMax rows: 142/160/178/579 250
+            // (`NPC.cs:10800`/`:11012`/`:11261`/`:16562`), 209 500
+            // (`:11691`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,
+            NpcKind::Cyborg => 500,
         }
     }
 
@@ -10541,6 +10561,7 @@ impl NpcKind {
             // (`NPC.cs:13606` / `:16768`).
             NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
             // W4-g10 lane 3 — the town pets' `damage = 10` rows: the
+            // W4-g10 lane 3 - the town pets' `damage = 10` rows: the
             // 637/638 arm (`NPC.cs:17218`), 656 (`:17302`), 670
             // (`:17488`), the 678-684 arm (`:17601`).
             NpcKind::TownCat
@@ -10659,6 +10680,13 @@ impl NpcKind {
             NpcKind::CultistDragonHead => 100,
             | NpcKind::CultistDragonBody4
             | NpcKind::Cyborg => 10,
+            // W4-d120 - SetDefaults damage rows: all five write 10
+            // (`NPC.cs:10798`/`:11010`/`:11259`/`:11689`/`:16561`).
+            NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg
+            | NpcKind::BartenderUnconscious => 10,
         }
     }
 }

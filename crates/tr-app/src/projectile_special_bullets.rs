@@ -391,8 +391,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
     let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
     let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
     if !hit_x && !hit_y {
-        p.pos.x = nx;
-        p.pos.y = ny;
+        // S1-P-i57 — the unblocked move rides `:20441`'s wet swap
+        // (`wet_velocity`: the `:17612-17655` drag while wet).
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
         return;
     }
     match p.kind {
@@ -414,8 +415,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
                 // The C# `UpdatePosition` (`:20445`) integrates the
                 // POST-bounce velocity on the bounce tick (the typhoon
                 // precedent); the probe's blocked-axis stand-in keeps
-                // the other axis sliding.
-                p.pos += p.vel;
+                // the other axis sliding. S1-P-i57: the wet arm rides
+                // `wet_velocity` (`:20441` — the `:17612-17655` drag).
+                p.pos += crate::projectile_wet::wet_velocity(p, world);
             } else {
                 kill(p);
             }
@@ -468,7 +470,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
                 };
                 p.vel = dir * speed;
             }
-            p.pos += p.vel;
+            // S1-P-i57 — the nano-bullet's bounce-tick integrate rides
+            // `:20441`'s wet swap (`wet_velocity`).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
         // Every other special bullet keeps the generic kill-on-tile
         // default arm (`:19849-19853`'s `position += velocity; Kill()`

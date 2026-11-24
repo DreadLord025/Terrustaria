@@ -367,8 +367,9 @@ fn crystal_bounce(
         p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
         p.damage = (p.damage as f32 * 0.85) as i32;
     } else {
-        p.pos.x = nx;
-        p.pos.y = ny;
+        // S1-P-i57 — the unblocked move rides `:20441`'s wet swap
+        // (`wet_velocity`: the `:17612-17655` drag while wet).
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
     }
     // `:18664-18697` — the post-bounce retarget (penetrate > 0, owner).
     if p.penetrate > 0 && p.owner == local_owner {
@@ -428,8 +429,9 @@ fn move_kill_on_tile(p: &mut Projectile, world: &World) {
             p.active = false;
             p.time_left = 0;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap (`:20441`'s wet arm via
+            // `wet_velocity`; dry byte-identical).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;
@@ -440,8 +442,10 @@ fn move_kill_on_tile(p: &mut Projectile, world: &World) {
 /// Electrosphere sphere 443: the ai[1]-latched fade-out kill, the 120-tick
 /// pulse cycle (the 80·(0.75..1.0) box breathing), the 3-tick frame
 /// machine and the dust ring's draws. The tracked-sound volume decay
-/// (`:30673-30686`) has no sound engine — skipped (no draws).
-pub(crate) fn sphere_pulse(p: &mut Projectile, rng: &mut dyn DropRng) {
+/// (`:30673-30686`) has no sound engine — skipped (no draws). S1-P-i57: the
+/// integrate rides `wet_velocity` (the row's `tileCollide = false`, the
+/// `:17476` gate keeps it un-scaled).
+pub(crate) fn sphere_pulse(p: &mut Projectile, rng: &mut dyn DropRng, world: &World) {
     // `:30687-30711` — the fade: ai[1] == 1 (the 442's Kill pulled it in)
     // ramps alpha +51 to the 255 kill; otherwise the −50 fade-in.
     if p.ai[1] == 1.0 {
@@ -494,8 +498,9 @@ pub(crate) fn sphere_pulse(p: &mut Projectile, rng: &mut dyn DropRng) {
         let _ = rng.next_float();
         let _ = rng.next_float();
     }
-    // The movement: tileCollide false — pure integration.
-    p.pos += p.vel;
+    // The movement: tileCollide false — pure integration. S1-P-i57:
+    // `wet_velocity` (the `:17476` free-move gate keeps it un-scaled).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 /// `AI()`'s aiStyle-34 arm (`Projectile.cs:27136-27188`) — the fireworks
@@ -813,8 +818,9 @@ mod tests {
     fn s1_p_i16_the_sphere_pulse_breathes_and_fades() {
         let mut p = proj(443, 0.0, 0.0);
         p.alpha = 255;
+        let w = world();
         let mut rng = Recorder::new(1); // the Next(2)/Next(4) gates miss
-        sphere_pulse(&mut p, &mut rng);
+        sphere_pulse(&mut p, &mut rng, &w);
         assert_eq!(p.alpha, 205, ":30705 — the −50 fade-in");
         assert_eq!(p.ai[0], 1.0, ":30714 — the counter");
         // The dust draws: angle+radius, then the two gates (no clones).
@@ -825,7 +831,7 @@ mod tests {
         q.ai[1] = 1.0;
         q.alpha = 204;
         let mut rng2 = Recorder::new(0);
-        sphere_pulse(&mut q, &mut rng2);
+        sphere_pulse(&mut q, &mut rng2, &w);
         assert!(!q.active, ":30694-30698 — the 255 kill");
         assert_eq!(q.alpha, 255);
         assert!(!q.friendly, ":30689 — the pull-in flips friendly");

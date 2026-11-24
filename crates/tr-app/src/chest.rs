@@ -387,6 +387,285 @@ pub(crate) fn remove_chest(chests: &mut Vec<WorldChest>, idx: usize) {
     }
 }
 
+/// `WorldGen.GetItemDrop_Chests(style, secondType)` (`WorldGen.cs:41554-
+/// 41839`): the chest item a refused placement / a break drops. `secondType`
+/// is the Containers2 (467) family; the default is 48 (the plain chest) /
+/// 3884 (the Containers2 base). The style ladders are verbatim.
+pub(crate) fn item_drop_chests(style: i32, second_type: bool) -> u16 {
+    if second_type {
+        match style {
+            1 => 3885,
+            2 => 3939,
+            3 => 3965,
+            4 => 3988,
+            5 => 4153,
+            6 => 4174,
+            7 => 4195,
+            8 => 4216,
+            9 => 4265,
+            10 => 4267,
+            11 => 4574,
+            12 | 13 => 4712,
+            14 => 5156,
+            15 => 5177,
+            16 => 5198,
+            17 => 5556,
+            18 => 5609,
+            19 => 5697,
+            20 => 5720,
+            21 => 5745,
+            22 => 5763,
+            23 => 5784,
+            24 => 5805,
+            25 => 5826,
+            26 => 5846,
+            27 => 5865,
+            28 => 5886,
+            29 => 5905,
+            30 => 5939,
+            31 => 5962,
+            32 => 5982,
+            33 => 6005,
+            34 => 6028,
+            35 => 6051,
+            36 => 6074,
+            37 => 6118,
+            _ => 3884,
+        }
+    } else {
+        match style {
+            1 | 2 => 306,
+            3 | 4 => 328,
+            5 => 343,
+            6 => 348,
+            7 => 625,
+            8 => 626,
+            9 => 627,
+            10 => 680,
+            11 => 681,
+            12 => 831,
+            13 => 838,
+            14 => 914,
+            15 => 952,
+            16 => 1142,
+            17 => 1298,
+            18 | 23 => 1528,
+            19 | 24 => 1529,
+            20 | 25 => 1530,
+            21 | 26 => 1531,
+            22 | 27 => 1532,
+            28 => 2230,
+            29 => 2249,
+            30 => 2250,
+            31 => 2526,
+            32 => 2544,
+            33 => 2559,
+            34 => 2574,
+            35 | 36 => 2612,
+            37 | 38 => 2613,
+            39 | 40 => 2614,
+            41 => 2615,
+            42 => 2616,
+            43 => 2617,
+            44 => 2618,
+            45 => 2619,
+            46 => 2620,
+            47 => 2748,
+            48 => 2814,
+            49 => 3180,
+            50 => 3125,
+            51 => 3181,
+            _ => 48,
+        }
+    }
+}
+
+/// `WorldGen.GetCampfireItemDrop(style)` (`WorldGen.cs:50039-50072`): the
+/// campfire item the `ReplaceTile` large-object drop reads
+/// (`KillTile_GetItemDrops` `:63983-63985`, `frameX / 54`). W4-g48.
+pub(crate) fn campfire_item_drop(style: i32) -> u16 {
+    match style {
+        0 => 966,
+        1..=5 => (3046 + style - 1) as u16,
+        6 => 3723,
+        7 => 3724,
+        8..=13 => (4689 + style - 8) as u16,
+        14 => 5299,
+        15 => 5357,
+        _ => 966,
+    }
+}
+
+/// `WorldGen.GetItemDrop_Dressers(style)` (`WorldGen.cs:49855-50037`): the
+/// dresser item. The default is 334; styles 1-3 are 646+style, 5-15 are
+/// 2386+style-5, the rest a verbatim ladder.
+pub(crate) fn item_drop_dressers(style: i32) -> u16 {
+    if (1..=3).contains(&style) {
+        return (646 + style) as u16;
+    }
+    match style {
+        4 => 918,
+        5..=15 => (2386 + style - 5) as u16,
+        16 => 2529,
+        17 => 2545,
+        18 => 2562,
+        19 => 2577,
+        20 => 2637,
+        21 => 2638,
+        22 => 2639,
+        23 => 2640,
+        24 => 2816,
+        25 => 3132,
+        26 => 3134,
+        27 => 3133,
+        28 => 3911,
+        29 => 3912,
+        30 => 3913,
+        31 => 3914,
+        32 => 3934,
+        33 => 3968,
+        34 => 4148,
+        35 => 4169,
+        36 => 4190,
+        37 => 4211,
+        38 => 4301,
+        39 => 4569,
+        40 => 5151,
+        41 => 5172,
+        42 => 5193,
+        43 => 5551,
+        44 => 5604,
+        45 => 5692,
+        46 => 5715,
+        47 => 5741,
+        48 => 5766,
+        49 => 5787,
+        50 => 5808,
+        51 => 5829,
+        52 => 5848,
+        53 => 5868,
+        54 => 5888,
+        55 => 5908,
+        56 => 5942,
+        57 => 5965,
+        58 => 5985,
+        59 => 6008,
+        60 => 6031,
+        61 => 6054,
+        62 => 6077,
+        63 => 6099,
+        64 => 6121,
+        _ => 334,
+    }
+}
+
+/// `WorldGen.PlaceChestDirect(x, y, type, style, id)` (`WorldGen.cs:57848-
+/// 57881`): the client's `34` apply — `Chest.CreateChest(x, y-1, id)` then the
+/// 2x2 tile write (frameX = 36*style + 18*dx, frameY = 18*dy, halfBrick off).
+/// The C# writes the tiles unconditionally (no placement gate — the host
+/// already validated). `id` is the host's store index.
+pub(crate) fn place_chest_direct(
+    app: &mut App,
+    x: i32,
+    y: i32,
+    kind: u16,
+    style: i32,
+    id: i32,
+) {
+    create_chest_at(app, x, y - 1, id);
+    for dx in 0..2 {
+        for dy in -1..=0 {
+            if let Some(t) = app.world.tile_mut(x + dx, y + dy) {
+                t.kind = kind;
+                t.frame_x = (36 * style + 18 * dx) as i16;
+                t.frame_y = (18 * (dy + 1)) as i16;
+                t.flags |= tr_core::tile::FLAG_ACTIVE;
+                t.flags &= !tr_core::tile::FLAG_HALF_BRICK;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceDresserDirect(x, y, type, style, id)` (`WorldGen.cs:57883-
+/// 57921`): the 3x2 dresser write (frameX = 54*style + 18*dx, dx -1..1).
+pub(crate) fn place_dresser_direct(
+    app: &mut App,
+    x: i32,
+    y: i32,
+    kind: u16,
+    style: i32,
+    id: i32,
+) {
+    create_chest_at(app, x - 1, y - 1, id);
+    let base = 54 * style;
+    for dx in -1..=1 {
+        for dy in -1..=0 {
+            if let Some(t) = app.world.tile_mut(x + dx, y + dy) {
+                t.kind = kind;
+                t.frame_x = (base + 18 * (dx + 1)) as i16;
+                t.frame_y = (18 * (dy + 1)) as i16;
+                t.flags |= tr_core::tile::FLAG_ACTIVE;
+                t.flags &= !tr_core::tile::FLAG_HALF_BRICK;
+            }
+        }
+    }
+}
+
+/// `Chest.CreateChest(X, Y, id)` (`Chest.cs:590-607`) with an explicit index:
+/// the client's `34` apply materialises the host's store slot at the coords.
+/// `id == -1` is the find-first path (the host's `PlaceChest`); a taken coord
+/// or a full store is the C# `-1` (no write).
+fn create_chest_at(app: &mut App, x: i32, y: i32, id: i32) {
+    let idx = if id >= 0 {
+        id as usize
+    } else {
+        match find_empty_chest(&app.world_chests, x, y) {
+            Some(i) => i,
+            None => return,
+        }
+    };
+    if idx >= MAX_CHESTS {
+        return;
+    }
+    while app.world_chests.len() <= idx {
+        app.world_chests.push(WorldChest {
+            tile: unplaced_tile(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        });
+    }
+    let max = DEFAULT_MAX_ITEMS as usize;
+    app.world_chests[idx] = WorldChest {
+        tile: (x, y),
+        slots: vec![crate::item::EMPTY_SLOT; max],
+        name: String::new(),
+        max_items: max,
+        ..Default::default()
+    };
+}
+
+/// `Chest.DestroyChestDirect(X, Y, id)` (`Chest.cs:647-668`): the client's
+/// `34` destroy apply — remove the store slot ONLY when its coords match,
+/// closing the local open index silently (`:659-662`).
+pub(crate) fn destroy_chest_direct(app: &mut App, x: i32, y: i32, id: i32) {
+    if id < 0 || id as usize >= MAX_CHESTS {
+        return;
+    }
+    let idx = id as usize;
+    let matches = app
+        .world_chests
+        .get(idx)
+        .is_some_and(|c| !is_removed(c) && c.tile == (x, y));
+    if matches {
+        remove_chest(&mut app.world_chests, idx);
+        if let Some(p) = app.player.as_mut() {
+            if p.chest == id {
+                p.chest = crate::bank::CHEST_CLOSED;
+            }
+        }
+    }
+}
+
 /// The chest's slots at `idx` — the plan contract's
 /// `get(idx) -> Option<&[ItemSlot]>` over `Chest.item[]`
 /// (`Chest.cs:74-78`). `None` for an out-of-range index; a removed slot
@@ -1140,15 +1419,21 @@ pub(crate) fn bank_open_origin(world: &World, x: i32, y: i32) -> (i32, i32) {
     (ox, oy)
 }
 
-pub(crate) fn play_menu_sound(app: &App, legacy_id: u32) {
+pub(crate) fn play_menu_sound(app: &mut App, legacy_id: u32) {
     // `SoundID.MenuOpen/MenuClose/MenuTick = 10/11/12` (`SoundID.cs:42/44/46`),
-    // played without a position in the C# (`:33242`/:33237/:33251).
-    match legacy_id {
-        10 => app.audio.play("Menu_Open"),
-        11 => app.audio.play("Menu_Close"),
-        12 => app.audio.play("Menu_Tick"),
-        _ => {}
-    }
+    // played without a position in the C# (`:33242`/:33237/:33251). W4-d79 —
+    // cases 10/11/12 (`LegacySoundPlayer.cs:750-782`) are the draw-free
+    // single-voice pool: each Stop()s the old instance + re-creates (`:751-
+    // 777`); the int overload draws no NextFloat. Case 12's
+    // `FocusHelper.AllowInputProcessing` gate (`:771`) folds to true (the
+    // standing D12 focus deviation).
+    let cue = match legacy_id {
+        10 => "Menu_Open",
+        11 => "Menu_Close",
+        12 => "Menu_Tick",
+        _ => return,
+    };
+    app.audio.play_menu(cue);
 }
 
 /// The right-click open path (`Player.cs:33056-33260`), the editing.rs
@@ -1170,7 +1455,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // with its DEFAULT quiet=false — an open sign plays the `:33537` cue.
     crate::signs::close_sign(app, false); // `:33087`
     app.close_shop();
-    app.talk_npc = None; // `:33088` — `SetTalkNPC(-1)`
+    app.set_talk_npc(None); // `:33088` - `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:33090` — `Main.npcChatText = ""`
     // `:33091-33096` — a chest-tile click while the rename editor is live
     // flushes it: sound 12, `editChest = false`, `npcChatText = ""`. The
@@ -1238,8 +1523,14 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             }
             // `:409` — `SoundEngine.PlaySound(22, X * 16, Y * 16)`: the
             // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
-            app.audio
-                .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+            // W4-d79 — case 22 (`LegacySoundPlayer.cs:937-946`) is the
+            // single-voice pool: the old unlock is Stop()ed + re-created
+            // (`:938-942`), draw-free. The int overload draws no NextFloat.
+            app.audio.play_single_voice(
+                "Unlock",
+                ox as f32 * 16.0,
+                oy as f32 * 16.0,
+            );
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -1280,8 +1571,11 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 if let Some(id) = progression {
                     unlocked_progression = Some(id);
                 }
-                app.audio
-                    .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+                app.audio.play_single_voice(
+                    "Unlock",
+                    ox as f32 * 16.0,
+                    oy as f32 * 16.0,
+                );
                 if consumes {
                     slot.count -= 1; // `:33210-33214`
                     if slot.count == 0 {
@@ -1417,7 +1711,7 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
     // mapping). W4-e10: `CloseSign()` `:32873` is the default quiet=false.
     crate::signs::close_sign(app, false); // `:32873`
     app.close_shop();
-    app.talk_npc = None; // `:32874` — `SetTalkNPC(-1)`
+    app.set_talk_npc(None); // `:32874` - `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:32876` — `npcChatText = ""`
     // `:32877-32882` — the rename-editor flush (the modal keyboard parks the
     // world routes, the chest path's Gap #6 revive point).
@@ -1490,19 +1784,14 @@ pub(crate) fn tick_open(app: &mut App) {
             play_menu_sound(app, id); // `:31080`/:31088 — `PlaySound(11)`
         }
     }
-    // `Main.TrySyncingMyPlayer` (`Main.cs:17575-17593`) runs AFTER
-    // `Player.Update`: a close transition this tick (the range/dead-tile
-    // close above, the click-path close, the dead tick's `UpdateDead`)
-    // carries a pending `editedChestName` on the `33` send — the name reads
-    // the LAST-SYNCED chest (`Main.chest[player.chest]`, `:17581`). The
-    // snapshot updates every tick (S1-P-i43).
-    let (cur, prev) = app
-        .player
-        .as_ref()
-        .map_or((-1, -1), |p| (p.chest, p.prev_synced_chest));
-    if cur != prev && cur < 0 && prev >= 0 {
-        flush_edited_chest_name(app);
-    }
+    // W4-c28 SWAP: the close-transition `33` send is owned by the client
+    // cadence's clone-compare (`net_player_sync`'s `chest_close_flush`,
+    // `Main.TrySyncingMyPlayer` `Main.cs:17575-17593`) — the C# sends it
+    // THERE, not in `HandleBeingInChestRange` (`Player.cs:31015-31097` has
+    // no SendData). The old S1-P-i43 per-tick flush here would double-send
+    // with the cadence arm; it is removed. The `prev_synced_chest` snapshot
+    // still updates every tick — the open-click flush's name-source
+    // fallback reads it.
     if let Some(p) = app.player.as_mut() {
         p.prev_synced_chest = p.chest;
     }
@@ -1805,6 +2094,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         .get(chest)
         .filter(|c| !is_removed(c))
         .map_or(0, |c| c.max_items);
+    // W4-c28: the pre-pass snapshot for the deposit's `32` diff.
+    let before: Vec<ItemSlot> = (0..max_items)
+        .map(|i| chest_slot(&app.world_chests, chest, i).unwrap_or(EMPTY_SLOT))
+        .collect();
     // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
     if max > 1 {
         for i in 0..max_items {
@@ -1839,7 +2132,15 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
                     ..s
                 },
             );
-            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1241`)
+            // W4-d79 — `SoundEngine.PlaySound(7)` (`ChestUI.cs:1241`): the
+            // UNPOSITIONED int overload, one case-7 `Next(-10, 11) * 0.01`
+            // pitch draw (`LegacySoundPlayer.cs:725`) + the Grab single-voice
+            // Stop/re-create (`:718-722`). The deposit runs from the
+            // shift-click handler OUTSIDE every SwapRandom block, so the draw
+            // rides the bare-`Main.rand` stand-in (`rngs.global()`, the
+            // S1-P-i43 transfer-cue convention).
+            app.audio
+                .play_grab_sound(-1.0, -1.0, app.rngs.global());
             item.count -= num;
             if item.count == 0 {
                 break; // `:1242-1249` — `SetDefaults(0)` (write-through)
@@ -1860,7 +2161,11 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
                 placeable = true; // `:1271-1274`
                 break;
             }
-            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1276`)
+            // W4-d79 — `SoundEngine.PlaySound(7)` (`ChestUI.cs:1276`): the
+            // unpositioned case-7 pitch draw + Grab pool, on the bare stream
+            // (the merge-pass peer above).
+            app.audio
+                .play_grab_sound(-1.0, -1.0, app.rngs.global());
             set_chest_slot(&mut app.world_chests, chest, j, item); // `:1275` — the whole clone
             item = EMPTY_SLOT; // `:1277-1278` — `SetDefaults(0)` (write-through)
             break;
@@ -1870,6 +2175,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         // The drained slot's remainder — air when fully moved
         // (`:1244`/:1278's `SetDefaults(0)` write-through).
         from.write(app, item);
+        // W4-c28: the ctx-1/2 shift-deposit's `32` per filled chest slot
+        // (`ChestUI.cs:1247`/`:1258`/`:1283` — the merge + empty-slot passes).
+        // The port diffs the whole pass against the pre-pass snapshot.
+        app.send_chest_item_diff(chest as i32, &before);
     }
     placeable
 }
@@ -2106,7 +2415,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
         Some(p) if p.chest >= 0 => (p.chest, p.chest_x, p.chest_y),
         _ => return false, // the DW-5.4 guard (`ChestUI.cs:844-848`'s calm arm)
     };
-    app.audio.play("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
+    app.audio.play_menu("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
     // `:103-119` — the tile-default decode at the open chest's origin (the
     // phase-3 `default_chest_name` chain).
     let default_name = app
@@ -2152,7 +2461,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
 /// (`UIVirtualKeyboard.cs:1061-1067`); the C# submit closure ignores its
 /// trimmed argument (`:363`), so the untrimmed text is what lands.
 pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
-    app.audio.play("Menu_Tick"); // `:842`
+    app.audio.play_menu("Menu_Tick"); // `:842`
     app.front = None; // `Main.editChest = false` (:843) + `Close(quiet: true)`
     let chest = match app.player.as_ref() {
         Some(p) if p.chest >= 0 => p.chest,
@@ -2237,7 +2546,7 @@ pub(crate) fn flush_edited_chest_name(app: &mut App) {
 /// panel-cancel (ID 6) leaves the keyboard open (recorded deviation).
 /// `Main.blockKey` (`:868`) has no port route.
 pub(crate) fn rename_cancel(app: &mut App) -> u32 {
-    app.audio.play("Menu_Tick"); // `:865`
+    app.audio.play_menu("Menu_Tick"); // `:865`
     app.front = None;
     12
 }

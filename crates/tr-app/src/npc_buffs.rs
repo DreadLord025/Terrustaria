@@ -139,6 +139,23 @@ pub struct NpcBuffs {
     /// `NPC.lifeRegenCount` (`NPC.cs:6249`): the ±120 damage/heal chunk
     /// accumulator carried between ticks.
     pub life_regen_count: i32,
+    /// W4-c28: the `NPC.AddBuff` send queue (`NPC.cs:89932-89935` client `53`,
+    /// `:89979-89982` host `54`) — every accepted (type, time) pair queues one
+    /// intent at the write point (the immune/longer-time rejections never
+    /// queue). The App-side drains (`netglue::drain_npc_buff_sends`, at the
+    /// sim-pass tails + the 60 Hz net-step catch-all) pick the wire by role.
+    /// NOT part of the buff state — the `54` reader's array writes never
+    /// touch it.
+    pub net_sends: Vec<(i32, i32)>,
+    /// W4-c28: the expired-sweep's `flag` latch
+    /// (`UpdateNPC_BuffClearExpiredBuffs`, `NPC.cs:91896-91908`) — the quiet
+    /// per-slot `DelBuff`s set it when at least one buff expired; the ONE
+    /// `54` fires host-only at the sweep tail. The port's sweep runs inside
+    /// `update_buffs_tick` with no netMode, so the latch rides to the
+    /// App-side drain (`netglue::drain_npc_buff_sends`), which calls the
+    /// decision layer (`net_npc_sync::expired_buff_sweep`) and owns the
+    /// wire. NOT part of the buff state.
+    pub expired_send: bool,
 }
 
 impl Default for NpcBuffs {
@@ -148,6 +165,8 @@ impl Default for NpcBuffs {
             buff_time: [0; NPC_MAX_BUFFS],
             buff_immune: [false; BUFF_ID_COUNT],
             life_regen_count: 0,
+            net_sends: Vec::new(),
+            expired_send: false,
         }
     }
 }
@@ -1160,6 +1179,8 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => &[],
         // W4-g10 lane 3 — the town pets: `NPCID.cs`'s DebuffImmunitySets has
         // no row for 637/638/656/670/678-684 — the null-row else-branch, no
+        // W4-g10 lane 3 - the town pets: `NPCID.cs`'s DebuffImmunitySets has
+        // no row for 637/638/656/670/678-684 - the null-row else-branch, no
         // immunity (`NPC.cs:17826-17832`), same as the town residents.
         NpcKind::TownCat
         | NpcKind::TownDog
@@ -1294,6 +1315,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::MossHornet
         | NpcKind::Moth => &[20, 31],
         => &[31],
+        // W4-d120 - all five carry `SpecificallyImmuneTo {31}` (the
+        // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
+        // 142/160/178/209/579).
+        NpcKind::SantaClaus
+        | NpcKind::Truffle
+        | NpcKind::Steampunker
+        | NpcKind::Cyborg
     }
 }
 
@@ -1473,6 +1501,18 @@ impl NpcBuffs {
         }
         self.buff_type[num as usize] = buff_type; // NPC.cs:89977-89978
         self.buff_time[num as usize] = time;
+        // W4-c28: the net-send intent (`NPC.cs:89932-89935` client `53` /
+        // `:89979-89982` host `54`) — the port queues at the accepted-write
+        // point (the immune/longer-time early-outs above never reach it);
+        // the App-side drain picks the wire by role.
+        self.net_sends.push((buff_type, time));
+    }
+
+    /// W4-c28: takes the queued `NPC.AddBuff` net intents
+    /// (`NPC.cs:89932-89935`/`:89979-89982`) — the App-side drain owns the
+    /// wire slot + the role gate.
+    pub fn take_net_sends(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.net_sends)
     }
 
     /// `NPC.FindBuffIndex` (`NPC.cs:89910-89924`): the immune table hides the
@@ -1507,7 +1547,7 @@ impl NpcBuffs {
     /// tail left by one per empty slot, scanned left to right without
     /// rescanning: `[empty, empty, C]` compacts to `[empty, C, 0]`, not
     /// `[C, 0, 0]`. The quiet/net tail (`NPC.cs:90019-90022`) is dead code.
-    fn del_buff(&mut self, buff_index: usize) {
+    pub(crate) fn del_buff(&mut self, buff_index: usize) {
         self.buff_time[buff_index] = 0;
         self.buff_type[buff_index] = 0;
         for i in 0..NPC_MAX_BUFFS - 1 {
@@ -1612,11 +1652,15 @@ impl NpcBuffs {
 
     /// `UpdateNPC_BuffClearExpiredBuffs` (`NPC.cs:91890-91909`). Like the C#,
     /// the loop does not rescan after `DelBuff`: an expired buff shifted into
-    /// an already-passed slot is only removed on a later tick.
+    /// an already-passed slot is only removed on a later tick. The per-slot
+    /// `DelBuff`s are QUIET (`:91901`); the sweep's `flag` (`:91896`/`:91902`)
+    /// rides `expired_send` — the ONE host `54` (`:91905-91908`) fires at the
+    /// App-side drain (the sweep itself runs with no netMode).
     fn clear_expired_buffs(&mut self) {
         for i in 0..NPC_MAX_BUFFS {
             if self.buff_type[i] > 0 && self.buff_time[i] <= 0 {
                 self.del_buff(i);
+                self.expired_send = true; // NPC.cs:91902 — flag = true
             }
         }
     }
@@ -2390,6 +2434,55 @@ mod tests {
         assert_eq!(b.buff_type[0], 0);
         assert_eq!(b.buff_type[1], 70, "one shift per empty slot");
         assert_eq!(b.buff_type[2], 0);
+    }
+
+    /// W4-c28: the expired-buff sweep's `54` send decision
+    /// (`NPC.cs:91890-91909`): the per-slot `DelBuff`s are QUIET (`:91901`),
+    /// and ONE `54` fires only when at least one buff expired AND the role is
+    /// the host (`:91905-91908`). The port's `clear_expired_buffs` runs inside
+    /// `update_buffs_tick` with no netMode, so the App-side drain
+    /// (`netglue::drain_npc_buff_sends`' host arm) owns the wire — this pins
+    /// the decision layer's gate: a sweep that expired something queues the
+    /// list on the host, nothing on the client, nothing when nothing expired.
+    #[test]
+    fn the_expired_sweep_queues_one_54_on_the_host_only_when_something_expired() {
+        use crate::app::net_npc_sync::{expired_buff_sweep, NpcSend};
+        // Host + an expiry: one BuffList.
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 2, true, &mut out);
+        assert_eq!(out, vec![NpcSend::BuffList { slot: 3 }]);
+        // Client: the sweep returns before the send (`:91892-91895`).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 1, true, &mut out);
+        assert!(out.is_empty(), "the client never sends the 54");
+        // Host + no expiry: nothing (`:91905`'s flag gate).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 2, false, &mut out);
+        assert!(out.is_empty(), "no expiry, no 54");
+        // SP: nothing (the netMode == 2 gate).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 0, true, &mut out);
+        assert!(out.is_empty(), "single-player sends nothing");
+    }
+
+    /// W4-c28: the sweep's `flag` latch (`NPC.cs:91896`/`:91902`) — the quiet
+    /// `DelBuff`s set `expired_send` when a slot expired; a sweep over a live
+    /// bar leaves it false. The drain takes the latch (the App-side witness
+    /// `an_expired_buff_sweep_sends_one_54_from_the_host` pins the wire).
+    #[test]
+    fn the_sweep_latches_expired_send_only_when_a_slot_expired() {
+        let mut b = NpcBuffs::default();
+        b.buff_type[0] = 31;
+        b.buff_time[0] = 0; // expired: type > 0, time <= 0 (`:91899`)
+        b.clear_expired_buffs();
+        assert!(b.expired_send, "the expiry latched the flag");
+        assert_eq!(b.buff_type[0], 0, "the quiet DelBuff cleared the slot");
+        // A live bar: no expiry, no latch.
+        let mut b = NpcBuffs::default();
+        b.buff_type[0] = 31;
+        b.buff_time[0] = 60;
+        b.clear_expired_buffs();
+        assert!(!b.expired_send, "a live bar latches nothing");
     }
 
     #[test]

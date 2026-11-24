@@ -6,6 +6,9 @@ pub mod bars;
 pub mod builder_toggles;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
+pub(crate) mod bestiary_hover;
+pub(crate) mod bestiary_screen;
+pub(crate) mod bestiary_screen_draw;
 pub mod buttons;
 pub(crate) mod emotes;
 pub mod framework;
@@ -15,6 +18,10 @@ pub mod char_select;
 pub mod chrome_elements;
 pub mod clipboard;
 pub(crate) mod chest;
+pub(crate) mod chat_portrait;
+pub(crate) mod chat_portrait_data;
+#[cfg(test)]
+mod chat_portrait_tests;
 pub mod chrome;
 pub(crate) mod coin_slot;
 pub mod color;
@@ -26,6 +33,7 @@ pub mod cursor;
 pub mod debug_items;
 pub mod debug_commands;
 pub mod debug_loadouts;
+pub mod elements;
 pub mod ingame_options;
 pub mod housing;
 pub mod images;
@@ -35,6 +43,7 @@ pub(crate) mod interact_icon;
 pub mod inventory;
 pub mod journey;
 pub mod loadout;
+pub mod keybinding_rows;
 pub mod keyboard;
 pub mod layers;
 pub mod manage_controls;
@@ -42,21 +51,31 @@ pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;
 pub mod panel;
+pub mod particles;
 pub mod pointer;
 pub mod reports;
+pub mod progress;
+pub mod resource_packs;
 pub mod resources;
+pub(crate) mod savings;
 pub mod save_list;
+pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
+pub(crate) mod shop_happiness;
 pub mod slot;
 pub mod snap;
 pub mod state_stack;
+pub mod sortable;
 pub mod text;
+pub mod text_box;
+pub mod text_panels;
 pub mod tooltip;
 pub mod tooltip_lines2;
 pub(crate) mod tooltip_sets;
 pub mod uistate;
 pub mod secret_seeds_list;
+pub mod workshop_rows;
 pub mod world_creation;
 pub mod world_creation_advanced;
 pub(crate) mod world_load;
@@ -731,6 +750,7 @@ pub fn draw_hud(
     map_style: i32,
     bestiary_open: bool,
     bestiary_selected: Option<usize>,
+    bestiary_ui: &bestiary_screen::BestiaryUi,
     kill_tracker: &tr_core::bestiary::WorldBestiary,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
@@ -852,6 +872,24 @@ pub fn draw_hud(
     // colour animators): the second-half rows read them through
     // `TooltipContext.world`.
     tooltip_world: tooltip_lines2::TooltipWorld,
+    // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`): the
+    // Happiness button draws when the talked NPC is not homeless
+    // (`NPC.CanShowHomelessText`, `NPC.cs:94828-94841`) and the latched
+    // `currentShoppingSettings.HappinessReport` is non-empty.
+    happiness_button: bool,
+    // The chat portrait (W4-g58 retire, `Main.DrawNPCPortrait`,
+    // `Main.cs:40318-40447`): the hop clock (`npcChatPortraitFrameCounter`,
+    // read-then-increment at `:40335` — the caller ticks it after this
+    // pass), `Main.DialoguePortraitPreference` (`Settings.
+    // portrait_preference`) and the Zoologist lycanthrope predicate
+    // (`NPC.ShouldBestiaryGirlBeLycantrope`, the world flags ride the App).
+    portrait_frame_counter: i32,
+    portrait_preference: u8,
+    portrait_lycanthrope: bool,
+    // `CoinSlot.Savings` (`CoinSlot.cs:341`): the shop savings pile's coin
+    // cells (`ItemSlot.DrawSavings`, `Main.cs:41791`, W4-g58 D5). The
+    // banks ride the `player` already passed above.
+    coin_slot: &mut coin_slot::CoinSlotState,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -928,7 +966,21 @@ pub fn draw_hud(
     // bubbles ride the world→UI transform (`GameViewMatrix.ZoomMatrix`,
     // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
     // not a pre-baked screen position.
-    emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+    emotes::draw(
+        r,
+        lookups,
+        screen,
+        emotes_state,
+        player,
+        camera,
+        zoom,
+        mouse_pos,
+        pulse,
+        emote_local_id,
+        emote_remote_players,
+        npcs,
+        emote_projectiles,
+    );
 
     // `DrawInterface_1_1_DrawEmoteBubblesInWorld`'s tail
     // (`Main.cs:46460-46464`): the hovered town NPC's chat bubble rides
@@ -956,6 +1008,16 @@ pub fn draw_hud(
     // the same panel — the read display, the Edit/Save interaction and
     // the edit caret.
     if (talk_npc.is_some() || sign_open) && !chest_editing {
+    // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
+    // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
+    // `:276-283`; the sign half is unported).
+    if talk_npc.is_some() {
+        // The Dryad's status button (`DryadPurification`, W4-g49) draws only
+        // while the talk NPC is the Dryad.
+        let dryad_status = npc_chat::dryad_status_active(npcs, talk_npc);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, dryad_status);
+        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`) rides
+        // the caller's `happiness_button` gate (the App resolves it).
         npc_chat::draw_panel(
             r,
             lookups,
@@ -967,6 +1029,28 @@ pub fn draw_hud(
             edit_sign,
             sign_blinker,
         );
+            happiness_button,
+            pulse,
+            mouse_pos,
+        );
+        // `NPCChatPanel.cs:79` — `Main.DrawNPCPortrait(color,
+        // rectangle.TopLeft())` right after the text, before the buttons
+        // (the port draws the buttons inside `draw_panel`; the portrait
+        // overlays the panel's top-left corner either way — it sits
+        // OUTSIDE the 500-wide box at x−62). The Detailed arm ports;
+        // CloseUp/FullBodyRetro/Disabled gate inside (`chat_portrait`).
+        if let Some(n) = talk_npc.and_then(|i| npcs.get(i)) {
+            let panel = npc_chat::panel_rect(lookups, screen, npc_chat_text, happiness_button);
+            chat_portrait::draw_portrait(
+                r,
+                lookups,
+                n,
+                Vec2::new(panel[0], panel[1]),
+                portrait_frame_counter,
+                portrait_preference,
+                portrait_lycanthrope,
+            );
+        }
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -999,7 +1083,7 @@ pub fn draw_hud(
     // bestiary covers the interface while open (the state's draw replaces
     // the HUD behind it).
     if bestiary_open {
-        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_ui, bestiary_selected, mouse_pos);
         // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
         // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
         // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself
@@ -1139,10 +1223,16 @@ pub fn draw_hud(
         // (73, invBottom=258), scale 0.755 — the same layout the chest
         // panel draws at (`ui::chest`). The ported stock resolves to ≤39
         // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
-        // end draws air. The happiness label/icon at (504, invBottom)
-        // (`:41790-41797`) and the coin breakdown wait for the chrome
-        // pass (ANALYSIS).
-        if let Some((stock, _mood, _discount)) = shop {
+        // end draws air.
+        if let Some((stock, mood, _discount)) = shop {
+            // The happiness chrome (`:41790-41797`, W4-g58): the "Shop"
+            // label + the DrawSavings coin pile (`:41791`, D5) + the
+            // NPCHappiness icon band + the P0 percent. The pile reads the
+            // player's four banks (`Player.bank/bank2/bank3/bank4`).
+            let banks: Option<[&[ItemSlot]; 4]> =
+                player.map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
+            let savings = banks.as_ref().map(|b| (coin_slot, b));
+            shop_happiness::draw(r, lookups, mood, pulse, savings);
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;

@@ -358,6 +358,17 @@ pub fn item_case2_playing_guard(style: i32, playing: bool) -> bool {
 /// function stays the pure volume/pitch decision; the slot read lives in the
 /// facade (the caller owns the audio device).
 pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) {
+/// `playing` is the `SoundInstanceItem[num].State == Playing` read
+/// (`SoundPlayer`-style slot state, the [`crate::audio::Audio`] item-slot
+/// table): styles 53/55 (`:559-562`) and 159 (`:583-586`) return `null`
+/// BEFORE the pitch draw while their slot is live — `None` models that
+/// refusal (research/32 D4 closure). The stop/re-create pool itself rides
+/// [`item_case2_pool`].
+pub fn item_use_case2(
+    style: i32,
+    playing: bool,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> Option<(i32, f32, f32)> {
     let mut num = style;
     let mut tweak = 1.0f32; // the num2 multipliers
     // `:517-535` — the per-style volume ifs.
@@ -387,6 +398,10 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
             if num == 55 {
                 tweak *= 0.75;
             }
+            // `:559-562` — the live-slot guard returns BEFORE the pitch draw.
+            if playing {
+                return None;
+            }
         }
         37 => tweak *= 0.5,
         52 => tweak *= 0.35,
@@ -394,6 +409,16 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
         158 => tweak *= 0.8,
         210 => tweak *= 0.35,
         _ => {}
+    }
+    // `:580-606` — the second switch: 159's playing guard (before the pitch
+    // draw) + its ×0.75. The default arm's Stop and the no-stop style list
+    // are the pool decision ([`item_case2_pool`]), applied by the caller
+    // when it replaces the slot's instance.
+    if num == 159 {
+        if playing {
+            return None;
+        }
+        tweak *= 0.75;
     }
     // `:610-634` — the pitch switch (one `Main.rand` draw per play, except
     // 192's `Projectile.kiteSoundPitch` read — no item-use style is 192).
@@ -409,16 +434,27 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
         _ => rng(-6, 7) as f32 * 0.01,
     };
     // `:635-639` — the music-box styles play at the music pitch; `:640-643`
-    // — style 169 drops 0.8. (No item-use row names 26/35/47/169 today; the
-    // arms are ported so the table cannot drift silently.)
+    // — style 169 drops 0.8. W4-g49: `Main.musicPitch` now has a port field
+    // (`App.music_pitch`, the `58` client store) — the caller passes it.
     if num == 26 || num == 35 || num == 47 {
         tweak *= 0.75;
-        pitch = 0.0; // Main.musicPitch — the port's music pitch stand-in
+        pitch = music_pitch; // `Main.musicPitch` (`:638`)
     }
     if num == 169 {
         pitch -= 0.8;
     }
-    (num, tweak, pitch)
+    Some((num, tweak, pitch))
+}
+
+/// The case-2 pool decision (`LegacySoundPlayer.cs:580-606`): whether the
+/// slot's old instance is Stop()ed before the fresh `CreateInstance`
+/// (`:590-593`'s default arm). The listed styles replace the array entry
+/// WITHOUT a Stop (`:595-605`) — the old voice plays out; 159 never reaches
+/// the arm on a live slot (the guard refused), and a dead slot has nothing
+/// to stop either way. Research/32 D4 closure — one voice per item style,
+/// the second play cuts the first off except on the no-stop list.
+pub fn item_case2_pool(num: i32) -> bool {
+    !matches!(num, 9 | 10 | 24 | 26 | 34 | 43 | 103 | 156 | 159 | 162 | 205)
 }
 
 /// One `LegacySoundPlayer.PlaySound` case-37 (Meowcart) play's decisions
@@ -978,7 +1014,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
         i += 1;
         1 // remap roll 1 → style 18
     };
-    let (num, tweak, pitch) = item_use_case2(1, &mut roll);
+    let (num, tweak, pitch) = item_use_case2(1, false, &mut roll).unwrap();
     assert_eq!(num, 18);
     assert_eq!(tweak, 1.0);
     assert!((pitch - 1.0 * 0.01).abs() < 1e-6);
@@ -989,7 +1025,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
             assert_eq!((lo, hi), (-6, 7), "style {style}'s default pitch window");
             0
         };
-        let (num, tweak, pitch) = item_use_case2(style, &mut roll);
+        let (num, tweak, pitch) = item_use_case2(style, false, &mut roll).unwrap();
         assert_eq!(num, style);
         assert!((tweak - want).abs() < 1e-6, "style {style}");
         assert_eq!(pitch, 0.0);
@@ -999,7 +1035,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
         assert_eq!((lo, hi), (-50, 51));
         -50
     };
-    let (num, tweak, pitch) = item_use_case2(156, &mut roll);
+    let (num, tweak, pitch) = item_use_case2(156, false, &mut roll).unwrap();
     assert_eq!(num, 156);
     assert!((tweak - 0.6).abs() < 1e-6);
     assert!((pitch - (-50.0 * 0.002)).abs() < 1e-6);
@@ -1007,8 +1043,45 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
     // 176 → 0.9.
     for (style, want) in [(123, 0.5f32), (116, 0.5), (129, 0.6), (124, 0.65), (125, 0.65), (176, 0.9)] {
         let mut roll = |_: i32, _: i32| 0;
-        let (_, tweak, _) = item_use_case2(style, &mut roll);
+        let (_, tweak, _) = item_use_case2(style, false, &mut roll).unwrap();
         assert!((tweak - want).abs() < 1e-6, "style {style}");
+    }
+}
+
+/// research/32 D4 — the case-2 playing guards and the pool decision
+/// (`LegacySoundPlayer.cs:559-562`/`:583-586`/`:589-605`): 53/55/159 refuse
+/// a live slot BEFORE the pitch draw; the no-stop style list replaces the
+/// slot without a Stop, every other style stops the old instance first.
+#[test]
+fn w4_d79_item_case2_guards_the_live_slots_and_picks_the_pool_arm() {
+    // The guarded styles draw nothing while their slot plays.
+    for style in [53, 55, 159] {
+        let mut roll = |_: i32, _: i32| panic!("the guarded play draws nothing");
+        assert_eq!(item_use_case2(style, true, &mut roll), None, "style {style}");
+    }
+    // A dead slot plays: 53/55 keep their windows, 159 cuts ×0.75 (`:587`).
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-20, -11));
+        -20
+    };
+    let (_, tweak, _) = item_use_case2(53, false, &mut roll).unwrap();
+    assert!((tweak - 0.75).abs() < 1e-6);
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-6, 7), "159 takes the default pitch window");
+        0
+    };
+    let (_, tweak, _) = item_use_case2(159, false, &mut roll).unwrap();
+    assert!((tweak - 0.75).abs() < 1e-6, "the :587 ×0.75");
+    // Non-guarded styles ignore the slot state (`:589-593` stops it).
+    let mut roll = |_: i32, _: i32| 0;
+    assert!(item_use_case2(1, true, &mut roll).is_some());
+    // The pool arm: the `:595-605` list keeps the old voice, the default
+    // stops it.
+    for num in [9, 10, 24, 26, 34, 43, 103, 156, 159, 162, 205] {
+        assert!(!item_case2_pool(num), "style {num} replaces without a Stop");
+    }
+    for num in [1, 2, 18, 19, 37, 52, 53, 55, 127, 177] {
+        assert!(item_case2_pool(num), "style {num} stops the old instance");
     }
 }
 
@@ -1176,4 +1249,23 @@ fn s1_e_21f_coin_case38_draws_slot_then_pitch() {
     let (_, tweak, _) = coin_pickup_case38(false, &mut roll);
     assert!((tweak - 1.0).abs() < 1e-6);
     assert_eq!(n, 2, "the draws are unconditional");
+
+/// W4-g49 `58 InstrumentSound`'s music-pitch fold
+/// (`LegacySoundPlayer.cs:635-639`): the 26/35/47 music styles take
+/// `Main.musicPitch` as the instance pitch (the default-arm draw still
+/// runs first, `:632`) and ×0.75 volume.
+#[test]
+fn w4_g49_music_styles_play_at_the_music_pitch() {
+    for style in [26, 35, 47] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-6, 7), "the default pitch draw still runs");
+            3
+        };
+        let (num, tweak, pitch) = item_use_case2(style, 0.45, &mut roll);
+        assert_eq!(num, style);
+        assert!((tweak - 0.75).abs() < 1e-6, "style {style} ×0.75 (`:637`)");
+        assert_eq!(pitch, 0.45, "Main.musicPitch overwrites the draw (`:638`)");
+    }
+}
+
 }

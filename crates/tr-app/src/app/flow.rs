@@ -534,7 +534,7 @@ fn world_play_click(app: &mut App, i: usize) -> Option<FlowClick> {
     }
     match ui::world_select::rejection_key(app.active_player_difficulty() == 3, game_mode) {
         Some(key) => {
-            app.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+            app.audio.play_menu("Menu_Open"); // `SoundEngine.PlaySound(10)`
             app.front_hint = Some(crate::lang::text(key));
             None
         }
@@ -2007,9 +2007,9 @@ impl App {
                     | FlowClick::SecretSeedsBack
                     | FlowClick::ConfirmNo
             ) {
-                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+                self.audio.play_menu("Menu_Close"); // `SoundEngine.PlaySound(11)`
             } else {
-                self.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+                self.audio.play_menu("Menu_Open"); // `SoundEngine.PlaySound(10)`
             }
             self.apply_front_flow(front, click);
         }
@@ -2890,7 +2890,7 @@ pub(crate) mod front_flow_tests {
         assert!(hit.is_some(), "the pointer is over an element");
         if hit != app.front_hover_hit {
             if hit.is_some() {
-                app.audio.play("Menu_Tick");
+                app.audio.play_menu("Menu_Tick");
             }
             app.front_hover_hit = hit;
         }
@@ -2903,7 +2903,7 @@ pub(crate) mod front_flow_tests {
         let hit2 = app.front_hit();
         if hit2 != app.front_hover_hit {
             if hit2.is_some() {
-                app.audio.play("Menu_Tick");
+                app.audio.play_menu("Menu_Tick");
             }
             app.front_hover_hit = hit2;
         }
@@ -3491,6 +3491,7 @@ pub(crate) mod front_flow_tests {
             shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),
             bestiary_open: false,
             bestiary_selected: None,
+            bestiary_ui: crate::ui::bestiary_screen::BestiaryUi::default(),
             chat: crate::chat::ChatMonitor::default(),
             achievements: crate::achievements::AchievementManager::registry(),
             achievements_open: crate::env::achievements_open(),
@@ -3583,6 +3584,7 @@ pub(crate) mod front_flow_tests {
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             shop_mood: 1.0,
+            npc_chat_portrait_frame_counter: 0,
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
@@ -3661,6 +3663,7 @@ pub(crate) mod front_flow_tests {
             net_dropped: false,
             net_npcs: std::collections::HashMap::new(),
             net_npcs_dirty: false,
+            net_pending_damages: Vec::new(),
             net_npc_states: std::collections::HashMap::new(),
             net_npc_outbox: Vec::new(),
             net_npc_despawns: Vec::new(),
@@ -3676,7 +3679,10 @@ pub(crate) mod front_flow_tests {
             net_item_last: std::collections::HashMap::new(),
             net_reserved: std::collections::HashMap::new(),
             net_ps_last: crate::net::PlayerState::default(),
-            net_beat: 0,
+            net_client_clone: crate::app::net_player_sync::ClientClone::default(),
+            net_clone_items: std::collections::HashMap::new(),
+            net_client_counter: 0,
+            net_player_outbox: Vec::new(),
             net_play_counter: 0,
             last_item_update: 0,
             net_npc_slots: Vec::new(),
@@ -3765,6 +3771,7 @@ pub(crate) mod front_flow_tests {
             camera_state: Default::default(),
             gfx_quality: Default::default(),
             world_events: Default::default(),
+            debug_shared: Default::default(),
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
@@ -3896,6 +3903,10 @@ pub(crate) mod front_flow_tests {
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
+            music_pitch: 0.0,
+            world_evil_good: 0,
+            world_evil_evil: 0,
+            world_evil_blood: 0,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: false,
@@ -5219,6 +5230,50 @@ pub(crate) mod front_flow_tests {
         app.discount_available = false;
         app.reforge_click();
         assert_eq!(app.coins, 100_000 - 666);
+    }
+
+    /// W4-g58: the reforge price reads the TALK-OPEN LATCH
+    /// (`Main.cs:41591` — `currentShoppingSettings.PriceAdjustment`), NOT
+    /// the shop-open `shop_mood` capture: the vanilla opens the menu
+    /// through the Tinkerer's chat button (`Main.cs:40022-40029`), so the
+    /// latch from `SetTalkNPC` (`Player.cs:4389`) is the live value. A
+    /// stale shop capture and a post-latch mood change must not move the
+    /// charge.
+    #[test]
+    fn the_reforge_charge_reads_the_talk_latch_not_the_shop_capture() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = reforge_app();
+        // A HOMELESS Tinkerer: the NoHome sentinel rides the 1.5 ceiling.
+        let mut tink = crate::npc::Npc::new(crate::npc::NpcKind::GoblinTinkerer, 32.0, 100.0, 1, 0.0);
+        tink.hp = tink.max_hp;
+        tink.home = None;
+        app.npcs.push(tink);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        // The stale shop capture says 1.0 — the C# charge ignores it:
+        // 2000 × 1.5 = 3000 → /3 = 1000 (not 666).
+        app.shop_mood = 1.0;
+        app.reforge_click();
+        assert_eq!(app.coins, 100_000 - 1000, "the latched 1.5 prices the roll");
+        // House him AFTER the latch: a fresh mood pass would drop the
+        // sentinel, but the charge still reads the latch. The first roll
+        // re-valued the instance (the prefix's ×value²), so the expected
+        // charge rides the LIVE prefixed value at the latched 1.5.
+        app.npcs[0].home = Some((2, 6));
+        app.reforge_cooldown = 0;
+        let value = crate::prefix::prefixed_stats(app.reforge_slot.kind, app.reforge_slot.prefix)
+            .map(|s| s.value)
+            .unwrap_or(2000);
+        let expect = crate::shop::reforge_cost(value, 1, 1.5, false);
+        let coins = app.coins;
+        app.reforge_click();
+        assert_eq!(
+            app.coins,
+            coins - expect,
+            "the post-latch mood change is inert (the latched 1.5 still prices)"
+        );
     }
 
     #[test]

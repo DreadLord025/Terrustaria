@@ -2,6 +2,16 @@
 //! (1.4.5.8) behind the inventory's quick-stack button (`Main.cs:41833-41868`,
 //! site `:41849`) and `Player.QuickStackAllChests` (`Player.cs:23183-23189`).
 //!
+//! W4-g50 RE-PROBE CONSTANTS-COPY of W4-g21 batch 3 (`c07c1eb95`,
+//! `origin/task/W4-g21-sounds-main-1` `crates/tr-app/src/quick_stack.rs`,
+//! tip lineage 7da02f439): the engine below is copied verbatim — KEEP-ONE at
+//! the union merge (g21's copy is the survivor). The net entry this lane
+//! adds is `quick_stack_net_source` (the `ReadNetInventory` scratch shape,
+//! `QuickStacking.cs:308-321`): the host's `85` arm reads the sender's slot
+//! list, snapshots those slots from the `5`-fed inventory copy and runs
+//! `transfer` + a slot-wise restore (`RestoreToPlayer`'s `netMode == 2`
+//! arm re-sends one `5` per slot, `:353-356`).
+//!
 //! Structure mirrors the source: [`pack_quick_stackable_items`] is
 //! `PackQuickStackableItems` (`:377-402`), [`transfer`] is `Transfer`
 //! (`:404-459`) with the `DestinationHelper` metrics (`:14-98`) and the
@@ -70,11 +80,19 @@ struct SourceSlot {
     item: ItemSlot,
     /// `SourceInventory.transferBlocked[i]` (`:195`).
     blocked: bool,
+pub(crate) struct SourceSlot {
+    /// The `PlayerItemSlotID.SlotReference.SlotId` — the port keeps the vanilla
+    /// grid/coin/ammo numbering; the void vault rows start at 58.
+    pub(crate) slot_id: usize,
+    pub(crate) item: ItemSlot,
+    /// `SourceInventory.transferBlocked[i]` (`:195`).
+    pub(crate) blocked: bool,
 }
 
 /// `QuickStacking.DestinationHelper` (`QuickStacking.cs:14-98`): one non-empty
 /// destination chest with its free-slot queue and per-category scores.
 struct Dest<'a> {
+pub(crate) struct Dest<'a> {
     slots: &'a mut [ItemSlot],
     item_count: usize,
     locked: bool,
@@ -87,12 +105,17 @@ struct Dest<'a> {
     position: (f32, f32),
     /// `ChestIndex` (`:36-43`) — the world-chest store index (banks assert).
     chest_index: i32,
+    /// W4-g50 net extension: the slots `FillStack`/`InsertIntoFreeSlot`
+    /// touched — the C# fires `SyncSlot(slot)` at each write (`:537`/`:565`,
+    /// the `SendData(32)` seam); the host arm replays them after the walk.
+    changed: Vec<usize>,
 }
 
 impl<'a> Dest<'a> {
     /// `Reset` (`:49-64`) + the `BuildDestinationMetricsAndStackItems` free-slot
     /// and category-score pre-pass (`:476-484`).
     fn new(slots: &'a mut [ItemSlot], locked: bool, position: (f32, f32), chest_index: i32) -> Self {
+    pub(crate) fn new(slots: &'a mut [ItemSlot], locked: bool, position: (f32, f32), chest_index: i32) -> Self {
         let item_count = slots.len();
         let mut free_slots = Vec::new();
         let mut category_scores = vec![0usize; crate::item_sorting::SETUP_LAYER_COUNT];
@@ -117,6 +140,19 @@ impl<'a> Dest<'a> {
             position,
             chest_index,
         }
+    }
+            changed: Vec::new(),
+        }
+    }
+    /// The world-chest store index (`ChestIndex`, `:36-43`) — the g50 net
+    /// arm's `SyncSlot`/blocked-list key.
+    pub(crate) fn chest_index(&self) -> i32 {
+        self.chest_index
+    }
+    /// The slots the transfer wrote, in write order (the `SyncSlot` sites)
+    /// — the g50 host arm broadcasts one `32` per entry.
+    pub(crate) fn changed_slots(&self) -> impl Iterator<Item = (usize, ItemSlot)> + '_ {
+        self.changed.iter().map(|&i| (i, self.slots[i]))
     }
     /// `IsEmpty` (`:45`): every slot is free.
     fn is_empty(&self) -> bool {
@@ -202,6 +238,7 @@ fn consolidate(source: &mut [SourceSlot], i: usize) {
 fn insert_into_free_slot(src: &mut ItemSlot, dest: &mut Dest<'_>) {
     let n = dest.consume_free();
     std::mem::swap(src, &mut dest.slots[n]);
+    dest.changed.push(n); // `dest.SyncSlot(num)` (`:565`)
 }
 
 /// `QuickStacking.BuildDestinationMetricsAndStackItems` (`:474-509`): for each
@@ -231,6 +268,7 @@ fn build_metrics_and_stack(
             let max = crate::registry::max_stack(dest.slots[i].kind);
             if can_stack(&source[j].item, &dest.slots[i]) && dest.slots[i].count < max {
                 fill_stack(&mut source[j].item, &mut dest.slots[i]);
+                dest.changed.push(i); // `FillStack`'s `dest.SyncSlot(slotIndex)` (`:537`)
                 if is_air(&source[j].item) {
                     continue;
                 }
@@ -279,6 +317,7 @@ fn best_for_category(c: usize, dests: &[Dest<'_>]) -> Option<usize> {
 /// smart-stack category pass. Returns the blocked world-chest indices
 /// (`_blockedChests`, `:450-458`).
 fn transfer(source: &mut [SourceSlot], dests: &mut [Dest<'_>], smart_stack: bool) -> Vec<i32> {
+pub(crate) fn transfer(source: &mut [SourceSlot], dests: &mut [Dest<'_>], smart_stack: bool) -> Vec<i32> {
     let mut matching: Vec<(u16, usize)> = Vec::new();
     for (d, dest) in dests.iter_mut().enumerate() {
         if !dest.is_empty() {
@@ -355,6 +394,7 @@ pub(crate) struct QuickStackInput<'a> {
 /// `Transfer` + `RestoreToPlayer` arm): pack the storage rows (+ void vault),
 /// transfer into the in-range chests, restore the leftovers. Returns the
 /// blocked chest indices (the `IndicateBlockedChest` particle is a no-op).
+#[allow(dead_code)] // the single-player entry is g21's button lane; g50 uses the net path
 pub(crate) fn quick_stack_to_nearby_chests(input: QuickStackInput<'_>) -> Vec<i32> {
     let QuickStackInput { grid, vault, fav, chests, smart_stack } = input;
     let mut source = pack_quick_stackable_items(grid, vault.as_deref(), fav);
@@ -371,6 +411,7 @@ pub(crate) fn quick_stack_to_nearby_chests(input: QuickStackInput<'_>) -> Vec<i3
 /// in-range bank, then pack the storage rows (NO void vault) and transfer into
 /// the banks (never smart-stacked, never locked). The `MoveCoins` pre-pass is
 /// the caller's (it owns the audio/rng); this fn runs the item transfer.
+#[allow(dead_code)] // g21's button lane owns the caller
 pub(crate) fn quick_stack_to_nearby_banks(
     grid: &mut [ItemSlot; crate::item::INV],
     fav: &dyn Fn(usize) -> bool,
@@ -387,6 +428,7 @@ pub(crate) fn quick_stack_to_nearby_banks(
 
 /// `Player.Settings.CycleQuickStackMode` (`Player.cs:374-377`): the
 /// QuickStack ↔ SmartStack toggle (the right-click arm, `Main.cs:41854`).
+#[allow(dead_code)] // g21's button lane owns the caller
 pub(crate) fn cycle_quick_stack_mode(mode: u8) -> u8 {
     if mode == 0 { 1 } else { 0 }
 }

@@ -112,8 +112,10 @@ fn finish_flight(p: &mut Projectile, world: &World) {
             p.active = false;
             p.time_left = 0;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap rides here too (the
+            // replica stays byte-identical): `:20441`'s `wet ? wetVelocity :
+            // velocity` via `wet_velocity` (the `:17612-17655` drag wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;
@@ -343,8 +345,9 @@ pub(crate) fn spike_pulse(p: &mut Projectile) {
 /// state 1 pins frame 1, +0.1 fall capped at 3, X drag 0.99. The rotation
 /// aims along the velocity (+1.57). Zero RNG. Movement: the row's
 /// `tileCollide = false` (`:4419`) — the plain integration, the port's
-/// `kill_step` non-colliding arm (projectile.rs:7811-7813).
-pub(crate) fn present(p: &mut Projectile) {
+/// `kill_step` non-colliding arm (projectile.rs:7811-7813). S1-P-i57: the
+/// integrate rides `wet_velocity` (the free-move gate keeps it un-scaled).
+pub(crate) fn present(p: &mut Projectile, world: &World) {
     // `:28908-28912`.
     p.alpha -= 50;
     if p.alpha < 0 {
@@ -375,8 +378,9 @@ pub(crate) fn present(p: &mut Projectile) {
     // `:28936`.
     p.rot = p.vel.y.atan2(p.vel.x) + 1.57;
     // HandleMovement's non-colliding integration (the row's
-    // `tileCollide = false`, `:4419`).
-    p.pos += p.vel;
+    // `tileCollide = false`, `:4419`). S1-P-i57: `wet_velocity` — the
+    // `:17476` gate keeps the free move un-scaled (dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
 }
 
 // ---------------------------------------------------------------------------
@@ -676,18 +680,19 @@ mod tests {
         // The grace: an upward lob holds still for 30 ticks, then falls.
         let mut p = shot(SANTA_PRESENT);
         p.vel = Vec2::new(2.0, -1.0);
-        present(&mut p);
+        let w = air();
+        present(&mut p, &w);
         assert_eq!(p.alpha, 205); // 255 − 50
         assert_eq!(p.frame, 0);
         assert_eq!(p.ai[0], 0.0);
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.vel.y, -1.0); // ai[1] = 1 ≤ 30: no fall yet
         for _ in 0..29 {
-            present(&mut p);
+            present(&mut p, &w);
         }
         assert_eq!(p.ai[1], 30.0);
         assert_eq!(p.vel.y, -1.0); // the grace holds through tick 30
-        present(&mut p); // ai[1] = 31 > 30: the first +0.1
+        present(&mut p, &w); // ai[1] = 31 > 30: the first +0.1
         assert!((p.vel.y - (-0.9)).abs() < 1e-6);
         assert_eq!(p.ai[0], 0.0); // still rising
         // The flip tick (vy = 0 at entry): state 0 flips ai[0] to 1, then
@@ -695,7 +700,7 @@ mod tests {
         // the drag (the consecutive-if shape, `:28913`/`:28926`).
         let mut q = shot(SANTA_PRESENT);
         q.vel = Vec2::new(2.0, 0.0);
-        present(&mut q);
+        present(&mut q, &w);
         assert_eq!(q.ai[0], 1.0);
         assert_eq!(q.frame, 1);
         assert!((q.vel.y - 0.1).abs() < 1e-6);
@@ -703,7 +708,7 @@ mod tests {
         // The cap at 3 (the float drift may overshoot a hair — the C#'s
         // `> 3f` clamp catches it the same way).
         for _ in 0..40 {
-            present(&mut q);
+            present(&mut q, &w);
         }
         assert!((q.vel.y - 3.0).abs() < 1e-5);
         assert_eq!(q.alpha, 0); // long faded

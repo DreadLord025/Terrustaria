@@ -643,11 +643,13 @@ pub const HEART_KINDS: [u16; 3] = [58, 1734, 1867];
 pub const STAR_KINDS: [u16; 3] = [184, 1735, 1868];
 /// `ItemID.Sets.IsAPickup`'s heart/star subset (`ItemID.cs:493` — the full
 /// set also holds the nebula trio 3453-3455 and the Mana Cloak star 4143,
-/// unported consume arms): `Player.ItemSpace` returns `CanTakeItem: true`
-/// unconditionally for them (`Player.cs:39155-39158`) — an inventory-full
-/// player still grabs them, and a FULL-life/full-mana player consumes them
-/// too (the heal/restore caps; only the star's PULL is gated at full mana,
-/// `Player.cs:34947`).
+/// whose consume arms landed with W4-f49 lane 12 / W4-d79): `Player.ItemSpace`
+/// returns `CanTakeItem: true` unconditionally for them
+/// (`Player.cs:39155-39158`) — an inventory-full player still grabs them,
+/// and a FULL-life/full-mana player consumes them too (the heal/restore
+/// caps; only the star's PULL is gated at full mana,
+/// `Player.cs:34947` — the 4143 is NOT in that gate's flag2 list).
+#[allow(dead_code)] // the skip-gate caller landed out with W4-f49 lane 12
 pub fn is_heart_or_star(kind: u16) -> bool {
     HEART_KINDS.contains(&kind) || STAR_KINDS.contains(&kind)
 }
@@ -812,6 +814,12 @@ const ITEM_NO_GRAVITY: &[u16] = &[
 /// Creation 5126 grants landed in W4-g15 lane 5 (`player.rs`
 /// `treasure_magnet`); the Heartreach buff 105 arms `life_magnet`
 /// (`player.rs:6518`).
+/// (`Player.cs:35133-35151`/`:34943-34963`). ALL grants are live: the
+/// `manaMagnet` family (2219/2220/2221/4000, S1-P-i52) + the Heartreach
+/// buff-105 `lifeMagnet` arm (i52) + the Treasure Magnet 5010 / Hand Of
+/// Creation 5126 (W4-f49) + the Gold Ring (S1-P-i50); the `world_sim/
+/// items.rs` grab pass feeds them from the live Player fields each tick
+/// (the pre-i52 "unported seam" note is superseded — W4-f49 residuals).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GrabFlags {
     pub gold_ring: bool,
@@ -1097,6 +1105,11 @@ pub struct ItemDrop {
     /// `WorldItem.grabDelayPlayer` (`WorldItem.cs:24`): the locked player
     /// index, 255 = all players (`GrabItems`' gate, `Player.cs:34911`).
     pub grab_delay_player: u8,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`): the monster-grab
+    /// lock, decremented per update (`:449-452`). The monster-grab gate
+    /// itself (`:405`) is unported (no enemy item grab); the field rides the
+    /// `21` wire's bit 3 (`NetMessage.cs:652`/`:665-668`, S1-I-1 wave I).
+    pub enemy_grab_delay_time: i32,
     /// `WorldItem.beingGrabbed` (`WorldItem.cs:40`): the pull step sets it;
     /// the next update skips the ground physics and just applies the
     /// velocity (`UpdateItem`'s else arm, `:425-435` → `ApplyMovement`
@@ -1169,6 +1182,7 @@ impl ItemDrop {
             phase,
             grab_delay_time: 0,
             grab_delay_player: 255,
+            enemy_grab_delay_time: 0,
             being_grabbed: false,
             on_conveyor: false,
             age_ticks: 0,
@@ -1655,6 +1669,9 @@ impl ItemDrop {
         // (`:445-448`) is the MP reservation clock — the port's host owns
         // every drop in SP, so it has no live consumer (the net_reserved
         // hold rides the client's `22 ItemOwner` handler).
+        // `WorldItem.cs:449-452` — the enemy twin decays the same way
+        // (S1-I-1 wave I; the `timeToKeepReservation` middle arm `:445-448`
+        // rides the net reservation book, not this struct).
         if self.enemy_grab_delay_time > 0 {
             self.enemy_grab_delay_time -= 1;
         }

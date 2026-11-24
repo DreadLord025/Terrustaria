@@ -141,6 +141,25 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 // wiring tools").
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
+                // `WorldGen.KillActuator`'s drop (`Item.NewItem(..., 849)`,
+                // `WorldGen.cs:58030`) — the cutter runs in `Player.ItemCheck`
+                // (`Player.cs:46857`), so the drop rides `UpdatePlayers`. The
+                // five dust 50 (`:58032-58035`) drain AFTER the drop on the
+                // same stream (W4-d54; body `tr_core::worldgen_dust::
+                // kill_actuator_dust`, the research/66 union re-point).
+                let ctx = app.spawn_ctx();
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                tr_core::worldgen_dust::kill_actuator_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
+                wire_placed_feedback(app, tx, ty);
+                // `WorldGen.KillActuator` (`WorldGen.cs:58023-58035`): the
+                // `PlaySound(0)` fires FIRST, then the drop
+                // (`Item.NewItem(..., 849)`, `:58030`) — the cutter runs in
+                // `Player.ItemCheck` (`Player.cs:46857`), so both draws ride
+                // `UpdatePlayers` in that order. The five dust 50
+                // (`:58032-58035`) are the visual seam (no dust engine on
+                // this path — ANALYSIS "The wiring tools").
                 return true;
             }
             use tr_core::wiring::WireColor;
@@ -166,6 +185,26 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                     // (`Player.cs:46862-46880`), same stream.
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
+                    // `WorldGen.KillWire`'s drop (`Item.NewItem(..., 530)`,
+                    // `WorldGen.cs:58130`) — the cutter's tile interaction runs
+                    // in `Player.ItemCheck` (`Player.cs:46862-46880`), so the
+                    // drop rides the `UpdatePlayers` stream. The five dust 50
+                    // (`:58132-58135` and the 2/3/4 twins) drain after it
+                    // (W4-d54; body `tr_core::worldgen_dust::kill_wire_dust`,
+                    // the research/66 union re-point — the identical
+                    // five-type-50 loop, colour-parameterised callers).
+                    let ctx = app.spawn_ctx();
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    tr_core::worldgen_dust::kill_wire_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
+                    wire_placed_feedback(app, tx, ty);
+                    // `WorldGen.KillWire` (`WorldGen.cs:58123-58135`): the
+                    // `PlaySound(0)` FIRST, then the drop
+                    // (`Item.NewItem(..., 530)`, `:58130`) — the cutter's
+                    // tile interaction runs in `Player.ItemCheck`
+                    // (`Player.cs:46862-46880`), both draws on
+                    // `UpdatePlayers` in that order.
                     return true;
                 }
             }
@@ -276,6 +315,13 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
 /// `Main.cs:17754` `UpdatePlayers` swap — only AFTER the attenuation gate
 /// (`play_place_sound`, the S1-E-21b path). The net message 17 the port
 /// has no wire flavour for (the local wire state is the truth).
+/// j * 16)` (`WorldGen.PlaceWire` `WorldGen.cs:58115`, `KillWire` `:58126`,
+/// `PlaceActuator` `:58015`, `KillActuator` `:58026`) — the int overload's
+/// case 0: the `Next(3)` Dig variation pick + the `Next(-10, 11) * 0.01`
+/// pitch ride the caller's `UpdatePlayers` stream (the tools run in
+/// `Player.ItemCheck_UseWiringTools`, `Main.cs:17754`), the Dig slot
+/// Stop/re-creates (research/32 D1/D4). The net message 17 the port has
+/// no wire flavour for (the local wire state is the truth).
 fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
     app.audio.play_place_sound(
         (0, 1),

@@ -124,6 +124,8 @@ macro_rules! rarity_desc {
 /// receipt (W4-g21 ↔ W4-g50): g50's `1c023f0ad` constants-copied this +
 /// [`sorting_layer_index`] verbatim ("keep-one at the union merge"); THIS
 /// branch's copies are the survivors — see `quick_stack.rs`'s module doc.
+/// `categoryScores` array length (`QuickStacking.cs:32`). CONSTANTS-COPY of
+/// W4-g21 batch 3 (`c07c1eb95`) — keep-one at the union merge.
 pub const SETUP_LAYER_COUNT: usize = 52;
 
 /// The 52 layers in `SetupWhiteLists` order (`ItemSorting.cs:1334-1385`) — the
@@ -804,6 +806,7 @@ static SETUP_LAYERS: [Layer; 52] = [
 /// KEEP-ONE mutual receipt (W4-g21 ↔ W4-g50): g50's constants-copy notes
 /// this fn — this branch's copy survives the union (g50's base predates
 /// g21's `sort_fav`/`sort_inventory` additions; keep those too).
+/// CONSTANTS-COPY of W4-g21 batch 3 (`c07c1eb95`) — keep-one at the union.
 pub fn sorting_layer_index(kind: u16) -> usize {
     layer_of_table()
         .get(kind as usize)

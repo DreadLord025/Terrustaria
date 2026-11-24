@@ -362,21 +362,65 @@ pub struct World {
     /// NpcKind row yet (the town-slime family is unported), so the flag is
     /// the port's observable half; the NPC-side transform is the roster gap.
     pub unlocked_slime_copper_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.TransformElderSlime`,
+    /// `NPC.cs:19142-19147` — the 685 → 679 transform raises it once, then
+    /// re-pushes `7 WorldData`) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.TransformCopperSlime`,
+    /// `NPC.cs:19166-19171` — a `CanConvertIntoCopperSlimeTownNPC` NPC →
+    /// 684 raises it once) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_copper_spawn: bool,
+    /// `CreditsRollEvent._creditsRollRemainingTime`
+    /// (`CreditsRollEvent.cs:10`) — the end-game credits roll's remaining
+    /// frames, clamped 0..28800 (`:8`'s MAX_TIME). A private static in the
+    /// C#; a world field is the port's standing-in (W4-g51 id-140). The
+    /// `140` kind-0 client arm writes it (`SetRemainingTimeDirect`,
+    /// `:45-48`); `UpdateTime` decrements (`:35-38`, `Main.cs:64968`).
+    pub credits_roll_remaining_time: i32,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
-    /// (S1-P-i35).
+    /// (S1-P-i35). The 4382 use writes it (`powerups::use_combat_book`,
+    /// W4-a6, `Player.cs:45324-45331`).
     pub combat_book_was_used: bool,
-    /// `NPC.boughtCat` (`WorldFile.cs:1392` / `:2358`) — the 4829 Cat License's
-    /// town-pet unlock (`ItemCheck_UsePetLicenses` `Player.cs:45354-45357`,
-    /// `NPC.UnlockOrExchangePet` `NPC.cs:80894-80918`). W4-g87.
+    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407`, v259; the
+    /// town stat ladder's second +250/+8 row, `NPC.cs:53025-53031`) — the
+    /// same world-field standing-in. The 5336 use writes it
+    /// (`powerups::use_combat_book`, W4-a6, `Player.cs:45337-45344`).
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408`, v260; the travel
+    /// shop's extra stock slot, `Chest.SetupTravelShop`, `Chest.cs:1303-
+    /// 1306`) — the same world-field standing-in. The 5343 use writes it
+    /// (`powerups::use_peddlers_satchel`, W4-a6, `Player.cs:45368-45383`).
+    pub peddlers_satchel_was_used: bool,
+    /// `NPC.boughtCat` / `boughtDog` / `boughtBunny` (`WorldFile.cs:1392-
+    /// 1394`, v217; the town-pet arrival gates, `Main.cs:65900-65911`) —
+    /// the same world-field standing-in. The pet licenses 4829/4830/4910
+    /// write them (`powerups::use_pet_license`, W4-a6,
+    /// `Player.cs:45352-45365`). W4-f43b: the arrival consumer is LIVE —
+    /// the g10 TownCat/TownDog/TownBunny kinds spawn through
+    /// `town_arrival`'s tail arms (`Main.cs:65900-65911`).
     pub bought_cat: bool,
-    /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`) — the 4830 Dog License's
-    /// town-pet unlock (`Player.cs:45358-45361`). W4-g87.
     pub bought_dog: bool,
-    /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`) — the 4910 Bunny
-    /// License's town-pet unlock (`Player.cs:45362-45365`). W4-g87.
     pub bought_bunny: bool,
+    /// `NPC.unlockedSlimeBlueSpawn` (`WorldFile.cs:1398`, v250; the blue
+    /// town slime's arrival gate, `Main.cs:65912-65915`) — the same
+    /// Main-global standing-in as the rainbow/red pair above. W4-f43b:
+    /// the eight-flag widening the town-slime arrival arms read
+    /// (`town_arrival_pets::tail_can_spawn`, `Main.cs:65912-65943`).
+    pub unlocked_slime_blue_spawn: bool,
+    /// `NPC.unlockedSlimeGreenSpawn` (`WorldFile.cs:1410`, v261) — flag8's
+    /// second term (`Main.cs:65796-65799`: `GenuineParty || green`).
+    pub unlocked_slime_green_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`WorldFile.cs:1411`, v261).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimePurpleSpawn` (`WorldFile.cs:1412`, v261).
+    pub unlocked_slime_purple_spawn: bool,
+    /// `NPC.unlockedSlimeYellowSpawn` (`WorldFile.cs:1414`, v261).
+    pub unlocked_slime_yellow_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`WorldFile.cs:1415`, v261; the
+    /// shimmer conversion's target gate, `NPCID.cs:10120`).
+    pub unlocked_slime_copper_spawn: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -460,6 +504,13 @@ pub struct World {
     /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
     /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
     pub dd2_spawn_hold: i32,
+    /// `DD2Event.TimeLeftBetweenWaves` (`DD2Event.cs:101`): the client-side
+    /// wave-break countdown the `116` wire sets (`MessageBuffer.cs:3864`) —
+    /// the crystal's overhead timer (`Main.cs:46100-46103`) and the
+    /// skip-wait gate (`DD2Event.cs:1781`/`:1797`) read it. Distinct from
+    /// `dd2_spawn_hold` (the host's `_timeLeftUntilSpawningBegins`); the
+    /// client never decays it (the `116` pushes refresh it). W4-g50.
+    pub dd2_time_left_between_waves: i32,
     /// `NPC.ShieldStrengthTower*` (`NPC.cs:6399-6405`): the four Lunar
     /// towers' shield strengths — raised at the spawn (`WorldGen.cs:86688`),
     /// spent by damage, zeroed at the reset (`NPC.cs:95247`).
@@ -621,6 +672,11 @@ pub struct World {
     /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the C#'s player
     /// name list — the port's single player collapses to a bool.
     pub angler_quest_turned_in: bool,
+    /// `Main.anglerWhoFinishedToday` (`Main.cs:1781`): the player names that
+    /// finished today's quest — the `75 AnglerQuestFinished` host arm adds
+    /// the sender's name (`MessageBuffer.cs:3154-3163`), the `74` join push
+    /// checks membership (`NetMessage.cs:1147`). W4-g49.
+    pub angler_who_finished_today: Vec<String>,
     /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
     /// (`Main.cs:65373`): the clock arms it (the clock has no RNG), the
     /// world pass resolves it on `Main.rand`'s app stream (the
@@ -633,6 +689,17 @@ pub struct World {
     /// index 19 (`Chest.cs:2791-2810`) reads it back. A `0` slot is
     /// an empty one.
     pub travel_shop: [u16; 40],
+
+    /// `WorldGen.tGood/tEvil/tBlood` (`WorldGen.cs:4180-4184`): the dryad's
+    /// world-status percentages, recomputed by `CountTiles` (`:71156-71169`,
+    /// banker's `Math.Round` + the nonzero-total floor of 1) and pushed to
+    /// the clients by the join arm (`MessageBuffer.cs:867`) and the recount
+    /// (`WorldGen.cs:71173`) as `57 Unknown57`; the client stores the three
+    /// bytes (`MessageBuffer.cs:2631-2638`). The port's tile-count pass is
+    /// unported — the fields ride the wire store until it lands (W4-f21b).
+    pub t_good: u8,
+    pub t_evil: u8,
+    pub t_blood: u8,
 
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
@@ -676,6 +743,15 @@ pub struct World {
     pub unique_id: [u8; 16],
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
+    /// `NPC.cavernMonsterType` (`NPC.cs:6585`, `new int[2, 3]` at `:95268`) —
+    /// the world-id-seeded cavern roster the deep-cavern spawn roll reads
+    /// (`NPC.cs:5099`'s `[rand.Next(2), rand.Next(3)]`). A `Main`-global in
+    /// the C#; a world field is the port's standing-in (the
+    /// `unlocked_slime_red_spawn` precedent). Rolled by
+    /// [`World::set_world_specific_monsters`] at the world-load tail
+    /// (`WorldFile.cs:771`); the `136 SyncCavernMonsterType` client arm
+    /// overwrites it verbatim (`MessageBuffer.cs:4210-4216`).
+    pub cavern_monster_type: [[i32; 3]; 2],
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
@@ -775,10 +851,21 @@ impl World {
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
             unlocked_slime_copper_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_copper_spawn: false,
+            credits_roll_remaining_time: 0,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             bought_cat: false,
             bought_dog: false,
             bought_bunny: false,
+            unlocked_slime_blue_spawn: false,
+            unlocked_slime_green_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_purple_spawn: false,
+            unlocked_slime_yellow_spawn: false,
+            unlocked_slime_copper_spawn: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -833,6 +920,7 @@ impl World {
             dd2_wave: 1,
             dd2_wave_kills: 0.0,
             dd2_spawn_hold: 300,
+            dd2_time_left_between_waves: 0,
             dd2_lost: false,
             dd2_lane_rate: crate::dd2::LANE_SPAWN_RATE,
             dd2_crystal_alive: false,
@@ -894,15 +982,69 @@ impl World {
             angler_quest: 0,
             angler_quest_finished: false,
             angler_quest_turned_in: false,
+            angler_who_finished_today: Vec::new(),
             angler_swap_pending: false,
             travel_shop: [0; 40],
+            t_good: 0,
+            t_evil: 0,
+            t_blood: 0,
             butterfly_chance: 0,
             generator_version: 0,
             unique_id: [0u8; 16],
             world_id: 0,
+            cavern_monster_type: [[0; 3]; 2],
             last_played: 0,
             creation_time: 0,
         }
+    }
+
+    /// `NPC.SetWorldSpecificMonstersByWorldID` (`NPC.cs:18102-18134`): a
+    /// fresh `UnifiedRandom(Main.worldID)` picks two DISTINCT column bands
+    /// (`Next(3)` twice, re-rolling the first while equal — the re-roll
+    /// draws only `num`, `:18107-18110`), then each row's three cells roll
+    /// the band's range: 0 → `Next(494, 496)` (Crawdads), 1 →
+    /// `Next(496, 498)` (Giant Shellies), else `Next(498, 507)`
+    /// (Salamanders). Called at the world-load tail (`WorldFile.cs:771`).
+    pub fn set_world_specific_monsters(&mut self) {
+        let mut rng = crate::unified_random::UnifiedRandom::new(self.world_id);
+        let mut num = rng.next_max(3);
+        let num2 = rng.next_max(3);
+        while num == num2 {
+            num = rng.next_max(3);
+        }
+        for i in 0..2 {
+            let band = if i == 1 { num2 } else { num };
+            for j in 0..3 {
+                self.cavern_monster_type[i][j] = match band {
+                    0 => rng.next_range(494, 496),
+                    1 => rng.next_range(496, 498),
+                    _ => rng.next_range(498, 507),
+                };
+            }
+        }
+    }
+
+    /// `CreditsRollEvent.MAX_TIME_FOR_CREDITS_ROLL_IN_FRAMES`
+    /// (`CreditsRollEvent.cs:8`).
+    pub const CREDITS_ROLL_MAX_TIME: i32 = 28800;
+
+    /// `CreditsRollEvent.IsEventOngoing` (`CreditsRollEvent.cs:12`).
+    pub fn credits_roll_ongoing(&self) -> bool {
+        self.credits_roll_remaining_time > 0
+    }
+
+    /// `CreditsRollEvent.SetRemainingTimeDirect` (`CreditsRollEvent.cs:45-48`):
+    /// `Utils.Clamp(time, 0, 28800)` — the `140` kind-0 client arm.
+    pub fn set_credits_roll_remaining_time(&mut self, time: i32) {
+        self.credits_roll_remaining_time = time.clamp(0, Self::CREDITS_ROLL_MAX_TIME);
+    }
+
+    /// `CreditsRollEvent.UpdateTime` (`CreditsRollEvent.cs:35-38`):
+    /// `Clamp(remaining - 1, 0, 28800)` — one tick, called from
+    /// `Main.UpdateTime` (`Main.cs:64968`) regardless of the day rate.
+    pub fn tick_credits_roll(&mut self) {
+        self.credits_roll_remaining_time =
+            (self.credits_roll_remaining_time - 1).clamp(0, Self::CREDITS_ROLL_MAX_TIME);
     }
 
     /// `Main.IsFastForwardingTime` (`Main.cs:6160-6167`): a dial fast-forward is
@@ -1595,6 +1737,42 @@ mod tests {
         // input (`dd2_won` latches at DD2Event.cs:483 and resets on start).
         w.dd2_won = true;
         assert!(!w.downed_dd2_any());
+    /// W4-g51 id-136: `NPC.SetWorldSpecificMonstersByWorldID`
+    /// (`NPC.cs:18102-18134`) — the two rows carry DISTINCT bands, every
+    /// cell lands in its band's range, and the roll is a pure function of
+    /// the world id (the same id replays the same grid).
+    #[test]
+    fn w4_g51_the_cavern_grid_rolls_two_distinct_bands_from_the_world_id() {
+        for id in [0i32, 1, 7, 4242, 0x1234_5678, -3] {
+            let mut w = super::World::new("t".into(), 8, 8);
+            w.world_id = id;
+            w.set_world_specific_monsters();
+            let band = |t: i32| match t {
+                494..=495 => 0,
+                496..=497 => 1,
+                498..=506 => 2,
+                _ => panic!("cell {t} outside every band range"),
+            };
+            let b0 = band(w.cavern_monster_type[0][0]);
+            let b1 = band(w.cavern_monster_type[1][0]);
+            assert_ne!(b0, b1, "id {id}: the two rows must differ");
+            for row in 0..2 {
+                for col in 0..3 {
+                    assert_eq!(
+                        band(w.cavern_monster_type[row][col]),
+                        if row == 0 { b0 } else { b1 },
+                        "id {id}: row {row} stays in its band"
+                    );
+                }
+            }
+            let mut again = super::World::new("t".into(), 8, 8);
+            again.world_id = id;
+            again.set_world_specific_monsters();
+            assert_eq!(
+                again.cavern_monster_type, w.cavern_monster_type,
+                "id {id}: the roll replays"
+            );
+        }
     }
 
     #[test]

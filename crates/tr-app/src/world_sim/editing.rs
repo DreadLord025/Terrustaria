@@ -33,6 +33,13 @@ mod sentry;
 mod permanent_upgrades;
 mod paint;
 use paint::use_paint_tool;
+// W4-g87 keep-one EXECUTED at the batch-L merge (research/263 §6.5, a6 138
+// §12.3 SEALED): g87's `permanent_upgrades.rs` three use arms (Demon Heart
+// 3335 / Minecart Powerup 5289 / Pet Licenses 4829/4830/4910) dedup onto
+// a6's single-seam `crate::powerups` machine — the START refusal, the
+// reuseDelay tail, the live AnyNPCs scan and the full GetItem walk are
+// shape-identical there; g87's unique slot-8 UI/draw port rides
+// `ui/inventory.rs` + `player.rs::can_demon_heart_accessory_be_shown`.
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -2341,6 +2348,26 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app,
         prev_mine_released && !prev_mine_down,
     ) {
+    // W4-a6 — `ItemCheck_TryDestroyingDrones` (`Player.cs:45245-45272`,
+    // called at `:43592` ahead of the Use* cluster): the 5451/5738 remotes
+    // kill their owner's live drone mid-swing. Runs every tick (the gate is
+    // `controlUseItem && ItemTimeIsZero`, NOT the press edge) and never
+    // consumes the tick — the drones are weapons, the kill is not a use.
+    crate::powerups::drone_destroy_check(app);
+    // W4-a6 — the permanent power-up consumables (`ItemCheck_UseLifeCrystal`
+    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`,
+    // the full `:43595-43607` ladder incl. the Demon Heart `:43598`, the
+    // Minecart Powerup `:43599` and the Pet Licenses `:43606`): the same
+    // mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the boss
+    // spawners below. The machine starts the swing on the press edge and
+    // grants when `item_time` reads zero inside the running swing; a started
+    // use consumes the tick like the boss arms. g87 keep-one EXECUTED
+    // (research/263 §6.5, a6 138 §12.3 SEALED): g87's three
+    // `permanent_upgrades` use arms + their dispatch calls dedup onto this
+    // single-seam machine — the CheckCanUse START refusal, the reuseDelay
+    // tail, the live AnyNPCs scan + the full GetItem walk are all folded
+    // here; g87's unique slot-8 UI/draw port rides ui/inventory.rs.
+    if crate::powerups::powerup_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
@@ -2362,6 +2389,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 | 557 | 5120 | 2767 | 4271
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
                 | 4271 | 2767 | 29 | 109 | 1291 | 5043
+            // W4-f49 — the Arcane Crystal 5339 (`ItemCheck_UseShimmerPermanentItems`
+            // `Player.cs:45399-45404`): the same `ItemTimeIsZero && itemAnimation > 0`
+            // mid-swing gate as the boss spawners (`:43607` calls it inside
+            // `ItemCheck_OwnerOnlyCode`'s per-tick arm).
+            | 5339
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2477,6 +2509,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
         // keeps its own fn above).
         if held.count > 0 && use_boss_summon_item(app) {
+            return;
+        }
+        // W4-f49 — the Arcane Crystal 5339 (`ItemCheck_UseShimmerPermanentItems`,
+        // `Player.cs:45399-45404`): `ApplyItemTime` + `usedArcaneCrystal = true`,
+        // the ONE-TIME permanent the regen engine reads (delay −0.05/tick
+        // `:19430-19433`, regen +max/50 `:19453-19456` — W4-d117's read arms).
+        if held.kind == 5339 && held.count > 0 && use_arcane_crystal(app) {
             return;
         }
     }
@@ -2779,6 +2818,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if crate::potions::use_potion_item(app, held) {
             return;
         }
+        // W4-e1 — `Player.ItemCheck`'s hair-dye arm (`Player.cs:42858-42865`):
+        // `ItemTimeIsZero && itemAnimation > 0` + `item.hairDye >= 0` applies
+        // the dye (`hairDye = item.hairDye`, the post-processed shader index)
+        // and consumes one. The port's use-press edge stands in for the
+        // ItemTimeIsZero gate (one use per press). The shader index is the
+        // `GameShaders.Hair.GetShaderIdFromItemId` lookup (`Item.cs:48716`);
+        // the team-dye puff gate (`:24270`) reads it against TeamDyeShaderIndex.
+        if let Some(def) = registry::get(held.kind) {
+            if def.hair_dye >= 0 {
+                // `Item.cs:48714-48717`: the Hair Dye Remover (1990, raw
+                // hairDye 0) KEEPS 0 — the post-processing skips it; every
+                // other dye takes the shader index.
+                let shader = if def.hair_dye == 0 {
+                    0
+                } else {
+                    crate::player::hair_dye_shader_index(held.kind)
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.hair_dye = shader;
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                start_use_timers(app, held);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
         // dropped — the i37 `use_potion_item` seam above owns EVERY drink
         // (the mana potions are `healMana > 0` drinkables, `Item.cs:2680-
@@ -3074,6 +3144,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // start, ahead of the mana pay (`ItemCheck_TryStartUse`
             // `:52023-52026`).
             if let Some(shoot) = registry::projectile(held.kind) {
+                // W4-a6 — `ItemCheck_CheckCanUse_Inner`'s drone refusals
+                // (`Player.cs:52067-52074`): the Jim's Drone 5451 / Remote
+                // Control Car 5738 refuse the use START while their
+                // projectile is out — no swing, no shot. The kill runs
+                // mid-swing instead (`powerups::drone_destroy_check`,
+                // `:45245-45272`); the shoot suppression (`:43519-43526`)
+                // is the same gate on the shot leg.
+                if matches!(held.kind, 5451 | 5738)
+                    && app
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.owned_projectile_counts[usize::from(shoot)] > 0)
+                {
+                    return;
+                }
                 let limit = match shoot {
                     crate::projectile::LIGHT_DISC => Some(6usize),
                     crate::projectile::ENCHANTED_BOOMERANG
@@ -3115,30 +3200,34 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // `StartChanneling(sItem)`'s `item.channel` gate (`:52960`).
             let def_is_channel = registry::get(held.kind).is_some_and(|d| d.channel);
-            // The mutable player borrow covers the whole throw (the mana
-            // pay + the reads the block makes through it).
-            let Some(p) = app.player.as_mut() else {
-                unreachable!()
-            };
-            // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
-            // Silenced debuff (35) refuses every mana-paying item — the gate
-            // reads the item's BASE mana, before the manaCost scale (S1-E-7
-            // wave A; the buff arm is `UpdateBuffs` `:10043`). This refusal is
-            // upstream of CheckMana and survives ManaV2.
-            if base_mana > 0 && p.silence {
-                return;
-            }
-            // `Player.ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`): a wet
-            // (non-lava) player refuses the fire spells — the Flamelash (shoot 34)
-            // among the listed staves; the 85/15/1122 kinds keep the verbatim set.
-            // `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`); the
-            // port splits the kinds (`player.rs:4315-4358`), so the water/honey/
-            // shimmer union stands in, and `!lavaWet` is the lava flag itself.
-            if (p.wet || p.honey_wet || p.shimmer_wet)
-                && !p.lava_wet
-                && matches!(registry::projectile(held.kind), Some(85 | 15 | 34 | 1122))
+            // W4-f49 — the gates read immutable snapshots: the flower drink
+            // below (`check_mana_with_flower`) needs the whole `&mut App`
+            // (the QuickMana ladder walks the inventory), so the mutable
+            // player borrow re-binds AFTER the pay.
             {
-                return;
+                let Some(p) = app.player.as_ref() else {
+                    unreachable!()
+                };
+                // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
+                // Silenced debuff (35) refuses every mana-paying item — the gate
+                // reads the item's BASE mana, before the manaCost scale (S1-E-7
+                // wave A; the buff arm is `UpdateBuffs` `:10043`). This refusal is
+                // upstream of CheckMana and survives ManaV2.
+                if base_mana > 0 && p.silence {
+                    return;
+                }
+                // `Player.ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`): a wet
+                // (non-lava) player refuses the fire spells — the Flamelash (shoot 34)
+                // among the listed staves; the 85/15/1122 kinds keep the verbatim set.
+                // `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`); the
+                // port splits the kinds (`player.rs:4315-4358`), so the water/honey/
+                // shimmer union stands in, and `!lavaWet` is the lava flag itself.
+                if (p.wet || p.honey_wet || p.shimmer_wet)
+                    && !p.lava_wet
+                    && matches!(registry::projectile(held.kind), Some(85 | 15 | 34 | 1122))
+                {
+                    return;
+                }
             }
             // S1-C-12 wave D — `ItemCheck_PayMana_ShouldSkipManaUse`'s
             // spaceGun arm (`Player.cs:52695-52698`): the Meteor set makes
@@ -3147,25 +3236,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // — no pay, no delay. The 3269 arm (`:52691-52694`) and the
             // turret/minion alt-fire arms (`:52699-52706`) stay out (no
             // port items/seam).
-            let skip_mana = crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind);
+            let skip_mana = app
+                .player
+                .as_ref()
+                .is_some_and(|p| crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind));
             if base_mana > 0 && !skip_mana {
                 // `CheckMana(rawAmountToPay, pay: true)` (`:52650`): the
                 // entry clears `slowMagicUse` (`:52578`); the ManaV2 empty
                 // arm re-arms it. `ItemCheck_PayMana_GetManaCostToPay`
                 // (`:52679-52687`) is the plain `item.mana` here (the 3852
                 // alt-fire ×2 has no port seam).
-                crate::regen::check_mana(
-                    &mut p.mana,
-                    &mut p.slow_magic_use,
-                    base_mana,
-                    p.mana_cost,
-                    true,
-                );
+                // W4-f49 — the App-level twin runs the WHOLE `CheckMana`
+                // (`:52576-52617`) including the mana-flower auto-drink lane
+                // (`:52588-52609`): on a short bar the flower drinks the
+                // first healMana potion (`QuickMana` `:52592`) and re-pays;
+                // a failed drink keeps the same V2 empty arm. The pure
+                // `regen::check_mana` stays for the pool-side pays.
+                crate::potions::check_mana_with_flower(app, base_mana, true, false);
                 // The use-start tick's `ItemCheck_ApplyManaRegenDelay`
                 // (`Player.cs:42808-42813` → `:50587-50593`): the animation
                 // was just armed by `StartActualUse`, so the delay re-arms
                 // from the POST-pay mana this same tick. The ongoing
                 // animation ticks re-arm it at the `update_editing` head.
+                let p = app.player.as_mut().unwrap();
                 crate::regen::apply_mana_regen_delay(
                     &mut p.regen,
                     p.mana_max,
@@ -3175,8 +3268,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             } else if base_mana > 0 {
                 // spaceGun skip: `ItemCheck_ActuallyPayMana`'s skipUsageCheck
                 // arm clears `slowMagicUse` (`:52645-52648`) and pays nothing.
-                p.slow_magic_use = false;
+                app.player.as_mut().unwrap().slow_magic_use = false;
             }
+            // W4-f49 — no long-lived player borrow across the shoot block:
+            // `fire_non_ammo_shot` takes the whole app (the flower drink
+            // above already re-bound it); the channel/buff writes re-borrow
+            // per site (the `apply_channel_tracks` tail's convention).
             // `Player.StartChanneling(sItem)` (`Player.cs:52958-52968`, called
             // by `ItemCheck_StartActualUse` `:51677` AFTER the mana pay): a
             // `channel` item arms the hold and seeds the cancel key with its
@@ -3187,6 +3284,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // snapshots it); seed it here so the spawn tick already carries
             // the clamped cursor (S1-P-i23).
             if def_is_channel {
+                let p = app.player.as_mut().unwrap();
                 let (cx, cy) = p.center();
                 p.channel = true;
                 p.channel_item = held.kind;
@@ -3204,9 +3302,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.channel_shoot = registry::projectile(held.kind).unwrap_or(0);
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
-            // rides the use start (the prefixed instance value). The direct
-            // field write keeps the player borrow (`p`) alive for the throw
-            // below — the same value [`arm_reuse_delay`] applies elsewhere.
+            // rides the use start (the prefixed instance value). W4-f49 —
+            // the direct field write no longer needs to keep a player borrow
+            // alive (the flower drink re-binds per site); the same value
+            // [`arm_reuse_delay`] applies elsewhere.
             app.reuse_delay = crate::prefix::prefixed_stats(held.kind, held.prefix)
                 .map(|s| s.reuse_delay)
                 .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
@@ -3270,7 +3369,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if crate::projectile::MINION_STAFF_PET_BUFF_ITEMS.contains(&held.kind)
                     && def.buff_type > 0
                 {
-                    p.buffs.add_buff(def.buff_type, 3600);
+                    app.player.as_mut().unwrap().buffs.add_buff(def.buff_type, 3600);
                 }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
@@ -3278,7 +3377,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `item.buffType > 0` grant rides the same use
                 // (`Player.cs:42879-42884`, the 90/27 exclusions).
                 if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
-                    p.buffs.add_buff(def.buff_type, def.buff_time);
+                    app.player.as_mut().unwrap().buffs.add_buff(def.buff_type, def.buff_time);
                 }
                 // `Player.cs:42778` — the free-up gate:
                 // `item.shoot >= 0 && item.shoot < ProjectileID.Count &&
@@ -3305,6 +3404,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             .achievements
                             .complete_condition("YOU_AND_WHAT_ARMY", "Spawn");
                     }
+                    let p = app.player.as_mut().unwrap();
+                    app.projectiles
+                        .free_up_pets_and_minions(p, proj, held.kind, app.local_id as u8);
                 }
                 // S1-P-i20 — the shot body lives in `fire_non_ammo_shot` (the
                 // shared use-start + mid-swing volley seam — the i08
@@ -6053,7 +6155,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     destroy_oldest_proximity_mines_over_cap(app, app.local_id as u8, 20);
                 }
             }
-            app.audio.play_at("Item_1", pcx, pcy, 1.0);
+            // W4-d79 — the launch is SILENT: `Player.ItemCheck_Shoot`
+            // (`Player.cs:47056-49468`) carries NO `PlaySound` (the census is
+            // zero hits); the launcher's `UseSound` plays once at the USE
+            // START (`:51696`, the wire's `start_swing_extras`). The pre-wave
+            // per-shot `Item_1` was a phantom duplicate (the gun/bow lanes
+            // retired theirs in S1-P-i14 / W4-d79).
         }
         // `ApplyItemTime` (`Player.cs:47184-47193` → `SetItemTime(useTime)`,
         // `:4416-4419`): the shot re-arms the action cadence, so the next shot
@@ -6254,6 +6361,20 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
+    // `KillWall`'s ten `KillWall_MakeWallDust` calls (`WorldGen.cs:60386-
+    // 60394`) run BETWEEN the sound and the drop. The type chain's
+    // `genRand` rolls ride the `frame_rng` stand-in (borrow snapshot —
+    // the dust body needs `&world`); the spawn blocks ride
+    // `UpdatePlayers` (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::wall_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
+        );
+        app.world.frame_rng = gen;
+    }
     // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
     // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
     // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
@@ -6333,6 +6454,19 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
         && edit::near_friendly_wall(&app.world, tx, ty)
     {
         if let Some(old) = edit::replace_wall(&mut app.world, tx, ty, create_wall) {
+            // `ReplaceWall` (`WorldGen.cs:62545-62551`): the ten
+            // `KillWall_MakeWallDust` calls run BEFORE the sound and the
+            // drop — the opposite order to `KillWall` (W4-d54 batch 2).
+            // The `genRand` type rolls ride the `frame_rng` snapshot.
+            {
+                let ctx = app.spawn_ctx();
+                let mut gen = app.world.frame_rng.clone();
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::world_dust_wall::wall_break_burst(
+                    rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, old, 10,
+                );
+                app.world.frame_rng = gen;
+            }
             // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
             // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
             // item (`:62551`) — both on the `UpdatePlayers` stream, sound
@@ -6462,7 +6596,7 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 /// anchor refuses the break. The C#'s `type > 0` half is implied — the
 /// store only holds real stacks. (M3-CHEST-UI landed the store; the
 /// refusal is live — S1-P-i43 retired the stale "stays empty" note.)
-fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
+pub(crate) fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
             .iter()
@@ -6649,6 +6783,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_x: t.frame_x,
             frame_y: t.frame_y,
         });
+    // The FULL pre-kill tile — the C# `tile` reference of
+    // `KillTile_MakeTileDust` (`WorldGen.cs:63699-63703` reads it while
+    // the cell is still intact: the liquid, the frames, the ground
+    // scans below it). The clear happens in the drop half.
+    let dust_tile = app.world.tile(tx, ty).filter(|t| t.active()).copied();
     app.queue_map_ring(tx, ty);
     // W4-c42 final (§8.4 re-audit find): the C# `DestroyPlate` runs inside
     // `KillTile_GetItemDrops` (`WorldGen.cs:65327`) at `:63863` — BEFORE
@@ -6717,22 +6856,45 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             .into_iter()
             .flatten()
         {
-            if let Some((name, volume)) = kill_cue(cue) {
-                app.audio.play_at(name, px, py, volume);
-            }
+            // W4-d79 — the faithful per-case path (research/32 D1/D4): the
+            // style arms' GetRandomPitch NextFloat rides the audio-only
+            // stream, the case draws ride `UpdatePlayers` (the break runs
+            // in `Player.ItemCheck`, `Main.cs:17754`), the slot pools
+            // Stop/detach per the case. The C# plays the sounds at the top
+            // of `KillTile` (:63558) BEFORE the loot — the port's order.
+            app.audio.play_kill_cue(
+                cue,
+                px,
+                py,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
         }
     }
     // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`),
-    // at the event cell.
+    // at the event cell — the int-overload cases 6/4/13 through the same
+    // faithful dispatcher.
     for event in &kill.events {
-        if let Some((name, volume)) = kill_cue((edit::pot_break_sound(event.style), 1)) {
-            app.audio.play_at(
-                name,
-                event.x as f32 * TILE_PX,
-                event.y as f32 * TILE_PX,
-                volume,
-            );
-        }
+        app.audio.play_kill_cue(
+            (edit::pot_break_sound(event.style), 1),
+            event.x as f32 * TILE_PX,
+            event.y as f32 * TILE_PX,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    }
+    // `KillTile`'s dust loop (`WorldGen.cs:63699-63703`):
+    // `KillTile_GetTileDustAmount(fail: false, tile)` calls of
+    // `KillTile_MakeTileDust` on the PRE-KILL tile, after the sounds
+    // and before the drops (W4-d54 batch 3). The type chain's genRand
+    // rolls ride the `frame_rng` snapshot; the spawn blocks ride
+    // `UpdatePlayers`.
+    if let Some(t) = &dust_tile {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_tile::tile_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
+        );
+        app.world.frame_rng = gen;
     }
     // W4-c14 - the `Check*` routines' own tail sounds (`CheckOrb`
     // `WorldGen.cs:54335-54342`: the crimson Heart's killed 4 / the Shatter
@@ -6909,6 +7071,145 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
+/// The replicated break of the `17 TileManipulation` reader
+/// (`MessageBuffer.cs:1157-1163`, W4-g48): the same `kill_tile` cascade +
+/// `KillTile_PlaySounds` + drop resolution as [`break_tile`], WITHOUT the
+/// single-player-only tails — the C# reader runs no achievement notify
+/// (`WorldGen.cs:63881-63884` gates `netMode != 2`, the local-mining notify is
+/// `Player.cs`'s), no `request_edit` (the 17 relay is the caller's), no plate
+/// release (the reader's kill is the plain `KillTile`). The message handler
+/// runs outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike precedent),
+/// so every draw rides the bare global stream. `spawn_drops` is the
+/// `Main.netMode != 1` gate (`WorldGen.cs:63860`): the host spawns the loot,
+/// the client receives it as `21` messages instead.
+pub(crate) fn replicated_break(app: &mut App, tx: i32, ty: i32, no_item: bool, spawn_drops: bool) {
+    let hit = app
+        .world
+        .tile(tx, ty)
+        .filter(|t| t.active())
+        .map(|t| HitCell {
+            x: tx,
+            y: ty,
+            kind: t.kind,
+            frame_x: t.frame_x,
+            frame_y: t.frame_y,
+        });
+    let Some(hit) = hit else {
+        return;
+    };
+    // `MapUpdateQueue.Add(num150, num151)` (`MessageBuffer.cs:1153`) — the
+    // single tile (the kill's `TileFrame` head queues its ring in the
+    // cascade).
+    if app.settings.map_enabled {
+        if let Some(m) = app.map.as_mut() {
+            app.map_queue.add_tile(m, tx, ty);
+        }
+    }
+    // `KillTile_PlaySounds` (`WorldGen.cs:63556-63559`): `!dedServ` — the
+    // listen-server host plays, a dedicated server would not (the port is
+    // always a listen host).
+    let sounds = edit::kill_tile_sound(hit.kind, hit.frame_x, false);
+    let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+    for cue in [sounds.primary, sounds.extra, sounds.shatter]
+        .into_iter()
+        .flatten()
+    {
+        if let Some((name, volume)) = kill_cue(cue) {
+            app.audio.play_at(name, px, py, volume);
+        }
+    }
+    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
+        return;
+    };
+    // The chest/dresser store close (`Chest.DestroyChest`,
+    // `WorldGen.cs:62506`/:62514 through `CheckTileBreakability2`): the same
+    // silent close as `break_tile` (`Chest.cs:640-643`).
+    let wide: i32 = match hit.kind {
+        21 | 467 => 2,
+        88 => 3,
+        _ => 0,
+    };
+    if wide > 0 {
+        let anchor_x = hit.x - i32::from(hit.frame_x) / 18 % wide;
+        let anchor_y = hit.y - i32::from(hit.frame_y) / 18;
+        if let Some(idx) = crate::chest::find_chest(&app.world_chests, anchor_x, anchor_y) {
+            crate::chest::remove_chest(&mut app.world_chests, idx);
+            if let Some(p) = app.player.as_mut() {
+                if p.chest == idx as i32 {
+                    p.chest = crate::bank::CHEST_CLOSED;
+                }
+            }
+        }
+    }
+    // The drop resolution (`KillTile_DropItems` + the cascade records) — the
+    // reader has no held item, so no staff bonus / axe power. `noItem`
+    // (`:1185`'s kind 4) skips the hit cell's own drop
+    // (`WorldGen.cs:63860-63864`); the cascade records still run. The client
+    // (`spawn_drops == false`) resolves nothing — the loot arrives as `21`.
+    if spawn_drops {
+        let ctx = drop_ctx(app);
+        let (drops, portals) = {
+            let main_rng = app.rngs.global();
+            break_drop_events(
+                &kill,
+                &app.world,
+                if no_item { None } else { Some(hit) },
+                false,
+                0,
+                main_rng,
+                &ctx,
+            )
+        };
+        for (id, count, x, y) in drops {
+            let rng = app.rngs.global();
+            spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        }
+        for (px, py) in portals {
+            let _ = app.projectiles.spawn_with_data(
+                518,
+                px as f32 * TILE_PX + 16.0,
+                py as f32 * TILE_PX + 16.0,
+                0.0,
+                -12.0,
+                0,
+                0.0,
+            );
+        }
+    }
+    for (px, py) in &kill.palm_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(app.rngs.global().next() as u64);
+        let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
+        if let Some(cell) = app.world.tile_mut(*px, *py) {
+            cell.frame_x = frame_x;
+        }
+    }
+    for (mx, my) in &kill.mushroom_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(app.rngs.global().next() as u64);
+        let frame_y = (gen_stream.next(3) * 18) as i16;
+        if let Some(cell) = app.world.tile_mut(*mx, *my) {
+            cell.frame_x = 18;
+            cell.frame_y = frame_y;
+        }
+    }
+    app.liquids.wake_around(&app.world, tx, ty, 3);
+    // The falling check (`WorldGen.TileFrame`, `WorldGen.cs:81380`).
+    if let Some(fall) = tr_core::falling::check_falling(&app.world, tx, ty - 1) {
+        if let Some(t) = app.world.tile_mut(tx, ty - 1) {
+            *t = Default::default();
+        }
+        let _ = app.projectiles.spawn_falling(
+            fall.tile_kind,
+            fall.proj_kind,
+            fall.damage,
+            fall.x,
+            fall.y,
+        );
+    }
+    app.world_key = None;
+}
+
 /// The world/player inputs the drop resolvers read. Every C# flag with no
 /// port state defaults to `false` (`Main.expertMode/dontStarveWorld` — the
 /// world modes are not persisted yet; remix/getGood/tenth/vampire never reach
@@ -6960,7 +7261,7 @@ pub(crate) struct DropCtx {
 }
 
 /// Builds [`DropCtx`] from the app state at the break moment.
-fn drop_ctx(app: &App) -> DropCtx {
+pub(crate) fn drop_ctx(app: &App) -> DropCtx {
     let (player_hurt, torches) = match &app.player {
         Some(p) => (
             p.hp < p.max_hp,
@@ -7019,12 +7320,12 @@ fn drop_ctx(app: &App) -> DropCtx {
 /// The hit cell's drop-relevant state, captured before the kill clears the
 /// tile (the C# `tileCache` of `KillTile_GetItemDrops`, `WorldGen.cs:63964`).
 #[derive(Clone, Copy)]
-struct HitCell {
-    x: i32,
-    y: i32,
-    kind: u16,
-    frame_x: i16,
-    frame_y: i16,
+pub(crate) struct HitCell {
+    pub x: i32,
+    pub y: i32,
+    pub kind: u16,
+    pub frame_x: i16,
+    pub frame_y: i16,
 }
 
 /// The item drops of one `kill_tile` result: the hit cell's per-cell
@@ -7041,6 +7342,11 @@ struct HitCell {
 /// streams come in as parameters (`genRand` = the seeded `FastRandom`
 /// stand-in, `Main.rand` = the caller's `UnifiedRandom` stage stream).
 fn break_drop_events(
+/// (:47130-47245). `(item, stack, x, y)` in spawn order, plus the Coin
+/// Portal projectile requests. Free of `App` — the RNG streams come in as
+/// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
+/// the caller's `UnifiedRandom` stage stream).
+pub(crate) fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
     hit: Option<HitCell>,
@@ -8895,6 +9201,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         ty as f32 * TILE_PX,
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     );
+    // `PlaceTile`'s torch/campfire puff (`WorldGen.cs:60283-60289`): on
+    // the unmuted placement of kind 22/140, three type-14 dust AFTER the
+    // sound switch, on the same `UpdatePlayers` stream (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::place_tile_torch_dust(rng, &mut app.dust, &ctx, &app.world, tx, ty, kind);
+    }
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
@@ -9382,6 +9696,78 @@ fn resolve_melee_strike(
                 // the top of this resolution, W4-e7) so the Snapping Stone
                 // strike's `&mut app.npcs` above could run while the `n`
                 // borrow ended — the old pre-StatusToNPC re-reads are gone.
+                // The struck NPC's Copy reads — captured before the
+                // mutable buff borrow below ends the `n` borrow (NLL).
+                let n_defense = n.defense();
+                let (nx, ny) = (n.x, n.y);
+                let (bw, bh) = n.size();
+                // The kind's hit cue (`NPC.HitSound`) — read before the app
+                // borrows below.
+                let hit_cue = n.kind.hit_sound();
+                // W4-e4 — the Classy Cane gate's NPC reads, captured before
+                // the app borrows below (the `n` borrow ends here).
+                let cane_gate = held.kind == 3351 && n.kind.to_u16() != 488 && n.max_hp > 5;
+                let (cane_ncx, cane_ncy) = n.center();
+                // W4-e4 — the Classy Cane's (3351) coin shower
+                // (`Player.cs:44367-44375`): `nPC.type != 488 && lifeMax > 5`.
+                // The C# runs it AFTER DamageVar (`:44342`) and BEFORE
+                // StatusToNPC (`:44391`). The coin's ARGUMENT draws ride the
+                // `UpdatePlayers` stream in C# initializer order: velocity
+                // X `NextFloat` then Y `NextFloat` (`:44369`), position
+                // `Next(nPC.width)` then `Next(nPC.height)` (`:44370`), then
+                // the stack `1 + RollBadLuck(25)` (`:44370`, the luck roll
+                // BEFORE the spawn). The ClassyCane orchestra body queues
+                // after (its own argument draws roll at the inline call —
+                // editing has direct app access, no pool borrow problem).
+                // Type 488 (the Town Slime's transformed form) has no port
+                // NpcKind row; the gate reads the raw kind id.
+                if cane_gate {
+                    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                    let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    // `:44369` — velocity = ((2 + NextFloat×2)×dir, −2 − NextFloat×2).
+                    let cvx = (2.0 + rng.next_float() * 2.0) * dir as f32;
+                    let cvy = -2.0 - rng.next_float() * 2.0;
+                    // `:44370` — center = nPC.position + (Next(width), Next(height)).
+                    let cx = nx + rng.next_max(bw as i32) as f32;
+                    let cy = ny + rng.next_max(bh as i32) as f32;
+                    // `:44370` — stack = 1 + RollBadLuck(25) (the luck roll).
+                    let stack = 1 + tr_core::loot::roll_bad_luck(rng, luck, 25);
+                    // `Item.RequestNewItem` → `WorldItem.Center = center`
+                    // (`Item.cs:49736`): the 14×14 coin box centred on the
+                    // rolled point. `GrabDelayForAllPlayers` →
+                    // `apply_grab_delay(255)` (`WorldItem.cs:310-313`).
+                    let mut coin = crate::item::ItemDrop::new(
+                        71,
+                        stack.max(1) as u32,
+                        0,
+                        cx - crate::item::SIZE * 0.5,
+                        cy - crate::item::SIZE * 0.5,
+                        cvx,
+                        cvy,
+                        0.0,
+                    );
+                    coin.apply_grab_delay(255);
+                    app.items.push(coin);
+                    // `:44371-44374` — ClassyCane at nPC.Center, movement
+                    // zero, invoker = this player. The emitter runs inline
+                    // (the gore sibling's argument draws + the 7-dust loop
+                    // roll on the same stream, C# order).
+                    let settings = crate::orchestrator_dust::OrchestraSettings {
+                        position: Vec2::new(cane_ncx, cane_ncy),
+                        movement: Vec2::ZERO,
+                        info: 0,
+                        invoker: app.local_id as u8,
+                    };
+                    let ctx = app.spawn_ctx();
+                    crate::orchestrator_dust::classy_cane(
+                        &settings,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &mut app.dust,
+                        &ctx,
+                        &app.world,
+                    );
+                }
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar
@@ -9413,6 +9799,12 @@ fn resolve_melee_strike(
                             p.on_hit_dodge_grant();
                         }
                     }
+                    // W4-c28: `NPC.AddBuff`'s net branches
+                    // (`NPC.cs:89932-89935` client `53`, `:89979-89982`
+                    // host `54`) — the buff engine queued each accepted
+                    // (type, time) pair; the drain picks the wire by role
+                    // at the hit site (the C# sends inline at AddBuff).
+                    app.drain_npc_buff_sends();
                     // `if (this.meleeEnchant == 6) num2 = (int)((float)
                     // num2 * Player.GetNanoFlaskDamageBoost())`
                     // (`Player.cs:44396-44399`, `:44423-44426`) — the
@@ -9536,8 +9928,10 @@ fn resolve_melee_strike(
                     );
                 }
                 // A joining client's strike goes to the host as `28`
-                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
+                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`);
+                // the landed damage folds into the pending-damage entry
+                // (`AddStrikeDamage`, `NPC.cs:81383`, W4-g51 id-162).
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx, if landed { dmg } else { 0 });
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81544-81553`) — the kind's own hit cue through
                 // the faithful case-3 path (S1-E-21 wave C): the volume
@@ -16816,6 +17210,72 @@ mod tests {
         assert!((p.magic_damage - 1.0).abs() < 1e-4);
     }
 
+    // ---- W4-f49: the arcane crystal use arm + the flower weapon drink ------
+    // WRITTEN NOT RUN (code-only mode, no compiler invoked).
+
+    /// `Player.ItemCheck_UseShimmerPermanentItems` (`Player.cs:45399-45404`):
+    /// the Arcane Crystal 5339 use arms `usedArcaneCrystal` ONCE (the
+    /// `!usedArcaneCrystal` gate), re-arms the action cadence to useTime 45
+    /// and consumes one through the generic consumable tail. The flag is a
+    /// permanent — the regen engine's two read arms (W4-d117) pick it up.
+    #[test]
+    fn w4_f49_the_arcane_crystal_use_arms_the_permanent_once() {
+        let mut app = staff_app(5339, "Arcane Crystal");
+        app.player.as_mut().unwrap().used_arcane_crystal = false;
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.used_arcane_crystal, "the permanent armed (:45402)");
+        assert_eq!(app.inventory[app.selected].count, 0, "one consumed");
+        // A second crystal cannot re-fire the flag arm (the gate), but the
+        // permanent stays armed across ResetEffects (no clear site).
+        let w = World::new("t".into(), 64, 800);
+        let mut q = crate::player::Player::spawn(&w);
+        q.used_arcane_crystal = true;
+        q.update(&w, crate::player::PlayerInput::default());
+        assert!(q.used_arcane_crystal, "ResetEffects keeps the permanent");
+    }
+
+    /// The arcane crystal's use is a no-op once the permanent is armed: the
+    /// `!usedArcaneCrystal` gate (`:45399`) refuses, the stack stays intact
+    /// through the flag arm (the generic tail still consumes on a real use,
+    /// but the flag arm itself never re-fires).
+    #[test]
+    fn w4_f49_the_used_arcane_crystal_refuses_the_flag_arm() {
+        let mut app = staff_app(5339, "Arcane Crystal");
+        app.player.as_mut().unwrap().used_arcane_crystal = true;
+        assert!(!use_arcane_crystal(&mut app), "the gate refuses (:45399)");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consume on refusal");
+    }
+
+    /// The mana-flower auto-drink through the WEAPON pay path
+    /// (`ItemCheck_ActuallyPayMana` → `CheckMana` `:52650` → `:52588-52609`):
+    /// a short bar with the flower armed drinks the first healMana potion
+    /// and re-pays. The Ruby Staff's 9-mana cost: 0 mana → drink 50 (capped
+    /// 20) → pay 9 → 11, the bolt fires, Mana Sickness 94 granted.
+    #[test]
+    fn w4_f49_the_flower_weapon_pay_drinks_and_fires() {
+        let mut app = staff_app(743, "Ruby Staff");
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 110,
+            name: "Lesser Mana Potion",
+            count: 3,
+            prefix: 0,
+        };
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "50 restored capped 20, then 9 paid");
+        assert!(!p.slow_magic_use, "the drink covered the cost");
+        assert!(p.buffs.find_buff_index(94).is_some(), "the drink grants 94");
+        assert_eq!(app.inventory[20].count, 2, "one potion consumed");
+        let bolts = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(bolts, 1, "the staff still fires after the flower drink");
+    }
+
     #[test]
     fn s1_e_7a_the_silenced_debuff_refuses_mana_items() {
         // `Player.cs:52221-52224`: `sItem.mana > 0 && silence` blocks the use
@@ -18907,6 +19367,12 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         // `PlaySound(15, x, y, 0)` — case 15, slot 0, the playing guard.
         app.audio.play_roar(0, plx, ply);
     }
+    // `Player.cs:43760` et al. — `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)`: the int overload, Style 0 → `Roar_0`, the
+    // TOP-LEFT position; case 15 draws NOTHING (the slot guard rides
+    // `play_roar`, research/32 D4).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -18921,6 +19387,51 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         .filter(|t| *t > 0)
         .map(|t| t as f32 * ONE_TICK_SECS)
         .unwrap_or(app.swing_max);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// W4-f49 — the Arcane Crystal 5339 (`Player.ItemCheck_UseShimmerPermanentItems`,
+/// `Player.cs:45399-45404`): `sItem.type == 5339 && itemAnimation > 0 &&
+/// !usedArcaneCrystal && ItemTimeIsZero` → `ApplyItemTime(sItem)` +
+/// `usedArcaneCrystal = true` (+ the msg-4 MP sync, no port). The flag is a
+/// PERMANENT — no ResetEffects clear (`:45399` is its only write outside the
+/// ctor `:56080` and the file round-trip `:54783`/`:55257`); the regen
+/// engine's two read arms landed with W4-d117 (`:19430-19433` delay −0.05,
+/// `:19453-19456` regen +max/50). The stack pays one through the generic
+/// consumable tail (`:43280-43326` — `consumable: true`, no ForceConsumption
+/// row, `CanConsumeConsumableItem` true): the tail gate is `itemTimeMax != 0
+/// && itemTime == itemTimeMax`, which the flag arm's `ApplyItemTime` arms on
+/// the FIRST use only — an already-used crystal's refused flag arm leaves
+/// `itemTime`/`itemTimeMax` at 0, so the tail does NOT consume it (the port's
+/// `use_arcane_crystal` returns false before the consume, same observable).
+/// The five siblings (5337/5338/5340/5341/5342) stay the crystals/powerups
+/// lane's.
+pub(crate) fn use_arcane_crystal(app: &mut App) -> bool {
+    let already_used = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.used_arcane_crystal);
+    if already_used {
+        return false; // `!this.usedArcaneCrystal` (`:45399`)
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    p.used_arcane_crystal = true; // `:45402`
+    // `ApplyItemTime(sItem)` (`:45401` → `:4416-4419` `SetItemTime(useTime)`):
+    // the ACTION cadence re-arms to the item's useTime (45, `Item.cs` row);
+    // the swing keeps running — the boss-spawner convention.
+    app.item_time = crate::item::use_time_secs(5339);
+    // The generic consumable tail (`:43317-43324`): stack--, the empty slot
+    // arms `itemTime = itemAnimation` (the port's TurnToAir fold).
+    let slot = &mut app.inventory[app.selected];
+    slot.count = slot.count.saturating_sub(1);
+    if slot.count == 0 {
+        slot.kind = 0;
+        app.item_time = app.swing; // `:43321-43324`
+    }
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
@@ -18955,6 +19466,10 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
         1,
         Some(crate::app::RngKey::UpdatePlayers),
     );
+    // `Player.cs:43926` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -19034,6 +19549,10 @@ pub fn use_snow_globe(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
+    // `Player.cs:43943` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -19067,6 +19586,10 @@ fn apply_moon_item(app: &mut App, kind: u16) {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
+    // `Player.cs:43977`/:44030 — `PlaySound(15, pos, 0)`: Style 0,
+    // top-left, draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -19350,6 +19873,10 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
+    // `Player.cs:43760` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = (player.x, player.y);
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -20015,6 +20542,10 @@ pub fn use_pirate_map(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
+    // `Player.cs:43960` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,

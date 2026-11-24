@@ -218,6 +218,10 @@ impl App {
                     homeless: n.home.is_none(),
                     home_x: n.home.map_or(-1, |(hx, _)| hx),
                     home_y: n.home.map_or(-1, |(_, hy)| hy),
+                    // W4-f43b: `SaveNPCs:1731`'s variation payload — the
+                    // license pets' rolled variant persists (the v18
+                    // per-record tail byte).
+                    variation_index: n.variation_index,
                 })
                 .collect();
             // `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven
@@ -432,6 +436,7 @@ impl App {
         // (`WorldGen.cs:6689-6699`, the `LegacySoundPlayer.cs:1257`/:1287
         // `x == -1 || y == -1` stop arms).
         self.audio.stop_waterfall_ambience();
+        self.audio.play_menu("Menu_Close");
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
@@ -453,7 +458,7 @@ impl App {
         // snapshotted the live rain into the file payload above.
         self.save_world();
         // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
-        self.audio.play("Menu_Open");
+        self.audio.play_menu("Menu_Open");
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;

@@ -251,6 +251,16 @@ pin_bool! {
 }
 
 pin_bool! {
+    /// `TR_DEBUG_COMMANDS`: `DebugOptions.enableDebugCommands`
+    /// (`Testing/DebugOptions.cs:8`) — the `94 DevCommands` reader's gate
+    /// (`MessageBuffer.cs:3469`) and the `/hh`/`/loadouts` chat commands'
+    /// registration gate (`DebugCommandProcessor.cs:30-33`, the W4-d85
+    /// registry lane's pin, keep-one at the union).
+    debug_commands,
+    "TR_DEBUG_COMMANDS"
+}
+
+pin_bool! {
     /// `TR_PAN` is set — the camera pans deterministically instead of following.
     pan_set,
     "TR_PAN"

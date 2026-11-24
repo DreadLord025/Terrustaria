@@ -9,6 +9,10 @@
 //! parent `UIList`'s view area (`GetViewCullingArea`, `UIElement.cs:359-362`),
 //! and budgets texture loads per frame: one slot per column for draws, four
 //! per load for the prefetch pass (`:44-70`).
+//!
+//! W4-d83 (research/18b row 39): `UIItemIcon` (`UIItemIcon.cs:7-26`) — the
+//! 32×32 single-item icon element whose whole draw is one context-31
+//! `ItemSlot.DrawItemIcon` call.
 
 /// `sizePerEntryX`/`sizePerEntryY` (`UIDynamicItemCollection.cs:21-23`).
 pub const SLOT: i32 = 44;
@@ -133,9 +137,63 @@ pub fn draw_plan(
     (drawn, to_load)
 }
 
+/// `UIItemIcon` (`GameContent/UI/Elements/UIItemIcon.cs:7-26`), research/18b
+/// row 39 (W4-d83): a 32×32 element drawing one item icon. The item itself is
+/// the caller's (the C# holds the live `Item`); this carries the ctor's size
+/// pin, the `blackedOut` tint pick and the draw-centre call's parameters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemIconElement {
+    /// `Width`/`Height` — `Set(32f, 0f)` both (`UIItemIcon.cs:16-17`).
+    pub size: [f32; 2],
+    /// `_blackedOut` (`:11`, ctor `:18`): the draw tint is Black, not White.
+    pub blacked_out: bool,
+}
+
+impl ItemIconElement {
+    /// The ctor (`:13-19`): 32×32, the blackout flag as given.
+    pub fn new(blacked_out: bool) -> Self {
+        Self {
+            size: [32.0, 32.0],
+            blacked_out,
+        }
+    }
+
+    /// `DrawSelf`'s single call (`:21-25`):
+    /// `ItemSlot.DrawItemIcon(_item, 31, sb, dimensions.Center(), _item.scale,
+    /// 32f, _blackedOut ? Black : White)` — context 31, the float centre
+    /// (`CalculatedStyle.cs:27`, no truncation), the item's own scale and the
+    /// 32 px size limit (`slot.rs::draw_item_icon` pins the same limit).
+    pub fn icon_draw(&self, rect: [f32; 4], item_scale: f32) -> ([f32; 2], f32, [u8; 4]) {
+        let center = [rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5];
+        let tint = if self.blacked_out {
+            [0, 0, 0, 255] // `Color.Black`
+        } else {
+            [255, 255, 255, 255]
+        };
+        (center, item_scale, tint)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `UIItemIcon` (`UIItemIcon.cs:13-25`): 32×32 ctor, the centre is the
+    /// float midpoint and the tint flips Black on the blackout flag.
+    #[test]
+    fn the_item_icon_pins_32_and_draws_context_31_at_the_centre() {
+        let icon = ItemIconElement::new(false);
+        assert_eq!(icon.size, [32.0, 32.0]);
+        let (center, scale, tint) = icon.icon_draw([10.0, 20.0, 32.0, 32.0], 0.8);
+        assert_eq!(center, [26.0, 36.0]);
+        assert_eq!(scale, 0.8, "the item's own scale rides through (`:24`)");
+        assert_eq!(tint, [255, 255, 255, 255]);
+        // Odd sizes keep the half pixel — Center() is float (`:23-24`).
+        let black = ItemIconElement::new(true);
+        let (c2, _, t2) = black.icon_draw([0.0, 0.0, 31.0, 33.0], 1.0);
+        assert_eq!(c2, [15.5, 16.5]);
+        assert_eq!(t2, [0, 0, 0, 255], "blackedOut draws Color.Black (`:24`)");
+    }
 
     /// `UpdateSize` (`:160-165`): 400 px holds 9 columns; 20 entries need 3 rows.
     #[test]

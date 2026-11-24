@@ -395,6 +395,34 @@ pub fn offsets_player_headgear_y(row: usize) -> f32 {
     }
 }
 
+/// `GameShaders.Hair.GetShaderIdFromItemId(type)` (`Item.cs:48716`): the
+/// 1-based hair-shader bind order (`DyeInitializer.cs:147-410`): 3259→1,
+/// 1977→2, 1978→3, 1979→4, 1980→5, 1981→6, 1982→7, 1983→8, 1984→9, 1985→10,
+/// 1986→11, 2863→12; unbound → −1. `Player.hairDye` stores this index; the
+/// team-dye puff gate (`:24270`) compares against `TeamDyeShaderIndex` = 9
+/// (the Party Hair Dye 1984 bind, `ContentSamples.cs:19`).
+pub(crate) fn hair_dye_shader_index(kind: u16) -> i32 {
+    match kind {
+        3259 => 1,
+        1977 => 2,
+        1978 => 3,
+        1979 => 4,
+        1980 => 5,
+        1981 => 6,
+        1982 => 7,
+        1983 => 8,
+        1984 => 9,
+        1985 => 10,
+        1986 => 11,
+        2863 => 12,
+        _ => -1,
+    }
+}
+
+/// `ContentSamples.DyeShaderIDs.TeamDyeShaderIndex` (`ContentSamples.cs:19`):
+/// `GameShaders.Hair.GetShaderIdFromItemId(1984)` = 9 (the 9th hair bind).
+pub(crate) const TEAM_DYE_SHADER_INDEX: i32 = 9;
+
 /// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
 /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
 /// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
@@ -1114,9 +1142,11 @@ pub struct Player {
     pub immune_alpha: i32,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
-    /// the facing-inheritance gate reads (`:77749`). The stealth armour
-    /// writers are unported (the Scout Sling's `aggro -= 400` half,
-    /// `Player.cs:14579`, still skips) — stock 0 until they land; the
+    /// the facing-inheritance gate reads (`:77749`). ResetEffects zeroes
+    /// it per tick (`:18377`); the Vortex stealth writer (`:25847`)
+    /// subtracts (W4-e1 reconcile). The Psycho-Knife/Shroomite writers
+    /// (`:25779`/`:25820`) are f3's machine; the Scout Sling's
+    /// `aggro -= 400` half (`Player.cs:14579`) still skips. The
     /// S1-D-3p wiring reads it through `npc_target::session_candidate`.
     pub aggro: i32,
     /// `Player.npcTypeNoAggro[NPCID.Count]` (`Player.cs:2994`, the bool
@@ -1274,6 +1304,37 @@ pub struct Player {
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
+    /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
+    /// tier 0..3. R3 EXECUTED: the tier writer is f12's g27 canonical
+    /// `buff_effects_orbs.rs::apply_orb_arm` (`UpdateBuffs_NebulaBuffs`
+    /// `:12070-12079`); its `fold_orb` bridges `orb_scan.nebula_level_mana`
+    /// onto THIS field (the ASSIGN stub `fold_orb_nebula_bridge`) — the
+    /// regen engine's read side (`RegenInputs.nebula_level_mana`) keeps
+    /// the Player field. `NebulaLevelup` `:57050-57053` grants the buff
+    /// (the 3455 pickup is its only source) and writes the field as a
+    /// same-tick hint; `ResetEffects` zeroes it (`:18755`);
+    /// `RegenState::nebula_mana_counter` is the cadence half the regen
+    /// engine reads (`ApplyNebulaBuffMana`).
+    pub nebula_level_mana: i32,
+    /// `Player.nebulaLevelLife` (`Player.cs:924`): the Nebula Life booster
+    /// tier — the same `UpdateBuffs_NebulaBuffs` derivation on the 173-175
+    /// slot (`:10448-10452`); `NebulaLevelup` `:57046-57049` (the 3454
+    /// pickup). The `lifeRegen += 6 * tier` consumer stays the f12
+    /// buff-frame lane's (its `orb_scan.nebula_level_life` twin); this
+    /// field carries the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_life: i32,
+    /// `Player.nebulaLevelDamage` (`Player.cs:930`): the Nebula Damage
+    /// booster tier — the 179-181 slot (`:10453-10461`), `NebulaLevelup`
+    /// `:57054-57057` (the 3453 pickup). The `0.15 * tier` four-class
+    /// damage consumer stays the f12 buff-frame lane's; this field carries
+    /// the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_damage: i32,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 shimmer
+    /// permanent (`ItemCheck_UseShimmerPermanentItems` `:45399-45404` —
+    /// the crystals/powerups lane owns the use arm). NOT cleared by
+    /// ResetEffects — a permanent unlock (the player-file field `:54783`).
+    /// The regen engine reads it (`:19430-19433`, `:19453-19456`).
+    pub used_arcane_crystal: bool,
     /// `Player.wellFed` — any of the fed tiers 26/206/207 held
     /// (`Player.cs:11933-11967`); gates the re-eat (`:14353`) and the
     /// expert regen halving.
@@ -1602,6 +1663,12 @@ pub struct Player {
     pub c_minecart: u32,
     pub c_mount: u32,
     pub c_grapple: u32,
+    /// `Player.basiliskCharge` (`Player.cs:2990`): the Basilisk mount's
+    /// charge ramp (`Mount.UpdateFrame` case 14, `Mount.cs:4087-4094`) —
+    /// +1/180 per tick while |vx| > RunSpeed/2, clamped 0..1, zeroed below
+    /// the gate. The charge trail's iteration count + velocity scale read
+    /// it (`:4121`/`:4133`).
+    pub basilisk_charge: f32,
     /// The equipped items' rolled prefixes, slot-parallel to `equipped` —
     /// `GrantPrefixBenefits` (`Player.cs:13953-14044`) reads them in the
     /// accessory grant pass below.
@@ -1648,9 +1715,9 @@ pub struct Player {
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The 5326 use
+    /// (`Player.cs:45218-45221`) rides `powerups::use_artisan_loaf` (W4-a6)
+    /// — the reach formula reads it.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
@@ -1660,6 +1727,10 @@ pub struct Player {
     /// the use arm landed here). Persisted in the `.plr` (`:54777`/`:55241`)
     /// and the `.trplayer` v7 line. The builder toggle half rides
     /// `builder_acc_status[11]` — read through [`Self::using_biome_torches`].
+    /// (`Recipe.cs:353-356`). The Torch God's Favor 5043 use
+    /// (`Player.cs:45226-45243`) rides `powerups::use_torch_gods_favor`
+    /// (W4-a6) — it also sets `builder_acc_status[11] = 0` (the
+    /// `UsingBiomeTorches` property, `:3950-3963`).
     pub unlocked_biome_torches: bool,
     /// `Player.hbLocked` (`Player.cs:1436`): the hotbar-lock toggle. The
     /// `DrawHotbarLockIcon` click flips it (`Main.cs:42507`, sound 22 at
@@ -1690,8 +1761,8 @@ pub struct Player {
     pub pinned_dash: i32,
     /// `Player.extraAccessory` (`Player.cs:866`): the Demon Heart's use-grant
     /// (`:45197`) - unlocks the 6th accessory slot in expert mode
-    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use is
-    /// unported, so the flag stays false in play.
+    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use rides
+    /// `powerups::use_demon_heart` (W4-a6).
     pub extra_accessory: bool,
     /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
     /// (the real items equip through `Item.mountType`), re-applied after the
@@ -1711,6 +1782,13 @@ pub struct Player {
     /// lives in `player_petting.rs`; the per-tick stop gates ride
     /// `update_petting_animal` beside the sitting/sleeping updates.
     pub petting: crate::player_petting::PettingInfo,
+    /// S3/K2 (the d21 compose contract, g10-side seat): the proj-lane
+    /// `TryGetTarget` feed — the resolved live projectile's bottom
+    /// (`PlayerPettingInfo.cs:70-75`: slot active + same type), refreshed
+    /// by the projectile pass when d21's lane lands (batch-D wires the
+    /// writer; until then it stays None and the proj petting path is
+    /// unreachable — the `from_projectile` ctor has no live caller).
+    pub petting_target_bottom: Option<(f32, f32)>,
     /// `PlayerSleepingHelper.timeSleeping` (`:17`): the fully-asleep counter
     /// — `>= 120` (`TimeToFullyFallAsleep`, `:11`) arms the clock's ×5
     /// (`World::day_rate`).
@@ -1968,6 +2046,13 @@ pub struct Player {
     pub potion_of_return_home_position: Option<(f32, f32)>,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.statLifeMax` (`Player.cs:1924`): the PERMANENT life cap — the
+    /// character file's `lifeMax` (`:55221`, clamped to 500) and the Life
+    /// Crystal's +20 (`:45306-45320`) / Life Fruit's +5 (`:45290-45304`)
+    /// use-grants. The crystal/fruit gates read THIS base (not the effective
+    /// `max_hp`), mirroring `mana_max_base`'s shape (`:1931`). A new character
+    /// starts at 100 (`UICharacterCreation.cs`; `Player.Initialize` `:56074`).
+    pub life_max_base: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
@@ -2040,6 +2125,39 @@ pub struct Player {
     /// mana-star pickups `:35071`/`:35087` — the S1-P-i52 lane owns those);
     /// drinking a mana potion grants NO ManaHeat, so the field stays 1.
     pub mana_heat: f32,
+    /// W4-e1 — `Player.yoraiz0rEye` (`Player.cs:1893`): the Yoraiz0r's Spell
+    /// (3580) vanity grant `itemSlot - 2` (`UpdateVisibleAccessory`
+    /// `:36969-36972`); ResetEffects zeroes it (`:18402`). The eye-trail
+    /// emitter (`Yoraiz0rEye` `:12446-12577`, site 12569) reads it at
+    /// `:25487`. The port grants from the functional accessory pass (the
+    /// vanity column's 3580 exception is `equip_swap.rs`'s — the grant here
+    /// covers the functional slot; ANALYSIS).
+    pub yoraiz0r_eye: i32,
+    /// W4-e1 — `Player.shadowDirection[1]` (`Player.cs:16583-16611`
+    /// `UpdateSocialShadow`): the PREVIOUS tick's facing — the eye trail's
+    /// old-point anchor (`:12495`). The full 3-slot shadow chain is a draw
+    /// seam; only [1] is read by a ported consumer.
+    pub shadow_direction_1: i32,
+    /// W4-e1 — `Player.shinyStone` (`Player.cs:14769`, the Shiny Stone 3337
+    /// grant): the regen sparkle gate (`UpdateLifeRegen` `:18945-18948`,
+    /// site 19273). ResetEffects clears; the accessory row re-arms.
+    pub shiny_stone: bool,
+    /// W4-e1 — `Player.teleportTime`/`teleportStyle` (`Player.cs:37490-37491`
+    /// `Teleport`'s tail): the teleport-visuals countdown + style
+    /// (`UpdateTeleportVisuals` `:16613-16670`, sites 16623/16633/16652).
+    pub teleport_time: f32,
+    pub teleport_style_id: i32,
+    /// W4-e1 — `Player.lastPortalColorIndex` (`Player.cs:37477-37480`,
+    /// style 4): the portal colour pick (`PortalHelper.GetPortalColor`).
+    pub last_portal_color_index: i32,
+    /// W4-e1 — `Player.setSolar`/`solarCounter`/`solarShields`
+    /// (`Player.cs:16366-16402` `ApplySetBonus_Solar`, site 16389): the
+    /// Solar Flare set's shield-charge machine. `set_solar` grants from the
+    /// armor-set row (2763/2764/2765); ResetEffects clears the shields
+    /// (`:18505`) and the set flag (`:25620` region).
+    pub set_solar: bool,
+    pub solar_counter: i32,
+    pub solar_shields: i32,
     /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
     /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
     /// Band 6185 (`:14615-14620`). `ResetEffects` clears (`:18720`), the
@@ -2076,6 +2194,10 @@ pub struct Player {
     /// sim caller feeds the App's swing/reuse timers each tick (the
     /// `frame_inputs` convention); the bare `update` callers keep false.
     pub mana_regen_item_in_use: bool,
+    // W4-d79's nebula field block DELETED at batch-L (the S1 mutual
+    // receipt): the `nebula_level_*` trio lives above (the f49 documented
+    // fields, `Player.cs:924-930`) and the mana counter lives on
+    // `RegenState::nebula_mana_counter` (the d117/f49 engine form).
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -2238,6 +2360,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.treasureMagnet` (`Player.cs:936`): the Treasure Magnet 5010
+    /// (`ApplyEquipFunctional` `:14551-14553`) and the Hand Of Creation 5126
+    /// (`:15286-15294`, the `treasureMagnet` half of its six-flag row) arm it
+    /// per tick; `ResetEffects` clears it (`:18493`). `GetItemGrabRange` adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`,
+    /// `Item.cs:49965`) — unlike the mana/life magnets it is not kind-gated.
+    /// W4-f49: the field + the two grants + the reset + the `GrabFlags` feed
+    /// (the range row itself already lived in `item.rs::get_item_grab_range`).
+    pub treasure_magnet: bool,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -2695,8 +2826,10 @@ pub struct Player {
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
     /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
-    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
-    /// writer is not ported yet, so the flag stays false in play.
+    /// unlocked by the Minecart Powerup 5289's use (`Player.cs:45207-45211`)
+    /// — `powerups::use_minecart_powerup` (W4-a6) raises it and grants the
+    /// Minecart Mech 3353 (`:45212`); the `UsingSuperCart` property
+    /// (`:3966`, `:55718`) reads it.
     pub unlocked_super_cart: bool,
     /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
     /// player's Super Cart toggle. The UI that flips it is not ported yet.
@@ -2801,6 +2934,15 @@ pub struct Player {
     /// (int)Center.X, (int)Bottom.Y)`) — `(x, y)` truncated in the drain;
     /// the style façade's case-2 pitch draw rides `UpdatePlayers`.
     pending_honey_land_sound: Option<(f32, f32)>,
+    /// W4-d79 — the full-mana refill cue + dust burst
+    /// (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the unpositioned
+    /// `PlaySound(25)` (case 25 — Volume/Pan only, no draws, no Stop) plus
+    /// the 5× dust-45 loop, each rolling `Next(20, 26) * 0.1` as the
+    /// `NewDust` scale argument BEFORE the spawn. `(position.X, position.Y,
+    /// width, height)` — the C# reads `base.position`/`width`/`height` live
+    /// at the refill tick; the drain owns the pool + the `UpdatePlayers`
+    /// stream (the sticky-dust convention).
+    pending_mana_refill: Option<(f32, f32, i32, i32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -3037,6 +3179,29 @@ pub struct Player {
     /// (`Player.cs:21905-21926`): `None` unless the sandstorm jump is
     /// performing + ascending. The drain rolls the 3 dust-124s + the gore.
     pending_sandstorm_jump: Option<SandstormJumpVisual>,
+    /// W4-e1 — the second-batch dust queues (`player_dust2.rs`, the ledger
+    /// docs/research/64-dust-sites-player-2.md). Each is a snapshot taken at
+    /// the C# read moment; the world_sim seam drains them on the
+    /// `UpdatePlayers` stream in C# site order (the sticky-dust pattern —
+    /// disjoint `app.dust`/`app.rngs`/`&spawn_ctx`/`&app.world` borrows while
+    /// `p` is live). One Option per exclusive site; the multi-fire sites
+    /// (glass slipper per equipped slot, crimson per heal chunk) queue Vecs.
+    pending_yoraiz_eye_dust: Option<crate::player_dust2::YoraizEyeDust>,
+    pending_glass_slipper_dust: Vec<crate::player_dust2::GlassSlipperDust>,
+    pending_solar_burst_dust: Option<crate::player_dust2::SolarBurstDust>,
+    pending_teleport_visuals_dust: Option<crate::player_dust2::TeleportVisualsDust>,
+    pending_shiny_sparkle_dust: Option<crate::player_dust2::ShinySparkleDust>,
+    pending_crimson_heal_dust: Option<crate::player_dust2::CrimsonHealDust>,
+    pending_mana_full_dust: Option<crate::player_dust2::ManaFullDust>,
+    /// W4-e1 batch 2 — the Lawn Mower swing puff (20320).
+    pending_mow_lawn_dust: Option<crate::player_dust2::MowLawnDust>,
+    pending_hair_dye_dust: Option<crate::player_dust2::HairDyeDust>,
+    pending_mana_heat_dust: Option<crate::player_dust2::ManaHeatDust>,
+    /// W4-e1 — `Player.hairDye` (`Player.cs:2546`): the applied hair-dye shader
+    /// index (`ItemCheck` `:42863` grants `item.hairDye`, the post-processed
+    /// shader id). The team-dye puff gate (`:24270`) reads it against
+    /// `TeamDyeShaderIndex` (9, the Party Hair Dye 1984 shader).
+    pub hair_dye: i32,
     /// W4-d51 — the tick's queued extra-jump dust burst (`Player.JumpMovement`,
     /// `Player.cs:20818-21012`): one [`JumpDust`] snapshot per triggered arm,
     /// taken AFTER the ascent-velocity write. The drain
@@ -3093,6 +3258,15 @@ pub struct Player {
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
+    /// W4-e4 — the Flame Waker Boots' / Hellfire Treads' walking-flame
+    /// requests (`Player.DoBootsEffect_PlaceFlamesOnTile`,
+    /// `Player.cs:14087-14099`, reached from `ApplyEquipFunctional`
+    /// `:14229-14232`/`:15174-15177`): `(X*16+8, Y*16+16)` per gated tile.
+    /// The C# spawns the FlameWaders orchestra inline; the port queues the
+    /// position and the world-sim drain rolls the emitter on the
+    /// `UpdatePlayers` stream (the `pending_sticky_dust` convention — the
+    /// player tick cannot borrow the App's dust pool).
+    pending_flame_waders: Vec<(f32, f32)>,
     /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
     /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
     /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
@@ -3495,8 +3669,39 @@ pub struct Player {
     pub override_fishing_bobber: i32,
     /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
-    /// ResetEffects — a permanent unlock (the player-file field).
+    /// ResetEffects — a permanent unlock (the player-file field). The
+    /// 5341 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// — the permanent +0.2 lifeRegenTime per tick (`:19113-19116`, the
+    /// `regen.rs` `aegis_crystal` input — its own slot so the add runs
+    /// BETWEEN the base +1 and the crimson +1 in the C#'s f32 order). The
+    /// 5337 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit —
+    /// the permanent +4 defense (`UpdatePermanentBoosters`, `:12853-
+    /// 12856`). The 5338 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane
+    /// Crystal — the permanent −0.05 manaRegenDelay per delay tick +
+    /// statManaMax2/50 mana regen (`:19430-19433`, `:19453-19456`). The
+    /// 5339 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia — the
+    /// permanent +0.05 pick/tile/wall speed (`UpdatePermanentBoosters`,
+    /// `:12861-12866`). The 5342 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_ambrosia: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl —
+    /// the permanent +0.03 luck (`RecalculateLuck`, `:29142-29145`). The
+    /// 5340 use rides `powerups::use_shimmer_permanent` (W4-a6). The
+    /// PERSISTENCE OWNER is this Player field (the `.plr` slot
+    /// `:54784`/`:55258`); `update_luck` mirrors it into the consumer
+    /// `LuckState.used_galaxy_pearl` before every recalculation (the g90
+    /// lane-7 shape, research/138 §2 — the C# reads the player field
+    /// directly, the LuckState copy is the port's consumer split).
+    pub used_galaxy_pearl: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -3576,6 +3781,16 @@ pub struct Player {
     // (`Player.cs:1244`, `:1248`, `:1246`): the cycling state — the mode is
     // granted per tick by the accessories 6168/6169/6193/6194 (`:14528-14544`),
     // the offset/cooldown are written inside a successful pick (`:53569-53577`)
+
+
+    // main/J net + nebula + g87 accessory state (kept through the F union)
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
+    pub wire_operations_cooldown: i32,
+    pending_hurt_net: Option<(bool, i32, i32)>,
+    pub emote_time: i32,
+    pub last_portal_color_index: i16,
 }
 
 /// One summon keep-alive arm of `Player.UpdateBuffs`' chain
@@ -3931,6 +4146,10 @@ impl Player {
             // (`tr_core::scene::SceneMetrics::new`).
             npc_banner_buff: vec![false; 320],
             mana_regen_bonus: 0,
+            nebula_level_mana: 0,
+            nebula_level_life: 0,
+            nebula_level_damage: 0,
+            used_arcane_crystal: false,
             stat_defense: 0,
             well_fed: false,
             pick_speed_bonus: 0.0,
@@ -4090,6 +4309,7 @@ impl Player {
             sitting: false,
             sleeping: false,
             petting: crate::player_petting::PettingInfo::default(),
+            petting_target_bottom: None,
             sleep_time: 0,
             sleeping_style: 0,
             offset_for_seat: (0.0, 0.0),
@@ -4118,6 +4338,7 @@ impl Player {
             c_light: 0,
             c_minecart: 0,
             c_mount: 0,
+            basilisk_charge: 0.0,
             c_grapple: 0,
             release_hook: true,
             release_throw: true,
@@ -4157,6 +4378,7 @@ impl Player {
             potion_of_return_home_position: None,
             hp: 100,
             max_hp: 100,
+            life_max_base: 100,
             armor_penetration: 0,
             melee_armor_penetration: 0,
             lava_time: 0,
@@ -4174,12 +4396,23 @@ impl Player {
             mana_sick: false,
             mana_sick_reduction: 0.0,
             mana_heat: 1.0,
+            yoraiz0r_eye: 0,
+            shadow_direction_1: 1,
+            shiny_stone: false,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
+            set_solar: false,
+            solar_counter: 0,
+            solar_shields: 0,
             p_stone: false,
             p_stone_prev: false,
             mana_max_base: 20,
             mana_flower: false,
             slow_magic_use: false,
             mana_regen_item_in_use: false,
+            // The nebula trio inits above (the f49 fields); d79's duplicate
+            // init + Player counter dropped at batch-L (RegenState owns it).
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             // `Player.cs:3160` — the field initializer zeroes all six slots.
@@ -4203,6 +4436,7 @@ impl Player {
             mana_magnet: false,
             treasure_magnet: false,
             life_magnet: false,
+            treasure_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -4355,6 +4589,7 @@ impl Player {
             pending_mana_full: false,
             pending_stoned_transition: false,
             pending_honey_land_sound: None,
+            pending_mana_refill: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -4399,6 +4634,17 @@ impl Player {
             pending_ability_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_sandstorm_jump: None,
+            pending_yoraiz_eye_dust: None,
+            pending_glass_slipper_dust: Vec::new(),
+            pending_solar_burst_dust: None,
+            pending_teleport_visuals_dust: None,
+            pending_shiny_sparkle_dust: None,
+            pending_crimson_heal_dust: None,
+            pending_mana_full_dust: None,
+            pending_mow_lawn_dust: None,
+            pending_hair_dye_dust: None,
+            pending_mana_heat_dust: None,
+            hair_dye: -1,
             pending_jump_dust: None,
             pending_dash_dust: None,
             pending_fast_run_dust: None,
@@ -4411,6 +4657,7 @@ impl Player {
             pending_wing_glide_dust: None,
             pending_splash_dust: None,
             pending_sticky_kill: None,
+            pending_flame_waders: Vec::new(),
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
             channel: false,
@@ -4492,7 +4739,18 @@ impl Player {
             pending_frame_emotes: Vec::new(),
             pending_hungry_sounds: 0,
             shroomite_stealth: false,
+            // `Player.cs:1562`: `public float stealth = 1f` — the f3
+            // reconcile fix (the port's old 0.0 made the Vortex recovery
+            // ramp fire 25 ring ticks on the first equip).
             stealth: 1.0,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
+            wire_operations_cooldown: 0,
+            pending_hurt_net: None,
+            emote_time: 0,
+            last_portal_color_index: 0,
+
             stealth_timer: 0,
             set_vortex: false,
             vortex_stealth_active: false,
@@ -4536,6 +4794,11 @@ impl Player {
             yoyo_glove: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_crystal: false,
+            used_aegis_fruit: false,
+            used_arcane_crystal: false,
+            used_ambrosia: false,
+            used_galaxy_pearl: false, // `Player.cs:56081`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             acc_harpy_charm: false,
@@ -5029,6 +5292,13 @@ impl Player {
     /// (`Player.cs:23830`, `SoundID.Item177` at `(Center.X, Bottom.Y)`).
     pub(crate) fn take_honey_land_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_honey_land_sound.take()
+    /// W4-d79 — takes the full-mana refill cue + dust burst
+    /// (`Player.cs:19550-19560`) — `(position.X, position.Y, width, height)`
+    /// captured at the refill tick; the drain plays the unpositioned case-25
+    /// chime and rolls the 5× `Next(20, 26)` dust-scale draws + spawns on
+    /// `UpdatePlayers`.
+    pub(crate) fn take_mana_refill(&mut self) -> Option<(f32, f32, i32, i32)> {
+        self.pending_mana_refill.take()
     }
 
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
@@ -5252,6 +5522,55 @@ impl Player {
         }
     }
 
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`): the Nebula booster
+    /// pickup's buff grant (W4-f49 lane 12 — the S1 mutual-receipt survivor,
+    /// d79's line-identical twin dropped at batch-L). The
+    /// `whoAmI != Main.myPlayer` gate is always false in the single-player
+    /// port. The scan deletes EVERY buff in `[type, type+3)` with the C#'s
+    /// `DelBuff(i--)` rescan (the compaction re-presents the next buff at
+    /// the same index — the port's `del_buff` compacts identically, so the
+    /// loop re-reads `i`). Then the family's tier climbs ONE, clamped 0..3
+    /// (`MathHelper.Clamp` — the tier is never negative), and
+    /// `AddBuff(base + tier - 1, 480)` grants the tier's buff id. Only the
+    /// three base ids act; anything else falls through the switch with the
+    /// deletes already done.
+    
+
+    // `Player.UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`): the tier
+    // derivation + the `buffTime == 2` step-down. R3 EXECUTED: this port
+    // copy is DELETED — the g27 canonical writer lives in f12's
+    // `buff_effects_orbs.rs::nebula_buffs` (dispatched by
+    // `apply_orb_arm`, verified semantically identical by the f12 sweep
+    // census: the `:12072` ASSIGN, the tier>1 time-2 step, the 480 re-arm,
+    // the POST-tick-head timer read). The `fold_orb` bridge assigns the
+    // scan's tiers onto the Player fields; the pickup grant
+    // (`nebula_levelup`) and the chained `ResetEffects` zero stay here.
+    // d79's `update_buffs_nebula`/`update_buffs_nebula_scan` twins DELETED
+    // at the batch-L merge (the S1 mutual receipt: three writers on one
+    // buff bar would triple-step the `buffTime == 2` edge); its
+    // Player-method `apply_nebula_buff_mana` twin + `Player.nebula_mana_counter`
+    // also dropped — the d117/f49 regen-engine form (`regen.rs`, the
+    // `RegenState` counter) is the ONE reader.
+
+    /// The fold_orb mana-bridge ASSIGN stub (R3 contract step 2). f12's
+    /// `buff_frame_wiring::fold_orb` carries these three lines verbatim:
+    /// `p.nebula_level_mana = s.nebula_level_mana;` (+ the life/damage
+    /// twins) — an ASSIGN, because the C# `:12072` is assign-derivation
+    /// and `OrbScanState` zero-seeds each tick (`reset_effects`, the
+    /// `:18755` chained clear), so a stale field cannot survive a
+    /// buff-less tick. The bridge is the ONLY writer onto these fields
+    /// besides `nebula_levelup`'s pickup hint (`:57047-57056`, the C#
+    /// runs the grant in `GrabItems` AFTER the scan — the frame order
+    /// player → projectiles → items keeps it a same-tick hint only).
+    /// f12's wiring module is NOT in batch-L; the wiring seam call site
+    /// in `world_sim/player.rs` marks where the bridge lands (the
+    /// bridge-with-deletions ONE-COMMIT contract's remaining half). The
+    /// regen read keeps the Player field (`RegenInputs.nebula_level_mana`).
+    pub(crate) fn fold_orb_nebula_bridge(&mut self, mana: i32, life: i32, damage: i32) {
+        self.nebula_level_mana = mana;
+        self.nebula_level_life = life;
+        self.nebula_level_damage = damage;
+    }
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
@@ -5340,6 +5659,79 @@ impl Player {
     /// (`Player.cs:21905-21926`) — the caller owns `Main.dust` + `Main.gore`.
     pub(crate) fn take_sandstorm_jump(&mut self) -> Option<SandstormJumpVisual> {
         self.pending_sandstorm_jump.take()
+    /// W4-e1 — the second-batch dust takes (`player_dust2.rs`). The caller
+    /// owns `Main.dust` + the `UpdatePlayers` stream; each drains through the
+    /// matching pure emitter in C# site order.
+    pub(crate) fn take_yoraiz_eye_dust(&mut self) -> Option<crate::player_dust2::YoraizEyeDust> {
+        self.pending_yoraiz_eye_dust.take()
+    }
+    pub(crate) fn take_glass_slipper_dust(&mut self) -> Vec<crate::player_dust2::GlassSlipperDust> {
+        std::mem::take(&mut self.pending_glass_slipper_dust)
+    }
+    pub(crate) fn take_solar_burst_dust(&mut self) -> Option<crate::player_dust2::SolarBurstDust> {
+        self.pending_solar_burst_dust.take()
+    }
+    pub(crate) fn take_teleport_visuals_dust(&mut self) -> Option<crate::player_dust2::TeleportVisualsDust> {
+        self.pending_teleport_visuals_dust.take()
+    }
+    pub(crate) fn take_shiny_sparkle_dust(&mut self) -> Option<crate::player_dust2::ShinySparkleDust> {
+        self.pending_shiny_sparkle_dust.take()
+    }
+    pub(crate) fn take_crimson_heal_dust(&mut self) -> Option<crate::player_dust2::CrimsonHealDust> {
+        self.pending_crimson_heal_dust.take()
+    }
+    pub(crate) fn take_mana_full_dust(&mut self) -> Option<crate::player_dust2::ManaFullDust> {
+        self.pending_mana_full_dust.take()
+    }
+    pub(crate) fn take_mow_lawn_dust(&mut self) -> Option<crate::player_dust2::MowLawnDust> {
+        self.pending_mow_lawn_dust.take()
+    }
+    pub(crate) fn take_hair_dye_dust(&mut self) -> Option<crate::player_dust2::HairDyeDust> {
+        self.pending_hair_dye_dust.take()
+    }
+    pub(crate) fn take_mana_heat_dust(&mut self) -> Option<crate::player_dust2::ManaHeatDust> {
+        self.pending_mana_heat_dust.take()
+    }
+
+    /// W4-e4 — takes the tick's queued FlameWaders flame positions
+    /// (`Player.cs:14094-14097`) — the caller owns `Main.dust` and rolls the
+    /// emitter on the `UpdatePlayers` stream.
+    pub(crate) fn take_flame_waders(&mut self) -> Vec<(f32, f32)> {
+        std::mem::take(&mut self.pending_flame_waders)
+    }
+
+    /// `Player.DoBootsEffect` (`Player.cs:14079-14085`): the walking-effect
+    /// gate — `miscCounter % 2 == 0 && velocity.Y == 0 && grappling[0] == -1
+    /// && CanSpawnWalkingEffects()` (`:35750-35753`: |vx| + |vy| > 1). The
+    /// FlameWaders arm (`:14229-14232`/`:15174-15177`) passes
+    /// `DoBootsEffect_PlaceFlamesOnTile`; the tile probe + the orchestra
+    /// spawn queue ride [`Self::try_flame_waders_tile`].
+    fn do_boots_effect_gate(&self) -> bool {
+        self.misc_counter % 2 == 0
+            && self.vy == 0.0
+            && !self.grappling_active
+            && self.vx.abs() + self.vy.abs() > 1.0
+    }
+
+    /// `Player.DoBootsEffect_PlaceFlamesOnTile` (`Player.cs:14087-14099`):
+    /// the tile BELOW the feet (`Main.tile[X, Y+1]`) must be active, dry
+    /// (`liquid == 0`) and `SolidTileAllowBottomSlope`; a pass queues the
+    /// FlameWaders orchestra at `(X*16+8, Y*16+16)`. Returns whether it
+    /// fired (the C# returns the bool the `TileActionAttempt` chain reads).
+    fn try_flame_waders_tile(&mut self, world: &World, x: i32, y: i32) -> bool {
+        let Some(t) = world.tile(x, y + 1) else {
+            return false;
+        };
+        if !t.active() || t.liquid > 0
+            || !crate::projectile_ai026_c::solid_tile_allow_bottom_slope(world, x, y + 1)
+        {
+            return false;
+        }
+        self.pending_flame_waders
+            .push((x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 16.0));
+        true
+    }
+
     /// W4-d51 — takes the extra-jump chain's queued dust snapshot
     /// (`Player.cs:20818-21012`); the caller owns `Main.dust` and the
     /// `UpdatePlayers` stream (`player_dust::drain_jump_dust`).
@@ -5661,6 +6053,7 @@ impl Player {
         self.pending_mana_full = false;
         self.pending_stoned_transition = false;
         self.pending_honey_land_sound = None;
+        self.pending_mana_refill = None;
         self.pending_flap_sound = None;
         self.pending_stoned_sound = None;
         self.pending_rocket_sound = None;
@@ -6800,6 +7193,7 @@ impl Player {
     }
 
     /// `Player.UpdateImmunity` (`Player.cs:18856-18894`): the i-frame
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
     /// (R-03-5's port; the dodge handlers above write the same fields via
@@ -7478,8 +7872,12 @@ impl Player {
         // callers are the PVP pair (`Player.cs:44098`, `Projectile.cs:14672`)
         // — unreachable here, so the port's callers all pass false and the
         // flag rides for parity + the maths test.
-        // W4-f3 — `Player.cs:38245`: `stealth = 1f` — any landed hit reveals
-        // the player (the stealth machines re-fade from the top next tick).
+        // `Player.cs:38245` — `stealth = 1f`: any landed hit reveals the
+        // player (the f3 reconcile row; the stealth machines re-fade from
+        // the top next tick). Runs AFTER the dodge early-returns, before
+        // the defense reduction — the C# position. CROSS-NOTE (keep-one):
+        // f50 `hurt_inner` carries the SAME write (its panic/squire head,
+        // f3-canonical per its own note) — at merge keep ONE copy.
         self.stealth = 1.0;
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
@@ -8327,8 +8725,8 @@ impl Player {
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
     /// read false in the sim; the port has no master difficulty yet, so the
     /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
-    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87,
-    /// `world_sim/editing/permanent_upgrades.rs`).
+    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87 → the batch-L
+    /// keep-one survivor `powerups::use_demon_heart`, research/263 §6.5).
     pub fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
         match slot {
             8 | 18 => self.extra_accessory && self.buffs.expert_mode,
@@ -8426,6 +8824,7 @@ impl Player {
         }
 
         }    fn update_equips(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+    fn update_equips(&mut self, world: &World) {
         for m in 3..10 {
             if !self.is_item_slot_unlocked_and_usable(m) {
                 continue;
@@ -8526,6 +8925,7 @@ impl Player {
             if self.equipped[n] == 5345 {
                 self.can_see_invisible_blocks = true;
             }
+            self.apply_equip_functional(m, kind, world);
         }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
@@ -8678,6 +9078,7 @@ impl Player {
         kind: u16,
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
+    fn apply_equip_functional(&mut self, item_slot: usize, kind: u16, world: &World) {
         // S1-C-12 wave E — the combat/damage family has ONE grant path:
         // `accessory_combat::apply_combat_accessory` claims its kinds here
         // and the former inline arms (489/490/491/2998/935/897/936/1343/
@@ -8735,6 +9136,10 @@ impl Player {
             // The Hand Of Creation 5126: the chisel row above PLUS the
             // `treasureMagnet` row (`:15292`) — ONE arm (a second 5126 arm
             // below would be unreachable, the i52 keep-one convention).
+            // flag the reach scan reads (`craft.rs`). W4-f49 — the 5126
+            // row's `treasureMagnet` half (`:15292`) lands here too (the
+            // other four flags ride the tile/wall scans + `autoPaint`).
+            4056 => self.pick_speed_bonus += 0.25,
             5126 => {
                 self.pick_speed_bonus += 0.25;
                 self.treasure_magnet = true;
@@ -8749,6 +9154,10 @@ impl Player {
             // The equipped accessory raises the placement/tool reach the
             // paint tools and the tile/wall routes read (W4-g79).
             407 => self.block_range += 1,
+            // W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+            // `Player.cs:14551-14553`): the bare `treasureMagnet` flag —
+            // the +150 grab range on EVERY kind (`:35149-35152`).
+            5010 => self.treasure_magnet = true,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -9079,6 +9488,9 @@ impl Player {
                 self.vanity_rocket_boots = 5;
                 self.hellfire_treads = true;
                 self.vanity_rocket_boots = 5; // `:15400` (W4-c14 doc-sweep)
+                // W4-e4 — the walking flames (`Player.cs:15174-15177`), the
+                // same `DoBootsEffect` gate the Flame Waker Boots carry.
+                self.try_flame_waders(item_slot, world);
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -9166,6 +9578,17 @@ impl Player {
             }
             // The merman shells (`:15134-15143` Moon Shell 861,
             // `:15402-15411` Celestial Shell 3110, `:15566-15573` Neptune's
+            // W4-e1 — the Shiny Stone 3337 (`Player.cs:14767-14770`): the
+            // standing-still regen boost flag; the sparkle gate
+            // (`UpdateLifeRegen` `:18945`, site 19273) reads it.
+            3337 => self.shiny_stone = true,
+            // W4-e1 — Yoraiz0r's Spell 3580 (`Player.cs:36969-36972`,
+            // `UpdateVisibleAccessory`): `yoraiz0rEye = itemSlot - 2`. The
+            // functional-slot grant covers the common equip; the vanity
+            // column's 3580 exception is `equip_swap.rs`'s (ANALYSIS).
+            3580 => self.yoraiz0r_eye = _item_slot as i32 - 2,
+            // The merman shells (`:15134-15143` Moon Charm 861,
+            // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
             // gates read (`CanUseWingAbilities` `:3994`, `WingAirLogicTweaks`
             // `:26496`). W4-e10: the `wolfAcc` half (861/3110, `:15137`/
@@ -9219,7 +9642,8 @@ impl Player {
             // The Mana Flower (`:15591-15594`), the Arcane Flower
             // (`:14405-14410` — also +5 magic crit / +5% magic damage; the
             // aggro -400 has no port consumer), the Magnet Flower
-            // (`:14455-14457`, its manaMagnet half unported) and the Mana
+            // (`:14455-14458`, its manaMagnet half live since i52 — the
+            // merged arm below) and the Mana
             // Cloak (`:14459-14460`) arm `manaFlower`; the ONE -0.08
             // `manaCost` row applies after the equip loop (`:12962-12965`),
             // so two flowers do not stack. Nature's Gift (`:15110-15113`)
@@ -9528,7 +9952,33 @@ impl Player {
             // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
             // (The `Item.lifeRegen` rows are generic now — the loop after
             // the accessory match adds every worn item's value.)
+            // W4-e4 — the Flame Waker Boots (4822) walking flames
+            // (`Player.cs:15174-15177`): `(!mount.Active || mount.Type != 47)
+            // && !hideVisibleAccessory[itemSlot]` gates
+            // `DoBootsEffect(DoBootsEffect_PlaceFlamesOnTile)`. The boots
+            // gate (`miscCounter % 2 == 0 && vy == 0 && !grappling &&
+            // CanSpawnWalkingEffects`) + the tile-below probe queue the
+            // FlameWaders orchestra position; the world-sim drain rolls the
+            // emitter on the `UpdatePlayers` stream. (The `:14229-14232`
+            // `UpdateItemDye` caller is the same effect on the dye path —
+            // the port's single functional-equip seam carries it once. The
+            // Hellfire Treads 4874 share the helper in their boot arm above.)
+            4822 => self.try_flame_waders(item_slot, world),
             _ => {}
+        }
+    }
+
+    /// W4-e4 — the FlameWaders `DoBootsEffect` gate + tile probe
+    /// (`Player.cs:15174-15177` → `:14079-14099`), shared by the Flame Waker
+    /// Boots (4822) and the Hellfire Treads (4874). The mount-47 exemption +
+    /// the per-slot visibility flag gate the boots effect; the tile-below
+    /// probe queues the orchestra position for the player-tick drain.
+    fn try_flame_waders(&mut self, item_slot: usize, world: &World) {
+        let mount_ok = !self.mount.is_active() || self.mount.kind() != 47;
+        if mount_ok && !self.hide_visible_accessory[item_slot] && self.do_boots_effect_gate() {
+            let x = (self.x + self.width * 0.5) as i32 / 16;
+            let y = (self.y + self.height - 1.0) as i32 / 16;
+            self.try_flame_waders_tile(world, x, y);
         }
     }
 
@@ -9656,6 +10106,8 @@ impl Player {
         if def.ranged && self.shroomite_stealth {
             kb *= 1.0 + (1.0 - self.stealth) * 0.5;
         }
+        // `:53364-53367` — the Vortex set's ranged knockback scale (the f3
+        // reconcile row; the two ifs are independent in the C#).
         if def.ranged && self.set_vortex {
             kb *= 1.0 + (1.0 - self.stealth) * 0.5;
         }
@@ -9705,10 +10157,23 @@ impl Player {
     /// Production always goes through the world-sim's `UpdatePlayers` stage
     /// stream, so this wrapper supplies a scratch seed-0 stream for the
     /// gear-less test players (an armed dodge source would draw from it
-    /// deterministically — nothing else).
+    /// deterministically — nothing else). R3: the wrapper also re-adds the
+    /// lifted `update_survival` regen tick (the wiring seam owns it in
+    /// production; the no-wiring callers keep their regen here).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         let mut scratch = tr_core::UnifiedRandom::default();
-        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch, &[], None)
+        // g10's petting inputs (`&[], None` — the npcs/talk_npc slots) ride
+        // the batch-L composed signature.
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch, &[], None);
+        // W4-f49 R3 step 4 — the regen tick re-added AFTER the movement
+        // wrapper for the no-wiring callers (the equip tests, the potion
+        // rigs): `update_survival` was lifted out of `update_with_grapple`
+        // to the world-sim wiring seam (the C# regen reads sit after the
+        // scan, `Player.cs:25977`/`:25995`). The inline nebula scan arms
+        // are gone, so this wrapper's nebula tier stays 0 — the same
+        // "the wiring owns the scan" shape the f12 gap-3 werewolf
+        // witnesses record.
+        self.update_survival(world, &mut scratch);
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -9913,7 +10378,12 @@ impl Player {
         // — the petting stop gates read this tick's control flags (W4-g10
         // FINAL; the machine lives in `player_petting.rs`, the NPC roster +
         // talk latch are the App's, so the call rides the world-sim seam).
-        self.update_petting_animal(npcs, talk_npc);
+        // S3 feed (the d21 compose contract): the proj-lane TryGetTarget
+        // resolves off `petting_target_bottom` — the field d21's K2 half
+        // lands with its projectile lane (batch-D); until then no live
+        // proj target exists (the from_projectile ctor is unwired), so the
+        // None feed is exact for every current caller.
+        self.update_petting_animal(npcs, talk_npc, self.petting_target_bottom);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -10362,12 +10832,21 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
+        // `ResetEffects`' nebula trio zero (`Player.cs:18755`) — ONE chained
+        // assign clears Damage, Life AND Mana (`nebulaLevelDamage =
+        // (nebulaLevelLife = (nebulaLevelMana = 0))`). The regen COUNTER is
+        // not reset here (the C# leaves it to the tier-0 arm of
+        // `ApplyNebulaBuffMana`, `:19583`).
+        self.nebula_level_mana = 0;
+        self.nebula_level_life = 0;
+        self.nebula_level_damage = 0;
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
-        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false`
-        // (`Player.cs:18491-18492`): the magnet accessories and buff 105
-        // re-arm them per tick (S1-P-i52).
+        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false` /
+        // `treasureMagnet = false` (`Player.cs:18491-18493`): the magnet
+        // accessories and buff 105 re-arm them per tick (S1-P-i52; the
+        // treasure half lands with W4-f49).
         self.mana_magnet = false;
         self.life_magnet = false;
         // `ResetEffects`' `treasureMagnet = false` (`Player.cs:18493`): the
@@ -10522,7 +11001,9 @@ impl Player {
         // owns that clear, gated on the freshly-derived `setVortex`.
         self.set_stardust = false;
         self.set_forbidden = false;
-        self.set_vortex = false;
+        // d79's nebula trio zero DUPLICATE dropped at batch-L (the S1
+        // receipt): the f49 copy above (`mana_regen_bonus` neighbour,
+        // `Player.cs:18755`) is the survivor — identical three lines.
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -10584,6 +11065,11 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `Player.cs:18377` — `aggro = 0`: ResetEffects zeroes it every
+        // tick; the Vortex stealth writer (`:25847`) subtracts from it per
+        // tick (the f3 reconcile row — without the reset the subtraction
+        // accumulates across ticks).
+        self.aggro = 0;
         // S1-C-12 wave E — the combat family's per-tick clears the wired
         // grants need: `minionKB = 0f` (`Player.cs:18347`) and `kbGlove
         // = false` (`:18709`). Without them the sky-stone bundle's
@@ -10901,6 +11387,13 @@ impl Player {
         // Frost (`frostArmor`) set flags the hurt voice reads (`:38684-
         // 38693`). `ResetEffects` clears both flags (`:18350`/`:18352`).
         self.apply_armor_sound_and_dust_changes();
+        // W4-d79's `update_buffs_nebula_scan()` call DELETED at batch-L
+        // (the S1 mutual receipt / R3 step 1): the ONE tier writer is f12's
+        // g27-canonical `buff_effects_orbs.rs::nebula_buffs` via
+        // `update_buff_frame` (not in this batch — the wiring seam in
+        // `world_sim/player.rs` marks its slot); until it lands the tier
+        // rides `nebula_levelup`'s same-tick pickup hint + the reset zero
+        // (the f12 gap-3 convention).
         for bt in self.buffs.active_types() {
             match bt {
                 // S1-E-7 wave A — the potion-buff block, in the C# chain's
@@ -11352,7 +11845,62 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-f49 R3 EXECUTED — the Nebula trio scan arms
+                // (`Player.cs:10444-10461`, the `UpdateBuffs_NebulaBuffs`
+                // helper `:12070-12079`) are DELETED from this inline loop:
+                // the g27 canonical `buff_effects_orbs.rs::apply_orb_arm`
+                // (branch task/W4-f12-buff-frame-wiring, routed EXCLUSIVELY
+                // by `buff_frame_wiring::update_buff_frame`) is the ONE
+                // tier writer. Two writers on one buff bar would double-
+                // step the `buffTime == 2` edge; the one-writer contract
+                // (research/85 R3 + the f12 sweep census) keeps the wiring.
+                // `fold_orb` bridges `orb_scan.nebula_level_*` onto these
+                // Player fields (the assign stub in this tree); the regen
+                // read (`RegenInputs.nebula_level_mana`) keeps the Player
+                // field. The Life/Damage CONSUMERS (`lifeRegen += 6 * tier`
+                // `:10451`, the `0.15 * tier` adds `:10456-10460`) stay
+                // f12's `fold_orb`.
                 _ => {}
+            }
+        }
+        // W4-e1 — `UpdateBuffs`' Solar shield arm (`Player.cs:10373-10407`):
+        // the live 170-172 buff re-affirms its 5-tick timer and derives
+        // `solarShields = 1 + buffType - 170`; a tier change clears the old
+        // slots, and `!setSolar` drops the shield + buff. The C# walks the
+        // buff slots with a `j--` rescan after each DelBuff compaction — the
+        // port re-reads the slot after a delete to match.
+        {
+            let mut j = 0usize;
+            while j < crate::buffs::MAX_BUFFS {
+                let bt = self.buffs.buff_type[j];
+                if bt >= 170 && bt <= 172 && self.buffs.buff_time[j] > 0 {
+                    self.buffs.buff_time[j] = 5;
+                    let num9 = 1 + bt - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(j);
+                            j = j.saturating_sub(1);
+                        } else {
+                            let mut n = 0usize;
+                            while n < crate::buffs::MAX_BUFFS {
+                                if self.buffs.buff_type[n] >= 170
+                                    && self.buffs.buff_type[n] <= 170 + num9 - 1
+                                {
+                                    self.buffs.del_buff(n);
+                                    n = n.saturating_sub(1);
+                                }
+                                n += 1;
+                            }
+                        }
+                    }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(j);
+                        j = j.saturating_sub(1);
+                    }
+                }
+                j += 1;
             }
         }
         if self.slow {
@@ -11378,6 +11926,23 @@ impl Player {
             self.vx = 0.0;
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
+        // W4-e1 — `Player.Update`'s pre-ResetEffects visual machines:
+        // `Yoraiz0rEye` (`:25487-25490`, site 12569) reads LAST tick's
+        // `yoraiz0rEye` grant (ResetEffects `:25491` clears it below);
+        // `UpdateSocialShadow` (`:24691`) shifts the facing history the eye
+        // trail's old anchor reads; `UpdateTeleportVisuals` (`:24692`, sites
+        // 16623/16633/16652) ticks the teleport countdown. All three queue
+        // dust for the drain (the `UpdatePlayers` stream).
+        if self.yoraiz0r_eye > 0 {
+            self.yoraiz0r_eye();
+        }
+        self.update_social_shadow();
+        self.update_teleport_visuals();
+        // W4-e1 — `Player.Update`'s hair-dye puff (`:24593`, site 24274) and
+        // the manaHeat ambient (`:24630-24662`, sites 24641/24654). Both queue
+        // dust for the drain; the hair-dye gate reads the live buff state.
+        self.update_hair_dye_dust();
+        self.mana_heat_ambient();
         // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
         // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :12946-12952):
@@ -11414,6 +11979,15 @@ impl Player {
         // W4-c14 doc-sweep - `:18354`: `vanityRocketBoots = 0` clears with
         // the gameplay tier; the equip rows + the vanity pass re-arm it.
         self.no_knockback = false;
+        // W4-e1 — `ResetEffects`' second-batch dust-host clears: `shinyStone`
+        // (`:18454`), `solarShields` (`:18505`), `yoraiz0rEye` (`:18402`),
+        // `setSolar` (`:25620`, the post-UpdateBuffs block). The equip /
+        // armor-set / buff passes below re-arm them per tick.
+        self.shiny_stone = false;
+        self.solar_shields = 0;
+        self.yoraiz0r_eye = 0;
+        self.set_solar = false;
+        self.set_vortex = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
         // clear lives in the ResetEffects block above (before the buff
@@ -11459,6 +12033,7 @@ impl Player {
         }
         // The bags' counterweight kind roll draws the caller's stage stream.
         self.update_equips(rng);
+        self.update_equips(world);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -11533,10 +12108,26 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
-        // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
-        // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
+        // W4-a6 — `UpdatePermanentBoosters` (`Player.cs:12851-12867`,
+        // called at `:25644` right after `UpdateEquips`): the C#'s OWN row
+        // order — Aegis Fruit +4 (`:12853-12856`), Gummy Worm +3
+        // (`:12857-12860`, the S1-P-i35 row), Ambrosia's speed triple LAST
+        // (`:12861-12866`). The port folds the pass into this post-equip
+        // seam (the Gummy Worm row's convention); the reconcile re-ordered
+        // the fruit row AHEAD of the worm row to the C# order (g89's
+        // verbatim shape, research/138 §2). `pickSpeed -= 0.05` is the
+        // port's signed bonus `pick_speed_bonus += 0.05` (`:4545`'s
+        // `1.0 - bonus` form).
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -11674,6 +12265,10 @@ impl Player {
             match bt {
                 2 => self.accessory_life_regen += 4,
                 165 => self.accessory_life_regen += 6,
+                // W4-d79's Nebula life fold (`Player.cs:10448-10452`,
+                // `lifeRegen += 6 * tier`) DELETED at batch-L (the S1
+                // mutual receipt / R3 step 2): f12's `fold_orb` owns the
+                // `buff_life_regen` consumer — one home per C# line.
                 _ => {}
             }
         }
@@ -11974,6 +12569,13 @@ impl Player {
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
             self.horizontal_movement(input);
+            // W4-e1 — `Player.cs:20176-20179`: the Lawn Mower (4049) swing
+            // puff fires at the HorizontalMovement tail (the mount-collision
+            // block). The swing phase reads the frame inputs the world_sim
+            // seam fed before the tick.
+            if self.held_item_kind == 4049 {
+                self.mow_the_lawn(self.frame_inputs.swing_anim, self.frame_inputs.swing_anim_max);
+            }
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -12255,6 +12857,10 @@ impl Player {
         // flight gate below already cover the rest of that branch).
         if !grappling && self.cced() && self.mount.is_active() {
             self.try_dismount(world);
+        }
+        // W4-e1 — `:26811`: the CCed arm cancels the jump visuals too.
+        if self.cced() {
+            self.cancel_all_jump_visual_effects();
         }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
@@ -12710,7 +13316,17 @@ impl Player {
             self.floor_visuals(world, falling);
         }
 
-        self.update_survival(world, rng);
+        // W4-f49 R3 step 4 — the regen tick LIFTED out of
+        // `update_with_grapple` to the world-sim wiring seam: the C# order
+        // is the scan (`UpdateBuffs` `:25566`) → `UpdateEquips` (`:25633`)
+        // → `UpdateLifeRegen` (`:25977`) → `UpdateManaRegen` (`:25995`) →
+        // `GrabItems` (`:27428`). With f12's `update_buff_frame` the scan
+        // (and the `fold_orb` nebula bridge) lands AFTER this call returns,
+        // so the regen reads must sit after the wiring — the lifted call
+        // lives in `world_sim/player.rs` at the seam. The standalone
+        // `Player::update` wrapper re-adds it for the no-wiring callers.
+        // (The lift also repairs f12's own `buff_life_regen` feed — its
+        // fold landed after the regen read and the next reset wiped it.)
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -12920,11 +13536,42 @@ impl Player {
                 self.swim_time = 0;
             }
         }
+        // W4-e1 — `PlayerFrame` → `UpdateVisibleAccessories` (`:35768-35770`,
+        // `:36753-36803`): the visible accessory slots 3..10 run
+        // `UpdateVisibleAccessory`, whose Glass Slipper (5077) arm calls
+        // `DoGlassSlipperSparkles` (`:14242`/`:14388`, sites 14291/14300).
+        // One snapshot per equipped slipper; the drain rolls both gates per
+        // snapshot on the `UpdatePlayers` stream. The `hideVisibleAccessory`
+        // gate (`:36789`) and the unlock gate (`:36756`) match the C#.
+        if !self.dead {
+            for slot in 3..10 {
+                if !self.is_item_slot_unlocked_and_usable(slot)
+                    || self.hide_visible_accessory[slot]
+                {
+                    continue;
+                }
+                if self.equipped[slot] == 5077 {
+                    let (cx, cy) = self.center();
+                    self.pending_glass_slipper_dust.push(
+                        crate::player_dust2::GlassSlipperDust {
+                            cx,
+                            cy,
+                            facing: self.facing,
+                            // `CanSpawnWalkingEffects` (`:35750-35753`).
+                            walking: self.vx.abs() + self.vy.abs() > 1.0,
+                        },
+                    );
+                }
+            }
+        }
         // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
         // one of the 57-60 roller-skate mounts
         // (`MountID.Sets.DoesNotOverrideLegFrames`, `MountID.cs:39`). Every
         // mount still runs its own animator, so this block does not return.
         let mut mount_owns_legs = false;
+        // W4-e4 — the intended frame state the mount animator ran this tick
+        // (the per-type extras read it; `None` when no mount is active).
+        let mut mount_frame_state: Option<i32> = None;
         if self.mount.is_active() {
             let kind = self.mount.kind();
             if !crate::mount::does_not_override_leg_frames(kind) {
@@ -12945,6 +13592,7 @@ impl Player {
                     // `:36199-36200`: `TryBeginningFlight` only fires for
                     // hover mounts (`Mount.cs:4537` — none in this table);
                     // the Rudolph dust trail is a visual seam.
+                    mount_frame_state = Some(crate::mount::FRAME_FLYING);
                     self.mount.update_frame(
                         crate::mount::FRAME_FLYING,
                         self.vx,
@@ -12959,6 +13607,7 @@ impl Player {
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
+                    mount_frame_state = Some(crate::mount::FRAME_SWIMMING);
                     self.mount.update_frame(
                         crate::mount::FRAME_SWIMMING,
                         self.vx,
@@ -12971,6 +13620,7 @@ impl Player {
                     );
                 } else {
                     // `:36207-36212`: plain air.
+                    mount_frame_state = Some(crate::mount::FRAME_IN_AIR);
                     self.mount.update_frame(
                         crate::mount::FRAME_IN_AIR,
                         self.vx,
@@ -12994,6 +13644,7 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
+                mount_frame_state = Some(state);
                 self.mount.update_frame(
                     state,
                     self.vx,
@@ -13004,6 +13655,44 @@ impl Player {
                     self.dash,
                     self.dash_delay,
                 );
+            }
+            // W4-e4 — `Mount.UpdateFrame`'s per-type dust extras
+            // (`Mount.cs:3637-4141`): the unicorn/wolf/witch/basilisk state
+            // machines + the WoF goat's tile-gated flames. The emitter
+            // bodies queue to the player-tick drain (`take_mount_dust`);
+            // the basilisk's FloorVisuals sandwich (d51's lane) runs here
+            // between the queued puffs and trail (the ±24 shift, cMount 0).
+            if let Some(state) = mount_frame_state {
+                let (cx, cy) = self.center();
+                let ctx = crate::mount::MountFrameContext {
+                    centre: Vec2::new(cx, cy),
+                    position: Vec2::new(self.x, self.y),
+                    bottom: Vec2::new(self.x + self.width * 0.5, self.y + self.height),
+                    bottom_left: Vec2::new(self.x, self.y + self.height),
+                    width: self.width,
+                    height: self.height,
+                    direction: self.facing,
+                    pvx: self.vx,
+                    pvy: self.vy,
+                    c_mount: self.c_mount,
+                };
+                let sandwich = self.mount.update_frame_extras(
+                    state,
+                    self.vx,
+                    self.vy,
+                    &ctx,
+                    &mut self.basilisk_charge,
+                );
+                if let Some(shift) = sandwich {
+                    // `Mount.cs:4110-4115` — the FloorVisuals sandwich: shift
+                    // ±24, sample the floor, shift back. The C# passes
+                    // `Falling: true` (the basilisk charge's landing burst).
+                    self.x += shift.x;
+                    self.y += shift.y;
+                    self.floor_visuals(world, true);
+                    self.x -= shift.x;
+                    self.y -= shift.y;
+                }
             }
         }
 
@@ -15880,6 +16569,279 @@ impl Player {
         }
     }
 
+    /// W4-e1 — `Player.UpdateSocialShadow` (`Player.cs:16583-16611`): the
+    /// 3-slot facing history. Only `shadowDirection[1]` (the PREVIOUS tick's
+    /// facing) has a ported consumer — the Yoraiz0r eye trail's old-point
+    /// anchor (`:12495`). The full pos/rotation/origin shadow chain is a draw
+    /// seam; the facing shift is ported verbatim (`:16585-16589`).
+    fn update_social_shadow(&mut self) {
+        // `for (num = 2; num > 0; num--) shadowDirection[num] =
+        // shadowDirection[num-1]` — [1] takes the old [0]; [0] takes facing.
+        // The port keeps only [1] (the [0] slot is the live facing).
+        self.shadow_direction_1 = self.facing;
+    }
+
+    /// W4-e1 — `Player.Yoraiz0rEye` (`Player.cs:12446-12577`, site 12569):
+    /// the eye-trail geometry at the `:25487` read moment. The scale switch
+    /// (`:12527-12549`) picks `num4`; case 1 returns (no trail). The light
+    /// half (`:12550-12561`, `PlotTileLine`) is the lighting lane's — no
+    /// `Main.rand`, skipped. The trail dust queues for the drain.
+    fn yoraiz0r_eye(&mut self) {
+        let Some(scale) = crate::player_dust2::yoraiz_eye_scale(self.yoraiz0r_eye) else {
+            return; // `:12529-12530` — case 1 returns.
+        };
+        // `:12448-12457` — the headgear offset (X is 0 for every row,
+        // `Main.cs:66638-66660`), the mounted-center lift, the sitting offset.
+        // The port's `body_frame` is the ROW index (the C# `bodyFrame.Y / 56`).
+        let row = self.body_frame as usize;
+        let headgear_y = offsets_player_headgear_y(row);
+        let (mcx, mcy) = self.mounted_center();
+        let (cx, cy) = self.center();
+        let mut pos = Vec2::new(
+            (self.width as i32 / 2) as f32,
+            (self.height as i32 / 2) as f32 + headgear_y,
+        ) + Vec2::new(mcx - cx, mcy - cy);
+        pos += Vec2::new(self.seat_pos_offset.0, self.seat_pos_offset.1 + self.seat_y_offset as f32);
+        // `:12458-12465` — the face-19 / head-276 nudges. The port has no
+        // face/head slot fields (the vanity draw lane), so both fold away.
+        // `:12466-12492` — the mount head offsets.
+        if self.mount.is_active() {
+            match self.mount.kind() {
+                52 => {
+                    pos.x += 14.0 * self.facing as f32;
+                    pos.y -= 2.0;
+                }
+                54 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x -= 14.0 * self.facing as f32;
+                }
+                56 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x += 6.0 * self.facing as f32;
+                    pos.y -= 10.0;
+                }
+                55 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.y -= 8.0;
+                }
+                61 => {
+                    pos.x -= 2.0 * self.facing as f32;
+                    pos.y += 8.0;
+                }
+                _ => {}
+            }
+        }
+        // `:12493-12495` — the eye anchor + the shadow-direction old anchor.
+        let y = -11.5;
+        let facing = self.facing as f32;
+        let mut vector2 = Vec2::new(
+            3.0 * facing - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + Vec2::new(0.0, self.gfx_off_y) + pos;
+        let mut vector3 = Vec2::new(
+            3.0 * self.shadow_direction_1 as f32 - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + pos;
+        // `:12496-12511` — the track-rider lean + the sleeping bed offset.
+        let mut zero = Vec2::ZERO;
+        let track_rider = self.mount.is_active()
+            && self.mount.data().is_some_and(|d| d.minecart || d.can_ride_minecart_tracks);
+        if track_rider {
+            let mut num2 = self.vx.signum() as i32;
+            if num2 == 0 {
+                num2 = self.facing;
+            }
+            let t = self.full_rotation / (std::f32::consts::PI / 4.0);
+            // `MathHelper.Lerp(a,b,t) = a + (b-a)*t` (XNA).
+            let mut zero2 = Vec2::new(0.0 + (-8.0 - 0.0) * t, 0.0 + (2.0 - 0.0) * t.abs());
+            zero2 = crate::player_dust2::rotate_by(zero2, self.full_rotation as f64);
+            if num2 == self.full_rotation.signum() as i32 {
+                zero2 *= 1.0 + (0.6 - 1.0) * t.abs();
+            }
+            zero += zero2;
+        }
+        // The sleeping `visualOffsetOfBedBase` (`:12512-12515`) is the bed
+        // draw lane's — the port's sleep is a pose flag (no offset), folds 0.
+        // `:12516-12520` — the full-rotation pivot.
+        if self.full_rotation != 0.0 {
+            let origin = Vec2::new(self.full_rotation_origin.0, self.full_rotation_origin.1);
+            vector2 = crate::player_dust2::rotate_about(vector2, self.full_rotation as f64, origin);
+            vector3 = crate::player_dust2::rotate_about(vector3, self.full_rotation as f64, origin);
+        }
+        // `:12522-12525` — the endpoints (num3 = 0, the Y half-lift is 0).
+        let new_pt = Vec2::new(self.x, self.y) + vector2 + zero;
+        let old_pt = Vec2::new(self.old_x, self.old_y) + vector3 + zero;
+        self.pending_yoraiz_eye_dust = Some(crate::player_dust2::YoraizEyeDust {
+            new_pt,
+            old_pt,
+            cx,
+            cy,
+            scale,
+        });
+    }
+
+    /// W4-e1 — `Player.UpdateTeleportVisuals` (`Player.cs:16613-16670`, sites
+    /// 16623/16633/16652): the per-tick teleport countdown. The time
+    /// decrements + style-2/3 pin run here (the C# order); the gate draw +
+    /// spawn queue for the drain. Style 9 (pylon) queues the gate draw only.
+    fn update_teleport_visuals(&mut self) {
+        if !(self.teleport_time > 0.0) {
+            return;
+        }
+        // `:16639-16646` — styles 2/3 pin the time to 0.005 (no dust).
+        if self.teleport_style_id == 2 || self.teleport_style_id == 3 {
+            self.teleport_time = 0.005;
+        } else if self.teleport_style_id == 4 {
+            // `:16649` — style 4 decays 0.02 BEFORE the gate.
+            self.teleport_time -= 0.02;
+        }
+        // The gate + spawn queue (styles 0/1/4/9); the drain rolls the gate.
+        if matches!(self.teleport_style_id, 0 | 1 | 4 | 9) {
+            self.pending_teleport_visuals_dust =
+                Some(crate::player_dust2::TeleportVisualsDust {
+                    style: self.teleport_style_id,
+                    time: self.teleport_time,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    portal_color_index: self.last_portal_color_index,
+                });
+        }
+        // `:16669` — the universal tail decay.
+        self.teleport_time -= 0.005;
+    }
+
+    /// W4-e1 — `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`, site
+    /// 16389): the Solar Flare shield-charge machine. `setSolar` grants from
+    /// the armor-set row; the 180-tick counter charges a shield (buff
+    /// 170+shields, 5 ticks) and queues the 16-dust gain burst. The shield
+    /// POSITION orbit (`:16403-16428`) is a draw seam (no rand); the dashType
+    /// grant (`:16434-16438`) rides the live shields.
+    pub(crate) fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383` — a shield-tier change clears the old 170/171.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for i in 0..crate::buffs::MAX_BUFFS {
+                    if self.buffs.buff_type[i] >= 170 && self.buffs.buff_type[i] <= 171 {
+                        self.buffs.del_buff(i);
+                    }
+                }
+            }
+            if self.solar_shields < 3 {
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395` — the 16-dust gain burst queues for the drain.
+                self.pending_solar_burst_dust = Some(crate::player_dust2::SolarBurstDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16434-16438` — the dash grant (solarDashing/dashDelay are the
+        // dash lane's; the shields>0 half grants dashType 3).
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
+    /// W4-e1 — `Player.MowTheLawn` (`Player.cs:20301-20346`, site 20320): the
+    /// Lawn Mower (4049) swing puff. The host gates the swing (miscCounter%2,
+    /// grounded, no grapple, itemAnimation>=1) and computes the lerp anchor;
+    /// the drain replays the single NewDustDirect. The NPC-collision +
+    /// tile-cut halves (`:20328-20345`) are the combat/editing lanes'.
+    fn mow_the_lawn(&mut self, swing_anim: f32, swing_anim_max: f32) {
+        // `:20303` — `itemAnimation < 1` is the INTEGER tick count; the port's
+        // swing timer is seconds, so convert (the `ticks_of` convention).
+        let anim_ticks = (swing_anim * 60.0).round() as i32;
+        if self.misc_counter % 2 != 0
+            || self.vy != 0.0
+            || self.grappling_active
+            || anim_ticks < 1
+        {
+            return;
+        }
+        // `:20307` — the mounted-center + direction*38 anchor.
+        let (mcx, mcy) = self.mounted_center();
+        let mut vector = Vec2::new(
+            mcx + self.facing as f32 * 38.0,
+            mcy + (self.height / 2.0 + 4.0),
+        );
+        // `:20308-20318` — the mount offsets (DontHoldItems / type 54).
+        if self.mount.is_active() {
+            let kind = self.mount.kind();
+            if crate::mount::dont_hold_items(kind) {
+                return;
+            }
+            if kind == 54 {
+                vector += Vec2::new(4.0 * self.facing as f32, 0.0);
+            }
+        }
+        // `:20319` — the swing phase.
+        let num = if swing_anim_max > 0.0 {
+            (1.0 - swing_anim / swing_anim_max) * 2.0
+        } else {
+            0.0
+        };
+        let d = self.facing as f32;
+        self.pending_mow_lawn_dust = Some(crate::player_dust2::MowLawnDust {
+            a: vector + Vec2::new(d * -16.0, -4.0),
+            b: vector + Vec2::new(d * -6.0, -4.0),
+            num,
+        });
+    }
+
+    /// W4-e1 — `Player.UpdateHairDyeDust` (`Player.cs:24268-24295`, site
+    /// 24274): the team-dye puff. The gate is the team-dye shader state +
+    /// alive/not-stoned/not-frozen/not-ghost; the drain rolls the Next(45) +
+    /// the type roll + the jitter chain (and the gore sibling's gate draws).
+    fn update_hair_dye_dust(&mut self) {
+        if self.dead
+            || self.ghost_like()
+            || self.buffs.find_buff_index(156).is_some()
+            || self.frozen
+            || self.hair_dye != TEAM_DYE_SHADER_INDEX
+        {
+            return;
+        }
+        self.pending_hair_dye_dust = Some(crate::player_dust2::HairDyeDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            vx: self.vx,
+            vy: self.vy,
+        });
+    }
+
+    /// W4-e1 — the manaHeat ambient (`Player.Update :24630-24662`, sites
+    /// 24641/24654): the heat != 1 gate + the Remap-derived probability. The
+    /// drain rolls the two NextFloat*6 gates + the spawn/clone chain.
+    fn mana_heat_ambient(&mut self) {
+        if self.mana_heat == 1.0 {
+            return;
+        }
+        // `:24635` — num4 = Remap(manaHeat, 1.3, 1, 1, 0), clamped (the
+        // local-player arm; the port is single-player). Utils.Remap clamps
+        // the lerp t to [0,1] by default.
+        let t = ((self.mana_heat - 1.3) / (1.0 - 1.3)).clamp(0.0, 1.0);
+        let num4 = 1.0 + (0.0 - 1.0) * t;
+        self.pending_mana_heat_dust = Some(crate::player_dust2::ManaHeatDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            num4,
+        });
+    }
+
     /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
     /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
     /// the shimmer strip, the position write, the fall-origin reset and the
@@ -15887,6 +16849,15 @@ impl Player {
     /// The velocity is NOT zeroed here — the C# scan zeroes it before the
     /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        // W4-e1 — `:37490-37491`: the teleport-visuals countdown arms.
+        self.teleport_time = 1.0;
+        self.teleport_style_id = style;
+        // `:37477-37480` — style 4 records the portal colour index.
+        if style == 4 {
+            // `extraInfo` is the portal colour; the port's callers pass 0
+            // (the pylon/portal lane owns the index) — kept as the field.
+            self.last_portal_color_index = 0;
+        }
         // `:37420-37423` — every style but 10 removes the hooks.
         if style != 10 {
             self.release_grappling_hooks = true;
@@ -15912,6 +16883,13 @@ impl Player {
         self.fall_start = (new_y / TILE_PX) as i32;
         self.prev_x = new_x;
         self.prev_y = new_y;
+        // W4-e1 — `:37484-37487`: `ResetAdvancedShadows` + three
+        // `UpdateSocialShadow` calls re-pin the facing history at the new
+        // spot (the eye trail's old anchor reads [1]). The pos/rotation
+        // shadow chain is a draw seam; the facing shift is ported.
+        for _ in 0..3 {
+            self.update_social_shadow();
+        }
     }
 
     /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
@@ -16309,6 +17287,42 @@ impl Player {
     /// device (the `take_cart_sounds` convention).
     pub(crate) fn take_ability_sounds(&mut self) -> Vec<(i32, f32, f32)> {
         std::mem::take(&mut self.pending_ability_sounds)
+        // W4-e4 — `Mount.UpdateEffects`' per-type dust cases
+        // (`Mount.cs:4815-5131`): the witch-broom trinket (23), the gem
+        // minecarts (25-31), the steam (36) / exhaust (32) / confetti (34)
+        // minecarts and the drill-mount trail (11). The emitter bodies queue
+        // to the player-tick drain (`take_mount_dust`) on the `UpdatePlayers`
+        // stream — the player tick cannot borrow the App's dust pool. The
+        // gate draws (the gem Next(10), the steam draw-free speed gate, the
+        // exhaust/confetti short-circuit gates) ride the emitters at the
+        // drain (the C# draws them inside the effect call). The witch-broom
+        // wind probe (`GetWitchBroomTrinketRotation`, `:3562-3574`) reads the
+        // centre tile's wind here (the snapshot the emitter needs).
+        match self.mount.kind() {
+            23 => {
+                let (cx, cy) = self.center();
+                let tx = (cx / TILE_PX) as i32;
+                let ty = (cy / TILE_PX) as i32;
+                let in_wind = wind.is_some_and(|w| w.in_a_place_with_wind(world, tx, ty, 1, 1));
+                let wind_speed = wind.map_or(0.0, |w| w.speed_current);
+                self.mount.queue_mount_effect(crate::mount::MountDustRequest::WitchBroom {
+                    wind_speed,
+                    in_wind,
+                });
+            }
+            25 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 86 }),
+            26 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 87 }),
+            27 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 88 }),
+            28 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 89 }),
+            29 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 90 }),
+            30 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 91 }),
+            31 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 262 }),
+            36 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::SteamMinecart { dust_type: 303 }),
+            32 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::ExhaustMinecart { dust_type: 31 }),
+            34 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::ConfettiMinecart),
+            11 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::DrillTrail),
+            _ => {}
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -16982,6 +17996,9 @@ impl Player {
         self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
+        // W4-e1 — `:36493` (PlayerFrame's grappling arm): the jump visuals
+        // cancel while hooked.
+        self.cancel_all_jump_visual_effects();
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
         // ({54, 57-60}) dismounts while the hooks are out.
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
@@ -17383,6 +18400,11 @@ impl Player {
     /// the buff-120 grant (`:23732-23735`, tiles 666/712) is a cited seam.
     /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
     /// the slope dust carve-out stay with the particle tasks.
+    /// the neighbors, solid tiles only. W4-f3 canonical host (the e1b-141
+    /// reconcile): the slope carve-out (`:23736`) and the `MakeFloorDust`
+    /// call (`:23740-23742`) ride here; the e1 KEEP rows fold in — the
+    /// Stinky buff-120 grant (`:23732-23735`, tiles 666/712, pre-carve-out)
+    /// and the ANY-liquid wet gate (`base.wet` = WetCollision).
     fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
@@ -17416,6 +18438,13 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(tile.kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(tile.kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(tile.kind);
+        // W4-e1 KEEP (the e1b-141 reconcile) — `:23732-23735`: the Stinky
+        // tiles (666/712) grant buff 120 for 180 ticks (`whoAmI ==
+        // Main.myPlayer` is the port's single player). The grant reads the
+        // REAL tile, so it runs BEFORE the slope carve-out.
+        if kind == 666 || kind == 712 {
+            self.buffs.add_buff(120, 180);
+        }
         // `Player.cs:23736-23739`: a slope in the three-tile window carves the
         // dust kind out (the flags above keep the real tile).
         let mut dust_kind = kind;
@@ -17426,10 +18455,14 @@ impl Player {
             dust_kind = -1;
         }
         // `Player.cs:23740-23742`: `!base.wet && !mount.Cart` → MakeFloorDust.
-        // The port's `wet` is water-only (the C#'s `base.wet` is the any-liquid
-        // union); the cart gate uses the mount's cart flag.
-        let cart = self.mount.is_active() && crate::mount::is_cart(self.mount.kind());
-        if !self.wet && !cart {
+        // W4-e1 KEEP: `base.wet` is WetCollision — ANY liquid — so the gate
+        // is the four-flag union (the water-only `wet` let lava/honey/shimmer
+        // feet spawn floor dust); the cart check covers `cart_mounted` + the
+        // active cart mount.
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let cart = self.cart_mounted
+            || (self.mount.is_active() && crate::mount::is_cart(self.mount.kind()));
+        if !any_wet && !cart {
             self.make_floor_dust(falling, dust_kind, tile.frame_x as i32, tile.frame_y as i32, tile.paint() as i32);
         }
     }
@@ -17439,8 +18472,8 @@ impl Player {
     /// (`player_dust::drain_floor_dust`) replays the per-iteration gate rolls +
     /// the `Dust.NewDust` chain on the `UpdatePlayers` stream. The shimmer-block
     /// orchestrator arm (`:23792-23818`, tiles 659/667) is a cited seam (the
-    /// ParticleOrchestrator is unported — its 4 draws stay with that lane); the
-    /// `Item177` landing cue (`:23830`, tiles 666/712) is an audio seam.
+    /// ParticleOrchestrator lane's); the `Item177` landing cue (`:23830`,
+    /// tiles 666/712) is an audio seam.
     fn make_floor_dust(&mut self, falling: bool, kind: i32, frame_x: i32, frame_y: i32, paint: i32) {
         self.pending_floor_dust = Some(FloorDust {
             kind,
@@ -17544,6 +18577,12 @@ impl Player {
         // runs every fixed step right after the tick) — a plain write.
         self.pending_torch_god = pending;
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-a6 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation (the g90 lane-7 shape, research/138).
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -18055,14 +19094,19 @@ impl Player {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
         }
-        // `Player.cs:23283-23316`: the drowning bubble. The `Next(20)` gate
-        // draws only while drowning (the `!flag` short-circuit); lava/honey-wet
-        // refuse after the draw. The mouth position is `(x + 12*direction,
-        // y + 4)` (gravDir 1, `num4 = 0`); the breathing-reed / mount-mouth
-        // offsets (`:23293-23314`) have no port fields and fold to the base.
-        if drowning && rng.next_range(0, 20) == 0 && !self.lava_wet && !self.honey_wet {
-            let mouth = Vec2::new(self.x + 12.0 * self.facing as f32, self.y + 4.0);
-            self.pending_drown_bubble = Some((mouth, self.width));
+        // `Player.cs:23283-23316`: the drowning bubble. KEEP-E1 (the e1b-141
+        // reconcile): the C# `||` chain draws the `Next(20)` BEFORE reading
+        // lavaWet/honeyWet — the draw rides whenever drowning, then the wet
+        // flags refuse (the old wet-first gate skipped the draw). The mouth
+        // position is `(x + 12*direction, y + 4)` (gravDir 1, `num4 = 0`);
+        // the breathing-reed / mount-mouth offsets (`:23293-23314`) have no
+        // port fields and fold to the base.
+        if drowning {
+            let gate = rng.next_range(0, 20) == 0;
+            if gate && !self.lava_wet && !self.honey_wet {
+                let mouth = Vec2::new(self.x + 12.0 * self.facing as f32, self.y + 4.0);
+                self.pending_drown_bubble = Some((mouth, self.width));
+            }
         }
         // `:23283-23316`: the bubble tail — `!flag || Next(20) != 0 ||
         // lavaWet || honeyWet` returns; the C#'s `||` short-circuits, so the
@@ -18258,16 +19302,27 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d79's Player-method `apply_nebula_buff_mana()` head call
+            // DELETED at batch-L (the S1 mutual receipt): the d117/f49
+            // engine form runs it FIRST inside `update_mana_regen`
+            // (`regen.rs`, the `:19421` position, `RegenInputs.
+            // nebula_level_mana` fed below) — ONE reader, ONE counter.
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
                 mana_regen_buff: self.mana_regen_buff,
+                nebula_level_mana: self.nebula_level_mana,
+                used_arcane_crystal: self.used_arcane_crystal,
                 well_fed: self.well_fed,
+                expert_mode: self.buffs.expert_mode,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
-                moving_x: self.vx != 0.0,
+                // `Player.cs:19241`: the halving arm needs BOTH a non-zero
+                // vx AND no hook — grappled movement keeps the ×1.25 lane.
+                moving_x: self.vx != 0.0 && !self.grappling_active,
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
+                grappling: self.grappling_active,
                 dot_regen: dots.regen,
                 dot_resets_time: dots.resets_time,
                 dot_fast_lane: dots.fast_lane,
@@ -18290,6 +19345,20 @@ impl Player {
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 }
                     + if self.holding(48) { 2.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-e1 — the second-batch dust gates: the shiny-stone still
+                // sparkle (`:18945`, site 19273) and the crimson heal burst
+                // (`:19292`, site 19296). `itemAnimation == 0` is the port's
+                // `mana_regen_item_in_use` stand-in (the swing/reuse timers).
+                shiny_stone_still: self.shiny_stone
+                    && self.vx.abs() < 0.05
+                    && self.vy.abs() < 0.05
+                    && !self.mana_regen_item_in_use,
+                crimson_regen: self.crimson_regen,
+                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot so the add
+                // lands BETWEEN the base +1 and the crimson row (the C#'s
+                // f32 order; the g90 lane-7 shape, research/138 §2).
+                aegis_crystal: self.used_aegis_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -18328,6 +19397,7 @@ impl Player {
             }
             update_mana_regen(
 )            if update_mana_regen(
+            let refilled = update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
@@ -18340,6 +19410,67 @@ impl Player {
                 // audio device and the UpdatePlayers stream).
                 self.pending_mana_full = true;
             }
+            );
+            // W4-e1 — drain the regen dust events into the queues (the
+            // `UpdatePlayers` stream replays them in the world_sim seam).
+            // The shiny sparkle gate (`:19271`) recorded its time; the crimson
+            // chunks counted their bursts; the full-mana bar (`:19550`, site
+            // 19555) arms on the engine's `refilled` return.
+            if let Some(time) = self.regen.shiny_gate_time.take() {
+                self.pending_shiny_sparkle_dust =
+                    Some(crate::player_dust2::ShinySparkleDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        cx: self.x + self.width * 0.5,
+                        cy: self.y + self.height * 0.5,
+                        regen_time: time,
+                    });
+            }
+            let bursts = std::mem::take(&mut self.regen.crimson_heal_bursts);
+            if bursts > 0 {
+                self.pending_crimson_heal_dust =
+                    Some(crate::player_dust2::CrimsonHealDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        bursts,
+                    });
+            }
+            if refilled {
+                self.pending_mana_full_dust = Some(crate::player_dust2::ManaFullDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+            }
+                // W4-d79 — `Player.cs:19550-19560`: the local player's
+                // full-bar `PlaySound(25)` + the 5× dust-45 burst. The
+                // engine returns the flag4-gated trigger (the ManaV2
+                // animation gate already suppressed it mid-swing); the
+                // drain plays the unpositioned chime and rolls the dust
+                // draws on `UpdatePlayers` (the queue convention — the
+                // tick has no `Audio`/`DustPool` borrow). The C# reads
+                // `base.position`/`width`/`height` at THIS point in
+                // `Player.Update` (`:25995`), before the movement tail.
+                self.pending_mana_refill =
+                    Some((self.x, self.y, self.width as i32, self.height as i32));
+            }
+        }
+        // `Player.Update`'s post-UpdateManaRegen tail (`Player.cs:
+        // 25996-26003`): runs UNCONDITIONALLY (outside the port's hp gate —
+        // the C# clamps a dead player's fields too). A negative regen
+        // counter zeroes (no C# lane writes it negative — a defensive pin),
+        // and an over-max bar (a same-tick pickup/drink landed past the
+        // engine's chunk clamps) snaps back to the max.
+        if self.regen.mana_regen_count < 0 {
+            self.regen.mana_regen_count = 0;
+        }
+        if self.mana > self.mana_max {
+            self.mana = self.mana_max;
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -18667,6 +19798,121 @@ lag31 stays false unless a force is on).
         }
         h
     }
+
+    // The net/f49/f49-bridge methods kept through the J/F/L unions are
+    // gathered in this impl (the L-side splice closed the prior impl early).
+    impl Player {
+    /// The `62 SyncDodge` reader's switch on ourselves
+    /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
+    /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
+    /// order (3, the retired Holy dodge, has no arm; any other kind falls
+    /// through). The send-back inside each handler is the SEND path's
+    /// (S1-I-4), not the reader's — the reader never re-sends. W4-c27.
+    pub(crate) fn apply_net_dodge(&mut self, kind: u8) {
+        if kind == 1 {
+            self.ninja_dodge(); // `:2889`
+        }
+        if kind == 2 {
+            self.do_shadow_dodge(); // `:2893`
+        }
+        if kind == 4 {
+            self.brain_of_confusion_dodge(); // `:2897`
+        }
+        if kind == 5 {
+            self.do_mystic_sash_dodge(); // `:2901`
+        }
+    }
+
+    /// W4-c28: takes the queued `Hurt` client-send tail
+    /// (`Player.cs:38369-38377`) — `(knockback_13, hp, max_hp)`, the hp pair
+    /// PRE-subtraction. The netglue drain maps it through
+    /// `net_player_sync::hurt_sends` into the client outbox.
+    pub(crate) fn take_hurt_net(&mut self) -> Option<(bool, i32, i32)> {
+        self.pending_hurt_net.take()
+    }
+
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`, W4-g50): the nebula
+    /// booster pickup's tier bump. The `whoAmI != Main.myPlayer` guard
+    /// (`:57032`) folds to the caller — the `102` client arm only calls it
+    /// on the local player. The existing tier buffs (`type..type+2`) are
+    /// deleted first (`:57037-57043`), then the matching level clamps +1 to
+    /// 0..3 (`nebulaMaxLevel`, `:922`) and the tier buff `type + level - 1`
+    /// grants for 480 ticks (`:57036`).
+    pub(crate) fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `for i < maxBuffs: if buffType[i] in [type, type+3) DelBuff(i--)`.
+        let mut i = 0;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs
+                    .add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Player.IsItemSlotUnlockedAndUsable` (`Player.cs:12579-12604`): the
+    /// slot 8 needs the Demon Heart's `extraAccessory` AND expert mode, the
+    /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
+    /// read false in the sim; the port has no master difficulty yet, so the
+    /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
+    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87,
+    /// `world_sim/editing/permanent_upgrades.rs`).
+    
+
+    /// `Player.CanDemonHeartAccessoryBeShown` (`Player.cs:4276-4283`): the
+    /// slot-8 row SHOWS when the slot is unlocked-and-usable, OR any of the
+    /// three carriers holds an item (`armor[8]`, the vanity `armor[18]`, the
+    /// dye `dye[8]`) — a pre-unlock loaded save keeps its stored row visible.
+    /// The C#'s `type <= 0` reads map to the port's kind-0-empty slots.
+    pub fn can_demon_heart_accessory_be_shown(&self) -> bool {
+        if !self.is_item_slot_unlocked_and_usable(8)
+            && self.equipped[8] == 0
+            && self.equipped[18] == 0
+        {
+            return self.dye_slots[8] > 0;
+        }
+        true
+    }
+
+    /// `Player.CanMasterModeAccessoryBeShown` (`Player.cs:4285-4292`): the
+    /// slot-9 twin. No master difficulty in the port, so the unlock half is
+    /// always false — the row shows only while a stored item occupies it.
+    pub fn can_master_mode_accessory_be_shown(&self) -> bool {
+        if !self.is_item_slot_unlocked_and_usable(9)
+            && self.equipped[9] == 0
+            && self.equipped[19] == 0
+        {
+            return self.dye_slots[9] > 0;
+        }
+        true
+    }
+
+    /// `Player.GetAmountOfExtraAccessorySlotsToShow` (`Player.cs:4294-4306`):
+    /// `Main.cs:41145`'s `num19 = 8 + this` — the equipment column's row
+    /// count and the Settings-button avoidance both read it.
+    pub fn extra_accessory_slots_to_show(&self) -> i32 {
+        i32::from(self.can_demon_heart_accessory_be_shown())
+            + i32::from(self.can_master_mode_accessory_be_shown())
+    }
+
 }
 
 /// Player movement collision: ground slopes (slope 1/2) are handled by `slope_floor`.
@@ -20235,6 +21481,78 @@ mod tests {
         q.update(&w, PlayerInput::default());
         assert!(q.magic_cuffs);
         assert_eq!(q.mana_max, 20 + 40);
+    }
+
+    /// W4-d117 — `Player.cs:19241`: the moving-halving arm needs BOTH
+    /// `velocity.X != 0` AND `grappling[0] < 0`; a hooked player keeps the
+    /// ×1.25 lane (and the mana delay's double countdown, `:19426`).
+    #[test]
+    fn w4_d117_grappled_movement_keeps_the_still_lane() {
+        let w = World::new("t".into(), 64, 800);
+        let ramp = |hooked: bool| -> (i32, f32) {
+            let mut p = Player::spawn(&w);
+            p.vx = 2.0;
+            p.grappling_active = hooked;
+            p.regen.life_regen_time = 3000.0;
+            p.regen.mana_regen_delay = 4.0;
+            p.mana = 10;
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            (p.regen.life_regen, p.regen.mana_regen_delay)
+        };
+        // max 100 → scale 0.3625: tier 8 × 1.25 = 10 → banker's(3.625) = 4;
+        // unhooks halve to 4 → banker's(1.45) = 1. Delay: hooked −1 −1 = 2,
+        // unhooked moving −1 = 3.
+        assert_eq!(ramp(true), (4, 2.0));
+        assert_eq!(ramp(false), (1, 3.0));
+    }
+
+    /// W4-d117 — the nebula tier / arcane-crystal fields flow from Player
+    /// into the engine (`:19421`, `:19430-19433`), and ResetEffects zeroes
+    /// the tier but NOT the counter (`:18755` vs `:19583`).
+    #[test]
+    fn w4_d117_nebula_and_crystal_fields_flow_through_the_engine() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.nebula_level_mana = 3;
+        p.regen.mana_regen_delay = 100.0; // regen line off — pure nebula
+        for _ in 0..2 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        }
+        assert_eq!(p.mana, 11, "tier 3 grants at counter 6 (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // A full update's ResetEffects wipes the tier (`:18755`); the
+        // counter's wipe is the ENGINE's tier-0 arm (`:19583`), not the
+        // reset — both are 0 after the tick.
+        p.regen.nebula_mana_counter = 4;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // The crystal survives ResetEffects (a permanent, `:45399-45404`
+        // has no reset site) and shaves the delay: still → 4 −1 −1 −0.05.
+        p.used_arcane_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_arcane_crystal, "ResetEffects keeps the permanent");
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.regen.mana_regen_delay = 4.0;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!((p.regen.mana_regen_delay - 1.95).abs() < 1e-6);
+    }
+
+    /// W4-d117 — `Player.Update`'s post-regen tail (`Player.cs:25996-26003`)
+    /// runs UNCONDITIONALLY: a dead player's negative counter and over-max
+    /// bar are clamped too (the port's hp gate only guards the engines).
+    #[test]
+    fn w4_d117_the_update_tail_clamps_run_even_when_dead() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.hp = 0;
+        p.mana = 30; // > mana_max 20
+        p.regen.mana_regen_count = -50;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.mana, 20, "the over-max snap (:26000-26003)");
+        assert_eq!(p.regen.mana_regen_count, 0, "the negative wipe (:25996)");
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
@@ -22875,6 +24193,202 @@ mod tests {
         assert!(!p.life_magnet, "the expiry cleared it");
     }
 
+    /// W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+    /// `Player.cs:14551-14553`) and the Hand Of Creation 5126 (`:15292`, the
+    /// `treasureMagnet` half of its six-flag row) arm `treasureMagnet` per
+    /// tick; `ResetEffects` (`:18493`) clears it. The grab-range row adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`) — the
+    /// `item.rs::get_item_grab_range` consumer was already live; this pins
+    /// the flag grant + the feed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_treasure_magnet_accessories_arm_treasure_magnet() {
+        let p = player_with_accessory(5010);
+        assert!(p.treasure_magnet, "the Treasure Magnet");
+        let p = player_with_accessory(5126);
+        assert!(p.treasure_magnet, "the Hand Of Creation's magnet half");
+        assert!(
+            (p.pick_speed_bonus - 0.25).abs() < 1e-4,
+            "its chiselSpeed row still folds"
+        );
+        let p = player_with_accessory(0);
+        assert!(!p.treasure_magnet, "ResetEffects cleared it (:18493)");
+        // The range consumer: +150 on a NON-pickup kind (the treasure magnet
+        // is not kind-gated, unlike the mana/life magnets).
+        let flags = crate::item::GrabFlags {
+            treasure_magnet: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::item::get_item_grab_range(1, flags),
+            42 + 150,
+            "the +150 rides every kind"
+        );
+    }
+
+    /// W4-f49 lane 12 — `NebulaLevelup` (`Player.cs:57030-57059`): the
+    /// pickup climbs the family tier ONE per grant, clamped at 3, deletes
+    /// the family's old buff ids first (`DelBuff(i--)` rescan) and grants
+    /// `base + tier - 1` for 480 ticks. The item rows map 3453→179,
+    /// 3454→173, 3455→176 (`Item.cs:31008-31016`). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_nebula_levelup_climbs_the_ladder_and_replaces_the_family_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // First mana pickup: tier 0 → 1, buff 176 for 480.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        let i = p.buffs.find_buff_index(176).expect("tier 1 = base id");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Second: the old 176 is DELETED, tier 2 grants 177.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "the old id aired");
+        let i = p.buffs.find_buff_index(177).expect("tier 2");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Third and fourth: cap 3 — the tier stays, the 178 timer refreshes
+        // to 480 (AddBuff's same-id arm keeps the larger time).
+        p.nebula_levelup(176);
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 3, "MathHelper.Clamp caps at 3");
+        assert!(p.buffs.find_buff_index(178).is_some());
+        assert!(p.buffs.find_buff_index(177).is_none());
+        // The families are independent: a Life pickup deletes only 173-175.
+        p.nebula_levelup(173);
+        assert_eq!(p.nebula_level_life, 1);
+        assert!(p.buffs.find_buff_index(173).is_some());
+        assert!(p.buffs.find_buff_index(178).is_some(), "the mana buff survives");
+        p.nebula_levelup(179);
+        assert_eq!(p.nebula_level_damage, 1);
+        assert!(p.buffs.find_buff_index(179).is_some());
+        // An unknown base id still runs the delete scan but grants nothing.
+        p.nebula_levelup(200);
+        assert_eq!(p.buffs.active_count(), 3, "no fourth buff from a stray id");
+    }
+
+    /// W4-f49 lane 12, R3 RE-TARGETED — `UpdateBuffs_NebulaBuffs`
+    /// (`Player.cs:12070-12079`, scan arms `:10444-10461`): the tier
+    /// derivation + the `buffTime == 2` step-down now live ONLY in f12's
+    /// g27 canonical writer (`buff_effects_orbs.rs::nebula_buffs` via
+    /// `apply_orb_arm`, driven by `update_buff_frame` — the f12 gap-3
+    /// convention: drive the wiring call, assert `orb_scan` + the bridged
+    /// field; f12's own `w4_f12_nebula_life_steps_down_and_adds_regen`
+    /// pins the arm core). THIS tree keeps the Player-field halves: the
+    /// pickup ladder (`nebula_levelup`), the `fold_orb` bridge ASSIGN
+    /// stub, and the chained reset. The no-wiring `Player::update`
+    /// wrapper no longer derives tiers (the inline scan arms are gone).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_nebula_scan_derives_the_tier_and_steps_down_at_time_two() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_levelup(176);
+        p.nebula_levelup(176); // tier 2, buff 177 @ 480
+        assert_eq!(p.nebula_level_mana, 2, "the pickup hint tier");
+        // The bridge ASSIGN (fold_orb's three lines): the scan-derived
+        // tier lands on the Player field the regen engine reads.
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2);
+        // The no-wiring wrapper: the head decrements the timer, but NO
+        // inline arm re-derives — the reset's zero survives (the wiring
+        // owns the scan; the same shape the f12 gap-3 witnesses record).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0, "the wiring owns the scan");
+        let i = p.buffs.find_buff_index(177).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 479, "one head decrement");
+        // The bridge re-arms the tier for the regen read (the merged
+        // tick: scan → bridge → update_survival).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.nebula_level_mana, 2, "the bridge keeps the field warm");
+        // The time-2 step-down + the Life/Damage twins are pinned on the
+        // f12 side (`apply_orb_arm`); the bridge carries whatever tier
+        // the scan hands it, verbatim ASSIGNs (no adds, no clamps).
+        p.fold_orb_nebula_bridge(1, 1, 1);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert_eq!(p.nebula_level_life, 1);
+        assert_eq!(p.nebula_level_damage, 1);
+        // The reset zero clears all three (the bridge's zero-seed twin).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
+    }
+
+    /// W4-f49 lane 12, R3 RE-TARGETED — the END-TO-END mana lane through
+    /// the WIRING seam: a 3455 pickup grants buff 176, the scan (f12's
+    /// `update_buff_frame`, not present in this tree) derives the tier,
+    /// `fold_orb`'s bridge ASSIGN lands it on `Player.nebula_level_mana`,
+    /// and the LIFTED `update_survival` (now after the wiring seam in
+    /// `world_sim/player.rs`, the C# `:25977`/`:25995` position) feeds
+    /// `ApplyNebulaBuffMana` (`:19421`) — SIX ticks at tier 1 yield ONE
+    /// mana point (`:19570-19574`). The rig drives the bridge per tick
+    /// exactly as the merged frame would. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_mana_pickup_feeds_the_regen_engine_through_the_scan() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.mana_max = 200;
+        p.nebula_levelup(176); // the 3455 pickup's grant
+        // Park the normal regen line far out so ONLY the nebula arm grants.
+        p.regen.mana_regen_delay = 1000.0;
+        for _ in 0..5 {
+            // The merged tick shape: movement (no inline scan) → the
+            // wiring's fold_orb bridge → the lifted regen read.
+            p.update_with_grapple(
+                &w,
+                PlayerInput::default(),
+                &[],
+                false,
+                false,
+                false,
+                None,
+                &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
+            );
+            p.fold_orb_nebula_bridge(1, 0, 0);
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        }
+        assert_eq!(p.nebula_level_mana, 1, "the bridge carried the tier");
+        assert_eq!(p.regen.nebula_mana_counter, 5);
+        assert_eq!(p.mana, 10, "no point before the sixth tick");
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[],
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
+        );
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.mana, 11, "the 6-counter grant (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+    }
+
+    /// W4-f49 lane 12 — `ResetEffects`' chained trio zero
+    /// (`Player.cs:18755`): one tick without a live nebula buff clears ALL
+    /// THREE tiers (the C# chains Damage = (Life = (Mana = 0))); the regen
+    /// counter is NOT reset here — the engine's tier-0 arm owns that
+    /// (`:19583`, d117's witness pins it). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_reset_effects_zeroes_all_three_nebula_tiers() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
+    }
+
     /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —
     /// the text carries the raw amount. `TryApplyManaHeat`
     /// (`:52006-52014`): the pair writes, the 120-tick buff, and the
@@ -23007,45 +24521,6 @@ mod tests {
         p.buffs.add_buff(29, 3600);
         p.update(&w, PlayerInput::default());
         assert_eq!(p.mana_max, 40, "the buff's +20 on the rebased cap");
-    }
-
-    /// W4-g87 — `CanDemonHeartAccessoryBeShown` (`Player.cs:4276-4283`): the
-    /// unlock shows the row; without it a stored armor/vanity/dye item keeps
-    /// it visible; an empty classic row stays hidden. The master twin
-    /// (`:4285-4292`) has no unlock in the port — only the stored-item legs.
-    #[test]
-    fn w4_g87_the_demon_heart_row_show_predicate() {
-        let w = ground_world();
-        let mut p = Player::spawn(&w);
-        assert!(
-            !p.can_demon_heart_accessory_be_shown(),
-            "empty classic row hidden"
-        );
-        assert_eq!(p.extra_accessory_slots_to_show(), 0);
-        // The unlock (expert + extraAccessory) shows it.
-        p.extra_accessory = true;
-        p.buffs.expert_mode = true;
-        assert!(p.can_demon_heart_accessory_be_shown());
-        assert_eq!(p.extra_accessory_slots_to_show(), 1);
-        // Expert alone (no heart) does NOT unlock.
-        p.extra_accessory = false;
-        assert!(!p.can_demon_heart_accessory_be_shown());
-        // A stored item shows the row even without the unlock (each leg).
-        p.equipped[8] = 285; // armor[8]
-        assert!(p.can_demon_heart_accessory_be_shown());
-        p.equipped[8] = 0;
-        p.equipped[18] = 285; // the vanity armor[18]
-        assert!(p.can_demon_heart_accessory_be_shown());
-        p.equipped[18] = 0;
-        p.dye_slots[8] = 1; // dye[8]
-        assert!(p.can_demon_heart_accessory_be_shown());
-        p.dye_slots[8] = 0;
-        assert!(!p.can_demon_heart_accessory_be_shown());
-        // The master row: no unlock in the port, only a stored item shows it.
-        assert!(!p.can_master_mode_accessory_be_shown());
-        p.equipped[9] = 285;
-        assert!(p.can_master_mode_accessory_be_shown());
-        assert_eq!(p.extra_accessory_slots_to_show(), 1);
     }
 
     /// S1-C-12 wave A — the prefix speed rows ride the accessory's rolled
@@ -30615,11 +32090,13 @@ mod tests {
         assert!(p.set_mount(54, false));
         p.equipped[4] = 1866;
         p.update_equips(&mut tr_core::UnifiedRandom::default());
+        p.update_equips(&w);
         let budget = p.wing_time_max;
         assert!(budget > 0, "the worn wings set the budget");
         p.mount.reset_flight_time(0.0, budget);
         p.mount.flight();
         p.update_equips(&mut tr_core::UnifiedRandom::default());
+        p.update_equips(&w);
         assert_eq!(p.mount.fly_time(), budget, "the brooch refills the raptor");
         // Unequipped: the flag clears and the refill stops (the wing slot
         // still holds the budget; only the brooch flag went away). The tail
@@ -30630,6 +32107,7 @@ mod tests {
         p.mount.reset_flight_time(0.0, p.wing_time_max);
         p.mount.flight();
         p.update_equips(&mut tr_core::UnifiedRandom::default());
+        p.update_equips(&w);
         assert_eq!(
             p.mount.fly_time(),
             p.wing_time_max - 1,
@@ -32117,6 +33595,98 @@ mod s1_player_composite_tests {
         assert_eq!(gasps, 1, "the gasp is the 1->0 edge, not the damage loop");
     }
 
+    /// W4-d79 — the full-mana refill trigger queues ONCE at the fill
+    /// (`Player.cs:19550-19560`): the payload is the live
+    /// `position`/`width`/`height` at the regen point (`:25995`), the
+    /// idling full bar never re-queues (flag4), and the ManaV2 animation
+    /// gate (`:19542-19545`) suppresses the queue while the point lands.
+    #[test]
+    fn w4_d79_the_mana_refill_queues_once_at_the_fill() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = p.mana_max - 1;
+        p.regen.mana_regen_count = 119;
+        p.regen.mana_regen_delay = 0.0;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            p.take_mana_refill(),
+            Some((p.x, p.y, p.width as i32, p.height as i32)),
+            "the cue + burst queued at the live box"
+        );
+        // The idling full bar: chunks still cross 120, flag4 stays false.
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+            assert!(p.take_mana_refill().is_none(), "no re-fire at full");
+        }
+        // The animation gate: the point lands, the queue stays empty.
+        let mut q = Player::spawn(&w);
+        q.mana = q.mana_max - 1;
+        q.regen.mana_regen_count = 119;
+        q.regen.mana_regen_delay = 0.0;
+        q.vx = 0.0;
+        q.vy = 0.0;
+        q.mana_regen_item_in_use = true;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.mana, q.mana_max, "the grant precedes the gate");
+        assert!(q.take_mana_refill().is_none(), "flag4 = false mid-animation");
+    }
+
+    /// W4-d79 PITCH FINAL — the Nebula owner-table contract
+    /// (`docs/research/W4-d79-pitch-final.md` §F1/S1), RE-TARGETED at the
+    /// batch-L merge per the S1 receipt: the levelup sweep/climb
+    /// (`:57030-57059`) + the chained reset (`:18755`) stay the f49 Player
+    /// shapes; the mana counter pays one point per 6 through the d117/f49
+    /// ENGINE form (`regen.rs`, `RegenState.nebula_mana_counter`); the
+    /// scan/time-2-step assertions move to f12's `apply_orb_arm` witnesses
+    /// when that lane lands (its `fold_orb` bridge drives the tier here —
+    /// the `fold_orb_nebula_bridge` stub stands in, the f12 gap-3
+    /// convention). These pins are the contract, not the implementation.
+    #[test]
+    fn w4_d79_final_the_nebula_owner_table_holds_on_this_tree() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The levelup: the family sweep + the clamp-0..3 climb.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert!(p.buffs.find_buff_index(176).is_some(), "NebulaUpMana1 @ 480");
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "tier 1 swept");
+        assert!(p.buffs.find_buff_index(177).is_some(), "NebulaUpMana2");
+        // The bridge ASSIGN carries the scan's tier (f12's writer drives
+        // it in production; the stub is the merged-tree stand-in).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2, "the bridge carried the tier");
+        // The mana counter: +tier/tick, one point per 6 — the ENGINE form
+        // (the regen head runs ApplyNebulaBuffMana first, `:19421`). Park
+        // the normal regen line far out so ONLY the nebula arm grants.
+        p.mana = 0;
+        p.regen.nebula_mana_counter = 0;
+        p.regen.mana_regen_delay = 1000.0;
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        for _ in 0..6 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            p.fold_orb_nebula_bridge(1, 0, 0); // the per-tick scan re-assign
+        }
+        assert_eq!(p.mana, 1, "the 6-count paid once");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        p.fold_orb_nebula_bridge(0, 0, 0);
+        p.regen.nebula_mana_counter = 4;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.regen.nebula_mana_counter, 0, "tier 0 wipes (:19583)");
+        // The reset zeroes the trio (the chained :18755 assign).
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_life, 0, "no live buff -> the reset holds");
+        assert_eq!(p.nebula_level_damage, 0);
+        assert_eq!(p.nebula_level_mana, 0, "the reset holds until the bridge re-assigns");
+    }
+
     /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):
     /// the default frame machine (`:30466-30479`) wraps 0..3 every 5 flying
     /// ticks; the frame-3 edge plays ONCE through the `flapSound` latch.
@@ -32913,6 +34483,375 @@ mod w4_d8_height_offset_tests {
         assert_eq!(p.mounted_center(), (p.x + 10.0, p.y + 21.0));
         assert_eq!(p.mounted_top(), (p.x + 10.0, p.y));
         assert_eq!(p.height_map_offset(), 18, "the Scutlix head offset");
+    // -----------------------------------------------------------------------
+    // W4-e1b — the f3-reconcile witnesses (research/141). Each pins one
+    // KEEP/DROP verdict row against the cited C# window. WRITTEN NOT RUN
+    // (code-only mode). The wall machines / vortex machine / stealth spawn
+    // are DROP-at-merge (f3-canonical); these witnesses keep e1's copy honest
+    // until the merge lifts f3's, and pin the KEEP-E1 rows (falling capture,
+    // drain order, the disjoint lanes' fidelity fixes).
+    // -----------------------------------------------------------------------
+
+    /// A wall column at tile x=30, rows 40..58, on the ground_world. The
+    /// player rests just left of it (right edge ≈ tile 30) at a row inside the
+    /// column, so the slide-edge probe (x+width+1 → tile 30) and the two-tile
+    /// wallslide probe both read solid. Returns (world, player at the wall).
+    fn wall_world_and_player() -> (World, Player) {
+        let mut w = ground_world();
+        for y in 40..58 {
+            let i = w.index(30, y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        // Right edge + slideDir(1) = 479 + 1 = 480 → tile 30; feet at row 51.
+        p.x = 459.0;
+        p.y = 780.0; // y + height + 1 = 823 → row 51 (inside the column)
+        p.vx = 0.0;
+        p.vy = 0.0;
+        (w, p)
+    }
+
+    /// DROP verdict (d) deviation 1 — the climb gate `:21639`. At gravDir 1
+    /// the C# `(!(vy < gravity) || gravDir != -1)` disjunct is vacuously true,
+    /// so a resting Rat (vy==0, no up/down key) RETURNS — no cling, no
+    /// `sliding`. e1's old `&& !(vy < gravity)` AND wrongly clung. The fixed
+    /// gate reduces to `wall + (a direction key or vy > 0)`.
+    #[test]
+    fn w4_e1b_climb_gate_resting_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false), "the Rat mounts");
+        // The Rat's 14×14 size override shrinks the box; re-site the right
+        // edge at the wall (x+width+1 = 480 → tile 30, feet row 51).
+        p.x = 480.0 - p.width - 1.0;
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 2; // the climb arm
+        p.slide_dir = 1;
+        p.control_right = true; // slideDir 1 needs controlRight
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = 0.0; // resting — no keys, vy not > 0
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the resting Rat returns at :21639 (vacuous gravDir clause)");
+        // A direction key (controlUp → flag3) DOES cling: vy pins to -3.
+        p.control_up = true;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "controlUp clings");
+        assert_eq!(p.vy, -3.0, ":21651 the climb-up impulse");
+    }
+
+    /// DROP verdict (d) deviation 2 — the level-1 slide gate `:21709`. The
+    /// `!(vy < -0.5) || gravDir != -1` disjunct is vacuous at gravDir 1; a
+    /// fast-RISING Rat (vy < -0.5, no keys) returns. Only `vy > 0.5` survives.
+    #[test]
+    fn w4_e1b_slide_gate_rising_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false));
+        p.x = 480.0 - p.width - 1.0; // re-site after the 14×14 override
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 1; // the level-1 (else) arm
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = -2.0; // rising fast — the old unguarded disjunct clung here
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the rising Rat returns at :21709");
+        // Falling past 0.5 with no keys clings (vy pins to 0.5).
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "vy > 0.5 clings");
+        assert_eq!(p.vy, 0.5, ":21724 the no-key slide velocity");
+    }
+
+    /// DROP verdict (d) deviations 3+4 — the wallslide gates `:21777`/`:21814`.
+    /// The >=2 arm needs `wall && vy > 0` (the `vy < gravity` disjunct is dead
+    /// at gravDir 1); the single-boot arm needs `wall && vy > 0.5` — the old
+    /// unguarded `|| vy < -0.5` slid a rising player with NO wall.
+    #[test]
+    fn w4_e1b_wallslide_gates_need_wall_and_downward_vy() {
+        let (w, mut p) = wall_world_and_player();
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.spiked_boots = 2;
+        p.vy = 0.0; // resting — the >=2 arm returns (vy not > 0)
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21777 the resting wallslide returns");
+        // Single-boot, rising, NO wall contact (slide_dir 0 → early return is
+        // separate; here keep the wall but vy < 0): the else-if must NOT fire.
+        p.spiked_boots = 1;
+        p.vy = -2.0;
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21814 the unguarded vy<-0.5 slide is gone");
+        // Falling past 0.5 against the wall: the single-boot slide fires.
+        p.vy = 1.0;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(p.sliding, "wall && vy>0.5 slides");
+        assert_eq!(p.vy, 0.5, ":21823 the no-down slide velocity");
+    }
+
+    /// KEEP-E1 (verdict (f)) — the `falling` flag is captured at the movement
+    /// HEAD (`:28073-28081`, |vy| > gravity BEFORE the collision resolve), so
+    /// a landing tick reaches FloorVisuals with vy==0 but falling=true and the
+    /// 20-dust burst fires. f3's rest-path capture (vy==0 gate) never fires.
+    /// This pins the head-capture expression the port uses (`player.rs:7912`).
+    #[test]
+    fn w4_e1b_falling_head_capture_fires_on_landing() {
+        let gravity = GRAVITY;
+        // The head capture: |vy| > gravity at the pre-collision velocity.
+        let falling_head = |vy: f32| vy > gravity || vy < -gravity;
+        assert!(falling_head(1.0), "a fast fall captures falling=true");
+        assert!(falling_head(-1.0), "a fast rise captures falling=true");
+        assert!(!falling_head(0.0), "rest captures falling=false");
+        // The REST-path capture (f3's, the wrong one): gated on vy==0 first,
+        // so |vy|>gravity is always false there — the landing burst never fires.
+        let falling_rest = |vy: f32| vy == 0.0 && (vy > gravity || vy < -gravity);
+        assert!(!falling_rest(0.0), "the rest path can never capture falling");
+        // A landing tick: pre-collision vy=1.0 (falling=true captured), the
+        // resolve zeroes vy, FloorVisuals still sees falling=true → 20 puffs.
+        let pre_vy = 1.0;
+        let captured = falling_head(pre_vy);
+        let post_vy = 0.0; // the collision resolve
+        assert!(captured && post_vy == 0.0, "the landing tick fires the burst");
+    }
+
+    /// KEEP-E1 — the floor-dust gate `:23740` is `!base.wet && !mount.Cart`,
+    /// where `base.wet` is WetCollision (ANY liquid). The port's four-flag
+    /// union (water/lava/honey/shimmer) gates it; the old water-only `wet`
+    /// let lava/honey/shimmer feet spawn floor dust. The Stinky buff-120 grant
+    /// (`:23732`) reads the REAL tile BEFORE the slope carve-out.
+    #[test]
+    fn w4_e1b_floor_dust_any_wet_gate_and_stinky_buff() {
+        let mut w = ground_world();
+        // A Stinky tile (666) floor at the player's feet row.
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let fx = ((p.x + p.width * 0.5) / TILE_PX) as i32;
+        let fy = ((p.y + p.body_height()) / TILE_PX) as i32;
+        let i = w.index(fx, fy);
+        w.tiles[i] = Tile { kind: 666, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // Dry feet: the Stinky grant fires (buff 120, 180 ticks) and the dust
+        // queues (falling=false, but the snapshot exists).
+        p.wet = false;
+        p.lava_wet = false;
+        p.honey_wet = false;
+        p.shimmer_wet = false;
+        p.floor_visuals(&w, false);
+        assert!(p.buffs.find_buff_index(120).is_some(), ":23732 the Stinky buff-120 grant");
+        assert!(p.pending_floor_dust.is_some(), "dry feet queue the floor dust");
+        // Lava-wet feet: ANY liquid suppresses the dust (the union gate).
+        p.pending_floor_dust = None;
+        p.lava_wet = true;
+        p.floor_visuals(&w, false);
+        assert!(p.pending_floor_dust.is_none(), ":23740 lava-wet feet spawn no floor dust");
+        // A sloped tile in the window suppresses the dust KIND (not the buff):
+        // f3's host still queues with kind = -1; the drain's allow-list refuses.
+        p.lava_wet = false;
+        p.pending_floor_dust = None;
+        w.tiles[i].set_slope(1);
+        p.floor_visuals(&w, false);
+        assert_eq!(p.pending_floor_dust.map(|b| b.kind), Some(-1), ":23736 the slope carve-out suppresses the dust KIND");
+        assert!(p.buffs.find_buff_index(120).is_some(), "the buff reads the real tile, pre-carve-out");
+    }
+
+    /// KEEP-E1 — the floor-dust falling chain `:24026` uses the INTEGER half
+    /// `(float)(base.width / 2)`. For an odd width the C# truncates: width 21
+    /// → 21/2 = 10 (not 10.5). The port's `(b.width as i32 / 2) as f32` matches.
+    #[test]
+    fn w4_e1b_floor_dust_integer_half_width() {
+        let width = 21.0f32;
+        let csharp_half = (width as i32 / 2) as f32; // (int)(21/2) = 10
+        assert_eq!(csharp_half, 10.0, "the integer half truncates 21/2 to 10");
+        assert_ne!(csharp_half, width / 2.0, "not the float half 10.5");
+    }
+
+    /// KEEP-E1 — the drown bubble `:23283` gate is
+    /// `!flag || Next(20) != 0 || lavaWet || honeyWet`: the Next(20) draw rides
+    /// whenever drowning, BEFORE the wet flags refuse. The f3-canonical host
+    /// draws the gate inside the drowning arm, then the wet flags refuse (the
+    /// e1b-141 fold). This pins the draw-then-refuse order on the tick side.
+    #[test]
+    fn w4_e1b_drown_bubble_host_gates_flag_only() {
+        // A counting rng: records every (min,max) draw it serves.
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                1 // Next(20) != 0 — the gate refuses AFTER its draw
+            }
+            fn next_float(&mut self) -> f32 {
+                0.5
+            }
+        }
+        let mut w = ground_world();
+        // Flood the head row so DrownCollision fires.
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.lava_wet = true; // wet — the OLD host gate skipped the DRAW
+        p.pending_drown_bubble = None;
+        let mut rng = CountRng { ranges: Vec::new() };
+        p.check_drowning(&w, &mut rng);
+        assert!(p.pending_drown_bubble.is_none(), "the wet flags refuse the bubble");
+        assert!(rng.ranges.contains(&(0, 20)), "the Next(20) draw rode before the wet refuse (:23283)");
+    }
+
+    /// KEEP-E1 — the stealth spawn default is `1f` (`Player.cs:1562`), not
+    /// 0.0. e1's old 0.0 made the Vortex recovery ramp fire 25 ring ticks on
+    /// the first equip. DROP-at-merge (f3-canonical) but pinned here.
+    #[test]
+    fn w4_e1b_stealth_spawns_at_one() {
+        let w = ground_world();
+        let p = Player::spawn(&w);
+        assert_eq!(p.stealth, 1.0, ":1562 public float stealth = 1f");
+    }
+
+    /// KEEP-E1 — the stealth chain's final else (`:25896-25899`) pins
+    /// `stealth = 1f` when no stealth source is armed, and the set-loss
+    /// disarm (`:16315-16321`) clears the toggle. The f3-canonical
+    /// `update_stealth` carries the fallback (the e1b-141 merge dropped
+    /// e1's vortex-arm-only copy); the disarm rides the tick's
+    /// UpdateArmorSets tail. The ranged knockback scale (`:53364-53367`)
+    /// reads the live stealth.
+    #[test]
+    fn w4_e1b_vortex_final_else_and_set_loss_disarm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stealth = 0.3;
+        p.set_vortex = false;
+        p.vortex_stealth_active = true;
+        p.update_stealth();
+        assert_eq!(p.stealth, 1.0, ":25896 the final else pins stealth=1f");
+        // With the set armed + active, the ramp fades and the rings queue.
+        p.set_vortex = true;
+        p.vortex_stealth_active = true;
+        p.stealth = 1.0;
+        p.update_stealth();
+        assert!((p.stealth - 0.96).abs() < 1e-5, ":25831 the -0.04 fade");
+        assert!(p.take_vortex_stealth_dust().is_some(), "flag11 queues the rings");
+        // The set-loss disarm rides UpdateArmorSets_Always_Vortex (:16319):
+        // a tick with no Vortex armour clears the toggle.
+        p.vortex_stealth_active = true;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.vortex_stealth_active, ":16315 the set-loss disarms the toggle");
+        // The ranged kb scale: 1 + (1-stealth)*0.5 at stealth 0.5 → 1.25.
+        let ranged = crate::registry::get(435).unwrap();
+        p.set_vortex = true;
+        p.shroomite_stealth = false;
+        p.stealth = 0.5;
+        assert!((p.weapon_knockback(ranged, 4.0) - 5.0).abs() < 1e-5, ":53364 the Vortex kb scale");
+    }
+
+    /// KEEP-E1 — `ResetEffects` zeroes `aggro` per tick (`:18377`); the Vortex
+    /// stealth writer (`:25847`) subtracts from it. Without the reset the
+    /// subtraction accumulates across ticks.
+    #[test]
+    fn w4_e1b_aggro_resets_each_tick() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.aggro = -500;
+        p.update(&w, PlayerInput::default());
+        // ResetEffects zeroes it; no stealth source re-subtracts this tick.
+        assert_eq!(p.aggro, 0, ":18377 ResetEffects aggro = 0");
+    }
+
+    /// KEEP-E1 — the climbing grants (`:15038-15066`) and the frog family
+    /// (`:14426-14444`) arm `spiked_boots` (the wall machines' gate input).
+    /// 953/975 +1, 976 +2, 984 =2; 3995/3996 +2 (3994 none).
+    #[test]
+    fn w4_e1b_climbing_and_frog_grants_arm_spiked_boots() {
+        let w = ground_world();
+        let boots = |kind: u16| {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            p.spiked_boots
+        };
+        assert_eq!(boots(953), 1, ":15040 Climbing Claws ++");
+        assert_eq!(boots(975), 1, ":15044 Shoe Spikes ++");
+        assert_eq!(boots(976), 2, ":15048 Tiger Climbing Gear += 2");
+        assert_eq!(boots(984), 2, ":15066 Master Ninja Gear = 2");
+        assert_eq!(boots(3994), 0, ":14426 the Flipper bundle has no boots");
+        assert_eq!(boots(3995), 2, ":14437 the Frog Leg bundle += 2");
+        assert_eq!(boots(3996), 2, ":14443 the Tiger Frog bundle += 2");
+        // The frog bundle's auto-jump + jump-speed + safe-fall ride too.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3995;
+        p.update(&w, PlayerInput::default());
+        assert!(p.auto_jump && p.acc_flipper, ":14433-14436");
+        assert_eq!(p.extra_fall, 10, ":14435");
+    }
+
+    /// KEEP-E1 — the Cloud double-jump visual ALSO needs the Sandstorm option
+    /// spent or absent (`:21894` `canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`).
+    /// An unspent Sandstorm suppresses the Cloud puff.
+    #[test]
+    fn w4_e1b_cloud_visual_suppressed_by_unspent_sandstorm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.has_jump_options[ExtraJump::Cloud.index()] = true;
+        p.can_jump_again[ExtraJump::Cloud.index()] = false;
+        p.vy = -2.0; // ascending
+        // Sandstorm armed AND unspent → the Cloud puff is suppressed.
+        p.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = false;
+        p.pending_double_jump_dust = None;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_dust.is_none(), ":21894 the unspent Sandstorm suppresses Cloud");
+        // Sandstorm spent → the Cloud puff fires.
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = true;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_dust.is_some(), "the spent Sandstorm frees the Cloud puff");
+    }
+
+    /// KEEP-E1 — an active dash cancels the Vortex stealth (`:21379`).
+    #[test]
+    fn w4_e1b_active_dash_cancels_vortex_stealth() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.dash_type = 1;
+        p.dash = 1;
+        p.dash_delay = -1; // the active-dash arm
+        p.vx = 20.0; // past the threshold → the fast-decay early return
+        p.vortex_stealth_active = true;
+        p.dash_movement(&w, PlayerInput::default());
+        assert!(!p.vortex_stealth_active, ":21379 the active dash disarms the stealth");
+    }
+
+    /// KEEP-E1 — the wall-cling/double-jump-visual block lives in the
+    /// `grappling[0] == -1 && !tongued` movement arm (`:26494`): a tongued
+    /// player never wall-clings or runs the jump==0 visual cancel. The
+    /// differential: with jump==0 and a performing jump armed, the ungated
+    /// tick cancels it (`:26755`); the tongued tick skips the whole block.
+    #[test]
+    fn w4_e1b_wall_block_gated_on_grapple_and_tongue() {
+        let (w, mut p) = wall_world_and_player();
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.jump = 0; // the :26753 cancel trigger
+        p.tongued = false;
+        p.update(&w, PlayerInput::default());
+        assert!(p.performing_jump.is_none(), "the ungated tick cancels the jump visual (:26755)");
+        // Tongued: the block is skipped — the performing jump survives.
+        let (w2, mut q) = wall_world_and_player();
+        q.performing_jump = Some(ExtraJump::Cloud);
+        q.jump = 0;
+        q.tongued = true;
+        q.update(&w2, PlayerInput::default());
+        assert!(q.performing_jump.is_some(), "the tongued player skips the wall/visual block (:26494)");
     }
 }
 
@@ -33808,4 +35747,44 @@ mod w4_f3_carpet_tests {
         assert!(monolith.accessory && monolith.vanity, "5345 accessory + vanity");
         assert_eq!(monolith.tile, Some(657), "5345 places the Echo Monolith 657");
     }
+
+    /// W4-g87 — `CanDemonHeartAccessoryBeShown` (`Player.cs:4276-4283`): the
+    /// unlock shows the row; without it a stored armor/vanity/dye item keeps
+    /// it visible; an empty classic row stays hidden. The master twin
+    /// (`:4285-4292`) has no unlock in the port — only the stored-item legs.
+    #[test]
+    fn w4_g87_the_demon_heart_row_show_predicate() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(
+            !p.can_demon_heart_accessory_be_shown(),
+            "empty classic row hidden"
+        );
+        assert_eq!(p.extra_accessory_slots_to_show(), 0);
+        // The unlock (expert + extraAccessory) shows it.
+        p.extra_accessory = true;
+        p.buffs.expert_mode = true;
+        assert!(p.can_demon_heart_accessory_be_shown());
+        assert_eq!(p.extra_accessory_slots_to_show(), 1);
+        // Expert alone (no heart) does NOT unlock.
+        p.extra_accessory = false;
+        assert!(!p.can_demon_heart_accessory_be_shown());
+        // A stored item shows the row even without the unlock (each leg).
+        p.equipped[8] = 285; // armor[8]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.equipped[8] = 0;
+        p.equipped[18] = 285; // the vanity armor[18]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.equipped[18] = 0;
+        p.dye_slots[8] = 1; // dye[8]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.dye_slots[8] = 0;
+        assert!(!p.can_demon_heart_accessory_be_shown());
+        // The master row: no unlock in the port, only a stored item shows it.
+        assert!(!p.can_master_mode_accessory_be_shown());
+        p.equipped[9] = 285;
+        assert!(p.can_master_mode_accessory_be_shown());
+        assert_eq!(p.extra_accessory_slots_to_show(), 1);
+    }
+
 }
