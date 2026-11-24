@@ -41,6 +41,9 @@ pub struct RegenState {
 /// (`death.rs::death_text_for` resolves the text).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DotDeath {
+    /// `ByOther(1)` — drowning (`CheckDrowning`, `Player.cs:23268`;
+    /// `DeathText.Drowned_*`, `Lang.cs:1060`).
+    Drowned,
     /// `ByOther(7)` — suffocating (fast lane).
     Suffocation,
     /// `ByOther(8)` — both lanes' fallback (`Player.cs:19331,19382`).

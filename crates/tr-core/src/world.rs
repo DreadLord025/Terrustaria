@@ -77,6 +77,12 @@ pub struct World {
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
     /// `ChangeSpawn`) — `None` = the generated spawn (`RemoveSpawn` clears).
     pub bed_spawn: Option<(i32, i32)>,
+    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
+    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
+    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
+    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
+    /// round-trips the list (W4-f45).
+    pub extra_spawn_points: Vec<(i16, i16)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
@@ -198,6 +204,13 @@ pub struct World {
     /// save rides the v15 tail (S1-F-16).
     pub downed_queen_slime: bool,
     pub downed_eoc: bool,
+    /// `NPC.EoCKilledToday` / `NPC.WoFKilledToday` (`NPC.cs:6611`/`:6613`):
+    /// the daily boss-death latches the Badger's Hat drop reads
+    /// (`DoDeathEvents_DropBossPotionsAndHearts`, `NPC.cs:79003-79015`);
+    /// both reset at dusk (`NPC.ResetBadgerHatTime`, `Main.cs:65221`).
+    /// Runtime-only, not saved.
+    pub eoc_killed_today: bool,
+    pub wof_killed_today: bool,
     pub downed_eow: bool,
     pub downed_skeletron: bool,
     pub downed_queen_bee: bool,
@@ -636,6 +649,7 @@ impl World {
             chests: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
+            extra_spawn_points: Vec::new(),
             spawn_x: width / 2,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,
@@ -646,6 +660,8 @@ impl World {
             downed_slime_king: false,
             downed_queen_slime: false,
             downed_eoc: false,
+            eoc_killed_today: false,
+            wof_killed_today: false,
             downed_eow: false,
             downed_skeletron: false,
             downed_queen_bee: false,

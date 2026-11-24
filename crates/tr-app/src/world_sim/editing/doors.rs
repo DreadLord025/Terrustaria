@@ -241,9 +241,18 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // `Player.cs:32313-32330`: the 40-px snap gate
             // (`IsWithinSnappngRangeToTile`) wraps the `sitting.SitDown`
             // call; a refused snap still consumes the click.
+            // W4-f32 — the `IsAToilet` extra info
+            // (`PlayerSittingHelper.cs:166-180`): tile 497 always, chair 15
+            // on the frameY/40 == 1/20 styles; `TryToPoop`'s gate reads it.
+            let is_toilet = app.world.tile(tx, ty).is_some_and(|t| {
+                t.kind == 497 || (t.kind == 15 && matches!(t.frame_y / 40, 1 | 20))
+            });
             if let Some(p) = app.player.as_mut() {
                 if within_snapping_range(p, tx, ty, 40.0) {
                     p.sit_down(&app.world, *seat_x, *seat_y, *direction, *seat_offset);
+                    // `sit_down` toggles off at the same seat — the flag
+                    // follows the live sitting state.
+                    p.sitting_on_toilet = p.sitting && is_toilet;
                 }
             }
             app.world_key = None;

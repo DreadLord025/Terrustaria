@@ -10,12 +10,16 @@
 //!
 //! The C# gate is `(whoAmI == Main.myPlayer && ImmunityCooldownID.Sets.
 //! Retaliate[cooldownCounter]) & flag` (`:38401`) — `flag` is the PRE-hit
-//! not-immune state (`:38208`). `hurt_inner` only queues on an accepted hit
-//! (the `flag` half) and its `retaliate_lane` argument carries the set
-//! membership: the contact/projectile/fall/petrify lanes ride General (a
-//! Retaliate member, `ImmunityCooldownID.cs:49`), the lava (`Lava`) and
-//! tile-contact (`TileContactDamage`) lanes pass false — vanilla lava/spike
-//! hits never retaliate.
+//! per-counter state (`:38208`). `hurt_inner` queues only when the flag
+//! held AND the counter is a Retaliate member (M4-HAZARD-1: the membership
+//! reads `id_tables::immunity_retaliate(cooldown_counter)` — the S1-C-7
+//! wave B `retaliate_lane` bool is retired): the contact/projectile/
+//! fall/petrify lanes ride General or BossNoCheese (members,
+//! `ImmunityCooldownID.cs:49`), the lava (`Lava`), tile-contact
+//! (`TileContactDamage`) and bug-net (`WrongBugNet`) lanes are not —
+//! vanilla lava/spike hits never retaliate. A cooldown-active
+//! PaladinsShield hit (the `:38210` exemption) reaches the tail with flag
+//! false and queues nothing.
 //!
 //! Deviations (ANALYSIS "The hurt modifiers (S1-C-7 wave B)"): the retaliate
 //! block's `Main.rand` draws drain at the hitting pass's tail rather than
@@ -189,17 +193,26 @@ pub fn drain_retaliate(
             dx += rng.next_range(-100, 101) as f32;
             let scale = 23.0 / (dx * dx + dy * dy).sqrt();
             // `:38478`: `NewProjectile(.., type, num12, 5f, whoAmI, 0f,
-            // position.Y)` — kb 5, ai1 = the player's position.Y.
-            if let Some(slot) = pool.spawn(
+            // position.Y)` — kb 5, ai1 = the player's position.Y. W4-f48:
+            // the five kinds now carry `proj_data` rows (`Projectile.cs:
+            // 7646-7658` — the 24x24 box, penetrate 2, alpha 50, the local
+            // immunity 10), so the spawn routes through the data seam (the
+            // C# `NewProjectile` runs `SetDefaults`); `armorPenetration =
+            // 25` (`:7657`) rides the typed setter (the gun_launch
+            // precedent — no `ProjData` field).
+            if let Some(slot) = pool.spawn_with_data_ai_owned(
                 kind,
                 owner,
-                Vec2::new(x, y),
-                Vec2::new(dx * scale, dy * scale),
+                x,
+                y,
+                dx * scale,
+                dy * scale,
                 damage_out,
                 5.0,
-                false,
+                0.0,
+                req.y,
             ) {
-                pool.set_ai1(slot, req.y);
+                pool.set_armor_penetration(slot, 25);
             }
         }
     }
@@ -256,6 +269,148 @@ pub fn drain_retaliate(
 pub fn drain_dismount(p: &mut Player, world: &tr_core::world::World) {
     if p.take_dismount_request() {
         p.try_dismount(world);
+    }
+}
+
+/// W4-f50 — the hit-dust loop drain (`Player.cs:38527-38553`): the surviving
+/// hit queued `(hitDirection, num2)`; the caller owns the dust pool + the
+/// hit lane's stream. `num2 / statLifeMax2 * 100` particles burst from the
+/// player's box, keyed to the armor set (stoned 1 / frost 135 / bone 26 /
+/// default 5 — deviation 4 wires the frost/bone texture-id keys). Each
+/// particle's velocity is `2 * hitDirection + hitDirection * num22 *
+/// NextFloat()` on X, `-2` on Y (the C# `num21 + hitDirection * num22 *
+/// NextFloat()`, `num22` stays 0). The `shader` post-arms are the dye
+/// layer's (unported).
+pub fn drain_hurt_dust(
+    p: &mut Player,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::world::World,
+    rng: &mut tr_core::UnifiedRandom,
+) {
+    let Some((hit_dir, num2)) = p.take_hurt_dust() else {
+        return;
+    };
+    // `:38529`: `num20 = num2 / statLifeMax2 * 100.0` — the loop bound.
+    let count = num2 as f64 / p.max_hp as f64 * 100.0;
+    // The armor-set key (`:38534-38551`): stoned 1, frost 135, bone 26,
+    // default 5. W4-f50 deviation 4: the `frost_armor`/`bone_armor` flags
+    // now derive from the `ApplyArmorSoundAndDustChanges` texture-id scan
+    // (`:38167-38186`) at the `UpdateArmorSets` seam; the stoned buff (156)
+    // takes priority, then frost, then bone, then the default.
+    let stoned = p.buffs.find_buff_index(156).is_some();
+    let dust_type = if stoned {
+        1
+    } else if p.frost_armor {
+        135
+    } else if p.bone_armor {
+        26
+    } else {
+        5
+    };
+    let num21 = 2.0 * hit_dir as f32;
+    // `:38531`: `num22 = 0f` — NEVER incremented in the loop, so the X
+    // velocity is just `num21`; the `NextFloat` draw is still consumed each
+    // iteration (the C# `num21 + hitDirection * num22 * NextFloat()`).
+    let num22 = 0.0f32;
+    let mut num23 = 0.0f64;
+    while num23 < count {
+        let vx = num21 + hit_dir as f32 * num22 * rng.next_float();
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            glam::Vec2::new(p.x, p.y),
+            p.width as i32,
+            p.height as i32,
+            dust_type,
+            vx,
+            -2.0,
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        let _ = idx;
+        num23 += 1.0;
+    }
+}
+
+/// W4-f50 — the football hurt drain (`Player.cs:38255-38269`): the accepted
+/// hit queued the hit direction; the caller owns the projectile pool + the
+/// inventory. The drain scans the 58 inventory slots for the Football (4743)
+/// and spawns the 861 return at the player's center with `(-hitDirection *
+/// 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then clears the slot (the mouse
+/// slot 58 clears `app.mouse_item`). The `NewProjectile` ai2 argument rides
+/// the `set_ai2` setter (the `set_ai1` convention).
+pub fn drain_football(
+    p: &mut Player,
+    pool: &mut ProjectilePool,
+    inventory: &mut [crate::item::ItemSlot],
+    mouse_item: &mut crate::item::ItemSlot,
+    owner: u8,
+) {
+    let Some(hit_dir) = p.take_football() else {
+        return;
+    };
+    let (cx, cy) = p.center();
+    // The C# scans `inventory[0..59]` (`:38257`); the port's inventory is the
+    // 50-slot array + the mouse slot. Every matching slot spawns + clears.
+    for slot in inventory.iter_mut() {
+        if slot.count > 0 && slot.kind == 4743 {
+            let stack = slot.count;
+            if let Some(idx) = pool.spawn(
+                861,
+                owner,
+                glam::Vec2::new(cx, cy),
+                glam::Vec2::new(-hit_dir as f32 * 4.0, -6.0),
+                0,
+                0.0,
+                false,
+            ) {
+                pool.set_ai1(idx, 1.0);
+                pool.set_ai2(idx, stack as f32);
+            }
+            *slot = crate::item::EMPTY_SLOT;
+        }
+    }
+    if mouse_item.count > 0 && mouse_item.kind == 4743 {
+        let stack = mouse_item.count;
+        if let Some(idx) = pool.spawn(
+            861,
+            owner,
+            glam::Vec2::new(cx, cy),
+            glam::Vec2::new(-hit_dir as f32 * 4.0, -6.0),
+            0,
+            0.0,
+            false,
+        ) {
+            pool.set_ai1(idx, 1.0);
+            pool.set_ai2(idx, stack as f32);
+        }
+        *mouse_item = crate::item::EMPTY_SLOT;
+    }
+}
+
+/// W4-f50 — the golf-club hurt drain (`Player.cs:38271-38280`): the accepted
+/// hit queued the flag; the caller owns the projectile pool + the held item
+/// kind. When the held item is a jousting lance (4788/4789/4790), every
+/// owned 877/878/879 projectile deactivates.
+pub fn drain_golf_club_kill(
+    p: &mut Player,
+    pool: &mut ProjectilePool,
+    held_kind: u16,
+    owner: u8,
+) {
+    if !p.take_golf_club_kill() {
+        return;
+    }
+    if !matches!(held_kind, 4788 | 4789 | 4790) {
+        return;
+    }
+    for proj in pool.slots_mut() {
+        if proj.active && proj.owner == owner && matches!(proj.kind, 877 | 878 | 879) {
+            proj.active = false;
+        }
     }
 }
 
@@ -447,6 +602,16 @@ mod tests {
         assert_eq!(s0.damage, 75);
         assert_eq!(s0.knock_back, 5.0);
         assert_eq!(s0.pos, Vec2::new(p.x, p.y - 500.0));
+        // W4-f48: the data-carrying spawn (`Projectile.cs:7646-7658`) —
+        // the 24x24 box, penetrate 2, alpha 50, tileCollide off, the local
+        // immunity 10 and the arpen-25 setter (`:7657`).
+        assert_eq!((s0.w, s0.h), (24.0, 24.0));
+        assert_eq!(s0.penetrate, 2);
+        assert_eq!(s0.alpha, 50);
+        assert!(!s0.tile_collide);
+        assert!(s0.uses_local_immunity);
+        assert_eq!(s0.local_hit_cooldown, 10);
+        assert_eq!(s0.armor_penetration, 25);
         // dx = center.x - x, dy = center.y - (y-500); speed 23.
         let (pcx, pcy) = p.center();
         let dx = pcx - p.x;
@@ -635,5 +800,162 @@ mod tests {
         assert!(p.set_mount(2, false));
         drain_dismount(&mut p, &w);
         assert!(p.mount.is_active());
+    }
+
+    #[test]
+    fn w4_f50_the_football_drain_spawns_the_return_and_clears_the_slot() {
+        // `Player.cs:38255-38269`: the Football (4743) spawns the 861 return
+        // at the player's center with `(-hitDirection * 4, -6)`, damage 0,
+        // ai1 = 1, ai2 = stack, then clears the slot.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.has_football = true;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let mut pool = ProjectilePool::new();
+        let mut inv = [crate::item::EMPTY_SLOT; 50];
+        inv[3] = crate::item::ItemSlot { kind: 4743, name: "Football", count: 5, prefix: 0 };
+        let mut mouse = crate::item::EMPTY_SLOT;
+        drain_football(&mut p, &mut pool, &mut inv, &mut mouse, 0);
+        let slot = pool.slots().iter().find(|s| s.active).expect("the 861 return");
+        assert_eq!(slot.kind, 861);
+        assert_eq!(slot.damage, 0);
+        // hitDirection: the player's center >= from_x (p.x + 100) is false,
+        // so hit_dir = -1 → velocity.X = -(-1)*4 = 4.
+        assert_eq!(slot.vel.x, 4.0);
+        assert_eq!(slot.vel.y, -6.0);
+        assert_eq!(slot.ai[1], 1.0);
+        assert_eq!(slot.ai[2], 5.0, "ai2 = the stack");
+        assert_eq!(inv[3].kind, 0, "the slot cleared");
+        assert!(p.take_football().is_none(), "the request is a one-shot");
+    }
+
+    #[test]
+    fn w4_f50_the_golf_club_drain_kills_the_owned_lances() {
+        // `Player.cs:38271-38280`: the held jousting lance (4788/4789/4790)
+        // kills every owned 877/878/879 projectile.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let mut pool = ProjectilePool::new();
+        pool.spawn(877, 0, glam::Vec2::ZERO, glam::Vec2::ZERO, 10, 0.0, false);
+        pool.spawn(878, 0, glam::Vec2::ZERO, glam::Vec2::ZERO, 10, 0.0, false);
+        pool.spawn(879, 1, glam::Vec2::ZERO, glam::Vec2::ZERO, 10, 0.0, false); // other owner
+        pool.spawn(1, 0, glam::Vec2::ZERO, glam::Vec2::ZERO, 10, 0.0, false); // not a lance
+        drain_golf_club_kill(&mut p, &mut pool, 4788, 0);
+        assert!(!pool.slots()[0].active, "the owned 877 dies");
+        assert!(!pool.slots()[1].active, "the owned 878 dies");
+        assert!(pool.slots()[2].active, "the other-owner 879 stays");
+        assert!(pool.slots()[3].active, "the non-lance stays");
+        // A non-lance held item kills nothing.
+        let mut q = Player::spawn(&w);
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let mut pool2 = ProjectilePool::new();
+        pool2.spawn(877, 0, glam::Vec2::ZERO, glam::Vec2::ZERO, 10, 0.0, false);
+        drain_golf_club_kill(&mut q, &mut pool2, 1, 0);
+        assert!(pool2.slots()[0].active, "a non-lance held item kills nothing");
+    }
+
+    #[test]
+    fn w4_f50_the_hit_dust_drain_spawns_the_burst() {
+        // `Player.cs:38527-38553`: `num2 / statLifeMax2 * 100` particles.
+        // 10 damage / 100 max * 100 = 10 particles, default dust 5.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::new(p.x - 400.0, p.y - 400.0),
+            screen_size: glam::Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        drain_hurt_dust(&mut p, &mut dust, &ctx, &w, &mut rng);
+        let active = dust.slots().iter().filter(|d| d.active).count();
+        assert_eq!(active, 10, "10 damage / 100 max * 100 = 10 particles");
+        assert!(p.take_hurt_dust().is_none(), "the request is a one-shot");
+    }
+
+    #[test]
+    fn w4_f50_the_hit_dust_keys_on_the_frost_and_bone_armor_sets() {
+        // `Player.cs:38534-38551`: stoned 1, frost 135, bone 26, default 5.
+        // Deviation 4 wires the frost/bone texture-id keys.
+        let w = World::new("t".into(), 64, 800);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(4800.0, 3200.0),
+            max_dust_to_draw: 6000,
+        };
+        let key = |frost: bool, bone: bool, stoned: bool| -> i32 {
+            let mut p = Player::spawn(&w);
+            p.frost_armor = frost;
+            p.bone_armor = bone;
+            if stoned {
+                p.buffs.add_buff(156, 100);
+            }
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+            let mut dust = tr_core::particles::DustPool::new();
+            let mut rng = tr_core::UnifiedRandom::new(7);
+            drain_hurt_dust(&mut p, &mut dust, &ctx, &w, &mut rng);
+            dust.slots().iter().find(|d| d.active).unwrap().dust_type
+        };
+        assert_eq!(key(false, false, false), 5, "default");
+        assert_eq!(key(true, false, false), 135, "frost");
+        assert_eq!(key(false, true, false), 26, "bone");
+        assert_eq!(key(true, true, false), 135, "frost before bone");
+        assert_eq!(key(true, true, true), 1, "stoned before everything");
+    }
+
+    #[test]
+    fn w4_f50_the_armor_dust_scan_derives_the_necro_and_frost_sets() {
+        // `ApplyArmorSoundAndDustChanges` (`Player.cs:38167-38186`): the
+        // Necro set (head 7/75, body 7, legs 7) → boneArmor; the Frost set
+        // (head 46, body 27, legs 26) → frostArmor. Deviation 4.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Necro: 151 (head 7), 152 (body 7), 153 (legs 7).
+        p.equipped[0] = 151;
+        p.equipped[1] = 152;
+        p.equipped[2] = 153;
+        p.apply_armor_sound_and_dust_changes();
+        assert!(p.bone_armor, "the Necro set arms boneArmor");
+        assert!(!p.frost_armor);
+        // Ancient Necro Helmet 959 (head 75) also counts.
+        let mut q = Player::spawn(&w);
+        q.equipped[0] = 959;
+        q.equipped[1] = 152;
+        q.equipped[2] = 153;
+        q.apply_armor_sound_and_dust_changes();
+        assert!(q.bone_armor, "the Ancient Necro Helmet (75) counts");
+        // Frost: 684 (head 46), 685 (body 27), 686 (legs 26).
+        let mut r = Player::spawn(&w);
+        r.equipped[0] = 684;
+        r.equipped[1] = 685;
+        r.equipped[2] = 686;
+        r.apply_armor_sound_and_dust_changes();
+        assert!(r.frost_armor, "the Frost set arms frostArmor");
+        assert!(!r.bone_armor);
+        // A mixed set arms neither.
+        let mut s = Player::spawn(&w);
+        s.equipped[0] = 151;
+        s.equipped[1] = 685;
+        s.equipped[2] = 153;
+        s.apply_armor_sound_and_dust_changes();
+        assert!(!s.bone_armor && !s.frost_armor);
     }
 }

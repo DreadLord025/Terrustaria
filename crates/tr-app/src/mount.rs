@@ -15,9 +15,20 @@
 //! PogoStick, WoFGoat, QueenSlime) and the state/equip core. Out of scope:
 //! the hover/flyer fatigue pool (M2-MOUNT-2) and the minecart rows
 //! (M2-MOUNT-3), everything minecart
-//! (`SetAsMinecart` `Mount.cs:2747-2799`, SuperCart — M2-MOUNT-3), the
-//! per-type abilities (`UpdateDrill`/`UseAbility` — M2-MOUNT-4), the net sync
-//! (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
+//! (`SetAsMinecart` `Mount.cs:2747-2799`, SuperCart — M2-MOUNT-3), the net
+//! sync (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
+//!
+//! M2-MOUNT-4 (W4-c14) adds the two projectile abilities — the Scutlix (9)
+//! laser pair and the Santank (46) missile/gift barrage: `UseAbility`
+//! (`Mount.cs:3254-3338` cases 9/46), `AimAbility` (`:5335-5465`),
+//! `ClampToDeadZone` (`:5296-5333`), `StopAbilityCharge` (`:2922-2931`),
+//! `ResetHeadPosition` (`:5283-5294`) and the auto-fire target scan
+//! (`UpdateEffects` case 9/46, `:4879-4947`, driven from
+//! `Player::update_mount_ability`). The Drill (8) arm stays unported — its
+//! `UseDrill` mining consumer is the mount lane's (research/371 §2 contract).
+//! The `AimAbility` eye-glow `Lighting.AddLight` heads are the light lane's.
+
+use glam::Vec2;
 
 /// `Mount.MountData` frame-set triple (`Mount.cs:207-249`): start/count/delay
 /// (+ `idleFrameLoop` :237). A `count` of 0 means the set is unused.
@@ -392,6 +403,32 @@ const SLIME: MountData = MountData {
 /// is M2-MOUNT-4 (the ability fields are already in the row). The decompile
 /// asserts the frame size 45x54 (`:1398-1416`).
 static SCUTLIX_Y_OFFSETS: [i32; 12] = [16; 12];
+
+/// `Mount.scutlixTextureSize` (`Mount.cs:1409`) — the Scutlix half-box the
+/// dead-zone clamp reads (`ClampToDeadZone` `:5303-5304` takes `.Y` as the
+/// Y half-extent and `.X` as the X). The decompile's `:1410-1416` assert
+/// pins it to the actual frame size (45x54).
+pub(crate) const SCUTLIX_TEXTURE_SIZE: Vec2 = Vec2::new(45.0, 54.0);
+
+/// `Mount.scutlixEyePositions` (`Mount.cs:1398-1421`): the 10-entry eye pair
+/// table, MINUS `scutlixTextureSize` (45, 54) per the `:1418-1421` loop —
+/// `UseAbility` case 9 (`:3273-3281`) and `AimAbility` case 9 (`:5404-5411`)
+/// index it by `(frameExtra - 6) * 2` (the 6-10 aim bands). The raw rows are
+/// (60,2) (70,6) (68,6) (76,12) (80,10) (84,18) (74,20) (76,24) (70,34)
+/// (76,34); each subtracts (45,54).
+pub(crate) const SCUTLIX_EYE_POSITIONS: [Vec2; 10] = [
+    Vec2::new(15.0, -52.0),
+    Vec2::new(25.0, -48.0),
+    Vec2::new(23.0, -48.0),
+    Vec2::new(31.0, -42.0),
+    Vec2::new(35.0, -44.0),
+    Vec2::new(39.0, -36.0),
+    Vec2::new(29.0, -34.0),
+    Vec2::new(31.0, -30.0),
+    Vec2::new(25.0, -20.0),
+    Vec2::new(31.0, -20.0),
+];
+
 const SCUTLIX: MountData = MountData {
     id: 9,
     buff: 143,
@@ -1591,6 +1628,13 @@ const SPOOKY_WOOD: MountData = MountData {
 static SANTANK_Y_OFFSETS: [i32; 27] = [
     4, 6, 6, 4, 4, 4, 4, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 ];
+
+/// `Mount.santankTextureSize` (`Mount.cs:2030`) — the Santank half-box the
+/// dead-zone clamp reads (`ClampToDeadZone` `:5307-5308`: `.Y` = 2 is the Y
+/// half-extent, `.X` = 23 the X). The 2-px Y half-extent makes the Santank's
+/// dead zone a thin horizontal band (the missile aims almost freely).
+pub(crate) const SANTANK_TEXTURE_SIZE: Vec2 = Vec2::new(23.0, 2.0);
+
 const SANTANK: MountData = MountData {
     id: 46,
     buff: 281,
@@ -2866,6 +2910,191 @@ impl MountState {
         }
     }
 
+    // --- M2-MOUNT-4: the Scutlix/Santank projectile-ability machine ---------
+    // (`UseAbility` `Mount.cs:3254-3338` cases 9/46 + the aim/scan support;
+    // research/371 §1). The fire itself lives on `Player`
+    // (`update_mount_ability` — it needs the NPC list, the pool and the RNG).
+
+    /// `Mount._frameExtra` — the Scutlix aim band (6-10) the eye table reads;
+    /// `UpdateFrame`'s extra-frame animation also writes it (the ability aim
+    /// overwrites while aiming).
+    pub(crate) fn frame_extra(&self) -> i32 {
+        self.frame_extra
+    }
+
+    /// `Mount._abilityCharging` — the scan's else-arm sets it (the charge
+    /// fills via [`MountState::ability_recovery`]).
+    pub(crate) fn ability_charging(&self) -> bool {
+        self.ability_charging
+    }
+
+    /// The scan's charge write (`Mount.cs:4939` sets true, `:4944` false) —
+    /// the driver's else-arms.
+    pub(crate) fn set_ability_charging(&mut self, value: bool) {
+        self.ability_charging = value;
+    }
+
+    /// `Mount._abilityCooldown` — the fire cadence gate (9: `== 0`;
+    /// 46: `% 10 == 0`) and the gift window (`<= 10`).
+    pub(crate) fn ability_cooldown(&self) -> i32 {
+        self.ability_cooldown
+    }
+
+    /// `Mount.AbilityCharge` (`Mount.cs:628`) — `charge / chargeMax` as f32;
+    /// the AimAbility eye-glow reads it (the light lane's, dropped here).
+    pub(crate) fn ability_charge_ratio(&self) -> f32 {
+        self.data()
+            .map_or(0.0, |d| self.ability_charge as f32 / d.ability_charge_max as f32)
+    }
+
+    /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`): an aim INSIDE the
+    /// mount's texture half-box pushes out to the box edge (the smaller
+    /// axis ratio wins); anything outside passes through. The half-extents:
+    /// Scutlix X 45 / Y 54 (`:5303-5304` — `.X` is the X bound, `.Y` the Y),
+    /// Santank X 23 / Y 2 (`:5307-5308`), Drill X 80 / Y 80 (`:5311-5312`,
+    /// unported — the contract, research/371 §2). Every other type returns
+    /// the position unchanged (`:5314-5315`).
+    pub(crate) fn clamp_to_dead_zone(&self, center: Vec2, position: Vec2) -> Vec2 {
+        let (num2, num) = match self.kind {
+            9 => (
+                SCUTLIX_TEXTURE_SIZE.x as i32 as f32,
+                SCUTLIX_TEXTURE_SIZE.y as i32 as f32,
+            ),
+            46 => (
+                SANTANK_TEXTURE_SIZE.x as i32 as f32,
+                SANTANK_TEXTURE_SIZE.y as i32 as f32,
+            ),
+            _ => return position,
+        };
+        let mut pos = position - center;
+        // `:5319` — the strict inside test on all four edges.
+        if pos.x > -num2 && pos.x < num2 && pos.y > -num && pos.y < num {
+            // `:5321-5330` — the two edge ratios; the SMALLER one scales the
+            // whole vector onto the box edge (an exact-0 axis divides to
+            // +inf in the C# float, so the other axis wins — the port's f32
+            // division reproduces that).
+            let num3 = num2 / pos.x.abs();
+            let num4 = num / pos.y.abs();
+            if num3 > num4 {
+                pos *= num4;
+            } else {
+                pos *= num3;
+            }
+        }
+        pos + center
+    }
+
+    /// `Mount.AimAbility` (`Mount.cs:5335-5465`) cases 9/46: face the clamped
+    /// aim, fold the angle into the Scutlix `_frameExtra` band (6/7/8/9/10
+    /// at the ±22.5/±67.5/±112.5 degree thresholds), and set `_flipDraw`
+    /// when the facing opposes the velocity. Returns the C#'s bool (the
+    /// frame/facing changed). The eye-glow `Lighting.AddLight` heads
+    /// (`:5394-5415`/`:5449-5459`) are the LIGHT lane's — dropped (the
+    /// charge ratio accessor above keeps the seam discoverable). Case 8
+    /// (the Drill diode) is the unported contract (research/371 §2).
+    /// `facing`/`vx` are the player's direction and X velocity; the caller
+    /// writes the returned facing back.
+    pub(crate) fn aim_ability(
+        &mut self,
+        center: Vec2,
+        target: Vec2,
+        facing: i32,
+        vx: f32,
+    ) -> (bool, i32) {
+        self.aiming = true;
+        match self.kind {
+            9 | 46 => {
+                let old_frame_extra = self.frame_extra;
+                let old_facing = facing;
+                // `:5344`/`:5426` — the clamped aim's angle in degrees
+                // (`MathHelper.ToDegrees` — the double product, then the
+                // float cast).
+                let rad = (self.clamp_to_dead_zone(center, target) - center).to_angle();
+                let mut deg = (rad as f64 * 180.0 / std::f64::consts::PI) as f32;
+                let new_facing;
+                if deg > 90.0 {
+                    new_facing = -1;
+                    deg = 180.0 - deg;
+                } else if deg < -90.0 {
+                    new_facing = -1;
+                    deg = -180.0 - deg;
+                } else {
+                    new_facing = 1;
+                }
+                // `:5359-5366`/`:5441-5448` — the draw flip when the facing
+                // opposes the run.
+                self.flip_draw = (new_facing > 0 && vx < 0.0) || (new_facing < 0 && vx > 0.0);
+                if self.kind == 9 {
+                    // `:5367-5393` — the five bands. `>= 0` folds the lower
+                    // half; the C# leaves the band UNCHANGED past ±112.5
+                    // (unreachable after the >90/<-90 fold, kept verbatim).
+                    if deg >= 0.0 {
+                        if (deg as f64) < 22.5 {
+                            self.frame_extra = 8;
+                        } else if (deg as f64) < 67.5 {
+                            self.frame_extra = 9;
+                        } else if (deg as f64) < 112.5 {
+                            self.frame_extra = 10;
+                        }
+                    } else if (deg as f64) > -22.5 {
+                        self.frame_extra = 8;
+                    } else if (deg as f64) > -67.5 {
+                        self.frame_extra = 7;
+                    } else if (deg as f64) > -112.5 {
+                        self.frame_extra = 6;
+                    }
+                }
+                // Case 46 keeps `_frameExtra` (`:5422-5464` — no band write).
+                let changed = if self.frame_extra == old_frame_extra {
+                    new_facing != old_facing
+                } else {
+                    true
+                };
+                (changed, new_facing)
+            }
+            _ => (false, facing),
+        }
+    }
+
+    /// `Mount.StopAbilityCharge` (`Mount.cs:2922-2931`): types 9/46 clear
+    /// the charging flag and re-arm the row's cooldown + duration (the fire
+    /// cadence restarts).
+    pub(crate) fn stop_ability_charge(&mut self) {
+        if matches!(self.kind, 9 | 46) {
+            self.ability_charging = false;
+            if let Some(row) = self.data() {
+                self.ability_cooldown = row.ability_cooldown;
+                self.ability_duration = row.ability_duration;
+            }
+        }
+    }
+
+    /// `Mount.ResetHeadPosition` (`Mount.cs:5283-5294`): while aiming, clear
+    /// the aim; `_frameExtra` zeroes UNLESS type 46 (the Santank keeps its
+    /// band); `_flipDraw` clears.
+    pub(crate) fn reset_head_position(&mut self) {
+        if self.aiming {
+            self.aiming = false;
+            if self.kind != 46 {
+                self.frame_extra = 0;
+            }
+            self.flip_draw = false;
+        }
+    }
+
+    /// Test-only: the aim state the witnesses pin.
+    #[cfg(test)]
+    pub(crate) fn test_ability_state(&self) -> (bool, bool, i32, i32) {
+        (self.aiming, self.flip_draw, self.frame_extra, self.ability_cooldown)
+    }
+
+    /// Test-only: the charging/cooldown writes the scan witnesses stage.
+    #[cfg(test)]
+    pub(crate) fn test_set_ability(&mut self, charging: bool, cooldown: i32) {
+        self.ability_charging = charging;
+        self.ability_cooldown = cooldown;
+    }
+
     /// `Mount.ExtraFall` / `Mount.FallDamage` (:183/:181 read via properties).
     pub(crate) fn extra_fall(&self) -> i32 {
         self.data().map_or(0, |d| d.extra_fall)
@@ -3053,6 +3282,157 @@ mod tests {
         assert!(!m.allow_direction_change(), "10 is not < 10");
         m.ability_recovery();
         assert!(m.allow_direction_change(), "9 < 10 allows the turn");
+    }
+
+    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+
+    /// `Mount.scutlixEyePositions` (`Mount.cs:1398-1421`): every row is the
+    /// raw pair MINUS (45, 54); the pair index `(frameExtra - 6) * 2` walks
+    /// the five aim bands.
+    #[test]
+    fn m4_the_scutlix_eye_table_is_the_raw_pairs_minus_the_texture_size() {
+        use super::{SCUTLIX_EYE_POSITIONS, SCUTLIX_TEXTURE_SIZE};
+        let raw = [
+            (60.0f32, 2.0f32),
+            (70.0, 6.0),
+            (68.0, 6.0),
+            (76.0, 12.0),
+            (80.0, 10.0),
+            (84.0, 18.0),
+            (74.0, 20.0),
+            (76.0, 24.0),
+            (70.0, 34.0),
+            (76.0, 34.0),
+        ];
+        for (i, (x, y)) in raw.iter().enumerate() {
+            assert_eq!(
+                SCUTLIX_EYE_POSITIONS[i],
+                glam::Vec2::new(x - SCUTLIX_TEXTURE_SIZE.x, y - SCUTLIX_TEXTURE_SIZE.y),
+                "row {i}"
+            );
+        }
+        // The band-8 pair (frameExtra 8 → index 4/5).
+        assert_eq!(SCUTLIX_EYE_POSITIONS[4], glam::Vec2::new(35.0, -44.0));
+        assert_eq!(SCUTLIX_EYE_POSITIONS[5], glam::Vec2::new(39.0, -36.0));
+    }
+
+    /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`): an aim inside the
+    /// half-box pushes to the edge by the SMALLER axis ratio; an outside aim
+    /// passes through; a non-ability mount is the identity.
+    #[test]
+    fn m4_the_dead_zone_clamp_pushes_inside_aims_to_the_box_edge() {
+        use super::MountState;
+        let center = glam::Vec2::new(100.0, 100.0);
+        let mut m = MountState::default();
+        // No mount: the identity (`:5314-5315`).
+        let p = center + glam::Vec2::new(3.0, 3.0);
+        assert_eq!(m.clamp_to_dead_zone(center, p), p);
+        // The Scutlix: X bound 45, Y bound 54. An aim (10, 10) inside both:
+        // ratioX 45/10 = 4.5 > ratioY 54/10 = 5.4? No — 4.5 < 5.4, so the X
+        // ratio (the smaller) scales: (45, 45).
+        m.set_mount(9, false);
+        let out = m.clamp_to_dead_zone(center, center + glam::Vec2::new(10.0, 10.0));
+        assert_eq!(out - center, glam::Vec2::new(45.0, 45.0));
+        // (40, 1): ratioX 45/40 = 1.125 < ratioY 54/1 = 54 → X wins:
+        // (45, 1.125).
+        let out = m.clamp_to_dead_zone(center, center + glam::Vec2::new(40.0, 1.0));
+        assert_eq!(out - center, glam::Vec2::new(45.0, 1.125));
+        // Outside the box: untouched (`:5319` fails).
+        let far = center + glam::Vec2::new(100.0, 0.0);
+        assert_eq!(m.clamp_to_dead_zone(center, far), far);
+        // The Santank: X bound 23, Y bound 2 — the thin band. (10, 1) inside:
+        // ratioX 23/10 = 2.3 > ratioY 2/1 = 2 → Y wins: (20, 2).
+        m.set_mount(46, false);
+        let out = m.clamp_to_dead_zone(center, center + glam::Vec2::new(10.0, 1.0));
+        assert_eq!(out - center, glam::Vec2::new(20.0, 2.0));
+        // A vertical Santank aim (0, 1): ratioX 23/0 = +inf > 2 → Y wins:
+        // (0, 2) — the C#'s float divide-by-zero, reproduced.
+        let out = m.clamp_to_dead_zone(center, center + glam::Vec2::new(0.0, 1.0));
+        assert_eq!(out - center, glam::Vec2::new(0.0, 2.0));
+    }
+
+    /// `Mount.AimAbility` case 9 (`Mount.cs:5340-5421`): the five degree
+    /// bands fold into frameExtra 6-10, the >90/<-90 arms flip the facing,
+    /// and the flipDraw follows the facing-vs-velocity opposition.
+    #[test]
+    fn m4_the_scutlix_aim_bands_fold_the_angle_into_frame_extra() {
+        use super::MountState;
+        let center = glam::Vec2::ZERO;
+        let mut m = MountState::default();
+        m.set_mount(9, false);
+        // Straight right (0°) → band 8, facing 1, no flip (vx 0).
+        let (changed, facing) =
+            m.aim_ability(center, glam::Vec2::new(200.0, 0.0), 1, 0.0);
+        assert_eq!((m.frame_extra(), facing), (8, 1));
+        assert!(changed, "the band moved off the reset 0");
+        assert!(!m.test_ability_state().1, "no flip at rest");
+        // 45° down-right → band 9 (`22.5 <= 45 < 67.5`).
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(100.0, 100.0), 1, 0.0);
+        assert_eq!((m.frame_extra(), facing), (9, 1));
+        // Straight down (90°) → band 10 (`67.5 <= 90 < 112.5`).
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(0.0, 100.0), 1, 0.0);
+        assert_eq!((m.frame_extra(), facing), (10, 1));
+        // Up-left (-135°) → facing -1, deg folds to -45 → band 7.
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(-100.0, -100.0), 1, 0.0);
+        assert_eq!((m.frame_extra(), facing), (7, -1));
+        // Straight left (180°) → facing -1, deg 0 → band 8; running right
+        // (vx > 0) against the left facing sets flipDraw.
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(-200.0, 0.0), 1, 5.0);
+        assert_eq!((m.frame_extra(), facing), (8, -1));
+        assert!(m.test_ability_state().1, "the left aim vs the right run flips");
+        // Straight up (-90°) → band 6 (`-112.5 < -90 <= -67.5`).
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(0.0, -100.0), 1, 0.0);
+        assert_eq!((m.frame_extra(), facing), (6, 1));
+    }
+
+    /// `Mount.AimAbility` case 46 (`Mount.cs:5422-5464`): the Santank folds
+    /// the facing + flipDraw but KEEPS frameExtra; `ResetHeadPosition`
+    /// (`:5283-5294`) keeps the Santank's band and zeroes the Scutlix's.
+    #[test]
+    fn m4_the_santank_aim_keeps_the_band_and_the_reset_spares_it() {
+        use super::MountState;
+        let center = glam::Vec2::ZERO;
+        let mut m = MountState::default();
+        m.set_mount(46, false);
+        m.frame_extra = 3; // a pre-existing band (the animator's)
+        let (_, facing) = m.aim_ability(center, glam::Vec2::new(-200.0, 0.0), 1, 0.0);
+        assert_eq!(facing, -1);
+        assert_eq!(m.frame_extra(), 3, "the Santank keeps its band");
+        assert!(m.test_ability_state().0, "aiming armed");
+        m.reset_head_position();
+        assert_eq!(m.frame_extra(), 3, "the reset spares the Santank band");
+        assert!(!m.test_ability_state().0, "aiming cleared");
+        // The Scutlix reset zeroes the band.
+        m.set_mount(9, false);
+        m.aim_ability(center, glam::Vec2::new(100.0, 100.0), 1, 0.0);
+        assert_eq!(m.frame_extra(), 9);
+        m.reset_head_position();
+        assert_eq!(m.frame_extra(), 0, "the Scutlix band zeroes");
+    }
+
+    /// `Mount.StopAbilityCharge` (`Mount.cs:2922-2931`): the 9/46 fire
+    /// re-arms the row cooldown (20/40) + duration and clears charging;
+    /// other types no-op.
+    #[test]
+    fn m4_stop_ability_charge_rearms_the_row_cooldown() {
+        use super::MountState;
+        let mut m = MountState::default();
+        m.set_mount(9, false);
+        m.test_set_ability(true, 0);
+        m.stop_ability_charge();
+        assert!(!m.ability_charging());
+        assert_eq!(m.ability_cooldown(), 20, "the Scutlix row's 20");
+        m.set_mount(46, false);
+        m.test_set_ability(true, 5);
+        m.stop_ability_charge();
+        assert!(!m.ability_charging());
+        assert_eq!(m.ability_cooldown(), 40, "the Santank row's 40");
+        // The Unicorn: no arm (`:2925` gates 9/46 only).
+        m.set_mount(10, false);
+        m.test_set_ability(true, 7);
+        m.stop_ability_charge();
+        assert!(m.ability_charging(), "the Unicorn keeps charging");
+        assert_eq!(m.ability_cooldown(), 7);
     }
 
     #[test]

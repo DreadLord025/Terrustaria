@@ -57,7 +57,8 @@ use tr_core::World;
 use crate::projectile::{
     BALLISTA_SHOT, BETSY_FIREBALL, BLOWUP_SMOKE_MOONLORD, BRAIN_SCRAMBLER, CANNON_EXPLOSIVE,
     DEERCLOPS_ICE_CHUNK, FLAMING_WOOD, GOLEM_EYE_BEAM, MINI_RETINA_LASER, PHANTASMAL_BOLT,
-    Projectile, RAY_GUNNER, SAUCER_LASER, SKULL, TRAP_VENOM_DART, VORTEX_DART, proj_frames,
+    Projectile, RAY_GUNNER, SAUCER_LASER, SCUTLIX_LASER, SKULL, TRAP_VENOM_DART, VORTEX_DART,
+    proj_frames,
 };
 
 /// The slice-B kind set — the higher-id rowed kinds this module owns.
@@ -68,11 +69,12 @@ use crate::projectile::{
 /// tests still exercise them directly) but the dispatch never routes
 /// those kinds here. The M4-PROJ-6 riders (20/88/355/660), the Book of
 /// Skulls (837) and every unrowed kind keep their existing arms untouched.
-pub(crate) const SLICE_B_KINDS: [u16; 9] = [
+pub(crate) const SLICE_B_KINDS: [u16; 10] = [
     SAUCER_LASER,          // 449
     PHANTASMAL_BOLT,       // 462
     VORTEX_DART,           // 581
     CANNON_EXPLOSIVE,      // 601
+    SCUTLIX_LASER,         // 606 (M2-MOUNT-4 — the 449 sibling, same C# block)
     BLOWUP_SMOKE_MOONLORD, // 622
     BALLISTA_SHOT,         // 680
     BETSY_FIREBALL,        // 686
@@ -89,10 +91,10 @@ pub(crate) fn covers(kind: u16) -> bool {
 /// flight counter holds at rest (no `ai[0]++` at `:56038-56041`). The
 /// slice-B members of the C# list: 259 (`:55972`), 270 (`:55974`), 325
 /// (`:55984`), 389 (`:55991`), 436 (`:55993`), 438 (`:55994`), 449
-/// (`:55997`), 462 (`:55999`), 601 (`:56013`), 980 (`:56029`). The other
-/// five (581/622/680/686/962) are NOT on the list — they count like arrows.
-/// `flag4` (the inverted gravity) is 1006-only (`:56034-56036`) — no
-/// slice-B kind sets it.
+/// (`:55997`), 462 (`:55999`), 601 (`:56013`), 606 (`:56014`, M2-MOUNT-4),
+/// 980 (`:56029`). The other five (581/622/680/686/962) are NOT on the
+/// list — they count like arrows. `flag4` (the inverted gravity) is
+/// 1006-only (`:56034-56036`) — no slice-B kind sets it.
 fn counts_flight(kind: u16) -> bool {
     !matches!(
         kind,
@@ -105,6 +107,7 @@ fn counts_flight(kind: u16) -> bool {
             | SAUCER_LASER
             | PHANTASMAL_BOLT
             | CANNON_EXPLOSIVE
+            | SCUTLIX_LASER
             | TRAP_VENOM_DART
     )
 }
@@ -189,25 +192,37 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
             }
         }
     }
-    // `:54772-54828` — the Martian laser group (440/449/606); 449 is the
-    // slice-B member: the alpha fade 25, the light (`:54788`, skipped), the
-    // localAI[0] flight-time ramp — +3/tick while ai[1] == 0 (the cap 100,
-    // `num54`/`num55` at `:54794-54795`), −3/tick once ai[1] != 0 with the
-    // `Kill(); return` at ≤ 0 (`:54822-54826`).
-    if p.kind == SAUCER_LASER {
+    // `:54772-54828` — the Martian laser group (440/449/606); 449 and 606
+    // are the slice-B members (M2-MOUNT-4 adds the Scutlix mount's 606):
+    // the alpha fade 25, the light (`:54784-54793`, skipped), the
+    // localAI[0] flight-time ramp — +num55/tick while ai[1] == 0 (the cap
+    // num54, `:54794-54800`: 449 → 100/3, 606 → 150/5), −num55/tick once
+    // ai[1] != 0 with the `Kill(); return` at ≤ 0 (`:54822-54826`). The
+    // 606's first-tick 4× dust-182 (`:54804-54812`, `localAI[0] == num55`)
+    // is SKIPPED with the dust (the slice-B zero-RNG convention — the
+    // `NewDust` args are constants, no explicit call-site draw); its
+    // `Kill()` dust census (`:73563-73572`, the `Next(3, 7)` count + the
+    // dust-182 loop) rides the same skip (the 449 sibling's `:73573` arm
+    // is skipped identically — the port's death is `active = false`).
+    if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
         if p.alpha > 0 {
             p.alpha -= 25;
         }
         if p.alpha < 0 {
             p.alpha = 0;
         }
+        let (cap, step) = if p.kind == SCUTLIX_LASER {
+            (150.0f32, 5.0f32)
+        } else {
+            (100.0, 3.0)
+        };
         if p.ai[1] == 0.0 {
-            p.local_ai[0] += 3.0;
-            if p.local_ai[0] > 100.0 {
-                p.local_ai[0] = 100.0;
+            p.local_ai[0] += step;
+            if p.local_ai[0] > cap {
+                p.local_ai[0] = cap;
             }
         } else {
-            p.local_ai[0] -= 3.0;
+            p.local_ai[0] -= step;
             if p.local_ai[0] <= 0.0 {
                 p.active = false;
                 p.time_left = 0;
@@ -538,6 +553,7 @@ mod tests {
             SAUCER_LASER,
             PHANTASMAL_BOLT,
             CANNON_EXPLOSIVE,
+            SCUTLIX_LASER,
             TRAP_VENOM_DART,
         ] {
             let mut p = shot(k);
@@ -663,6 +679,36 @@ mod tests {
         }
         assert_eq!(p.local_ai[0], 1.0); // 100 − 33×3
         step(&mut p, &w, None); // 1 − 3 = −2 ≤ 0 → Kill
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// M2-MOUNT-4 — 606 (`:54772-54828`): the Scutlix laser rides the same
+    /// group with the 150/5 constants (`:54796-54800`): the +5 ramp caps at
+    /// 150 (tick 30: 5×30 = 150), the ai[1] != 0 countdown kills at ≤ 0.
+    /// The resting counter (`:56014`) keeps the gravity off. The tile
+    /// contact keeps the port's kill-on-tile stand-in (the 449 sibling's
+    /// convention — the C# `:18278` bounce latch + `:20435` UpdatePosition
+    /// skip are the documented slice-B deviation, ANALYSIS).
+    #[test]
+    fn m4_the_scutlix_laser_ramps_150_by_5_and_counts_down() {
+        let w = air();
+        let mut p = shot(SCUTLIX_LASER);
+        assert_eq!(p.alpha, 255, "the row's alpha");
+        assert_eq!(p.extra_updates, 2, "the row's extraUpdates");
+        for _ in 0..30 {
+            step(&mut p, &w, None);
+        }
+        assert_eq!(p.local_ai[0], 150.0, "5×30 caps at 150");
+        assert_eq!(p.alpha, 0, "255 − 30×25 clamps");
+        assert_eq!(p.ai[0], 0.0, "the resting counter");
+        p.ai[1] = 1.0;
+        for _ in 0..29 {
+            step(&mut p, &w, None);
+            assert!(p.active);
+        }
+        assert_eq!(p.local_ai[0], 5.0); // 150 − 29×5
+        step(&mut p, &w, None); // 5 − 5 = 0 ≤ 0 → Kill
         assert!(!p.active);
         assert_eq!(p.time_left, 0);
     }

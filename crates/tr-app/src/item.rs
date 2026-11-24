@@ -1104,13 +1104,29 @@ impl ItemDrop {
     /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
     /// (`WorldItem.cs:849-864`) and the tile-collision pass.
     fn move_in_world(&mut self, world: &World) {
-        // `WorldItem.cs:363-364` — the air gravity and the fall cap.
-        self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
-        // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
-        // applied BEFORE the collision pass (`MoveInWorld`'s order).
-        self.vel.x *= FRICTION_X;
-        if self.vel.x.abs() < FRICTION_EPSILON {
-            self.vel.x = 0.0;
+        // `WorldItem.cs:774-786` — the `ItemID.Sets.ItemNoGravity` arm
+        // (`ItemID.cs:1320`): souls (520/521), the nebula pickups and the
+        // like float — BOTH axes decay ×0.95 with the ±0.1 rest snap, NO
+        // gravity and NO fall cap. The port models the two soul ids (the
+        // W4-f32 loot lane); the other set members land with their items.
+        if !self.shimmered && matches!(self.kind, 520 | 521) {
+            self.vel.x *= 0.95;
+            if self.vel.x < 0.1 && self.vel.x > -0.1 {
+                self.vel.x = 0.0;
+            }
+            self.vel.y *= 0.95;
+            if self.vel.y < 0.1 && self.vel.y > -0.1 {
+                self.vel.y = 0.0;
+            }
+        } else {
+            // `WorldItem.cs:363-364` — the air gravity and the fall cap.
+            self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
+            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
         }
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
         // AABB pass. The C# stores the bool in `item.onConveyor`, which

@@ -2199,6 +2199,31 @@ pub enum NpcKind {
     // (d42's variants above) + the 12-critter tail (Worm -> c8@737, the
     // gold septet + bait tail -> d40's variants above) dropped; the Duck
     // quartet keeps (renumbered 731-734 in to_u16).
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the jungle critter
+    /// (`NPC.cs:13601-13612`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default — the row writes none), value 0,
+    /// catchItem 2121. DATA-ONLY (W4-e26): the aiStyle-7 town machine
+    /// (~2600 lines, research/25 row 7 APPROXIMATE) is its own wave;
+    /// the kind + stats land so the catch/release chain resolves.
+    /// E8 keep-one EXECUTED (research/108): e26 owns the Frog; the wire
+    /// id moves 361→744 (d37's Pirate owns proto 361), cs/net stay 361.
+    /// The Duck 362 variant DROPPED to c10 (the waterfowl family's
+    /// canonical owner, SEAL S1 — its walker/swim rows + Transform
+    /// chain land there; e26 keeps only the Frog + the ladybug pair).
+    Frog,
+    /// `NPCID.LadyBug` (604, `NPCID.cs:11885`) — the luck critter
+    /// (`NPC.cs:16763-16780`): 10x10, aiStyle 115, dmg 0, def 0, 5 HP,
+    /// kb 1, npcSlots 0.25, noGravity, catchItem 4361. WIRED (W4-e26):
+    /// the axis' 115 arm rides `npc_ai_style115::ai_115_step`; the
+    /// `CheckActive` 604/605 window (`NPC.cs:77930-77938`) and the
+    /// `checkDead` kill (`:78056-78059`) feed the luck seams.
+    LadyBug,
+    /// `NPCID.GoldLadyBug` (605, `NPCID.cs:11887`) — the gold luck
+    /// critter (the same `NPC.cs:16763-16780` row): 10x10, aiStyle 115,
+    /// the 604 stats + rarity 3, catchItem 4362; the gold flag doubles
+    /// the luck windows (`LadyBugKilled`/`LadyBugLuck`'s `type == 605`).
+    /// `NPCID.Sets.IsGoldCritter` member (`NPCID.cs:10126`).
+    GoldLadyBug,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2721,6 +2746,13 @@ pub struct Npc {
     /// Invulnerability` (`NPC.cs:90534-90556`) decrements it per update and
     /// zeroes it for released/statue spawns (S1-P-i36).
     pub catchable_immunity: i32,
+    /// `Main.windSpeedTarget` stamped for the aiStyle-115 ladybug drift
+    /// (`NPC.cs:47625`, `value.X += Main.windSpeedTarget * 0.8f`). The
+    /// `Npc::update_rng` signature cannot carry the App's wind, so the
+    /// sim's tick closure stamps it per ladybug before the step (the
+    /// WoF `world.wof_*` write-through convention); the solo `update_rng`
+    /// path reads the stock 0. W4-e26.
+    pub ladybug_wind: f32,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -4477,6 +4509,9 @@ impl Npc {
             } else {
                 0
             },
+            // `Main.windSpeedTarget` — stamped by the sim for the ladybug
+            // drift; stock 0 until then (W4-e26).
+            ladybug_wind: 0.0,
             swarm_done: false,
             king_slime_local: [0.0; 4],
             size_override: None,
@@ -5342,6 +5377,10 @@ impl Npc {
             // (`NPC.cs:11164`), 693 0.6 (`:17731`).
             NpcKind::RuneWizard => 0.3,
             NpcKind::LibrarianSkeleton => 0.6,
+            // The luck critters (W4-e26, E8 keep-one): the `SetDefaults`
+            // rows write no knockBackResist — the head's 1f
+            // (`NPC.cs:8533`) stands (the ForceBubble / W4-c9 precedent).
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 1.0,
             _ => 0.4,
         }
     }
@@ -6025,6 +6064,9 @@ impl Npc {
             // (`NPC.cs:11160`), 693 2 (`:17728`).
             NpcKind::RuneWizard => 30,
             NpcKind::LibrarianSkeleton => 2,
+            // The luck critters (W4-e26, E8 keep-one): defense 0 each
+            // (`NPC.cs:13607` / `:16769`).
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6709,6 +6751,9 @@ impl Npc {
             // (`NPC.cs:11165`), 693 160 (`:17732`).
             NpcKind::RuneWizard => 5000.0,
             NpcKind::LibrarianSkeleton => 160.0,
+            // The luck critters (W4-e26, E8 keep-one): the rows write no
+            // value — the head's 0f (`NPC.cs:8544`) stands.
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6775,6 +6820,60 @@ impl Npc {
     /// `NPC.cs:51307`), so it keeps its own life.
     pub fn has_carrier(&self) -> bool {
         self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
+    }
+
+    /// `NPC.boss` (`NPC.cs:6513`'s per-type `SetDefaults` rows) for the
+    /// ported boss roster — the `NPCLoot` soul gate's `info.npc.boss`
+    /// (`Conditions.cs:1581`), the `LegacyHack_IsABoss` trophy rows
+    /// (`ItemDropDatabase.cs:878-908`) and `DoDeathEvents`' boss tail
+    /// (`NPC.cs:79505-79513`) all read it. W4-f32 DOC-SWEEP census: the
+    /// C#'s 23 `this.boss = true` sites are 21 `SetDefaults` kinds —
+    /// 4 (:8716), 35 (:9180), 50 (:9389), 113 (:10358), 125 (:10535),
+    /// 126 (:10552), 127 (:10570), 134 (:10676), 222 (:11868),
+    /// 245 (:12176), 262 (:12393), 266 (:12452), 370 (:13716),
+    /// 395 (:14061 — the MARTIAN SAUCER CORE is a boss), 396 (:14097),
+    /// 397 (:14116), 398 (:14136), 439 (:14227), 636 (:17202),
+    /// 657 (:17323), 664 (:17401, the Torch God — unported),
+    /// 668 (:17460) — plus the DYNAMIC `DropEoWLoot` latch (:78425-78428:
+    /// the last EoW segment sets `boss = true` before `NPCLoot`, so the
+    /// head's row is NOT a static `SetDefaults` boss). The DD2 bosses
+    /// (551/564/565/576/577) and the Dutchman (491) do NOT set it (their
+    /// trophies are unconditional `Common` rows,
+    /// `ItemDropDatabase.cs:903-908`). The port's `boss` field is only
+    /// wired for Duke Fishron / King Slime today, so this helper is the
+    /// faithful per-kind read the loot/death paths use (the field's
+    /// general migration is the S1-D-3p follow-up). The dynamic arms are
+    /// NOT kind reads: the Twins' surviving-half demotion
+    /// (`DoDeathEvents_BeforeLoot`, `NPC.cs:78916-78923`) and the EoW
+    /// last-segment latch are documented gaps (research/74). The Moon
+    /// parts (396/397) are bosses in `SetDefaults` but their ported
+    /// deaths are ALL bypass kills (`moon_despawn_kill` — the strike
+    /// death restores the hover, the orphan/despawn kills skip
+    /// `NPCLoot`), so the death loop's tail refuses them on that flag
+    /// and no boss-tail draw ever fires for a part.
+    pub fn is_boss_kind(&self) -> bool {
+        matches!(
+            self.kind,
+            NpcKind::KingSlime
+                | NpcKind::EyeOfCthulhu
+                | NpcKind::BrainOfCthulhu
+                | NpcKind::QueenBee
+                | NpcKind::SkeletronHead
+                | NpcKind::WallOfFlesh
+                | NpcKind::TheDestroyer
+                | NpcKind::SkeletronPrime
+                | NpcKind::Retinazer
+                | NpcKind::Spazmatism
+                | NpcKind::Plantera
+                | NpcKind::Golem
+                | NpcKind::DukeFishron
+                | NpcKind::MartianSaucerCore
+                | NpcKind::AncientCultist
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::Deerclops
+        )
     }
 
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81387-81475`): the
@@ -7702,6 +7801,16 @@ impl Npc {
             // the slave link rides the sim-stamped `balloon_slave_view`
             // (the ForceBubble carrier_uid convention).
             113 => self.ai_113_balloon(world, player, rng),
+            // `else if (this.aiStyle == 115) { this.AI_115_LadyBugs(); }`
+            // (`NPC.cs:41081-41083`; the machine `:47580-47714`) — the
+            // ladybug pair 604/605, the style's only users. W4-e26: the
+            // faithful `npc_ai_style115::ai_115_step` claims the arm; the
+            // wind drift reads `App.wind.speed_target` through the sim's
+            // pre-pass (the `Npc::update_rng` signature cannot carry it —
+            // the solo path uses the stamped `ladybug_wind` field). The
+            // noGravity + tile-collide integration tail rides
+            // `integrate_flyer_collision` (the Goldfish convention).
+            115 => self.ai_115_ladybug(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -8622,6 +8731,33 @@ impl Npc {
         }
         let (w, h) = self.size();
         self.wet = is_wet(world, self.x, self.y, w, h);
+    /// W4-e26 — the aiStyle-115 adapter: the ladybug pair (604/605) rides
+    /// the faithful `npc_ai_style115::ai_115_step` (`AI_115_LadyBugs`,
+    /// `NPC.cs:47580-47714`). The session player is the one
+    /// `TargetCandidate` (the port is single-player,
+    /// `npc_target::session_candidate`); the wind drift reads the
+    /// sim-stamped `ladybug_wind` (`Main.windSpeedTarget`, stock 0 on the
+    /// solo path); ticker 0 (the `EverLastingTicker` is not plumbed — the
+    /// S1-D-3p precedent). The arm draws `Main.rand` on the caller's
+    /// `UpdateNPCs` stream (the rearm block, `:47584-47618`).
+    ///
+    /// The ladybugs are noGravity (`NPC.cs:16774`) but tile-collide (the
+    /// row writes no noTileCollide), so the integration tail is the
+    /// no-gravity `UpdateCollision` (`integrate_flyer_collision`, the
+    /// Goldfish/bat convention) — NOT the raw noTileCollide add.
+    fn ai_115_ladybug(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        crate::npc_ai_style115::ai_115_step(
+            self,
+            world,
+            &players,
+            self.ladybug_wind,
+            0,
+            rng,
+        );
         self.integrate_flyer_collision(world);
     }
 
@@ -11119,6 +11255,17 @@ impl Npc {
             NpcKind::GoldBunny | NpcKind::GoldFrog => {
                 crate::npc_ai_critter::critter_ai(self, world, player, rng)
             }
+            // The Frog walker (W4-e26, E8 keep-one): DATA-ONLY — the
+            // aiStyle-7 town machine (~2600 lines, research/25 row 7) is
+            // its own wave; the kind + stats land for the catch/release
+            // chain. No-op until then (the W4-d35 data-wave precedent).
+            // The Duck dropped to c10 (the waterfowl owner, SEAL S1).
+            NpcKind::Frog => {}
+            // The luck critters (W4-e26): claimed by the aiStyle-115 axis
+            // above — these arms keep the kind match exhaustive and route
+            // direct-kind callers to the same machine (the fishron /
+            // W4-c9 snail precedent).
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => self.ai_115_ladybug(world, player, rng),
         }
     }
 
@@ -11912,6 +12059,68 @@ impl Npc {
                     &mut self.sprite_dir,
                     &mut self.rotation,
                 );
+            // The luck critters' `case 604/605` (`NPC.cs:66961-66980`):
+            // spriteDirection = direction; the counter advances only while
+            // moving (velocity != Zero), wrapping at num139*num138 = 8;
+            // grounded (vy == 0) → row counter/2 (0..3), airborne → row
+            // 4 + counter/2 (4..7). `Main.npcFrameCount[604/605]` = 8.
+            NpcKind::LadyBug | NpcKind::GoldLadyBug => {
+                self.sprite_dir = self.facing;
+                if (self.vx != 0.0 || self.vy != 0.0) {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame_counter = 0.0;
+                    }
+                }
+                let cell = (self.frame_counter as i32 / 2) as u32;
+                self.frame = if self.vy == 0.0 { cell } else { 4 + cell };
+            }
+            // The Frog's `case 361` (`NPC.cs:76618-76685`, shared with
+            // 445/687): the wet swim rows 10/11/12 by |vx| band; the
+            // grounded idle 6-tick cycle over rows 0..5; the grounded
+            // walk the 0/6/8/9 hop bands; airborne row 9 (fall) / 8
+            // (rise). `Main.npcFrameCount[361]` = 13. DATA-ONLY kind.
+            NpcKind::Frog => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vx > 0.25 || self.vx < -0.25 {
+                        10
+                    } else if self.vx > 0.15 || self.vx < -0.15 {
+                        11
+                    } else {
+                        12
+                    };
+                } else if self.vy == 0.0 {
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        self.frame = if self.frame_counter < 6.0 {
+                            0
+                        } else if self.frame_counter < 12.0 {
+                            6
+                        } else if self.frame_counter < 18.0 {
+                            8
+                        } else {
+                            if self.frame_counter >= 23.0 {
+                                self.frame_counter = 0.0;
+                            }
+                            9
+                        };
+                    }
+                } else if self.vy > 0.0 {
+                    self.frame = 9;
+                } else {
+                    self.frame = 8;
+                }
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -25796,12 +26005,51 @@ impl Npc {
                 } else {
                     0
                 };
-                // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
-                // immunity gates the thorns arms (`:31397-31418`), so a
-                // contact that dodges (`Hurt` runs after, `:31423`) still
-                // reflects. The port's `hurt_cd <= 0` is the `!immune`
-                // stand-in (the collapsed General cooldown, M4-HAZARD-1).
-                let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31332-31349` — the per-kind counter pick:
+                // `specialHitSetter` starts General; the Moon Lord family
+                // (396 head / 397 hand / 398 core / 400 free eye / 401 leech
+                // blob) rides BossNoCheese. The Empress (636, `:31342-31348`,
+                // with its ai[0] 0/10 no-contact skip) arrives with d125's
+                // kind — the counter API (`hurt_cooldown`) is the
+                // split-contract entry it will pass `IMMUNITY_BOSS_NO_CHEESE`
+                // through (M4-HAZARD-1).
+                let cooldown_counter = if matches!(
+                    self.kind,
+                    NpcKind::MoonLordHead
+                        | NpcKind::MoonLordHand
+                        | NpcKind::MoonLordCore
+                        | NpcKind::MoonLordFreeEye
+                        | NpcKind::MoonLordLeechBlob
+                ) {
+                    crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+                } else {
+                    crate::id_tables::IMMUNITY_GENERAL
+                };
+                // `Player.cs:31392-31396` — `flag4 = !this.immune`, or the
+                // per-counter `hurtCooldowns[specialHitSetter] == 0` when the
+                // lane is array-backed: the PRE-hit immunity gates the
+                // thorns arms (`:31397-31418`), so a contact that dodges
+                // (`Hurt` runs after, `:31423`) still reflects. The General
+                // arm keeps the port's `hurt_cd` seconds mirror beside the
+                // C# flag (the collapsed-lane witness contract).
+                let pre_hit_not_immune =
+                    if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+                        !player.immune && player.hurt_cd <= 0.0
+                    } else {
+                        player.hurt_cooldowns[cooldown_counter as usize] == 0
+                    };
+                // `Player.cs:31366-31381` — the parry verdict rides BEFORE
+                // the thorns arms: `flag3 = CanParryAgainst(rect, npcRect,
+                // velocity)`; on a parry the reflect multiplier pins at 2
+                // (`num = 2f`), the knockback halves to 5, `flag = false`
+                // skips `Hurt` and `flag2 = true` skips `StatusFromNPC`.
+                // The enemy centre is the C# `Rectangle.Center` integer
+                // arithmetic (`(int)position.X + width/2`, `:31356`).
+                let parry = player.can_parry_against(
+                    self.x as i32 + w as i32 / 2,
+                    self.vx,
+                    self.vy,
+                );
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -25810,7 +26058,16 @@ impl Npc {
                 // carries the varied contact damage (`num3`, `:31387`) and
                 // runs BEFORE `Hurt` — a dodged hit reflects too.
                 if pre_hit_not_immune && dmg > 0 && !self.dont_take_damage {
-                    let reflect = player.thorns_damage(dmg);
+                    // On a parry the multiplier is 2 REGARDLESS of the
+                    // thorns sources (`num = 2f`, `:31377`) — a shield
+                    // parry reflects even with no thorns armed; the
+                    // Cactus flat 15 still rides (`:31406-31418`).
+                    let reflect = if parry {
+                        ((dmg as f32 * 2.0) as i32).min(1000)
+                            + if player.cactus_thorns { 15 } else { 0 }
+                    } else {
+                        player.thorns_damage(dmg)
+                    };
                     if reflect > 0 {
                         let (ncx, _) = self.center();
                         let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
@@ -25819,17 +26076,40 @@ impl Npc {
                             1.0
                         };
                         // The C# knocks the NPC away from the player
-                        // (`-num2`, knockback 10).
-                        self.hurt(reflect, ncx, 10.0 * dir, false, player.buffs.expert_mode);
+                        // (`-num2`, knockback 10 — 5 on a parry, `:31378`).
+                        let kb = if parry { 5.0 } else { 10.0 };
+                        self.hurt(reflect, ncx, kb * dir, false, player.buffs.expert_mode);
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
-                // num3, hitDirection: num2, .., dodgeable:
+                // num3, hitDirection: num2, .., cooldownCounter:
+                // specialHitSetter, dodgeable:
                 // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
                 // gates `StatusFromNPC`, whose debuff body the port carries
-                // elsewhere (unchanged).
-                if dmg > 0 {
-                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                // elsewhere (unchanged). M4-HAZARD-1: the counter-carrying
+                // entry — the boss lanes land THROUGH the General i-frames.
+                // `flag` is false on a parry (W4-f48, `:31379`) — the shield
+                // eats the hit whole.
+                if dmg > 0 && !parry {
+                    player.hurt_cooldown(
+                        dmg,
+                        cx,
+                        rng,
+                        self.is_damage_dodgeable(),
+                        cooldown_counter,
+                    );
+                }
+                // `Player.cs:31427-31431` — the parry tail: the collision
+                // immunity window (60 with the Cross Necklace's
+                // `longInvince`, else 30) through the strike-counted
+                // `GiveImmuneTimeForCollisionAttack`, then the
+                // ParryDamageBuff grant `AddBuff(198, 300)` — the next
+                // melee strike ×5s (`:44307-44312`).
+                if parry {
+                    player.give_immune_time_for_collision_attack(
+                        if player.long_invince { 60 } else { 30 },
+                    );
+                    player.buffs.add_buff(198, 300);
                 }
             }
         }
@@ -26218,6 +26498,13 @@ impl Npc {
             NpcKind::Snail => 740,
             NpcKind::GlowingSnail => 741,
             NpcKind::MagmaSnail => 655,
+            // The luck critters (W4-e26, E8 keep-one): the Frog rides the
+            // d37-E8 wire slot 744 (cs_id stays 361); the ladybug pair
+            // keeps the vanilla ids 604/605 (free slots, the d42 ownership
+            // flip). The Duck dropped to c10 (the waterfowl owner).
+            NpcKind::Frog => 744,
+            NpcKind::LadyBug => 604,
+            NpcKind::GoldLadyBug => 605,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -27493,6 +27780,94 @@ mod tests {
     }
 
     #[test]
+    fn w4_f48_parry_contact_eats_the_hit_reflects_double_and_grants_198() {
+        // `Update_NPCCollision`'s parry lane (`Player.cs:31366-31431`):
+        // `flag3` skips `Hurt` (`flag = false`), pins the reflect at 2x
+        // with knockback 5, then grants the 60/30 collision window +
+        // `AddBuff(198, 300)`.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0; // moving toward the player's facing side
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0; // overlapping, the bat centre RIGHT of the player
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp0, "the parry eats the hit (flag = false)");
+        // The reflect: 2x the VARIED contact damage (±15% band), capped.
+        let reflected = bat_hp0 - bat.hp;
+        assert!(
+            (34..=46).contains(&reflected),
+            "2x the varied 20 lands (got {reflected})"
+        );
+        // The 30-tick window + the no-blink flag + buff 198 for 300.
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        let i = p.buffs.find_buff_index(198).expect("the parry grants 198");
+        assert_eq!(p.buffs.buff_time[i], 300);
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_window_doubles_to_60_with_long_invince() {
+        // `Player.cs:31429`: `GiveImmuneTimeForCollisionAttack(longInvince
+        // ? 60 : 30)` — the Cross Necklace's second consumer.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        p.long_invince = true;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.immune_time, 60, "the Cross Necklace doubles the parry window");
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_without_the_window_lands_the_hit_normally() {
+        // No parry window: the vanilla lane — `Hurt` runs, no 198 grant,
+        // no reflect without thorns.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert!(p.hp < hp0, "the hit lands without the shield window");
+        assert_eq!(bat.hp, bat_hp0, "no thorns, no reflect");
+        assert!(p.buffs.find_buff_index(198).is_none(), "no parry, no 198");
+    }
+
+    #[test]
     fn s1_c_1_dw_2_1_npc_is_damage_dodgeable_table() {
         // `NPC.IsDamageDodgeable` (`NPC.cs:78744-78753`): the Skeletron heads
         // — `case 35` (`NPCID.SkeletronHead`) and `case 127`
@@ -27523,6 +27898,127 @@ mod tests {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert!(n.is_damage_dodgeable(), "{kind:?} defaults true");
         }
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the contact
+    /// counter pick (`Player.cs:31332-31349`): the Moon Lord family
+    /// (396/397/398/400/401) rides BossNoCheese and lands THROUGH the
+    /// General i-frames on its own `hurt_cooldowns` slot; a plain NPC
+    /// keeps General and is swallowed by the same window. The thorns
+    /// flag4 (`:31392-31396`) reads the lane's own pre-hit state.
+    #[test]
+    fn w4_d115_m4_hazard_the_moon_lord_contact_lands_through_the_general_iframes() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // Every Moon Lord kind picks BossNoCheese (`:31335-31341`).
+        for kind in [
+            NpcKind::MoonLordHead,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 16.0, 1, 0.0);
+            n.damage_override = Some(20);
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = n.x;
+            player.y = n.y;
+            player.hp = 10_000;
+            player.max_hp = 10_000;
+            player.stat_defense = 0;
+            // A live General window (a prior contact hit armed it).
+            player.immune = true;
+            player.immune_time = 600;
+            player.hurt_cd = 10.0;
+            let hp0 = player.hp;
+            let mut rng = UnifiedRandom::new(9);
+            n.contact(&mut player, &mut rng);
+            assert!(
+                player.hp < hp0,
+                "{kind:?}: the BossNoCheese contact lands through the i-frames"
+            );
+            assert!(
+                player.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize] > 0,
+                "{kind:?}: the lane's own slot re-armed (:38391-38393)"
+            );
+            assert_eq!(player.immune_time, 600, "the General window untouched");
+            // The second contact inside the boss window is swallowed.
+            let hp1 = player.hp;
+            n.contact(&mut player, &mut rng);
+            assert_eq!(player.hp, hp1, "{kind:?}: one hit per boss window");
+        }
+        // The contrast: a plain NPC keeps General (`:31332`) — the same
+        // live window swallows its contact.
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = bat.x;
+        player.y = bat.y;
+        player.hp = 10_000;
+        player.max_hp = 10_000;
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let hp0 = player.hp;
+        let mut rng = UnifiedRandom::new(9);
+        bat.contact(&mut player, &mut rng);
+        assert_eq!(player.hp, hp0, "the General contact is swallowed");
+        assert_eq!(player.hurt_cooldowns, [0; 6], "no array write on General");
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the boss
+    /// lane's thorns flag4 (`Player.cs:31392-31396`): with the General
+    /// window live but the BossNoCheese slot free, the PRE-hit flag holds
+    /// and the thorns reflect even though the General lane would refuse;
+    /// with the boss slot running, flag4 is false and nothing reflects.
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_thorns_flag_reads_its_own_counter() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 32.0, 16.0, 1, 0.0);
+        head.damage_override = Some(20);
+        head.hp = 10_000;
+        head.max_hp = 10_000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(14, 3600); // the Thorns Potion
+        player.update(&w, crate::player::PlayerInput::default());
+        assert!(player.thorns > 0.0);
+        // Re-pin the overlap after the fold tick (the spawn fall moved it).
+        player.x = head.x;
+        player.y = head.y;
+        // General live, boss slot free: the reflect fires.
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let head_hp = head.hp;
+        let mut rng = UnifiedRandom::new(9);
+        head.contact(&mut player, &mut rng);
+        assert!(head.hp < head_hp, "flag4 held: the thorns bit back");
+        // Boss slot running: flag4 false, no reflect on the second touch.
+        let head_hp = head.hp;
+        head.hurt_cd = 0.0; // the NPC's own melee cooldown must not gate
+        head.contact(&mut player, &mut rng);
+        assert_eq!(head.hp, head_hp, "flag4 false: no reflect inside the boss window");
     }
 
     #[test]
@@ -31624,7 +32120,7 @@ mod tests {
         // + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 /
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
-    pub(super) const ALL_KINDS: [NpcKind; 525] = [
+    pub(super) const ALL_KINDS: [NpcKind; 528] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -32217,6 +32713,11 @@ mod tests {
         // W4-g5 — the two unclaimed aiStyle-8 casters.
         NpcKind::RuneWizard,
         NpcKind::LibrarianSkeleton,
+        // The luck critters (W4-e26, E8 keep-one): the Frog + the ladybug
+        // pair; the Duck dropped to c10 (the waterfowl owner, SEAL S1).
+        NpcKind::Frog,
+        NpcKind::LadyBug,
+        NpcKind::GoldLadyBug,
     ];
 
 
@@ -33690,7 +34191,7 @@ mod tests {
     /// through the port's tables — the small-kinds pin's shape. WRITTEN,
     /// NOT RUN (code-only mode).
     #[test]
-    fn w4_c8_the_crawler_defaults_match_the_csharp_rows() {
+    fn w4_c8_the_crawler_defaults_match_the_csharp_rows_batch_e() {
         // (kind, vanilla type, aiStyle, w, h, kb)
         let rows = [
             (NpcKind::Worm, 357u16, 66u8, 10.0, 4.0, 1.0f32),
@@ -37469,7 +37970,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            525,
+            528,
             "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)"
         );
         assert!(
@@ -41242,6 +41743,12 @@ mod s1_d_2_tests {
         (NpcKind::Grubby, 66),
         (NpcKind::Sluggy, 66),
         (NpcKind::Buggy, 66),
+        // The luck critters (W4-e26, E8 keep-one): Frog aiStyle 7
+        // (`NPC.cs:13605`), the ladybug pair aiStyle 115 (`:16767`).
+        // The Duck dropped to c10 (the waterfowl owner, SEAL S1).
+        (NpcKind::Frog, 7),
+        (NpcKind::LadyBug, 115),
+        (NpcKind::GoldLadyBug, 115),
     ];
 
     #[test]
@@ -48395,6 +48902,163 @@ mod w4_c9_snail_wiring_tests {
                 "{name} is never packed into the atlas"
             );
             assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_e26_luck_critter_tests {
+    //! W4-e26 — the luck critter roster wiring (E8 keep-one EXECUTED:
+    //! the Frog + the ladybug pair; the Duck 362 dropped to c10, the
+    //! waterfowl family's canonical owner — research/108 E8/SEAL S1).
+    //! Every row pins verbatim to the C# (`NPC.cs:13601-13612` Frog,
+    //! `:16763-16780` the ladybug pair). WRITTEN, NOT RUN (code-only
+    //! mode); the W4-d35 / W4-c9 stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The three kinds' `SetDefaults` rows through the port's tables.
+    #[test]
+    fn w4_e26_the_luck_critter_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Frog, 361u16, 7u8, 12.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::LadyBug, 604, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GoldLadyBug, 605, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb (head 1f)");
+            assert_eq!(shell.value(), value, "{kind:?} value (head 0f)");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha (no row)");
+        }
+        // The sounds: NPCHit1 / NPCDeath1 each.
+        for kind in [NpcKind::Frog, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // noGravity: the ladybug pair only (`NPC.cs:16774`); the Frog
+        // row writes none (the aiStyle-7 walker falls).
+        assert!(NpcKind::LadyBug.no_gravity());
+        assert!(NpcKind::GoldLadyBug.no_gravity());
+        assert!(!NpcKind::Frog.no_gravity());
+    }
+
+    /// The wire ids (E8 keep-one): the Frog rides 744 (its vanilla proto
+    /// 361 is d37's Pirate — research/108 E8), the ladybug pair keeps the
+    /// free vanilla slots 604/605; the cs/net ids stay vanilla and the
+    /// catch/release chain resolves through them. The Duck's 362 decode
+    /// arm is GONE (dropped to c10) — `from_u16(362)` is None here.
+    #[test]
+    fn w4_e26_the_luck_critter_protocol_ids_round_trip() {
+        for (kind, wire, net) in [
+            (NpcKind::Frog, 744u16, 361i32),
+            (NpcKind::LadyBug, 604, 604),
+            (NpcKind::GoldLadyBug, 605, 605),
+        ] {
+            assert_eq!(kind.to_u16(), wire, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(wire), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(net).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+        }
+        // The dropped Duck: neither wire 362 nor wire 731 (c10's E8 slot)
+        // decodes on THIS branch — the row lands with the c10 merge.
+        assert_eq!(NpcKind::from_u16(362), None, "Duck dropped to c10");
+        assert_eq!(NpcKind::from_u16(731), None, "c10's Duck slot is not e26's");
+        // The Frog's old vanilla proto 361 is free again on this branch.
+        assert_eq!(NpcKind::from_u16(361), None, "Frog moved 361->744");
+    }
+
+    /// The catch/convert tables: the ladybug baits 4361/4362 and the
+    /// Frog item 2121 (`NPC.cs:13611`/`:16779`), and the makeNPC release
+    /// items resolve back to the kinds. The Duck's 2122/362 chain stays
+    /// in the cs-id tables (the item registry is kind-independent) but
+    /// its release resolution waits for the c10 merge.
+    #[test]
+    fn w4_e26_the_luck_critter_catch_and_release_chain_resolves() {
+        assert_eq!(crate::bug_net::catch_item(361, 0.0), 2121, "Frog");
+        assert_eq!(crate::bug_net::catch_item(604, 0.0), 4361, "LadyBug");
+        assert_eq!(crate::bug_net::catch_item(605, 0.0), 4362, "GoldLadyBug");
+        for ty in [361, 604, 605] {
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+        }
+        // The release items' makeNPC fields ride the generated registry.
+        assert_eq!(crate::registry::make_npc(2121), 361);
+        assert_eq!(crate::registry::make_npc(4361), 604);
+        assert_eq!(crate::registry::make_npc(4362), 605);
+        // The release plan keeps the type (no variant roll for these).
+        let mut rng = UnifiedRandom::new(7);
+        for ty in [361, 604, 605] {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+        }
+    }
+
+    /// The bestiary entries: distinct credits, the vanilla net ids, the
+    /// localized display names, no quick-unlock (the critter kill ladder).
+    #[test]
+    fn w4_e26_the_luck_critter_bestiary_entries() {
+        for (kind, net, credit, name) in [
+            (NpcKind::Frog, 361, "Frog", "Frog"),
+            (NpcKind::LadyBug, 604, "LadyBug", "Ladybug"),
+            (NpcKind::GoldLadyBug, 605, "GoldLadyBug", "Gold Ladybug"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} display name");
+            assert!(!e.quick_unlock, "{kind:?} rides the kill ladder");
+        }
+    }
+
+    /// The debuff-immunity null-rows: none of the three has a
+    /// `DebuffImmunitySets` entry (`NPCID.cs:6075+`).
+    #[test]
+    fn w4_e26_the_luck_critters_have_no_debuff_immunity() {
+        for kind in [NpcKind::Frog, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!buffs.buff_immune[20], "{kind:?} not poison-immune");
+            assert!(!buffs.buff_immune[31], "{kind:?} not on-fire-immune");
+        }
+    }
+
+    /// The Frog data-only kind arm holds still (the aiStyle-7 town
+    /// machine is its own wave); the ladybugs ride the wired aiStyle-115
+    /// axis (a full tick steps without panicking, inside the 8-row strip).
+    #[test]
+    fn w4_e26_the_waterfowl_hold_still_and_the_ladybugs_fly() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [NpcKind::Frog] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let (x0, y0) = (n.x, n.y);
+            for _ in 0..60 {
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            assert_eq!((n.x, n.y), (x0, y0), "{kind:?} data-only holds still");
+        }
+        for kind in [NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < 8, "{kind:?} row {} of 8", n.frame);
+            }
+            // The scale latch armed (0.7..0.9, `NPC.cs:47586`).
+            assert!(n.ai[1] >= 0.7 && n.ai[1] < 0.9, "{kind:?} scale latch");
         }
     }
 }

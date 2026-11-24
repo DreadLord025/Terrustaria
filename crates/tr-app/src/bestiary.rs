@@ -3787,6 +3787,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Maggot",
         name: "Gold Frog",
+        kind: NpcKind::Frog,
+        kind: NpcKind::LadyBug,
+        kind: NpcKind::GoldLadyBug,
     },
 ];
 

@@ -50,11 +50,26 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// W4-d115 wiring round — the Acc_Neck layer family
+    /// (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+    /// `AssetInitializer.cs:223-226`), indexed by `ArmorIDs.Neck` slot
+    /// 1..14 (`ARMOR_NECK_COUNT` = 15; index 0 is the empty slot — the
+    /// layer gates `neck > 0`, `PlayerDrawLayers.cs:2028`). The Cross
+    /// Necklace 554 rides slot 2 (`Item.cs:7992`).
+    pub(crate) acc_neck: [Option<BgTex>; 15],
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
     pub(crate) mount_back: [Option<BgTex>; crate::mount::MOUNT_COUNT],
     pub(crate) mount_front: [Option<BgTex>; crate::mount::MOUNT_COUNT],
+    /// W4-f50 deviation 3 — `TextureAssets.Beetle` (`Images/BeetleOrb`,
+    /// `AssetInitializer.cs:578`): the Beetle orb's 3-frame wing sheet
+    /// (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
+    pub(crate) beetle_orb: Option<BgTex>,
+    /// `TextureAssets.AccShield[slot]` (`AssetInitializer.cs:219-221`,
+    /// `Images/Acc_Shield_{slot}`): the visible shield strips by
+    /// `ArmorIDs.Shield` slot, 1..12 (0 is the empty slot, Count = 13).
+    pub(crate) acc_shield: [Option<BgTex>; 13],
 }
 
 impl Default for PlayerAssets {
@@ -76,8 +91,11 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            acc_neck: [None; 15],
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
+            beetle_orb: None,
+            acc_shield: [None; 13],
         }
     }
 }
@@ -127,6 +145,17 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // W4-d115 wiring round — the Acc_Neck strips (`AssetInitializer.cs:
+        // 223-226`): the file number is the neck slot, 1..14 (index 0 has
+        // no file — the empty slot). A missing file stays `None` and the
+        // layer skips it.
+        acc_neck: std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("Acc_Neck_{slot}"), None)
+            }
+        }),
         // The mount strips resolve by the rows' own sheet names (`Mount.cs:
         // 696-2567`); a missing file stays `None` and the draw skips it.
         mount_back: std::array::from_fn(|i| {
@@ -146,6 +175,18 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
                     sky_tex(atlas, row.front_sheet, None)
                 }
             })
+        }),
+        // W4-f50 deviation 3 — `TextureAssets.Beetle` loads `Images/BeetleOrb`
+        // (`AssetInitializer.cs:578`); a missing file stays `None`.
+        beetle_orb: sky_tex(atlas, "BeetleOrb", None),
+        // `AssetInitializer.cs:219-221`: slot 0 is the empty asset; the
+        // visible shield slots 1..12 load `Images/Acc_Shield_{slot}`.
+        acc_shield: std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("Acc_Shield_{slot}"), None)
+            }
         }),
     }
 }
@@ -823,6 +864,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(GOLD_CRITTER_SHEETS)
             .chain(WATERFOWL_SHEETS)
             .chain(CRITTER_TAIL_SHEETS)
+            .chain(LUCK_CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -2037,6 +2079,13 @@ pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608,
 /// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
 pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
     &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
+/// W4-e26 — the luck critter sheets (E8 keep-one): one sheet per kind,
+/// exactly as the vanilla's `TextureAssets.Npc[type]` — the Frog (361),
+/// the Ladybug (604) and the Gold Ladybug (605) each draw their own
+/// `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`]. The Duck (362) sheet dropped to c10 (the
+/// waterfowl owner packs it; research/108 SEAL S1).
+pub(crate) const LUCK_CRITTER_SHEETS: &[u32] = &[361, 604, 605];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -2399,6 +2448,27 @@ pub(crate) fn draw_player(
     zoom: f32,
     screen: Vec2,
 ) -> u32 {
+    let layers = player_draw_layers(
+        assets, lookups, player, held, armor, light, style, anim_time,
+    );
+    push_layers(r, &layers, camera, zoom, screen)
+}
+
+/// The composite layer set [`draw_player`] pushes — split out so the
+/// dodge-afterimage pass (W4-d115 wiring round) can tint the whole set
+/// with the ghost alpha (`GetImmuneAlphaPure`'s `alphaReduction`,
+/// `Player.cs:54184-54196`) before pushing, exactly like the C#
+/// `BoringSetup` multiplies each layer colour by the shadow factor.
+pub(crate) fn player_draw_layers(
+    assets: &PlayerAssets,
+    lookups: &assets::Lookups,
+    player: &Player,
+    held: Option<(u16, f32, u16)>,
+    armor: ArmorKinds,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+) -> Vec<LayerSprite> {
     let (cx, cy) = player.center();
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
@@ -2480,6 +2550,10 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
+        // W4-d115 wiring round — the Acc_Neck layer's inputs: the sim's
+        // `update_visible_neck_accessory` re-derives both per tick.
+        neck: player.neck,
+        c_neck: player.c_neck,
         // The live `Player.compositeFrontArm`/`compositeBackArm`
         // (`Player.cs:1906`) — the sim assigns them per `useStyle`/`holdStyle`
         // (the S1-G-16 swing parity); the renderer's composite machine
@@ -2511,6 +2585,29 @@ pub(crate) fn draw_player(
         seat_y_offset,
         sleeping: player.sleeping,
         full_rotation,
+        // W4-f50 deviation 3 — the Beetle orb draw inputs.
+        beetle_orbs: player.beetle_orbs,
+        beetle_frame: player.beetle_frame,
+        beetle_pos: [
+            [player.beetle_pos[0].x, player.beetle_pos[0].y],
+            [player.beetle_pos[1].x, player.beetle_pos[1].y],
+            [player.beetle_pos[2].x, player.beetle_pos[2].y],
+        ],
+        beetle_vel: [
+            [player.beetle_vel[0].x, player.beetle_vel[0].y],
+            [player.beetle_vel[1].x, player.beetle_vel[1].y],
+            [player.beetle_vel[2].x, player.beetle_vel[2].y],
+        ],
+        beetle_set: player.beetle_offense || player.beetle_defense,
+        // `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the
+        // sim-derived visible shield slot + the raised/parry pose inputs.
+        shield: player.shield,
+        shield_raised: player.shield_raised,
+        shield_parry_time_left: player.shield_parry_time_left,
+        // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`
+        // (the draw pass's `anim_time % 3600` convention).
+        global_time: anim_time % 3600.0,
+        cart_mounted: player.cart_mounted,
     };
     let mut layers = assemble_layers(&state, assets);
     // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
@@ -2523,7 +2620,172 @@ pub(crate) fn draw_player(
         ];
         super::player_layers::apply_player_rotation(&mut layers, pivot, state.full_rotation);
     }
-    push_layers(r, &layers, camera, zoom, screen)
+    layers
+}
+
+/// W4-d115 wiring round — the dodge afterimage block
+/// (`LegacyPlayerRenderer.cs:433-467`): the shadow-dodge pair and the
+/// brain-of-confusion ring draw BEFORE the main copy (`:468-475`), each a
+/// full `DrawPlayer` at `position + netOffset + offset` with the ghost
+/// alpha as the `shadow` parameter. The maths ride `player_dodge_draw`'s
+/// pure fns; this fn is their render seam — the ghost copies reuse the
+/// live composite assembly at the offset origin, tinted by
+/// `GetImmuneAlphaPure`'s `alphaReduction` factor (`Player.cs:54184-54196`:
+/// `color *= 1 - shadow`; the port's `immuneAlpha` blink visual is
+/// unported, so the `(255 - immuneAlpha)/255` base is 1 and the shimmer
+/// term is 0 — recorded deviation, ANALYSIS "The dodge afterimages").
+///
+/// RNG contract (`:452-453`): ONE `Next(-10,11)` per shadow ghost, the
+/// +count copy first. The port pins the stream per frame like the
+/// sparkle draws (`Main.rand` is a global stream the port cannot share
+/// across passes; the frame-pinned seed keeps two identical runs
+/// SHA256-equal). The brain ring is RNG-free.
+///
+/// The C# calls the step (`:433-448`) inside the same block; the port
+/// steps the live field in `App::draw_region` before the render clone
+/// (`Player::step_shadow_dodge_draw_counter`), so this fn only READS the
+/// stepped counter.
+pub(crate) fn draw_dodge_afterimages(
+    r: &mut SpriteRenderer,
+    assets: &PlayerAssets,
+    lookups: &assets::Lookups,
+    player: &Player,
+    held: Option<(u16, f32, u16)>,
+    armor: ArmorKinds,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    // The frame's pinned seed (the sparkle convention — the caller feeds
+    // `frame_count`-derived bits so the alpha rolls replay per frame).
+    ghost_seed: u64,
+) -> u32 {
+    let mut ghosts: Vec<crate::player_dodge_draw::DodgeGhost> = Vec::new();
+    if player.shadow_dodge_count > 0.0 {
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(ghost_seed as i32);
+        if let Some(pair) = crate::player_dodge_draw::shadow_dodge_ghosts(
+            player.shadow_dodge_count,
+            &mut rng,
+        ) {
+            ghosts.extend(pair);
+        }
+    }
+    ghosts.extend(crate::player_dodge_draw::brain_dodge_ghosts(
+        player.brain_of_confusion_dodge_animation_counter,
+    ));
+    if ghosts.is_empty() {
+        return 0;
+    }
+    let mut quads = 0;
+    for g in ghosts {
+        // `GetImmuneAlphaPure`'s factor (`:54186-54190`): the base
+        // `(255 - immuneAlpha)/255` is 1 (the blink visual is unported)
+        // and `alphaReduction > 0` multiplies `1 - shadow`.
+        let factor = if g.shadow > 0.0 { 1.0 - g.shadow } else { 1.0 };
+        let mut copy = player.clone();
+        copy.x += g.offset.x;
+        copy.y += g.offset.y;
+        // The ghost is a full DrawPlayer at the offset position — the
+        // composite assembly runs unchanged (its light sample re-reads
+        // the GHOST tile, `PlayerDrawSet.cs:440-454`); the tint factor
+        // lands on every layer colour before the push (the C# multiplies
+        // each layer's colour inside BoringSetup).
+        let mut layers = player_draw_layers(
+            assets, lookups, &copy, held, armor, light, style, anim_time,
+        );
+        for l in &mut layers {
+            l.color[0] *= factor;
+            l.color[1] *= factor;
+            l.color[2] *= factor;
+            l.color[3] *= factor;
+        }
+        quads += push_layers(r, &layers, camera, zoom, screen);
+    }
+    quads
+}
+
+/// `LegacyPlayerRenderer.DrawGhost` (`:514-524`) + `DrawPlayerFull`'s ghost
+/// arm (`:274-281`): the hardcore ghost draws the `Images/Ghost` sheet's
+/// `ghostFrame` row (4 rows), flipped when facing left, tinted by the centre
+/// tile's light lifted to `mouseTextColor/2 + 100` (byte saturating — the
+/// vanilla `Color` ctor clamps), through `GetImmuneAlpha`
+/// (`Player.cs:54162-54181`: `(255 - immuneAlpha)/255`, the shadow's
+/// `1 - alphaReduction` scale, transparent past 125). The three velocity
+/// trail copies (`position - velocity*(2 + i*2)`, shadow `0.5 + 0.2*i`) draw
+/// first with the alpha's `(1 - max(0.5, shadow - 0.5))` cut, then the body.
+/// The XNA origin is the frame centre — the top-left lands at
+/// `(int)(pos + frame/2) - frame/2`; the port snaps the same world pixels.
+/// `shimmerTransparency` has no port field (S1-E-16) — its arms read 0.
+pub(crate) fn draw_ghost(
+    r: &mut SpriteRenderer,
+    atlas: &Atlas,
+    player: &Player,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    mouse_text_color: u8,
+) -> u32 {
+    let Some(rect) = atlas.sheet("Ghost") else {
+        return 0;
+    };
+    let fw = rect.width as f32;
+    let fh = rect.height as f32 / 4.0;
+    let row = player.ghost_frame.clamp(0, 3) as u32;
+    let uv = [
+        rect.x as f32 / atlas.width as f32,
+        (rect.y as f32 + row as f32 * fh) / atlas.height as f32,
+        (rect.x as f32 + fw) / atlas.width as f32,
+        (rect.y as f32 + (row as f32 + 1.0) * fh) / atlas.height as f32,
+    ];
+    let uv = flip_uv(uv, player.facing != 1);
+    // The tint: `Lighting.GetColor(centre tile, new Color(mtc/2 + 100, ...))`
+    // — the byte ctor saturates at 255; the light multiplies it per channel.
+    let (cx, cy) = player.center();
+    let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+    let base = (mouse_text_color / 2).saturating_add(100) as f32 / 255.0;
+    let l = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let tint = [l[0] * base, l[1] * base, l[2] * base, base];
+    // `GetImmuneAlpha`: the immuneAlpha scale, transparent past 125.
+    let immune_scale = if player.immune_alpha > 125 {
+        0.0
+    } else {
+        (255 - player.immune_alpha) as f32 / 255.0
+    };
+    let mut quads = 0;
+    let mut push = |pos: [f32; 2], shadow: f32| {
+        let mut scale = immune_scale;
+        if shadow > 0.0 {
+            scale *= 1.0 - shadow;
+        }
+        // The DrawGhost alpha cut (`:519`): `A *= 1 - max(0.5, shadow - 0.5)`.
+        let a = tint[3] * scale * (1.0 - (shadow - 0.5).max(0.5));
+        if a <= 0.0 {
+            return;
+        }
+        let color = [tint[0] * scale, tint[1] * scale, tint[2] * scale, a];
+        // The XNA centre-origin draw: top-left = (int)(pos + frame/2) - frame/2.
+        let tl = [
+            (pos[0] + fw * 0.5).trunc() - fw * 0.5,
+            (pos[1] + fh * 0.5).trunc() - fh * 0.5,
+        ];
+        r.push_sprite(snap_to_screen(tl, camera, zoom, screen), [fw, fh], uv, color);
+        quads += 1;
+    };
+    // `DrawPlayerFull`'s trail (`:276-280`): three copies behind the velocity.
+    for i in 0..3 {
+        let back = 2.0 + i as f32 * 2.0;
+        push(
+            [player.x - player.vx * back, player.y - player.vy * back],
+            0.5 + 0.2 * i as f32,
+        );
+    }
+    push([player.x, player.y], 0.0);
+    quads
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
@@ -4723,6 +4985,18 @@ pub(crate) fn draw_npcs(
             NpcKind::LibrarianSkeleton => {
                 pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
             }
+            // W4-e26 — the luck critters draw their own sheets
+            // (`LUCK_CRITTER_SHEETS`) at `SetFrameSize`'s integer-division
+            // row height over `Main.npcFrameCount[type]` (361 thirteen
+            // rows, 604/605 eight — `Main.cs:67082`). The ladybugs'
+            // `NPC.scale` latch (0.7..0.9, `NPC.cs:47586`) rides
+            // `scaled_anchor` (the BlazingWheel/firefly convention); the
+            // Frog keeps scale 1 (the generic anchor). None rotates (the
+            // aiStyle-115 arm writes no rotation; the Frog FindFrame case
+            // writes none either). The Duck dropped to c10 (E8 keep-one).
+            NpcKind::Frog => pumpkin_moon_draw(assets.npc_sheet(361), npc_rows(361), n, w, h),
+            NpcKind::LadyBug => scaled_anchor(assets.npc_sheet(604), npc_rows(604), n, w, h),
+            NpcKind::GoldLadyBug => scaled_anchor(assets.npc_sheet(605), npc_rows(605), n, w, h),
         };
         let Some(tex) = tex else {
             continue;
@@ -5611,6 +5885,13 @@ mod anchor_tests {
             ML_EYE_SHEET,
         ] {
             assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
+        }
+        // W4-d115 wiring round: `make_player_assets` asks `Acc_Neck_{1..14}`
+        // for the neck layer (AssetInitializer.cs:223-226, ArmorIDs.Neck.Count
+        // = 15 with slot 0 the empty file-less index).
+        for slot in 1..crate::id_tables::ARMOR_NECK_COUNT {
+            let name = format!("Acc_Neck_{slot}");
+            assert!(packed(&name), "{name} is asked for by the neck layer but never packed");
         }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.

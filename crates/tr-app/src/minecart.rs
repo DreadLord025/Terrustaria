@@ -1304,6 +1304,104 @@ pub(crate) fn minecart_bumper_sound(
     });
 }
 
+/// W4-c14 - `DelegateMethods.Minecart.BumperSoundFart`
+/// (`DelegateMethods.cs:321-326`, `Mount.cs:1100`/`:1108`): Item16 THEN
+/// Item56 - two plays in the C# order, both at the centre rule; the fart
+/// cloud (the `useDelay` default true) is the visual seam.
+pub(crate) fn minecart_bumper_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    let x = (position.x as i32 + width / 2) as f32;
+    let y = (position.y as i32 + height / 2) as f32;
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x,
+        y,
+    });
+    sounds.push(CartCue {
+        cue: "Item_56",
+        x,
+        y,
+    });
+}
+
+/// W4-c14 - `Mount.MeowcartLandingSound` (`Mount.cs:659-662`, the Meowmere
+/// cart 33's delegate `:1014`): legacy id 37 style 5 at the centre rule.
+/// The cue name routes the drain to `Audio::play_meowcart_sound` (the
+/// case-37 slot pick, NOT an Item-style play).
+pub(crate) fn meowcart_landing_sound(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "MeowcartLanding",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
+/// W4-c14 - `Mount.MeowcartBumperSound` (`Mount.cs:664-667`, `:1015`):
+/// legacy id 37 style 3, same position rule.
+pub(crate) fn meowcart_bumper_sound(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "MeowcartBumper",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
+/// W4-c14 - `DelegateMethods.Minecart.JumpingSoundFart`
+/// (`DelegateMethods.cs:308-312`, the Fart/Terra-Fart carts' delegate,
+/// `Mount.cs:1102`/`:1110`): Item16 at the same centre rule, then the
+/// fart cloud (the gore/dust visuals are the recorded seam). The base
+/// cart's `JumpingSound` is EMPTY (`:244-246`) - only the fart carts play.
+pub(crate) fn minecart_jumping_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
+/// W4-c14 - `DelegateMethods.Minecart.LandingSoundFart`
+/// (`DelegateMethods.cs:314-319`, `Mount.cs:1101`/`:1109`): Item16 THEN
+/// Item53 - two plays in the C# order, both at the centre rule; the fart
+/// cloud is the visual seam.
+pub(crate) fn minecart_landing_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    let x = (position.x as i32 + width / 2) as f32;
+    let y = (position.y as i32 + height / 2) as f32;
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x,
+        y,
+    });
+    sounds.push(CartCue {
+        cue: "Item_53",
+        x,
+        y,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2960,6 +3058,49 @@ mod tests {
         );
     }
 
+    /// M2-MOUNT-4 census (research/371 §3) — the Meowcart/track rattle's pitch
+    /// does NOT scale with speed. The Item55 cue is identical at every speed
+    /// (same asset, same position — the cue carries no pitch term); the pitch
+    /// is the FIXED case-2 window `-Next(-20, -11) * 0.02`
+    /// (`LegacySoundPlayer.cs:616`), drawn at play time on the audio path,
+    /// never from the cart velocity. Speed only gates the SPARK density (the
+    /// threshold chain above). This witness pins the cue's speed-invariance
+    /// across the three density tiers.
+    #[test]
+    fn m4_the_rattle_cue_is_speed_invariant_no_pitch_scaling() {
+        let max = 13.0f32;
+        let mut cues = Vec::new();
+        for vx in [2.0f32, 6.5, 10.4] {
+            // low / mid / high density tiers
+            let mut sounds = Vec::new();
+            let mut sparks = Vec::new();
+            let mut rng = 999u64;
+            rolling_wheel_sparks(
+                &mut sounds,
+                &mut sparks,
+                &mut rng,
+                SPARK_POS,
+                20,
+                52,
+                Vec2::new(vx, 0.0),
+                max,
+                0.0,
+            );
+            assert_eq!(sounds.len(), 1, "one rattle per gate-passing tick");
+            cues.push(sounds[0].clone());
+        }
+        // The cue is byte-identical across the tiers — no velocity term.
+        assert_eq!(cues[0], cues[1]);
+        assert_eq!(cues[1], cues[2]);
+        assert_eq!(cues[0].cue, "Item_55");
+        // The fixed pitch window's bounds: -Next(-20,-11)*0.02 spans
+        // [0.22, 0.40] (Next(-20,-11) ∈ [-20,-12], negated ×0.02) — a
+        // constant band, independent of any speed.
+        let lo = -(-12i32) as f32 * 0.02;
+        let hi = -(-20i32) as f32 * 0.02;
+        assert!((lo - 0.24).abs() < 1e-6 && (hi - 0.40).abs() < 1e-6);
+    }
+
     /// DW-3.2 + the plan's P3 boundary — the f64 compares
     /// (`Player.cs:19873/:19888`): the f32 products at exactly 0.66·max
     /// (8.579999923706055) and 0.33·max (4.289999961853027) both sit below
@@ -3101,7 +3242,7 @@ mod tests {
     }
 
     /// The cue positions (`DelegateMethods.cs:248-256`): `(int)Position +
-    /// (Width/2, Height/2)` — C# int casts truncate toward zero.
+    /// (Width/2, Height/2)` - C# int casts truncate toward zero.
     #[test]
     fn landing_and_bumper_sounds_carry_the_c_sharp_positions() {
         let mut sounds = Vec::new();
@@ -3113,5 +3254,51 @@ mod tests {
         assert_eq!(sounds[1].cue, "Item_56");
         assert_eq!(sounds[1].x, 10.0, "(int)(-0.5) truncates to 0");
         assert_eq!(sounds[1].y, 26.0);
+    }
+
+    /// W4-c14 - the Meowcart delegates (`Mount.cs:659-667`): the landing
+    /// and bumper queue their own case-37 cue names (NOT Item-style names)
+    /// at the truncated centre; the drain routes them to the case-37 play.
+    #[test]
+    fn w4_c14_the_meowcart_delegates_queue_the_case37_cues() {
+        let mut sounds = Vec::new();
+        meowcart_landing_sound(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds[0].cue, "MeowcartLanding");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        meowcart_bumper_sound(&mut sounds, Vec2::new(-0.5, -0.5), 20, 52);
+        assert_eq!(sounds[1].cue, "MeowcartBumper");
+        assert_eq!((sounds[1].x, sounds[1].y), (10.0, 26.0));
+    }
+
+    /// W4-c14 - the fart carts' delegates (`DelegateMethods.cs:308-326`):
+    /// the jump plays ONE Item16; the landing plays Item16 THEN Item53 and
+    /// the bumper Item16 THEN Item56, in the C# order, all at the same
+    /// truncated centre.
+    #[test]
+    fn w4_c14_the_fart_delegates_play_their_cue_pairs_in_order() {
+        let mut sounds = Vec::new();
+        minecart_jumping_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(
+            sounds,
+            vec![CartCue {
+                cue: "Item_16",
+                x: 110.0,
+                y: 234.0
+            }]
+        );
+        sounds.clear();
+        minecart_landing_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds.len(), 2);
+        assert_eq!(sounds[0].cue, "Item_16", "the fart first (`:316`)");
+        assert_eq!(sounds[1].cue, "Item_53", "then the landing (`:317`)");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
+        sounds.clear();
+        minecart_bumper_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds.len(), 2);
+        assert_eq!(sounds[0].cue, "Item_16", "the fart first (`:323`)");
+        assert_eq!(sounds[1].cue, "Item_56", "then the bumper (`:324`)");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
     }
 }

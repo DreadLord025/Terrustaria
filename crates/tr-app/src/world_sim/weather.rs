@@ -1577,9 +1577,11 @@ mod tests {
     /// port's kill path, npcs.rs) consumes its duration draw from the
     /// `UpdateNPCs` stream — `checkDead` runs inside `NPC.UpdateNPC` under
     /// the `UpdateNPCs` swap (`Main.cs:17767-17769`) — and the rain goes
-    /// down with the same negated-×100 cooldown. Exactly one `UpdateNPCs`
-    /// draw for the whole death tick (the death path's only other named
-    /// consumer is the orb-boss `boss_death_roll`, not this kill).
+    /// down with the same negated-×100 cooldown. W4-f32 DOC-SWEEP re-pin:
+    /// the stop now rides INSIDE `DoDeathEvents` (`NPC.cs:79405-79410`),
+    /// i.e. AFTER the King's `NPCLoot_DropItems` draws and BEFORE the
+    /// money/heals/boss-potion draws — the twin replays the loot half
+    /// through the same seam, then reads the stop's `Next(3024, 6048)`.
     #[test]
     fn the_king_death_stops_the_slime_rain_on_the_update_npcs_stream() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -1609,15 +1611,41 @@ mod tests {
             0.0,
         );
         king.hp = 0; // dead on arrival — the kill path runs this tick
-        app.npcs.push(king);
+        app.npcs.push(king.clone());
 
-        // The twin: the death sound's case-4 pitch draw FIRST
+        // The twin app: the death sound's case-4 pitch draw FIRST
         // (`NPC.checkDead` `NPC.cs:78193` precedes `NPCLoot`/`DoDeathEvents`
         // — one `Next(-10, 11)`, `LegacySoundPlayer.cs:693`, S1-E-21 wave C),
-        // then the one `Next(3024, 6048)` draw the stop consumes.
-        let mut twin = UnifiedRandom::new(app.world.seed as i32);
-        let _death_pitch = twin.next_range(-10, 11);
-        let want_cooldown = -(twin.next_range(3024, 6048) as f64) * 100.0;
+        // then the King's `NPCLoot_DropItems` (the rule engine + the
+        // velocity/prefix draws — the same `spawn_loot` seam the kill path
+        // runs), then the stop's `Next(3024, 6048)` inside DoDeathEvents.
+        let mut twin_app = flow_app(None, vec![], vec![]);
+        let mut twin_world = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = twin_world.index(x, y);
+                twin_world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                twin_world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        twin_world.compute_column_surface();
+        twin_app.world = twin_world;
+        let mut twin_player = crate::player::Player::spawn(&twin_app.world);
+        twin_player.max_hp = 200;
+        twin_app.player = Some(twin_player);
+        let _death_pitch = twin_app
+            .rngs
+            .stream(crate::app::RngKey::UpdateNpcs)
+            .next_range(-10, 11);
+        crate::world_sim::npcs::spawn_loot(&mut twin_app, &king);
+        let want_cooldown = -(twin_app
+            .rngs
+            .stream(crate::app::RngKey::UpdateNpcs)
+            .next_range(3024, 6048) as f64)
+            * 100.0;
 
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
 
@@ -1625,23 +1653,14 @@ mod tests {
         assert!(!app.world.slime_rain, "the King's death stopped the rain");
         assert_eq!(
             app.world.slime_rain_time, want_cooldown,
-            "the negated-×100 cooldown from the UpdateNPCs draw"
+            "the negated-×100 cooldown from the UpdateNPCs draw after the loot"
         );
-        assert_eq!(
-            want_cooldown, -549_500.0,
-            "the seed-0 sequence: the death pitch draw, then 5495 (the twin replay proved the shape)"
-        );
-        // The value pin above already proves the draw order: the death
-        // sound's one pitch draw precedes the stop's `Next(3024, 6048)`
-        // (a missing/extra prior draw would shift the cooldown off the
-        // twin's replay). Since P3 the same tick's NPCLoot half
-        // (coins/loot) also draws `UpdateNPCs` — the stream sits past the
-        // twin by the King's loot sequence, pinned per-group in DW-3.2's
-        // loot test.
+        // The stream sits past the twin by the post-stop draws (the money,
+        // the heals, the boss potions/hearts — the C# tail after case 50).
         assert_ne!(
             *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
-            twin,
-            "the death tick drew past the stop (the loot sequence follows)"
+            *twin_app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            "the death tick drew past the stop (money/heals/potions follow)"
         );
         // The weather stream is untouched by the kill path (the two callers'
         // streams differ exactly as the C#'s swaps make them).

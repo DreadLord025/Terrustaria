@@ -866,6 +866,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:7119-7125` the RuneWizard, `:10060-10066` the
         // LibrarianSkeleton).
         NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => &[20, 31],
+        // The luck critters (W4-e26, E8 keep-one): none of 361/604/605
+        // has a `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary
+        // carries no entry for them) — the null-row else-branch
+        // (`NPC.cs:17822-17828`), no immunity. The Duck dropped to c10.
+        NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => &[],
     }
 }
 

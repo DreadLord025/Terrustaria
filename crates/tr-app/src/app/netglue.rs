@@ -807,6 +807,135 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 36` — a client's zone flags (`MessageBuffer.cs:2178-2202`).
+            // The host forces the subject to the sender (`:2181-2184`), stores
+            // the six bytes (`:2187-2192`) and relays to the others (`:2199`).
+            // The `zone5[0]` false→true edge spawns Faelings host-side
+            // (`:2195-2198`, `NPC.Spawner.SpawnFaelings`, `NPC.cs:5957-5995`) —
+            // kind 677 has no port roster entry yet, so the edge is parked
+            // (W4-c27; the shimmer-spawn lane owns it).
+            C2s::PlayerZone(mut z) => {
+                z.player_id = id as u8; // `:2183`
+                self.remote_players.entry(id).or_default().zone = z;
+                server.broadcast_except(&S2c::PlayerZone(z), id); // `:2199`
+            }
+            // `case 41` — a client's aimed-item rotation/animation
+            // (`MessageBuffer.cs:2271-2289`). The host forces the subject to
+            // the sender (`:2274-2277`), stores both fields (`:2281-2282`),
+            // re-derives `channel` from the sender's selected inventory item
+            // (`:2283`) and relays (`:2286`).
+            C2s::ItemAnim(mut a) => {
+                a.player_id = id as u8; // `:2276`
+                let entry = self.remote_players.entry(id).or_default();
+                entry.item_rotation = a.rotation;
+                entry.item_animation = a.animation;
+                entry.channel = Self::peer_channel(entry); // `:2283`
+                server.broadcast_except(&S2c::ItemAnim(a), id); // `:2286`
+            }
+            // `case 43` — a client's mana-restore amount
+            // (`MessageBuffer.cs:2307-2324`). The host forces the subject to
+            // the sender (`:2310-2313`), spawns the HealMana text for anyone
+            // but itself (`:2315-2318`, `Player.ManaEffect`,
+            // `Player.cs:4531-4538`) and relays (`:2321`).
+            C2s::ManaEffect(mut m) => {
+                m.player_id = id as u8; // `:2312`
+                if m.player_id as u32 != self.local_id {
+                    self.spawn_peer_mana_text(m.player_id, m.amount as i32);
+                }
+                server.broadcast_except(&S2c::ManaEffect(m), id); // `:2321`
+            }
+            // `case 51` — a client's misc request (`MessageBuffer.cs:2482-2530`).
+            // The host forces the subject to the sender (`:2485-2488`).
+            C2s::MiscDataSync(mut d) => {
+                d.player_id = id as u8; // `:2487`
+                match d.kind {
+                    // `:2493` NPC.SpawnSkeletron — the summon trigger is
+                    // unported (`NPC.cs:80422-80473`, the world_sim/npcs.rs
+                    // red-hat note); parked, W4-c27.
+                    1 => {}
+                    // `:2496-2499` — the host relays; the clients play Item1.
+                    2 => server.broadcast_except(&S2c::MiscDataSync(d), id),
+                    // `:2505-2510` Main.Sundialing (`Main.cs:6169-6182`): the
+                    // cooldown-0 gate, the dawn fast-forward + cooldown 8,
+                    // then `SendData(7)` — the port re-pushes the header.
+                    3 => {
+                        if self.world.sundial_cooldown == 0 {
+                            self.world.fast_forward_to_dawn = true;
+                            self.world.sundial_cooldown = 8;
+                            server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+                        }
+                    }
+                    // `:2512` BigMimicSpawnSmoke (`NPC.cs:77494-77515`): the
+                    // 20x dust-54 + 6x gore-99 burst — the big-mimic roster
+                    // is unported; parked, W4-c27.
+                    4 => {}
+                    // `:2514-2521` — the TorchGod (664) bestiary kill.
+                    5 => self.bestiary.kills.register_kill("TorchGod"),
+                    // `:2522-2527` Main.Moondialing (`Main.cs:6184-6197`).
+                    6 => {
+                        if self.world.moondial_cooldown == 0 {
+                            self.world.fast_forward_to_dusk = true;
+                            self.world.moondial_cooldown = 8;
+                            server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // `case 55` — a PvP debuff aimed at a peer
+            // (`MessageBuffer.cs:2594-2611`). The gate (`:2599`): BOTH the
+            // target and the sender hostile, and `Main.pvpBuff[type]`. The
+            // id is NOT forced — the target stays as written. The host sends
+            // to the target alone (`:2603`); the port's host keeps a local
+            // player, so a buff aimed at it applies locally (the target
+            // client's `:2607` half).
+            C2s::PlayerBuffPvp(b) => {
+                let target_hostile = if b.player_id as u32 == self.local_id {
+                    self.player.as_ref().is_some_and(|p| p.hostile)
+                } else {
+                    self.remote_players
+                        .get(&(b.player_id as u32))
+                        .is_some_and(|p| p.hostile)
+                };
+                let sender_hostile = self.remote_players.get(&id).is_some_and(|p| p.hostile);
+                if target_hostile
+                    && sender_hostile
+                    && crate::buffs::is_pvp_buff(b.buff_type as i32)
+                {
+                    if b.player_id as u32 == self.local_id {
+                        if let Some(p) = self.player.as_mut() {
+                            p.buffs.add_buff_from_net_pvp(b.buff_type as i32, b.time);
+                        }
+                    } else {
+                        server.send(b.player_id as u32, &S2c::PlayerBuffPvp(b)); // `:2603`
+                    }
+                }
+            }
+            // `case 62` — a client's dodge fired
+            // (`MessageBuffer.cs:2879-2908`). The host forces the subject to
+            // the sender (`:2883-2886`) and relays to the others (`:2905`).
+            // The C# host also runs the dodge on its non-simulated remote
+            // `Player` copy (`:2887-2902`) — the survivors there are the
+            // 120/80 immunity window (the buff strip + Hallowed cooldown
+            // are `whoAmI == myPlayer`-gated, `Player.cs:38026-38029`) and
+            // the dust/gore bursts. The port keeps no remote `Player` (the
+            // peer record is a render snapshot; the bursts are S1-E-1), so
+            // that half is parked with the `:2577` hostile-shot follow-up;
+            // the relay is the live half. W4-c27.
+            C2s::SyncDodge(mut d) => {
+                d.player_id = id as u8; // `:2885`
+                server.broadcast_except(&S2c::SyncDodge(d), id); // `:2905`
+            }
+            // `case 84` — a client's stealth value
+            // (`MessageBuffer.cs:3246-3260`). The host forces the subject to
+            // the sender (`:3249-3252`), stores the float (`:3254`) and
+            // relays (`:3257` — the writer re-reads the stored field,
+            // `NetMessage.cs:1200`, so the relay carries the stored value).
+            C2s::PlayerStealth(mut s) => {
+                s.player_id = id as u8; // `:3251`
+                self.remote_players.entry(id).or_default().stealth = s.stealth; // `:3254`
+                server.broadcast_except(&S2c::PlayerStealth(s), id); // `:3257`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -847,6 +976,55 @@ impl App {
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
     // the peers, the peers learn the newcomer.
+
+    /// `MessageBuffer.cs:2283` — `player.channel =
+    /// player.inventory[player.selectedItem].channel`: the `41` reader
+    /// re-derives the channel flag from the peer's selected item. The peer's
+    /// inventory rides `5 PlayerInventory` into `PlayerNet.inventory`; an
+    /// unknown slot/kind reads `false` (the C#'s empty `Item` has
+    /// `channel = false`). W4-c27.
+    fn peer_channel(p: &net::PlayerNet) -> bool {
+        let slot = (p.selected as u8).min(58);
+        p.inventory
+            .get(&slot)
+            .and_then(|it| crate::registry::get(it.kind.max(0) as u16))
+            .is_some_and(|def| def.channel)
+    }
+
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`) on a peer: the HealMana
+    /// text at the peer's position (`CombatText.NewText`, `:4533`). The net
+    /// handlers run outside every RNG swap, so the placement draws ride the
+    /// bare stream (the `play_switch_click` precedent). The peer body is the
+    /// C#'s 20x42 (`Player.cs:29210-29211`); the font measure falls back like
+    /// the local drain (`world_sim/player.rs`). W4-c27.
+    fn spawn_peer_mana_text(&mut self, player_id: u8, amount: i32) {
+        let Some(p) = self.remote_players.get(&(player_id as u32)) else {
+            return;
+        };
+        let (x, y) = (p.x, p.y);
+        let text = amount.to_string();
+        let size = match self.lookups.combat_text_font.as_ref() {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let location = crate::combat_text::Rect {
+            x,
+            y,
+            width: 20.0,
+            height: 42.0,
+        };
+        crate::combat_text::spawn_amount(
+            &mut self.combat_texts,
+            location,
+            crate::combat_text::HEAL_MANA,
+            amount,
+            false,
+            false,
+            size,
+            1.0,
+            self.rngs.global(),
+        );
+    }
 
     /// Streams the world to a spawning client as `10 TileBlock` sections —
     /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
@@ -1866,6 +2044,98 @@ impl App {
                     }
                 }
             }
+            // `case 18` — the host's clock (`MessageBuffer.cs:1290-1298`,
+            // client-only). `Main.time` is the wire `int`; the port's clock is
+            // f64 ticks. `sunModY`/`moonModY` (`Main.cs:1185`/`:1187`) are the
+            // journey-mode sun/moon drag offsets — no port field yet, parked
+            // (W4-c27).
+            S2c::SetTime(t) => {
+                self.world.day_time = t.day_time;
+                self.world.time = t.time as f64;
+            }
+            // `case 36` — a peer's zone flags (`MessageBuffer.cs:2178-2202`,
+            // the `netMode == 1` half keeps the wire id): stored on the peer
+            // record, the render/zone consumers read it from there.
+            S2c::PlayerZone(z) => {
+                self.remote_players
+                    .entry(z.player_id as u32)
+                    .or_default()
+                    .zone = z;
+            }
+            // `case 41` — a peer's aimed-item rotation/animation
+            // (`MessageBuffer.cs:2271-2289`, the `netMode == 1` half keeps the
+            // wire id): stored on the peer record, `channel` re-derived from
+            // the peer's selected inventory item (`:2283`).
+            S2c::ItemAnim(a) => {
+                let entry = self
+                    .remote_players
+                    .entry(a.player_id as u32)
+                    .or_default();
+                entry.item_rotation = a.rotation;
+                entry.item_animation = a.animation;
+                entry.channel = Self::peer_channel(entry); // `:2283`
+            }
+            // `case 43` — a peer's mana-restore amount
+            // (`MessageBuffer.cs:2307-2324`): the HealMana text spawns for
+            // anyone but ourselves (`:2315-2318`).
+            S2c::ManaEffect(m) => {
+                if m.player_id as u32 != self.local_id {
+                    self.spawn_peer_mana_text(m.player_id, m.amount as i32);
+                }
+            }
+            // `case 51` — the host's misc fan-out (`MessageBuffer.cs:2482-2530`,
+            // the client half). Kind 2 plays Item1 at the subject's position
+            // (`:2502`, `SoundID.Item1` — the case-2 façade, the net handlers
+            // run outside every swap so the draws ride the bare stream).
+            // Kinds 1/3/5/6 are host-side only; kind 4's big-mimic smoke
+            // burst is parked (the roster is unported), W4-c27.
+            S2c::MiscDataSync(d) => {
+                if d.kind == 2 {
+                    if let Some(p) = self.remote_players.get(&(d.player_id as u32)) {
+                        let (x, y) = (p.x, p.y);
+                        self.audio
+                            .play_npc_item_cue(1, x, y, self.rngs.global()); // `:2502`
+                    }
+                }
+            }
+            // `case 55` — a PvP debuff aimed at us (`MessageBuffer.cs:2599`'s
+            // `netMode == 1` clause: only our own id applies; `:2607`
+            // `AddBuff(fromNetPvP: true)` — the wire time is final).
+            S2c::PlayerBuffPvp(b) => {
+                if b.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.buffs.add_buff_from_net_pvp(b.buff_type as i32, b.time);
+                    }
+                }
+            }
+            // `case 62` — a dodge on the wire (`MessageBuffer.cs:2879-2908`,
+            // the `netMode == 1` half keeps the wire id). Ours runs the
+            // ported handlers (the `Player.cs:38023-38165` bodies via
+            // `player.rs` — the client IS the subject's `myPlayer`, so the
+            // buff strip / Hallowed cooldown / brain buff run). A peer's
+            // dodge on the remote copy leaves only the 120/80 immunity
+            // window (the rest is `myPlayer`-gated, `Player.cs:38026-38029`)
+            // and the dust/gore bursts — the port has no peer hurt lane
+            // (hostile shots parked, the `:2577` follow-up) and the bursts
+            // are S1-E-1, so that half is parked, same as the host arm.
+            // W4-c27.
+            S2c::SyncDodge(d) => {
+                if d.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.apply_net_dodge(d.kind);
+                    }
+                }
+            }
+            // `case 84` — a peer's stealth value (`MessageBuffer.cs:3246-3260`,
+            // the `netMode == 1` half keeps the wire id): stored on the peer
+            // record (`:3254`); ours is applied by the local stealth writer
+            // that sent it, the relay echo excluded by the host.
+            S2c::PlayerStealth(s) => {
+                self.remote_players
+                    .entry(s.player_id as u32)
+                    .or_default()
+                    .stealth = s.stealth; // `:3254`
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -2627,8 +2897,44 @@ impl App {
     /// per-NPC / per-projectile `netSpam` gates, `NPC.cs:90583-90631` /
     /// `Projectile.cs:17210-17244`) — NOT by a whole-set broadcast here.
     pub(crate) fn net_tick(&mut self, dt: f32) {
+        // W4-d115 — the dodge handlers' `SendData(62)` queue
+        // (`Player.cs:38038/:38053/:38115/:38163`) drains EVERY tick, ahead
+        // of the 10 Hz state batch: the C# send is inline in `Hurt`, the
+        // port's queue hands it to this phase of the same fixed step (the
+        // `take_hurt_sound` convention). `NetMessage.SendData`'s netMode
+        // gate (`NetMessage.cs:83-86`) drops the sends single-player — the
+        // take still runs so the queue cannot grow unbounded.
+        let dodge_sends = self
+            .player
+            .as_mut()
+            .map(|p| p.take_dodge_sends())
+            .unwrap_or_default();
         if matches!(self.net, NetRole::Off) {
             return;
+        }
+        if !dodge_sends.is_empty() {
+            let me = self.local_id as u8;
+            match &self.net {
+                NetRole::Host(server) => {
+                    for kind in dodge_sends {
+                        server.broadcast(&S2c::SyncDodge(net::SyncDodge {
+                            player_id: me,
+                            kind,
+                        }));
+                    }
+                }
+                NetRole::Client(client) => {
+                    for kind in dodge_sends {
+                        // The host forces the id to the sender
+                        // (`MessageBuffer.cs:2885`); ours is informational.
+                        client.send(&C2s::SyncDodge(net::SyncDodge {
+                            player_id: me,
+                            kind,
+                        }));
+                    }
+                }
+                NetRole::Off => {}
+            }
         }
         // `Ping.Update` (`Main.cs:17817-17820`) runs once per **frame** in
         // `UpdateWorld_Client`, not on the 10 Hz net cadence, and needs no
@@ -4142,6 +4448,17 @@ fn npc_seed(
         // W4-g5 — the two casters ride the hover ctor like the other
         // casters (`spawn_hover`; aiStyle 8, the d38 precedent).
         crate::npc::NpcKind::RuneWizard | crate::npc::NpcKind::LibrarianSkeleton => {
+        // The Frog walker (W4-e26, E8 keep-one): plants its feet on the
+        // column surface (the generic surface ctor; the aiStyle-7 machine
+        // takes over on the first tick — DATA-ONLY until then). The Duck
+        // dropped to c10 (the waterfowl owner, SEAL S1).
+        crate::npc::NpcKind::Frog => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // The luck critters (W4-e26): the noGravity flyers' net seed rides
+        // the hover ctor (the net state overwrites the position below;
+        // the aiStyle-115 machine takes over on the first tick).
+        crate::npc::NpcKind::LadyBug | crate::npc::NpcKind::GoldLadyBug => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
@@ -5783,5 +6100,243 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-c27 `18 SetTime` — the client applies the host's clock verbatim
+    /// (`MessageBuffer.cs:1290-1298`): the `int` time lands as f64 ticks, the
+    /// `== 1` day flag, the mod offsets parked (no port field).
+    #[test]
+    fn w4_c27_set_time_applies_the_hosts_clock() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host's own 10 Hz clock broadcast rides the same values, so the
+        // assertion holds regardless of which message lands last.
+        host_app.world.day_time = false;
+        host_app.world.time = 16_200.0;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SetTime(net::SetTime {
+                day_time: false,
+                time: 16_200,
+                sun_mod_y: -60,
+                moon_mod_y: 30,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(!client_app.world.day_time, "the night flag applied");
+        assert_eq!(client_app.world.time, 16_200.0, "the int clock applied");
+    }
+
+    /// W4-c27 `36 SyncPlayerZone` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2181-2184`), stores the six bytes and relays to the
+    /// others (`:2199`); the client keeps the wire id on its peer record.
+    #[test]
+    fn w4_c27_player_zone_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let z = net::PlayerZone {
+            player_id: 200, // spoofed — the host must override it to 1
+            zone1: 0xA5,
+            zone2: 0x0F,
+            zone3: 0xF0,
+            zone4: 0x33,
+            zone5: 0x01,
+            town_npcs: 4,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.zone.player_id, 1, "the id forced to the sender");
+        assert_eq!(stored.zone.zone1, 0xA5);
+        assert_eq!(stored.zone.zone5, 0x01);
+        assert_eq!(stored.zone.town_npcs, 4);
+        // The relay excludes the sender (`:2199`'s `this.whoAmI`), so the
+        // client never sees its own zone echo — its peer record for itself
+        // stays absent, exactly the C#'s ignore-own shape.
+        assert!(client_app.remote_players.get(&1).is_none());
+    }
+
+    /// W4-c27 `41 ItemRotationAndAnimation` — the host forces the subject to
+    /// the sender (`MessageBuffer.cs:2274-2277`), stores rotation/animation
+    /// (`:2281-2282`), re-derives `channel` from the selected item (`:2283`)
+    /// and relays (`:2286`).
+    #[test]
+    fn w4_c27_item_anim_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let a = net::ItemAnim {
+            player_id: 200, // spoofed — the host must override it to 1
+            rotation: 0.75,
+            animation: 12,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ItemAnim(a));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.item_rotation, 0.75);
+        assert_eq!(stored.item_animation, 12);
+        // No inventory synced yet: the selected slot's kind is unknown, so
+        // the channel re-derive reads false (`:2283`).
+        assert!(!stored.channel);
+        assert!(client_app.remote_players.get(&1).is_none());
+    }
+
+    /// W4-c27 `43 ManaEffect` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2310-2313`) and spawns the HealMana text for anyone
+    /// but itself (`:2315-2318`); the client does the same on the relay.
+    #[test]
+    fn w4_c27_mana_effect_spawns_the_peers_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed the client's peer record on the host so the text has a spot.
+        host_app
+            .remote_players
+            .entry(1)
+            .or_default()
+            .x = 100.0;
+        host_app.remote_players.get_mut(&1).unwrap().y = 200.0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ManaEffect(net::ManaEffect {
+                player_id: 200, // spoofed — forced to 1
+                amount: 50,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let texts: Vec<_> = host_app
+            .combat_texts
+            .iter()
+            .filter(|t| t.active && t.text == "50")
+            .collect();
+        assert_eq!(texts.len(), 1, "one HealMana text for the peer");
+        assert_eq!(texts[0].color, crate::combat_text::HEAL_MANA);
+        assert_eq!(texts[0].position[0], 100.0);
+    }
+
+    /// W4-c27 `62 SyncDodge` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2883-2886`) and relays to the others (`:2905`);
+    /// the sender's own echo is excluded, so its local player is untouched
+    /// (the send site applies its own dodge, S1-I-4).
+    #[test]
+    fn w4_c27_sync_dodge_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::SyncDodge(net::SyncDodge {
+                player_id: 200, // spoofed — the host must override it to 1
+                kind: 2,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        // The relay excludes the sender (`:2905`'s `this.whoAmI`), so the
+        // client never re-applies its own dodge from an echo.
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.shadow_dodge_timer, 0, "no self-echo apply");
+        assert!(!p.immune);
+        // The host-side apply on the non-simulated remote copy is parked
+        // (no peer hurt lane); the host's own player is not the subject.
+        assert_eq!(host_app.player.as_ref().unwrap().shadow_dodge_timer, 0);
+    }
+
+    /// W4-c27 `62 SyncDodge` — the client's own-id arm runs the ported
+    /// handler (`MessageBuffer.cs:2891-2894` → `Player.ShadowDodge`,
+    /// `Player.cs:38023-38042`): the 80-tick immunity (longInvince false),
+    /// buff 59 stripped, the 1800-tick Hallowed cooldown armed.
+    #[test]
+    fn w4_c27_sync_dodge_shadow_applies_on_the_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        client_app.player.as_mut().unwrap().buffs.add_buff(59, 600);
+        let me = client_app.local_id as u8;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SyncDodge(net::SyncDodge {
+                player_id: me,
+                kind: 2,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let p = client_app.player.as_ref().unwrap();
+        assert!(p.immune, "the dodge armed the i-frames");
+        assert_eq!(p.immune_time, 80, "longInvince false → 80");
+        assert_eq!(p.shadow_dodge_timer, 1800, "the Hallowed cooldown");
+        assert!(
+            p.buffs.find_buff_index(59).is_none(),
+            "buff 59 stripped by the dodge"
+        );
+    }
+
+    /// W4-c27 `84 PlayerStealth` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:3249-3252`), stores the float (`:3254`) and relays
+    /// (`:3257`); the client stores a peer's value on its record.
+    #[test]
+    fn w4_c27_player_stealth_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerStealth(net::PlayerStealth {
+                player_id: 200, // spoofed — the host must override it to 1
+                stealth: 0.25,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.stealth, 0.25, "the float stored under the sender");
+        // The relay excludes the sender, so no self-echo record.
+        assert!(client_app.remote_players.get(&1).is_none());
+        // The host's own stealth value reaches the client's peer record
+        // (the `netMode == 1` half keeps the wire id, `:3254`).
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::PlayerStealth(net::PlayerStealth {
+                player_id: 0,
+                stealth: 0.625,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer");
+        assert_eq!(peer.stealth, 0.625);
+    }
+
+    /// W4-d115 — a real belt dodge on the client queues the `62` kind-1 send
+    /// (`Player.NinjaDodge` `Player.cs:38161-38164`); `net_tick` drains the
+    /// queue every tick (the `take_hurt_sound` convention), so after the pump
+    /// the local queue is empty and the host forced the relay id to the
+    /// sender (`MessageBuffer.cs:2885`). The sender's own echo is excluded
+    /// (`:2905`), so the client does not re-apply / re-send its own dodge.
+    #[test]
+    fn w4_d115_ninja_dodge_send_drains_on_the_net_tick() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut p = player::Player::spawn(&client_app.world);
+        p.equipped[3] = 963; // the Black Belt
+        p.update(&client_app.world, player::PlayerInput::default());
+        assert!(p.black_belt);
+        // A scripted Next(10)==0 dodges the hit (the belt roll).
+        struct ZeroRng;
+        impl tr_core::loot::DropRng for ZeroRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.5
+            }
+        }
+        assert!(!p.hurt(20, p.x + 100.0, &mut ZeroRng, true), "the belt dodges");
+        client_app.player = Some(p);
+        // The send is queued by the dodge, not yet drained.
+        assert_eq!(
+            client_app.player.as_ref().unwrap().take_dodge_sends(),
+            vec![1]
+        );
+        // Re-arm a fresh dodge, then let the net tick drain it.
+        {
+            let p = client_app.player.as_mut().unwrap();
+            p.immune = false;
+            p.immune_time = 0;
+            p.hurt_cd = 0.0;
+            assert!(!p.hurt(20, p.x + 100.0, &mut ZeroRng, true));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(
+            client_app.player.as_ref().unwrap().take_dodge_sends().is_empty(),
+            "net_tick drained the 62 send queue"
+        );
+        // The host's own player is not the subject (the relay excludes the
+        // sender), so its dodge bookkeeping is untouched.
+        assert_eq!(host_app.player.as_ref().unwrap().shadow_dodge_timer, 0);
     }
 }

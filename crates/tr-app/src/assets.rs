@@ -346,6 +346,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // W4-c46 — `TextureAssets.Ghost` (`Images/Ghost`,
+        // `AssetInitializer.cs:318`): the hardcore ghost's 4-row sheet
+        // (`LegacyPlayerRenderer.DrawGhost`, `:514-524`).
+        "Ghost",
         // The mount sheets of the M2-MOUNT-1 ground set (`MountData`
         // back/front textures, `Mount.cs:696-2567`): the named `Mount_*`
         // sheets plus the `Extra_*` files the C# binds through
@@ -492,6 +496,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_181",
         "Extra_198",
         "Extra_93",
+        // W4-f50 deviation 3: `TextureAssets.Beetle` = `Images/BeetleOrb`
+        // (`AssetInitializer.cs:578`), the Beetle orb's 3-frame wing sheet
+        // (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
+        "BeetleOrb",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -510,6 +518,43 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor/Armor_2",
         "Armor/Armor_3",
         "Armor/Armor_4",
+        // W4-d115 wiring round — the Acc_Neck layer family
+        // (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+        // `AssetInitializer.cs:223-226`; `ArmorIDs.Neck.Count` = 15,
+        // `ArmorIDs.cs:2325`). Index 0 has no file (the empty slot —
+        // `DrawPlayer_20_NeckAcc` gates `neck > 0`, `PlayerDrawLayers.cs:
+        // 2028`); 1..14 are the fourteen neck accessories (the Cross
+        // Necklace 554 rides slot 2, `Item.cs:7992`). The layer draws the
+        // body frame at the torso anchor (`PlayerDrawLayers.cs:2030`).
+        "Acc_Neck_1",
+        "Acc_Neck_2",
+        "Acc_Neck_3",
+        "Acc_Neck_4",
+        "Acc_Neck_5",
+        "Acc_Neck_6",
+        "Acc_Neck_7",
+        "Acc_Neck_8",
+        "Acc_Neck_9",
+        "Acc_Neck_10",
+        "Acc_Neck_11",
+        "Acc_Neck_12",
+        "Acc_Neck_13",
+        "Acc_Neck_14",
+        // The visible shield strips (`AssetInitializer.cs:219-221`,
+        // `TextureAssets.AccShield[slot]` = `Images/Acc_Shield_{slot}`,
+        // slots 1..12; `DrawPlayer_25_Shield`, PlayerDrawLayers.cs:2954).
+        "Acc_Shield_1",
+        "Acc_Shield_2",
+        "Acc_Shield_3",
+        "Acc_Shield_4",
+        "Acc_Shield_5",
+        "Acc_Shield_6",
+        "Acc_Shield_7",
+        "Acc_Shield_8",
+        "Acc_Shield_9",
+        "Acc_Shield_10",
+        "Acc_Shield_11",
+        "Acc_Shield_12",
         "NPC_1",
         "NPC_22",
         "NPC_21",
@@ -798,6 +843,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_45",
         "Heart",
         "Bubble",
+        // `TextureAssets.Flame` (`AssetInitializer.cs:496`): the lava-budget
+        // meter's flame (`Main.DrawInterface_Resources_Breath`, `Main.cs:43511`).
+        "Flame",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
         // ordinary NPC health bar's fill and depleted strips
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
@@ -1544,6 +1592,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_485",
         "NPC_486",
         "NPC_487",
+        // W4-e26 — the luck critter sheets (`LUCK_CRITTER_SHEETS`, E8
+        // keep-one: the Duck's NPC_362 dropped to c10).
+        "NPC_361",
+        "NPC_604",
+        "NPC_605",
 ];
 
 
@@ -2143,7 +2196,7 @@ pub struct AmbienceTex {
 // c7/d40's slots above own them) = 320.
 // + W4-c10's 8 waterfowl sheets (362-365/602/603/608/609; the
 // 12-critter tail dropped - d40/c8's slots above own them) = 328.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 335] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 338] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2267,6 +2320,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 335] = [
         // W4-g5 — the two casters' bestiary sheets, appended last so the
         // earlier slots keep their indexes.
         172, 693,
+        // W4-e26 — the luck critters (E8 keep-one: the Duck 362 dropped
+        // to c10), appended last for the same reason.
+        361, 604, 605,
     ];
 
 
@@ -2382,6 +2438,10 @@ pub struct Lookups {
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Flame` (`Images/Flame`, `AssetInitializer.cs:496`): the
+    /// lava-budget meter's flame (`Main.DrawInterface_Resources_Breath`,
+    /// `Main.cs:43511`), 22x22 like the Bubble.
+    pub ui_flame: Option<tr_render::SheetRect>,
     /// `TextureAssets.Hb1` (`Images/HealthBar1`): the health bar's filled
     /// strip (`Main.cs:21988-21990`).
     pub ui_health_bar1: Option<tr_render::SheetRect>,
@@ -2781,6 +2841,7 @@ impl Lookups {
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_flame: atlas.sheet("Flame").copied(),
             ui_health_bar1: atlas.sheet("HealthBar1").copied(),
             ui_health_bar2: atlas.sheet("HealthBar2").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
@@ -3224,6 +3285,12 @@ atlas.sheet("NPC_442").copied(),
                 // W4-g5 — the two casters' bestiary sheets (3-frame strips).
                 atlas.sheet("NPC_172").copied(),
                 atlas.sheet("NPC_693").copied(),
+                // W4-e26 — the luck critter strips (361/604/605; the
+                // Duck's NPC_362 dropped to c10, E8 keep-one), appended
+                // last so the earlier slots keep their indexes.
+                atlas.sheet("NPC_361").copied(),
+                atlas.sheet("NPC_604").copied(),
+                atlas.sheet("NPC_605").copied(),
             ],
 
 

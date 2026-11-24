@@ -386,6 +386,12 @@ impl App {
             // as the draw pass — row `y` `(int)(20 + 22 * (1 - scale))`, x advance
             // `(int)(Width * scale) + 4`, hover size the untruncated `Width * scale`
             // (`ui::slot::closed_hotbar_metrics`).
+            // W4-c46 final — the ghost early-return (`Main.cs:43588`): no hotbar
+            // hover/click while the hardcore ghost flies (the whole function
+            // returns before the slot loop).
+            if self.player.as_ref().is_some_and(|p| p.ghost) {
+                return None;
+            }
             let mut x = 20.0;
             for i in 0..HOTBAR {
                 let sc = self.hotbar_scales[i].clamp(0.75, 1.0);

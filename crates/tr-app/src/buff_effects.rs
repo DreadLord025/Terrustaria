@@ -79,13 +79,13 @@ pub struct DebuffEffects {
     pub max_minions: i32,       // 110/150 ++, `:10173-10180`
     pub max_turrets: i32,       // 348 ++, `:10181-10184`
     pub endurance: f32,         // 114 +0.1, `:10202-10205`
-    pub melee_crit: i32,        // 115 +10, `:10206-10211`
-    pub ranged_crit: i32,       // 115 +10
-    pub magic_crit: i32,        // 115 +10
+    pub melee_crit: i32,        // 115 +10, `:10206-10211`; 321 +10, `:9940-9947`
+    pub ranged_crit: i32,       // 115 +10; 321 +10
+    pub magic_crit: i32,        // 115 +10; 321 +10
     pub melee_damage: f32,      // 117 +0.1, `:10265-10271`
     pub ranged_damage: f32,     // 117 +0.1
     pub magic_damage: f32,      // 117 +0.1
-    pub minion_damage: f32,     // 117 +0.1
+    pub minion_damage: f32,     // 117 +0.1; 321 +0.1, `:9946`
     pub life_regen: i32,        // 165 +6, `:10305`
     pub luck_potion: i32,       // 257 tier, `:10285-10302`
     /// `talkNPC = -1` — Stinky breaks the open dialogue (`:10278`).
@@ -198,6 +198,18 @@ pub fn apply_debuff_effect_arm(
             e.melee_damage += 0.1;
             e.ranged_damage += 0.1;
             e.magic_damage += 0.1;
+            e.minion_damage += 0.1;
+        }
+        // W4-d115 lane 19 — `:9940-9947`: buff 321 (the brain dodge's
+        // BrainOfConfusionBuff cooldown) grants +10 crit to the three
+        // non-summon classes + 0.10 minion damage. The arm sits in the
+        // C#'s pre-debuff chain (between 158 and 2); the table matches
+        // by id so the position is free. The live scan's copy rides
+        // `player.rs` (the 59-arm neighbour).
+        321 => {
+            e.melee_crit += 10;
+            e.ranged_crit += 10;
+            e.magic_crit += 10;
             e.minion_damage += 0.1;
         }
         119 => e.love_struck = true, // `:10272-10275`
@@ -440,6 +452,24 @@ mod tests {
         let e = apply(144); // `:10313-10317`
         assert!(e.electrified);
         assert_eq!(e.electrified_light, Some([0.3, 0.8, 1.1])); // `:10316`
+    }
+
+    /// W4-d115 lane 19 — buff 321 (BrainOfConfusionBuff): +10 crit ×3
+    /// + 0.10 minion damage (`Player.cs:9940-9947`), per-slot adds.
+    #[test]
+    fn w4_d115_lane19_the_brain_confusion_buff_grants_crit_and_minion_damage() {
+        let e = apply(321);
+        assert_eq!(e.melee_crit, 10);
+        assert_eq!(e.ranged_crit, 10);
+        assert_eq!(e.magic_crit, 10);
+        assert!((e.minion_damage - 0.1).abs() < 1e-6);
+        // Per-slot stacking like the C# chain (two live slots add twice).
+        let mut e2 = DebuffEffects::default();
+        let ctx = DebuffEffectContext::default();
+        apply_debuff_effect_arm(&mut e2, 321, 240, &ctx);
+        apply_debuff_effect_arm(&mut e2, 321, 240, &ctx);
+        assert_eq!(e2.melee_crit, 20);
+        assert!((e2.minion_damage - 0.2).abs() < 1e-6);
     }
 
     #[test]

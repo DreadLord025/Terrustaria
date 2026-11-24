@@ -504,6 +504,47 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
+    // W4-f32 — the Sparkle Guitar 4715's chord (`Player.cs:46591-46603`,
+    // `ItemCheck_UseMisc`'s `ItemAnimationJustStarted` arm): the note arm
+    // starts the swing through `fire_non_ammo_shot` → this seam, so the
+    // chord fires here. The range clamp + luck roll + pitch draw ride the
+    // `UpdatePlayers` stream (`luck::guitar_chord_cue`). The Carbon/Ivy
+    // guitars (4057/4372) are damage-less and never start a swing — their
+    // chord fires on the dedicated press-edge arm in `update_editing`, NOT
+    // here (listing them would double-draw). The `58` net-sync and the
+    // progression-37 notify are the documented skips.
+    if held_kind == 4715 {
+        play_guitar_chord(app, Vec2::new(cx, cy), mouse_world, Vec2::new(sw, sh));
+    }
+}
+
+/// W4-f32 — `Player.PlayGuitarChord`'s play seam (`Player.cs:46671-46703`):
+/// the range clamp, the luck roll + pitch draw (`luck::guitar_chord_cue`)
+/// and the cue's `play_use_sound` at the player's Centre — all on the
+/// `UpdatePlayers` stream. Shared by the use-start seam (the Sparkle
+/// Guitar's note start) and the Carbon/Ivy press-edge arm (the two
+/// damage-less guitars never start a swing in the port's use path).
+fn play_guitar_chord(app: &mut App, centre: Vec2, mouse_world: Vec2, screen: Vec2) {
+    let mut range =
+        (mouse_world - centre).length() / (smaller_scaled_axis(screen, app.zoom) / 2.0);
+    if range > 1.0 {
+        range = 1.0;
+    }
+    let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+    let (cue, pitch) = crate::luck::guitar_chord_cue(
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        luck,
+        range,
+    );
+    if let Some(idx) = crate::luck::item_sound_style_index(cue) {
+        app.audio.play_use_sound(
+            idx,
+            centre.x,
+            centre.y,
+            pitch,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    }
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
@@ -870,9 +911,11 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
         }
         return true;
     }
-    // `:53815` — the fail tick (`KillTile(fail: true)`): the port's
-    // per-tick sound/dust is the recorded deviation; the damage stays in
-    // the book. `:53822-53825` — a non-zero damage prunes the book.
+    // `:53815` - the fail tick (`KillTile(fail: true)`): W4-c14 plays the
+    // entry's `KillTile_PlaySounds(fail: true)` cue (the dust stays the
+    // recorded visual skip); the damage stays in the book. `:53822-53825`
+    // - a non-zero damage prunes the book.
+    play_kill_fail_cue(app, tx, ty);
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
@@ -1320,9 +1363,14 @@ fn hammer_tile_hit(
             app.world_key = None;
         }
     }
-    // `:45698-45701` — a non-zero damage prunes the book AFTER both
+    // `:45690-45697` - the fail arm (`KillTile(fail: true)`): W4-c14 plays
+    // the entry's fail cue (the dust stays the recorded visual skip).
+    if total < 100 {
+        play_kill_fail_cue(app, tx, ty);
+    }
+    // `:45698-45701` - a non-zero damage prunes the book AFTER both
     // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
-    // above + this tail — the C# order, kept).
+    // above + this tail - the C# order, kept).
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
@@ -1557,12 +1605,12 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
     // `:45721-45724` — the Don't Starve cactus chop hurts the chopper on
     // EVERY damaging hit (not only the break): `Main.DamageVar(6f, 0f -
     // this.luck)`, hitDirection 0 (no knockback), not quiet, no crit, the
-    // TileContactDamage cooldown. The port's single hurt lane folds the
-    // cooldown counters onto `hurt_cd` (the M4-HAZARD-1 admission,
-    // `touch_damage.rs`'s precedent) and `hitDirection 0` maps to the
-    // player's own centre (no directional kick). The damage draw rides the
-    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`), before
-    // the kill's own drop draws — the C# order.
+    // TileContactDamage cooldown (`:45723`). M4-HAZARD-1: the lane rides
+    // its own `hurt_cooldowns` slot (`touch_damage.rs`'s precedent) and
+    // `hitDirection 0` maps to the player's own centre (no directional
+    // kick). The damage draw rides the `UpdatePlayers` stream (the
+    // ItemCheck swap, `Main.cs:17754`), before the kill's own drop draws —
+    // the C# order.
     if app
         .world
         .seeds
@@ -1575,7 +1623,13 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
         if let Some(p) = app.player.as_mut() {
             let (cx, _) = p.center();
-            let _ = p.hurt(dmg, cx, rng, true);
+            let _ = p.hurt_cooldown(
+                dmg,
+                cx,
+                rng,
+                true,
+                crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            );
         }
     }
     // `:45725` — the accumulation; `>= 100` breaks.
@@ -1618,15 +1672,17 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         rearm_axe_item_time(app, held);
         return true;
     }
-    // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
-    // sound/dust is the recorded deviation; the damage stays in the book.
-    // `:45764-45767` — a non-zero damage prunes the book.
+    // `:45756-45763` - the fail tick (`KillTile(fail: true)`): W4-c14 plays
+    // the entry's fail cue (the dust stays the recorded visual skip); the
+    // damage stays in the book. `:45764-45767` - a non-zero damage prunes
+    // the book.
+    play_kill_fail_cue(app, tx, ty);
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
         }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
     }
-    // `:45768` — the cadence re-arm on the fail tick too.
+    // `:45768` - the cadence re-arm on the fail tick too.
     rearm_axe_item_time(app, held);
     false
 }
@@ -2468,6 +2524,35 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if !pulley && fishing_use(app, held, world_pos, prev_mine_released && !prev_mine_down) {
             return;
         }
+    }
+    // W4-f32 — the Carbon/Ivy Guitar's press-edge chord (`Player.cs:46576-
+    // 46589`, `ItemCheck_UseMisc`'s `Main.mouseLeft && Main.mouseLeftRelease`
+    // arm): the two damage-less guitars (4057/4372 — no projectile, no
+    // tile) never start a swing in the port's use path, so the chord fires
+    // on the press edge here. The C# gate is `itemAnimation > 0` (the use
+    // started elsewhere); the port's edge + cooldown pair stands in. The
+    // Sparkle Guitar 4715's chord rides the use-start seam (its note arm
+    // starts the swing). The `58` net-sync + progression 37 are skips.
+    if matches!(held.kind, 4057 | 4372)
+        && held.count > 0
+        && app.mine_down
+        && prev_mine_released
+        && !prev_mine_down
+        && !app.inventory_open
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+    {
+        let (sw, sh) = app.screen_size();
+        let centre = app
+            .player
+            .as_ref()
+            .map(|p| Vec2::new(p.center().0, p.center().1))
+            .unwrap_or(app.camera);
+        play_guitar_chord(app, centre, world_pos, Vec2::new(sw, sh));
+        start_use_timers(app, held);
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
     }
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
@@ -5576,6 +5661,33 @@ pub(crate) fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32
     })
 }
 
+/// W4-c14 - one mining fail-tick cue: the `WorldGen.KillTile(x, y, fail:
+/// true)` entry's `KillTile_PlaySounds(fail: true)` (`WorldGen.cs:63558`,
+/// the pick's fail arm `Player.cs:53815`, the hammer's `:45692`, the axe's
+/// `:45758`). The `CheckTileBreakability` refusal (`:63542-63545`'s `num ==
+/// 2`) returns BEFORE the sound - the port's `can_kill_tile` stands in for
+/// it (the `break_tile` refusal convention). The cue table is the landed
+/// S1-E-21c `kill_tile_sound` with `fail: true` (no shatter tail); the
+/// pinned `kill_cue` map plays it (the D3 pin - no gameplay draws).
+pub(crate) fn play_kill_fail_cue(app: &mut App, tx: i32, ty: i32) {
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
+    let Some(t) = app.world.tile(tx, ty).filter(|t| t.active()).copied() else {
+        return;
+    };
+    let sounds = edit::kill_tile_sound(t.kind, t.frame_x, true);
+    let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+    for cue in [sounds.primary, sounds.extra, sounds.shatter]
+        .into_iter()
+        .flatten()
+    {
+        if let Some((name, volume)) = kill_cue(cue) {
+            app.audio.play_at(name, px, py, volume);
+        }
+    }
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
@@ -5673,6 +5785,18 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 event.y as f32 * TILE_PX,
                 volume,
             );
+        }
+    }
+    // W4-c14 - the `Check*` routines' own tail sounds (`CheckOrb`
+    // `WorldGen.cs:54335-54342`: the crimson Heart's killed 4 / the Shatter
+    // 13; `Check2x1`'s piggy arm `:47235`: Shatter 13), at the checked cell
+    // after the kill loop - the C# plays them at the check's tail, after
+    // the cascade's own `KillTile_PlaySounds` cues above. The pinned
+    // `kill_cue` map (the D3 convention) resolves them.
+    for &(id, style, sx, sy) in &kill.check_sounds {
+        if let Some((name, volume)) = kill_cue((id, style)) {
+            app.audio
+                .play_at(name, sx as f32 * TILE_PX, sy as f32 * TILE_PX, volume);
         }
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
@@ -5829,6 +5953,10 @@ pub(crate) struct DropCtx {
     /// No player (headless shots) reads full life + 0 torches.
     pub player_hurt: bool,
     pub torches: i32,
+    /// `Player.GetClosestRollLuck(i, j, range)`'s luck input
+    /// (`Player.cs:18236-18239` → the closest player's `luck`) — the Coin
+    /// Portal roll (`WorldGen.cs:57176`, W4-f32). No player reads 0.
+    pub luck: f32,
     /// `player2.Zone*` — the scene metrics refresh at the player centre;
     /// `ZoneGlowshroom` has no port metric (false, phase-5 ANALYSIS).
     pub zone_hallow: bool,
@@ -5884,6 +6012,9 @@ fn drop_ctx(app: &App) -> DropCtx {
             .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
         player_hurt,
         torches,
+        // `Player.GetClosestRollLuck`'s luck (`Player.cs:18236-18239`) —
+        // the Coin Portal roll's input (W4-f32).
+        luck: app.player.as_ref().map_or(0.0, |p| p.luck()),
         zone_hallow: app.scene_metrics.zone_hallow,
         zone_crimson: app.scene_metrics.zone_crimson,
         zone_corrupt: app.scene_metrics.zone_corrupt,
@@ -6434,10 +6565,11 @@ fn spawn_things_from_pot(
     // :57099-57171 — the style multiplier and the luck range.
     let range = pot_luck_range(pot_style_multiplier(style, ctx.hard_mode));
     // :57176-57182 — the Coin Portal (`Player.GetClosestRollLuck` →
-    // `Luck.RollLuck(luck, range)` with the port's luck 0 = one
-    // `Main.rand.Next(range)`, `Luck.cs:5-12`, `Player.cs:18236-18239`);
-    // the caller spawns the projectile (`NewProjectile(…, 518, …)`).
-    if main_rng.next_range(0, range) == 0 {
+    // `Luck.RollLuck(luck, range)`, `Luck.cs:5-16`, `Player.cs:18236-
+    // 18239`); W4-f32: the roll rides `ctx.luck` — at luck 0 it
+    // degenerates to the same single `Main.rand.Next(range)` the
+    // pre-luck port drew; the caller spawns the 518 projectile.
+    if tr_core::loot::roll_luck(main_rng, ctx.luck, range) == 0 {
         return (Vec::new(), true);
     }
     // :57184-57182 — the dungeon key: `genRand.Next(35)` consumes first, the
@@ -7769,6 +7901,26 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                // `if (this.parryDamageBuff && sItem.melee)`
+                // (`Player.cs:44307-44312`): the shield parry's buff 198
+                // ×5s the next MELEE strike and consumes itself — the
+                // flag clears AND `ClearBuff(198)` strips the buff (both,
+                // so the same swing's later NPCs get no second boost).
+                // The ×5 rides the PRE-`DamageVar` value (the C# block
+                // precedes `:44342`), after the crit roll (`:44298`) —
+                // the draw order is untouched (no new draws).
+                let held_is_melee = registry::get(held.kind).is_some_and(|d| d.melee);
+                let raw = if held_is_melee
+                    && app.player.as_ref().is_some_and(|p| p.parry_damage_buff)
+                {
+                    if let Some(p) = app.player.as_mut() {
+                        p.parry_damage_buff = false;
+                        p.buffs.clear_buff(198);
+                    }
+                    raw * 5.0
+                } else {
+                    raw
+                };
                 // W4-e7 lane 23 — `if (this.accPyroclast) Projectile.
                 // TryMakingSnappingStoneStrike(..., ref dmg, 1)`
                 // (`Player.cs:44338-44341`): the Pyroclast melee strike runs
@@ -7833,10 +7985,49 @@ fn resolve_melee_strike(
                     // type 453, which the port does not ship.
                     flymeal_town_hit = true;
                 }
+                // W4-f32 — the Tax Collector's cane coin shower
+                // (`Player.cs:44367-44374`): `sItem.type == 3351 &&
+                // nPC.type != 488 && nPC.life > 5` → a copper coin at
+                // `npc.position + (Next(width), Next(height))` with
+                // `stack: 1 + RollBadLuck(25)` and the explicit velocity
+                // `(2 + NextFloat*2) * direction, -2 - NextFloat*2`.
+                // The C# draw order: the two velocity NextFloats FIRST
+                // (`:44369`), then the centre's Next(width)/Next(height)
+                // (`:44370`'s center argument), then the stack's
+                // RollBadLuck(25) — all on the `UpdatePlayers` stream,
+                // BEFORE StatusToNPC (`:44391`). The 488 (Target Dummy)
+                // refusal is constants-on (the kind is unported). The
+                // ClassyCane particle is a visual skip. Runs pre-strike
+                // (the C# block precedes `StrikeNPC` `:44403`), so the
+                // life gate reads the PRE-hit hp.
+                if held.kind == 3351 && n.hp > 5 {
+                    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                    let vx = (2.0 + loot_rng.next_float() * 2.0) * dir as f32;
+                    let vy = -2.0 - loot_rng.next_float() * 2.0;
+                    let (nw, nh) = n.size();
+                    let cx = n.x + loot_rng.next_max(nw as i32) as f32;
+                    let cy = n.y + loot_rng.next_max(nh as i32) as f32;
+                    let stack = 1 + tr_core::loot::roll_bad_luck(loot_rng, luck, 25);
+                    // `NewItemOwnership.GrabDelayForAllPlayers` — every
+                    // player (and the monsters) wait the 100-tick delay.
+                    let mut coin = crate::item::ItemDrop::new(
+                        71,
+                        stack.max(1) as u32,
+                        0, // prefix: 0 — no prefix draw
+                        cx - crate::item::SIZE * 0.5,
+                        cy - crate::item::SIZE * 0.5,
+                        vx,
+                        vy,
+                        0.0,
+                    );
+                    coin.apply_grab_delay(crate::item::GRAB_DELAY_ALL);
+                    app.items.push(coin);
+                }
                 // The struck NPC's Copy reads were captured up front (the
                 // `n_kind`/`n_defense`/`nx`/`ny`/`bw`/`bh`/`hit_cue` locals at
-                // the top of this resolution) so the Snapping Stone strike's
-                // `&mut app.npcs` above could run while the `n` borrow ended.
+                // the top of this resolution, W4-e7) so the Snapping Stone
+                // strike's `&mut app.npcs` above could run while the `n`
+                // borrow ended — the old pre-StatusToNPC re-reads are gone.
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar
@@ -7856,6 +8047,18 @@ fn resolve_melee_strike(
                         &mut app.npcs[idx].buffs,
                         status_rng,
                     );
+                    // W4-d115 — `ProcessHitAgainstNPC`'s `if (nPC.life > 5)
+                    // this.OnHit(...)` (`Player.cs:44392-44395`): AFTER
+                    // StatusToNPC (`:44391`), BEFORE the nano-flask boost
+                    // (`:44396`). Only the Hallowed `onHitDodge` arm lands
+                    // (`OnHit` `:6938-6941`, the Holy Protection buff-59
+                    // grant — RNG-free); the titanium/regen/petal/stardust/
+                    // crystal-leaf arms are unported families.
+                    if app.npcs[idx].hp > 5 {
+                        if let Some(p) = app.player.as_mut() {
+                            p.on_hit_dodge_grant();
+                        }
+                    }
                     // `if (this.meleeEnchant == 6) num2 = (int)((float)
                     // num2 * Player.GetNanoFlaskDamageBoost())`
                     // (`Player.cs:44396-44399`, `:44423-44426`) — the
@@ -8457,6 +8660,62 @@ mod tests {
         assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
     }
 
+    /// W4-f48 parry wave — `ProcessHitAgainstNPC`'s ParryDamageBuff arm
+    /// (`Player.cs:44307-44312`): buff 198 ×5s the next melee strike
+    /// (pre-`DamageVar`) and consumes the flag AND the buff. WRITTEN NOT
+    /// RUN (code-only mode). The base sword hit reads 7 on this rig's
+    /// pristine `UpdatePlayers` stream (the bug_09 pin above); ×5 = 35
+    /// through the same ±15% band + the slime's defence — the assertion
+    /// rides the band, not a literal, because the ×5 changes the roll's
+    /// truncation input.
+    #[test]
+    fn w4_f48_parry_buff_198_quintuples_the_next_melee_strike_and_consumes() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24; // the wooden sword (damage 7, melee)
+        a.inventory[a.selected].count = 1;
+        let p = a.player.as_mut().unwrap();
+        p.parry_damage_buff = true;
+        p.buffs.add_buff(198, 300);
+        let hp0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        let dealt = hp0 - a.npcs[0].hp;
+        // 7 × 5 = 35 pre-var; the ±15% band [30, 40] minus defence/2 ≥ 1.
+        assert!(
+            dealt >= 28,
+            "the parry boost lands (7×5 through the band, got {dealt})"
+        );
+        let p = a.player.as_ref().unwrap();
+        assert!(!p.parry_damage_buff, "the strike consumes the flag");
+        assert!(p.buffs.find_buff_index(198).is_none(), "ClearBuff(198) strips it");
+        // A second swing (the buff gone) lands the plain 7-band again.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 24;
+        b.inventory[b.selected].count = 1;
+        let hp_b = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert_eq!(hp_b - b.npcs[0].hp, 7, "no buff, the plain sword row");
+    }
+
+    /// W4-f48 parry wave — the ×5 is MELEE-only (`sItem.melee`,
+    /// `Player.cs:44307`): a non-melee held row keeps the buff armed.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_buff_198_leaves_non_melee_strikes_alone() {
+        let mut a = melee_app();
+        // The Copper Bow (99, ranged) — the cursor melee arm still runs
+        // its ProcessHitAgainstNPC resolution for the held row, but
+        // `sItem.melee` is false, so the parry arm must not fire.
+        a.inventory[a.selected].kind = 99;
+        a.inventory[a.selected].count = 1;
+        let p = a.player.as_mut().unwrap();
+        p.parry_damage_buff = true;
+        p.buffs.add_buff(198, 300);
+        mine_frames(&mut a, 1);
+        let p = a.player.as_ref().unwrap();
+        assert!(p.parry_damage_buff, "the non-melee strike keeps the flag");
+        assert!(p.buffs.find_buff_index(198).is_some(), "the buff survives");
+    }
+
 
     /// M3-EQUIP-20 — the melee penetration row raises the hit
     /// (`Player.cs:44383` `num2 += nPC.checkArmorPenetration(...)`).
@@ -8609,6 +8868,40 @@ mod tests {
         let n = &a.npcs[0];
         let slot = n.buffs.find_buff_index(120).expect("Stinky lands");
         assert_eq!(n.buffs.buff_time[slot], 300, "the fixed 300 (:6573)");
+    }
+
+    /// W4-d115 — the melee `OnHit` seam (`Player.cs:44392-44395`,
+    /// `if (nPC.life > 5) OnHit`): the Hallowed flag grants buff 59 on the
+    /// landed swing, the `life > 5` gate refuses a near-dead victim, and
+    /// the grant consumes no `UpdatePlayers` draw (the arm is RNG-free).
+    #[test]
+    fn w4_d115_the_melee_strike_grants_holy_protection_behind_the_life_gate() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        a.player.as_mut().unwrap().on_hit_dodge = true;
+        mine_frames(&mut a, 1);
+        let p = a.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(59).expect("the strike grants buff 59");
+        assert_eq!(p.buffs.buff_time[i], 1800, "AddBuff(59, 1800) (:6940)");
+        // The life gate: a 5-life victim never reaches OnHit.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 24;
+        b.inventory[b.selected].count = 1;
+        b.player.as_mut().unwrap().on_hit_dodge = true;
+        b.npcs[0].hp = 5;
+        mine_frames(&mut b, 1);
+        assert!(
+            b.player.as_ref().unwrap().buffs.find_buff_index(59).is_none(),
+            "life <= 5 skips OnHit (:44392)"
+        );
+        // The unarmed control: no flag, no grant, and the stream matches —
+        // the grant arm draws nothing either way.
+        let mut c = melee_app();
+        c.inventory[c.selected].kind = 24;
+        c.inventory[c.selected].count = 1;
+        mine_frames(&mut c, 1);
+        assert!(c.player.as_ref().unwrap().buffs.find_buff_index(59).is_none());
     }
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
@@ -9005,6 +9298,72 @@ mod tests {
         );
     }
 
+    /// W4-f32 — the Tax Collector's cane coin shower (`Player.cs:44367-
+    /// 44374`): a 3351 hit on a `life > 5` NPC draws the velocity pair
+    /// (NextFloat ×2), the centre pair (Next(width), Next(height)) and the
+    /// stack's `RollBadLuck(25)`, then spawns the 71 copper with
+    /// `GrabDelayForAllPlayers`. Differential witness: the cane rig and
+    /// the plain-sword rig share the pre-block draws; the cane's stream
+    /// is the sword's advanced by exactly 5 draws at luck 0 (2 floats +
+    /// 2 centre + 1 plain Next(25)), and the coin spawns at stack 1..26.
+    #[test]
+    fn f32_the_classy_cane_shower_draws_and_spawns() {
+        let mut saw_coin = false;
+        for seed in 0..12i32 {
+            // The plain baseline: same rig, same seed, no cane.
+            let mut base = melee_app();
+            seed_stream(&mut base, seed);
+            let hp0 = base.npcs[0].hp;
+            mine_frames(&mut base, 1);
+            assert!(base.npcs[0].hp < hp0, "the baseline hit lands (seed {seed})");
+            assert!(base.items.is_empty(), "no cane, no shower");
+            let base_state = stream_of(&mut base);
+
+            // The cane rig: the 3351 in the selected slot.
+            let mut cane = melee_app();
+            cane.inventory[cane.selected] = crate::item::ItemSlot {
+                kind: 3351,
+                name: "Tax Collectors Stick Of Doom",
+                count: 1,
+                prefix: 0,
+            };
+            seed_stream(&mut cane, seed);
+            mine_frames(&mut cane, 1);
+            // The shower runs pre-strike on the PRE-hit hp (25 > 5).
+            let coins: Vec<&crate::item::ItemDrop> =
+                cane.items.iter().filter(|it| it.kind == 71).collect();
+            assert_eq!(coins.len(), 1, "one copper per landed cane hit");
+            let coin = coins[0];
+            assert!((1..=26).contains(&(coin.count as i32)), "stack 1 + Next(25)");
+            assert_eq!(coin.grab_delay_player, crate::item::GRAB_DELAY_ALL);
+            assert_eq!(coin.grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
+            // The 5-draw advance: replay the block over the baseline's
+            // pre-block state is not directly observable (the block sits
+            // mid-chain), so pin the SHAPE on the engine instead: the
+            // cane's stream differs from the baseline's by the block's
+            // draws plus the downstream damage difference (the cane's
+            // 40-damage row vs the sword's) — assert divergence only.
+            assert_ne!(stream_of(&mut cane), base_state);
+            saw_coin = true;
+        }
+        assert!(saw_coin);
+        // The RollBadLuck(25) shape at luck 0: one plain Next(25).
+        let mut a = tr_core::UnifiedRandom::new(3);
+        let r = tr_core::loot::roll_bad_luck(&mut a, 0.0, 25);
+        let mut b = tr_core::UnifiedRandom::new(3);
+        assert_eq!(r, b.next_max(25));
+        assert_eq!(a, b);
+        // Positive luck WIDENS the range (RollBadLuck is the inverted
+        // RollLuck, `Luck.cs:18-28`): Next(Next(25, 50)) — smaller stacks.
+        let mut c = tr_core::UnifiedRandom::new(3);
+        let r1 = tr_core::loot::roll_bad_luck(&mut c, 1.0, 25);
+        let mut d = tr_core::UnifiedRandom::new(3);
+        let _gate = d.next_float();
+        let inner = d.next_range(25, 50);
+        assert_eq!(r1, d.next_range(0, inner));
+        assert_eq!(c, d);
+    }
+
     /// S1-P-i50 — the Lucky Coin melee proc (`ApplyNPCOnHitEffects`' tail,
     /// `Player.cs:44537-44549`): a landed hit on a `value > 0` NPC with
     /// `hasLuckyCoin` draws `Next(5)`; on 0 it draws the denomination
@@ -9364,6 +9723,62 @@ mod tests {
             app.audio.played_count() - before,
             1,
             "one break cue, no per-drop sound"
+        );
+    }
+
+    /// W4-c14 - the mining fail ticks play the `KillTile(fail: true)`
+    /// entry's cue (`Player.cs:53815`/`:45692`/`:45758` →
+    /// `WorldGen.cs:63558`): a sub-100 pick hit on stone queues ONE Tink
+    /// (the `kill_tile_sound` dirt/stone arm, `:66500-66504`), the break
+    /// tick plays its own cue exactly once (no double), and a
+    /// `CanKillTile`-refused cell stays silent (`:63542-63545`'s `num ==
+    /// 2` returns before the sound).
+    #[test]
+    fn w4_c14_the_mining_fail_tick_plays_the_kill_fail_cue() {
+        let mut w = World::new("t".into(), 40, 40);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 20, 20);
+        // The Iron Pickaxe's 40 damage < 100: the first hit is a fail tick.
+        let before = app.audio.played_count();
+        let broke = pick_tile_hit(&mut app, 20, 20, 40);
+        assert!(!broke, "40 < 100: the tile stands");
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the fail tick plays the stone Tink once"
+        );
+        // The break tick (the accumulated 120 >= 100) plays its own cue
+        // once - the fail arm never fires on it.
+        assert!(!pick_tile_hit(&mut app, 20, 20, 40), "80 < 100: still standing");
+        let before = app.audio.played_count();
+        assert!(pick_tile_hit(&mut app, 20, 20, 40), "the third hit breaks");
+        assert_eq!(app.audio.played_count() - before, 1, "one break cue");
+        // A locked-door refusal is silent: `can_kill_tile` false maps the
+        // C#'s `CheckTileBreakability` 2-return (before the sound).
+        let mut app2 = mining_app(World::new("t".into(), 40, 40), 20, 20);
+        let i = app2.world.index(20, 20);
+        app2.world.tiles[i] = Tile {
+            kind: 10,
+            frame_x: 0,
+            frame_y: 594, // the locked golden door's frame family
+            ..Default::default()
+        };
+        app2.world.tiles[i].flags |= FLAG_ACTIVE;
+        let before = app2.audio.played_count();
+        play_kill_fail_cue(&mut app2, 20, 20);
+        assert_eq!(
+            app2.audio.played_count() - before,
+            0,
+            "the refused cell plays nothing"
         );
     }
 
@@ -13031,6 +13446,43 @@ mod tests {
         let (loot, portal) = run_pot(&ctx, 0, surface_y, gen_seed, portal_seed, 0, 0);
         assert!(portal, "the portal roll fires on the found seed");
         assert!(loot.is_empty(), "the portal returns without loot");
+
+        // W4-f32 — the portal roll rides `ctx.luck` (`WorldGen.cs:57176` →
+        // `Player.GetClosestRollLuck` → `Luck.RollLuck`, `Luck.cs:5-16`):
+        // luck 0 is the plain Next(500) (the seed above proves it); luck
+        // 1.0 shrinks the range to Next(Next(250, 500)) — a seed whose
+        // plain Next(500) MISSES can still portal under the shrunk range.
+        let mut lucky_ctx = pot_ctx();
+        lucky_ctx.luck = 1.0;
+        let mut diverged = false;
+        for seed in 0u64..20_000 {
+            let mut plain = tr_core::UnifiedRandom::new(seed as i32);
+            if plain.next_range(0, 500) == 0 {
+                continue; // both would portal — not the divergence case
+            }
+            let mut probe = tr_core::UnifiedRandom::new(seed as i32);
+            if tr_core::loot::roll_luck(&mut probe, 1.0, 500) == 0 {
+                let (loot, portal) =
+                    run_pot(&lucky_ctx, 0, surface_y, gen_seed, seed, 0, 0);
+                assert!(portal, "the shrunk range portals on seed {seed}");
+                assert!(loot.is_empty());
+                // The plain ctx on the same seed does NOT portal.
+                let (_, plain_portal) = run_pot(&ctx, 0, surface_y, gen_seed, seed, 0, 0);
+                assert!(!plain_portal);
+                diverged = true;
+                break;
+            }
+        }
+        assert!(diverged, "positive luck portals where luck 0 misses");
+        // Negative luck widens the range (Next(Next(500, 1000))) — the
+        // portal fires LESS often; the draw shape is three draws.
+        let mut a = tr_core::UnifiedRandom::new(7);
+        let bad = tr_core::loot::roll_luck(&mut a, -1.0, 500);
+        let mut b = tr_core::UnifiedRandom::new(7);
+        let _gate = b.next_float();
+        let inner = b.next_range(500, 1000);
+        assert_eq!(bad, b.next_range(0, inner));
+        assert_eq!(a, b);
 
         // Dungeon key: `genRand.Next(35) == 0` with a dungeon wall below the
         // surface → exactly item 327, before any potion roll.
@@ -18813,5 +19265,67 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+}
+
+/// W4-e26 — the garden-gnome tile-567 placement witness. The census
+/// finding: the placement is ALREADY generic — item 4609 (`tile:
+/// Some(567)`, `place_style: 0`) routes through `place_item_tile` →
+/// `TileObject.CanPlace`/`Place` because the registry's `D_567` def
+/// carries `uses_custom_can_place: true` (1×2, bottom anchor,
+/// `coordinate_heights [18, 18]`, `coordinate_width 26`). No missing
+/// gate; this pins the end-to-end item use + the luck sensor's tile.
+/// WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_e26_gnome_placement_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use super::tests::{object_world, slot};
+
+    /// The registry route: tile 567 is a registered custom-place object,
+    /// so the gnome item rides `TileObject.CanPlace`/`Place` (NOT the
+    /// legacy single-tile write). `Player.cs:39771-39772`.
+    #[test]
+    fn w4_e26_the_gnome_routes_through_tile_object() {
+        assert!(tr_core::tileobject::routes_through_tile_object(567, 0));
+        assert!(!legacy_precheck_applies(567, 0), "no legacy pre-check");
+        assert!(!assorted_placement_route(567, 0), "no plant cut rule");
+        let def = tr_core::tileobject::def_for_tile(567).expect("D_567 registered");
+        assert_eq!((def.width, def.height), (1, 2), "1×2");
+        assert!(def.uses_custom_can_place);
+        assert_eq!(def.coordinate_width, 26);
+        assert_eq!(def.coordinate_heights, &[18, 18]);
+        // The item registry: 4609 → tile 567, style 0.
+        assert_eq!(registry::place_tile(4609), Some(567));
+        assert_eq!(registry::place_style(4609), 0);
+    }
+
+    /// The full item use: a Garden Gnome held over a floor cell places
+    /// the 1×2 object (bottom row clicked), consumes one item, and the
+    /// tile-567 marker the luck sensor reads (`SceneMetrics.cs:590-593`)
+    /// is present. `object_world`'s floor is row 20; the gnome's bottom
+    /// cell is (10, 19), top (10, 18).
+    #[test]
+    fn w4_e26_the_gnome_item_places_the_luck_tile() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(4609, 3);
+        assert!(use_tile_item(&mut app, 10, 19), "the gnome places");
+        assert_eq!(app.inventory[app.selected].count, 2, "one consumed");
+        // Both cells carry tile 567, frame_important, style-0 frames.
+        let bottom = *app.world.tile(10, 19).unwrap();
+        let top = *app.world.tile(10, 18).unwrap();
+        assert!(bottom.active() && bottom.kind == 567, "bottom cell");
+        assert!(top.active() && top.kind == 567, "top cell");
+        assert_eq!((bottom.frame_x, bottom.frame_y), (0, 18), "bottom row frameY 18");
+        assert_eq!((top.frame_x, top.frame_y), (0, 0), "top row frameY 0");
+        assert!(app.world.frame_important[567], "frame_important mirrored");
+        // A refused placement (no floor under the anchor) keeps the item.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(4609, 3);
+        // (30, 10) is mid-air: the bottom anchor finds no solid support.
+        assert!(!use_tile_item(&mut app2, 30, 10), "mid-air refuses");
+        assert_eq!(app2.inventory[app2.selected].count, 3, "the item is kept");
     }
 }

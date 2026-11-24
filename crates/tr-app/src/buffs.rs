@@ -190,6 +190,18 @@ impl BuffSlots {
     /// branch (`:5269-5275`, msg 55 + `Main.pvpBuff`) is unreachable in the
     /// single-player port — deviation recorded in ANALYSIS "Buff slots (M2-BUFF-1)".
     pub fn add_buff(&mut self, buff_type: i32, time: i32) {
+        self.add_buff_inner(buff_type, time, false);
+    }
+
+    /// `Player.AddBuff(type, time, fromNetPvP: true)` (`Player.cs:5263`,
+    /// `:5287-5290`): the `55 AddPlayerBuffPvP` reader's call
+    /// (`MessageBuffer.cs:2607`) — the wire time is already final, so
+    /// `AddBuff_DetermineBuffTimeToAdd` is skipped. W4-c27.
+    pub fn add_buff_from_net_pvp(&mut self, buff_type: i32, time: i32) {
+        self.add_buff_inner(buff_type, time, true);
+    }
+
+    fn add_buff_inner(&mut self, buff_type: i32, time: i32, from_net_pvp: bool) {
         if self.buff_immune[buff_type as usize] {
             return;
         }
@@ -200,7 +212,12 @@ impl BuffSlots {
                 }
             }
         }
-        let time = self.add_buff_determine_buff_time_to_add(buff_type, time);
+        // `:5287-5290` — `if (!fromNetPvP)` gates the time extension.
+        let time = if from_net_pvp {
+            time
+        } else {
+            self.add_buff_determine_buff_time_to_add(buff_type, time)
+        };
         if !self.add_buff_try_updating_existing_buff_time(buff_type, time) {
             self.add_buff_remove_old_pet_buffs_of_matching_type(buff_type);
             self.add_buff_remove_old_melee_buffs_of_matching_type(buff_type);
