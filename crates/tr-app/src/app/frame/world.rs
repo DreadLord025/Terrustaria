@@ -649,32 +649,27 @@ impl App {
     /// `WorldGen.isGeneratingOrLoadingWorld` gate is false in the frame
     /// loop (the port's worldgen completes before it starts).
     fn animate_tiles_phase(&mut self, dt: f32) {
-    self.phase("animate_tiles");
-    let wind = self.wind.speed_current;
-    let rng = self.rngs.global();
-    let step = &mut self.tile_anim_step;
-    let animator = &mut self.tile_anim;
-    // W4-g34: `AnimateTiles`' trailing `AnimateTiles_CritterCages()`
-    // (`Main.cs:19303`) — same 60 Hz tick, same `Main.rand` stream, gated
-    // on the `Main.critterCage` proximity flag the tile draw raised last
-    // frame (`TileDrawing.cs:474` clears it at the non-solid pass head).
-    let cage_anim = &mut self.cage_anim;
-    let critter_cage = self.critter_cage;
-    step.tick(dt, |_| {
-        animator.animate_tiles(wind, rng, false);
-        cage_anim.animate(critter_cage, rng);
-    // W4-f14: `Main.AnimateTiles`'s tail call
-    // `Main.AnimateTiles_CritterCages()` (`Main.cs:19303`) rides the SAME
-    // tick and the SAME `Main.rand` stream, after the tile-493 counter —
-    // the cage animator's `critter_cage` gate (set by the draw while a
-    // cage is in view, TileDrawing.cs:5672 etc.) returns before any draw
-    // when no cage is on screen, so the interleave stays bit-for-bit.
-    let cages = &mut self.cage_anim;
-    step.tick(dt, |_| {
-        animator.animate_tiles(wind, rng, false);
-        cages.animate_critter_cages(rng);
-    });
-    step.cap_backlog();
+        self.phase("animate_tiles");
+        let wind = self.wind.speed_current;
+        let rng = self.rngs.global();
+        let step = &mut self.tile_anim_step;
+        let animator = &mut self.tile_anim;
+        // W4-g34: `AnimateTiles`' trailing `AnimateTiles_CritterCages()`
+        // (`Main.cs:19303`) — same 60 Hz tick, same `Main.rand` stream, gated
+        // on the `Main.critterCage` proximity flag the tile draw raised last
+        // frame (`TileDrawing.cs:474` clears it at the non-solid pass head).
+        let cage_anim = &mut self.cage_anim;
+        let critter_cage = self.critter_cage;
+        // W4-f14: the table-driven cage animator (`Main.*CageFrame`) rides the
+        // SAME tail call and stream; the draw clears/sets `critter_cage` and
+        // reads the tables (`TileDrawing.cs:474`/`:5672-5907`).
+        let cages = &mut self.cages;
+        step.tick(dt, |_| {
+            animator.animate_tiles(wind, rng, false);
+            cage_anim.animate(critter_cage, rng);
+            cages.animate_critter_cages(rng);
+        });
+        step.cap_backlog();
     }
 
     /// S1-B-3: the post-gate weather cluster (`Main.cs:17222`'s

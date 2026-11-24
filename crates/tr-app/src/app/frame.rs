@@ -2475,7 +2475,7 @@ mod tests {
         assert!(gated.contains("} else {"), "a cage-free view keeps 0");
         assert_eq!(key_block.matches("anim_key()").count(), 1);
         // The draw call feeds the animator mutably (the flag rides it).
-        assert!(draw.contains("&mut self.cage_anim,"));
+        assert!(draw.contains("&mut self.cages,"));
     }
 
     // ---- W4-g86 research/244 phase 1: the cursorItemIcon clears ------------

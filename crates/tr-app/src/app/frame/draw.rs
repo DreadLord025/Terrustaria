@@ -2361,7 +2361,7 @@ impl App {
                             // clears/sets `Main.critterCage` and reads the
                             // `Main.*CageFrame` tables (TileDrawing.cs:474/
                             // :5672-5907).
-                            &mut self.cage_anim,
+                            &mut self.cages,
                             // W4-f6 wiring: the lava-bubble private stream +
                             // the pool/ctx (`LiquidRenderer._random`, :132).
                             &mut self.liquid_rand,

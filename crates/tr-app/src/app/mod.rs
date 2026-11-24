@@ -1553,7 +1553,7 @@ pub(crate) struct App {
     /// (TileDrawing.cs:474/:5672) and reads the tables through
     /// `drawdata_furniture::cage_draw_data`; the G6
     /// `WorldFrameKey::cage_anim` covers the state.
-    pub(crate) cage_anim: tr_core::drawdata_cages::CritterCageAnimator,
+    pub(crate) cages: tr_core::drawdata_cages::CritterCageAnimator,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -6816,7 +6816,7 @@ impl App {
             // W4-f14: the cage animator is PROCESS state — constructed
             // once per App with the world-seed warm-up stand-in (the C#
             // seeds Main.rand from DateTime.Now.Ticks, Main.cs:6463).
-            cage_anim: tr_core::drawdata_cages::CritterCageAnimator::new(world_seed as i32),
+            cages: tr_core::drawdata_cages::CritterCageAnimator::new(world_seed as i32),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
