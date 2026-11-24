@@ -875,6 +875,11 @@ pub const FLAMELASH: u16 = 34;
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
 pub const DEMON_SICKLE: u16 = 44;
+/// `ProjectileID.HarpyFeather` (38) — the Harpy's hostile feather
+/// (`NPC.cs:23428`, W4-d23): 14x14, aiStyle 1, hostile, penetrate −1,
+/// tileCollide true (`Projectile.cs:1207-1216` — the `aiStyle = 0` write
+/// at `:1211` is overwritten by the `aiStyle = 1` at `:1214`).
+pub const HARPY_FEATHER: u16 = 38;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -2691,6 +2696,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
             // `timeLeft = 300` (`NPC.cs:23450`).
             DEMON_SICKLE => (48.0, 48.0, 18, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
+            // `:1207-1216` — the harpy feather (the Harpy's hostile shot,
+            // `NPC.cs:23428`, W4-d23): 14x14, aiStyle 1 (the `:1214` write
+            // over `:1211`'s 0), `penetrate = -1`, the stock 3600 life and
+            // `tileCollide = true`; the spawn site overrides `timeLeft =
+            // 300` (`NPC.cs:23429`). 38 IS on the `flag3 = false` list
+            // (`:55953`) — the flight counter rests, no gravity: the
+            // feather flies dead straight (`ai_style1_rider`'s resting
+            // flight; the AI_STYLE_1_RIDERS gate carries the kind).
+            HARPY_FEATHER => (14.0, 14.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
             // `penetrate = 5`, `scale = 0.9f`.
             DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),

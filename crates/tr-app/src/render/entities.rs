@@ -731,6 +731,23 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::CursedHammer
             | NpcKind::EnchantedSword
     )
+            // W4-d23 merge-side fold: the 13 rotation writers the inline
+            // whitelist carried (man-eater atan2 aim :22734-22750, SolarFlare
+            // homing :21499, the flyers' FindFrame velocity tilt :74858) —
+            // the stale inline whitelist dropped for the ONE gate.
+            | NpcKind::AngryTrapper
+            | NpcKind::FlyingSnake
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFlyingFox
+            | NpcKind::GiantFungiBulb
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::ManEater
+            | NpcKind::RedDevil
+            | NpcKind::Snatcher
+            | NpcKind::SolarFlare
+            | NpcKind::SporeBat
+            | NpcKind::VampireBat
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -820,6 +837,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(GOLD_CRITTER_SHEETS)
             .chain(WATERFOWL_SHEETS)
             .chain(CRITTER_TAIL_SHEETS)
+            .chain(MANEATER_SHEETS)
+            .chain(SPIT_FLARE_SHEETS)
+            .chain(FLYER14_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1135,6 +1155,8 @@ fn npc_add_height(n: &Npc) -> f32 {
         // ids 564/565 are the mage, 551 the Betsy; the C# range is the
         // mage trio's ORIGINAL ids 562-564, see `NPCID`).
         DD2DarkMage | DD2DarkMageT3 => 18.0,
+        // `:22069-22072` 48 (the Harpy — W4-d23).
+        Harpy => 32.0,
         // `:22075` 49/51 (the cave/jungle bats — not the hellbat's 60).
         CaveBat | JungleBat => 4.0,
         // `:22079` 60 (the Hellbat).
@@ -1155,6 +1177,15 @@ fn npc_add_height(n: &Npc) -> f32 {
         // (69→4) / SpikeBall (70→-4) arms dropped with the g8-owned dups
         // (367 §1).
 
+        // `:22081-22084` 62/66/156 (the Demon, the Voodoo Demon, the Red
+        // Devil — W4-d23 landed the 62/156 kinds; the old comment's
+        // charm/Wandering-Eye ids were stale).
+        Demon | VoodooDemon | RedDevil => 14.0,
+        // `:22109-22112` 150/151/158 (the Ice/Lava/Vampire bats — W4-d23;
+        // the old comment's fish ids were stale).
+        IceBat | Lavabat | VampireBat => 10.0,
+        // `:22113-22116` 152 (the Giant Flying Fox — W4-d23).
+        GiantFlyingFox => 6.0,
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
         BoundGoblin | GoblinTinkerer | DD2JavelinT3 => 4.0,
@@ -1167,9 +1198,9 @@ fn npc_add_height(n: &Npc) -> f32 {
         WallOfFlesh => -2.0,
         // `:22107` 83/84 (the Skeletron's hands + the other hand id).
         SkeletronHand => 20.0,
-        // `:22111` 150/151/158 (the Blue/Goldfish variants — the port's
-        // single 55 Goldfish keeps the vanilla 65 row), `:22125` 87-92 (the
-        // Goldfish school) 56.
+        // `:22129-22132` 87-92 (the C#'s wyvern-band ids — the port's
+        // Goldfish/Piranha keep their pre-existing 56 row, the BUG-07
+        // sweep's claim; the bat trio's real 150/151/158 row is above).
         Goldfish | Piranha => 56.0,
         // `:22133-22136` 134-136 (the Destroyer's segments).
         TheDestroyer | TheDestroyerBody | TheDestroyerTail => 30.0,
@@ -1982,6 +2013,50 @@ pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608,
 /// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
 pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
     &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
+
+/// The man-eater family's sheets (W4-d23, aiStyle 13): Man Eater (43),
+/// Snatcher (56), Clinger (101), Angry Trapper (175), Fungi Bulb (259)
+/// and Giant Fungi Bulb (260) each draw their own `NPC_<id>` art. Keyed
+/// by the vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const MANEATER_SHEETS: &[u32] = &[
+    43,  // the Man Eater
+    56,  // the Snatcher
+    101, // the Clinger
+    175, // the Angry Trapper
+    259, // the Fungi Bulb
+    260, // the Giant Fungi Bulb
+];
+
+/// The aiStyle-9 spit/flare family's sheets (W4-d23): Vile Spit (112),
+/// Vile Spit EoW (666) and Solar Flare (516) each draw their own
+/// `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const SPIT_FLARE_SHEETS: &[u32] = &[
+    112, // the Vile Spit
+    666, // the Vile Spit (Eater of Worlds)
+    516, // the Solar Flare
+];
+
+/// The aiStyle-14 flyer family's sheets (W4-d23): the thirteen wired
+/// kinds + the Vampire transform target each draw their own `NPC_<id>`
+/// art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const FLYER14_SHEETS: &[u32] = &[
+    48,  // the Harpy
+    62,  // the Demon
+    93,  // the Giant Bat
+    121, // the Slimer
+    137, // the Illuminant Bat
+    150, // the Ice Bat
+    151, // the Lava Bat
+    152, // the Giant Flying Fox
+    156, // the Red Devil
+    158, // the Vampire Bat
+    159, // the Vampire (the Transform target, aiStyle 3)
+    226, // the Flying Snake
+    634, // the Spore Bat
+    660, // the Queen Slime minion
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4583,6 +4658,56 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // The man-eater family (W4-d23): each kind draws its own
+            // `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows
+            // (43/56/175 three, 101 five, 259 four, 260 two —
+            // `Main.cs:67082`) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin arm's shape. The
+            // frame machines rest the bulbs at row 0 (no FindFrame case);
+            // the chomp/Clinger strips animate. All six rotate (the
+            // aiStyle-13 aim writes, the whitelist below).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // The aiStyle-9 spit/flare family (W4-d23): each draws its own
+            // `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows (112/666
+            // one, 516 four — `Main.cs:67082`) with the generic centred
+            // anchor. The spits rest at row 0; the flare's strip animates.
+            // The 516 AI writes `rotation` every tick (the whitelist below).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // The aiStyle-14 flyer family (W4-d23): each kind draws its
+            // own `NPC_<id>` sheet at `Main.npcFrameCount[type]` rows
+            // (48 six, 62/156 five, 93/121/137/150/151/152/158/226/660
+            // four, 634 five, 159 fifteen — `Main.cs:67082`) with the
+            // generic centred anchor — the pumpkin arm's shape. The
+            // FindFrame machines animate the flap/counter strips; all
+            // fourteen tilt (the vx×0.1 writes, the whitelist below).
+            NpcKind::Harpy
+            | NpcKind::Demon
+            | NpcKind::GiantBat
+            | NpcKind::Slimer
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::RedDevil
+            | NpcKind::VampireBat
+            | NpcKind::Vampire
+            | NpcKind::FlyingSnake
+            | NpcKind::SporeBat
+            | NpcKind::QueenSlimeMinionPurple => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;

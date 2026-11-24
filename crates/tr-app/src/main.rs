@@ -147,6 +147,10 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-d23 (aiStyle-13): UNWIRED man-eater family (43/56/101/175/259/260,
+// NPC.cs:22615-22847) - the six kinds + the axis claim are the wiring
+// step (the npc_ai_style17/20 precedent).
+mod npc_ai_style13;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style47;

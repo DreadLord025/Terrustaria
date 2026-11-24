@@ -3735,6 +3735,108 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Maggot",
+    },BestiaryEntryDef {
+        credit_id: "AngryTrapper",
+        net_id: 175,
+        kind: NpcKind::AngryTrapper,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Trapper",
+    },
+// The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
+    // entries — the populator registers all three by id (112/666 the
+    // Corruption spit, 516 the Solar Pillar flare; the normal-enemy kill
+    // ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "VileSpit",
+        net_id: 112,
+        kind: NpcKind::VileSpit,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "VileSpitEaterOfWorlds",
+        net_id: 666,
+        kind: NpcKind::VileSpitEoW,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "SolarFlare",
+        net_id: 516,
+        kind: NpcKind::SolarFlare,
+        variant: None,
+        quick_unlock: false,
+        name: "Solar Flare",
+    },BestiaryEntryDef {
+        credit_id: "IceBat",
+        net_id: 150,
+        kind: NpcKind::IceBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "LavaBat",
+        net_id: 151,
+        kind: NpcKind::Lavabat,
+        variant: None,
+        quick_unlock: false,
+        name: "Lava Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingFox",
+        net_id: 152,
+        kind: NpcKind::GiantFlyingFox,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Flying Fox",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDevil",
+        net_id: 156,
+        kind: NpcKind::RedDevil,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Devil",
+    },
+    BestiaryEntryDef {
+        credit_id: "VampireBat",
+        net_id: 158,
+        kind: NpcKind::VampireBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire Bat",
+    },
+    // The VampireBat's Transform(159) target (`NPC.cs:23353`) — aiStyle 3
+    // (the fighter walker), NOT a style-14 member; it lands here because
+    // the transform pair is one unit (the bat flees the surface by day,
+    // the vampire walks it by night — `:58843-58851` transforms back).
+    BestiaryEntryDef {
+        credit_id: "Vampire",
+        net_id: 159,
+        kind: NpcKind::Vampire,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire",
+    },
+BestiaryEntryDef {
+        credit_id: "SporeBat",
+        net_id: 634,
+        kind: NpcKind::SporeBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeMinionPurple",
+        net_id: 660,
+        kind: NpcKind::QueenSlimeMinionPurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Queen Slime Minion",
     },
 ];
 
