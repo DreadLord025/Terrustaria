@@ -452,6 +452,7 @@ impl App {
                             pos,
                             w,
                             h,
+                            n.ai[0],
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
@@ -512,7 +513,45 @@ impl App {
                                     self.entity_lights.add(x, y, rgb);
                                 }
                             }
+                            // W4-c11: the Tesla Turret's blue light — the
+                            // ai[1]/60-scaled fade (`NPC.cs:35167`) then
+                            // the constant (0.1, 0.5, 0.7) (`:35175`), at
+                            // the truncated centre tile 10 px up. RNG-free.
+                            NpcKind::MartianTurret => {
+                                let (x, y, rgb) = crate::npc_ai_style73::turret_light(
+                                    n.ai[1],
+                                    (pos.x + w / 2.0, pos.y + h / 2.0),
+                                );
+                                self.entity_lights.add(x, y, rgb);
+                            }
                             _ => {}
+                        }
+                        // W4-d31 style83 wiring — the cultist tablet's
+                        // constant light (`NPC.cs:36921-36924`:
+                        // `AddLight(Center, 0.8, 0.75, 0.55)`). Keyed on the
+                        // vanilla `cs_id` (437), NOT a kind variant — the
+                        // 437 kind rides the roster wave (W4-d40 `7fec14aa`),
+                        // so this arm is dormant until it lands (the
+                        // kind-agnostic gate keeps the wiring compilable
+                        // pre-merge, the style83 axis-arm precedent). The
+                        // `Lighting.AddLight(Vector2, ...)` overload
+                        // truncates the quotient per axis (`Lighting.cs:
+                        // 140-143` — `(int)(v/16f)`, the `XAnchor::Center`
+                        // form). RNG-free; fed only while the tablet lives
+                        // (the `hp <= 0` gate above — the C#'s early-return
+                        // paths skip the tail too).
+                        if n.kind.cs_id() == 437 {
+                            let x = crate::entity_lights::tile_x(
+                                pos,
+                                w,
+                                crate::entity_lights::XAnchor::Center,
+                            );
+                            let y = crate::entity_lights::tile_y(
+                                pos,
+                                h,
+                                crate::entity_lights::XAnchor::Center,
+                            );
+                            self.entity_lights.add(x, y, [0.8, 0.75, 0.55]);
                         }
                     }
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
@@ -587,6 +626,16 @@ impl App {
                             p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
                         ) {
                             self.entity_lights.add(x, y, rgb);
+                        }
+                        // W4-g5 — the 1092 book's per-tick `Lighting.AddLight
+                        // (base.Center, 0.3f, 0.25f, 0.1f)` (`Projectile.cs:
+                        // 25394`): a constant AI-head light, NOT the
+                        // SetDefaults `light` amount (the 1092 row carries
+                        // none). The Centre anchor truncates per axis.
+                        if p.kind == crate::projectile::LIBRARIAN_BOOK {
+                            let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+                            let cy = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+                            self.entity_lights.add(cx, cy, [0.3, 0.25, 0.1]);
                         }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):

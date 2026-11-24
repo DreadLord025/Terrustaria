@@ -628,8 +628,31 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Desert Djinn",
     },
+    // W4-g5 — the two unclaimed aiStyle-8 casters (`BestiaryEntry.Enemy`,
+    // the automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
+    // the display names ride `Lang.GetNPCName`, en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "RuneWizard",
+        net_id: 172,
+        kind: NpcKind::RuneWizard,
+        variant: None,
+        quick_unlock: false,
+        name: "Rune Wizard",
+    },
+    BestiaryEntryDef {
+        credit_id: "LibrarianSkeleton",
+        net_id: 693,
+        kind: NpcKind::LibrarianSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Librarian Skeleton",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
-    // clone 665 (the port folds it — identical stats and name).
+    // clone 665 (R4 FINAL, research/322 — stat-identical, one aiStyle-9
+    // arm, one {31} immunity, one name; both net ids are Hide=true
+    // exclusions in C# (`NPCID.cs:1443-1456`) — the port's entry is the
+    // pre-existing base row, kept; the 665 banner split (Tim's 177) is
+    // unreachable, no credit drains for either).
     BestiaryEntryDef {
         credit_id: "ChaosBall",
         net_id: 30,
@@ -2703,6 +2726,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef { credit_id: "HellArmoredBonesMace", net_id: 279, kind: NpcKind::HellArmoredBonesMace, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     BestiaryEntryDef { credit_id: "HellArmoredBonesSword", net_id: 280, kind: NpcKind::HellArmoredBonesSword, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+        kind: NpcKind::BlackDragonfly,
+        kind: NpcKind::BlueDragonfly,
+        kind: NpcKind::GreenDragonfly,
+        kind: NpcKind::OrangeDragonfly,
+        kind: NpcKind::RedDragonfly,
+        kind: NpcKind::YellowDragonfly,
+        kind: NpcKind::GoldDragonfly,
+        kind: NpcKind::FairyCritterPink,
+        kind: NpcKind::FairyCritterGreen,
+        kind: NpcKind::FairyCritterBlue,
+        kind: NpcKind::WindyBalloon,
     BestiaryEntryDef {
         credit_id: "CultistTablet",
         net_id: 437,
@@ -2728,6 +2762,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Lunatic Cultist",
     },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+        name: "Lavafly",
+    },
     // The snail wall-crawler family + its shimmer target (W4-c9): the
     // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
     // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
@@ -2784,6 +2820,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Gold Mouse",
+        name: "Shimmerfly",
     },
     // W4-c8 — the crawling-critter family's own entries (the populator
     // registers them all; `NPCID.Search.GetName` credits, the en-US
@@ -3153,6 +3190,20 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Etherian Lightning Bug",
+        name: "Maggot",
+    },
+    // The gold critters (W4-c9): the populator registers each
+    // (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set). The names ride the lang table
+    // (`lang_tables.rs`'s 442/446/447 rows).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
     },
     BestiaryEntryDef {
         credit_id: "WalkingAntlion",
@@ -3735,6 +3786,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Maggot",
+        name: "Gold Frog",
     },
 ];
 
@@ -4308,6 +4360,15 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::BloodEelBody => NpcKind::BloodEelHead,
         NpcKind::BloodEelTail => NpcKind::BloodEelHead,
+        // The dragonflies (W4-d33): the five Hide=true colours fold onto
+        // the visible RedDragonfly 599 card — the kill credit
+        // `ContentSamples.cs:1043-1047` (`NpcBestiaryCreditIdsByNpcNetIds`
+        // [595/596/597/598/600] = [599]). The Gold 601 keeps its own card.
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
         // W4-c8 — the TruffleWormDigger rides the TruffleWorm's row — the
         // vanilla's bestiary draw modifiers hide it (`NPCID.cs:3714-3718`'s
         // `Hide = true`), so it folds onto the visible worm (the Force
@@ -4770,5 +4831,95 @@ mod tests {
         assert!(crate::ui::bestiary_draw_offsets::get(328).unwrap().hide);
         assert!(ENTRIES.iter().any(|e| e.net_id == 328),
             "GAP-3: the port carries the Hide kind's entry (vanilla has none)");
+    }
+}
+
+/// W4-c7 SEAL (research/350) — the critter-family cross-lane receipts,
+/// pinned against the CURRENT tip's tables. The c8 generic gate +
+/// GOLD_PEER_TABLE land with c8's merge; these witnesses pin the c7-side
+/// facts that hold TODAY (the auto-cover inputs + the gold absence).
+/// WRITTEN, NOT RUN (code-only mode — no compiler invoked).
+#[cfg(test)]
+mod w4_c7_seal_tests {
+    use super::*;
+
+    /// The c8 generalized `counts_as_a_critter` predicate (c8 tip
+    /// `7c2de9c06`, bestiary.rs:2280-2285) — the C# property
+    /// `NPC.CountsAsACritter` (`NPC.cs:6887-6897`: lifeMax <= 5 &&
+    /// damage == 0 && type != 594 && type != 686). Mirrored here so the
+    /// receipt compiles before c8's merge; the merge keeps c8's fn.
+    fn counts_as_a_critter(kind: NpcKind) -> bool {
+        kind.max_hp() <= 5
+            && kind.contact_damage() == 0
+            && kind.cs_id() != 594
+            && kind.cs_id() != 686
+    }
+
+    /// research/350 §2 — the four c7 kinds auto-cover the sight provider
+    /// with ZERO provider wiring: hp 5 (`npc/data.rs:3666`) / dmg 0
+    /// (`:4034`) / cs_id ∉ {594, 686}. The 549 DD2LanePortal passes the
+    /// RAW gate (hp 5 `:3470`, dmg 0 `:3835`) but is Hide
+    /// (`NPCID.cs:4910-4915`) — the populator's `GetExclusions`
+    /// (`BestiaryDatabaseNPCsPopulator.cs:870-886`) never registers it,
+    /// so c8's fold row keeps the kill provider (the counter-case).
+    #[test]
+    fn w4_c7_seal_the_sight_gate_auto_covers_the_firefly_four() {
+        for (kind, net) in [
+            (NpcKind::Firefly, 355i32),
+            (NpcKind::LightningBug, 358),
+            (NpcKind::Lavafly, 654),
+            (NpcKind::Shimmerfly, 677),
+        ] {
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax (NPC.cs rows)");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert!(counts_as_a_critter(kind), "{kind:?} auto-covers");
+            // The bestiary entry rides the vanilla net id (the sight
+            // provider keys on the credit id, not the protocol id).
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} entry net id");
+            assert_eq!(e.kind, kind);
+        }
+        // The 549 counter-case: raw gate TRUE, Hide exclusion keeps it
+        // off the critter provider (c8's fold row, research/262 §1).
+        assert!(counts_as_a_critter(NpcKind::DD2LanePortal));
+        assert_eq!(NpcKind::DD2LanePortal.cs_id(), 549);
+    }
+
+    /// research/350 §4 — c7's gold kinds: NONE. The 14-member
+    /// `NPCID.Sets.GoldCrittersCollection` (`NPCID.cs:10121-10125`,
+    /// verbatim) contains no firefly id; the 13-row provider dictionary
+    /// (`BestiaryDatabaseNPCsPopulator.cs:703-716`, verbatim pairs) has
+    /// no firefly key — 356 appears ONLY as the 444 GoldButterfly's
+    /// peer (the row activates when the f18/d39 keep-one lands the
+    /// canonical Butterfly, research/350 §3).
+    #[test]
+    fn w4_c7_seal_the_gold_table_has_no_firefly_row() {
+        const GOLD_COLLECTION: [u16; 14] = [
+            443, 442, 592, 593, 444, 601, 445, 446, 605, 447, 627, 613, 448, 539,
+        ];
+        // (gold id, peer ids) — the populator's 13 registrations; 593
+        // is collection-only (its own entry rides the plain provider).
+        const GOLD_PEERS: [(u16, &[u16]); 13] = [
+            (443, &[46]),
+            (442, &[74]),
+            (592, &[55]),
+            (444, &[356]),
+            (601, &[599]),
+            (445, &[361]),
+            (446, &[377]),
+            (605, &[604]),
+            (447, &[300]),
+            (627, &[626]),
+            (613, &[612]),
+            (448, &[357]),
+            (539, &[299, 538]),
+        ];
+        for id in [355u16, 358, 654, 677] {
+            assert!(!GOLD_COLLECTION.contains(&id), "{id} is not a gold critter");
+            assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == id), "{id} has no gold row");
+        }
+        assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == 593), "593 collection-only");
+        let butterfly = GOLD_PEERS.iter().find(|(g, _)| *g == 444).unwrap();
+        assert_eq!(butterfly.1, &[356], "the GoldButterfly peer contract");
     }
 }

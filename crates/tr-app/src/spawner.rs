@@ -1245,6 +1245,9 @@ fn spawn_npc_at(
         }
         // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
         // then the Eskimo default (161; all the port's zombie kind).
+        // W4-d25 keep-one (f5f486c7c): the 155 roll's Wolf spawn DROPPED
+        // — d36 owns the canonical Wolf@772 (a11f61850); the zombie
+        // stand-in stands until that lane lands.
         if is_ices_snow(tile_kind) || tile_kind == 162 {
             if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(4) == 0 {
                 return Npc::spawn_zombie(ctx.world, x);
@@ -5002,4 +5005,5 @@ mod tests {
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
     }
+
 }

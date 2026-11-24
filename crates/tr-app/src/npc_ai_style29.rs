@@ -74,8 +74,9 @@
 //! * `this.active = false` (`:26217`) has no port field — the port's
 //!   death convention `hp = 0` stands in (same as the live arm).
 //! * `Lighting.AddLight(centre/16, 0.3, 0.2, 0.1)` (`:26403`) is the
-//!   entity-light follow-up (S1-E-5's NPC family) — skipped, documented
-//!   in ANALYSIS.
+//!   entity-light follow-up (S1-E-5's NPC family) — landed S1-D-3 W-1d
+//!   on the draw-side feed (`npc_lights::npc_light`'s Hungry row, the
+//!   CenterTruncated anchor).
 //! * The expert arms (`:26229-26236`/`:26242-26249` the accel bonuses,
 //!   `:26255-26279` the defense restore + the whoAmI-mod leash ladder,
 //!   `:26338-26367` the hp-scaled speed cap + the wall-side catch-up
@@ -338,7 +339,8 @@ pub fn style29_step(npc: &mut Npc, world: &World, ctx: &Style29Context, players:
         npc.rotation = (num392 as f64).atan2(num391 as f64) as f32 + 3.14;
     }
     // `:26403` — Lighting.AddLight(centre/16, 0.3, 0.2, 0.1): the
-    // entity-light follow-up (S1-E-5), skipped here.
+    // entity-light feed (S1-D-3 W-1d, `npc_lights::npc_light`'s Hungry
+    // row — the draw-side collection, RNG-free).
     // No `position += velocity` here: the Hungry is noTileCollide
     // (`NPC.cs:10390`), so `UpdateNPC` integrates after `AI()`.
 }

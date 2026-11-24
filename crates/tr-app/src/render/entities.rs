@@ -814,6 +814,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(STYLE10_SHEETS)
             .chain(STYLE44_SHEETS)
             .chain(STYLE16_SHEETS)
+            .chain(G5_CASTER_SHEETS)
+            .chain(DRAGONFLY_SHEETS)
+            .chain(FAIRY_BALLOON_SHEETS)
             .chain(FIREFLY_SHEETS)
             .chain(CRAWLER_SHEETS)
             .chain(SNAIL_SHEETS)
@@ -932,6 +935,20 @@ fn npc_frame_uv(tex: &BgTex, frame_h: f32, frame: u32) -> [f32; 4] {
         tex.uv[1] + dv * r,
         tex.uv[2],
         tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// The windy balloon's 8-column colour strip (`Main.cs:23861`'s
+/// `value22.Frame(8, 1, frame.Y)` — `Utils.Frame`: INTEGER cell width,
+/// the column index the FindFrame case's raw `ai[2]` write gives).
+fn balloon_frame_uv(tex: &BgTex, col: u32) -> [f32; 4] {
+    let du = (tex.uv[2] - tex.uv[0]) / 8.0;
+    let c = col as f32;
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1],
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[3],
     ]
 }
 
@@ -1585,6 +1602,25 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
         NpcKind::BartenderUnconscious => 579,
+        // W4-d33 — the dragonflies' bestiary credits fold onto the Red
+        // 599 card (`entry_for_npc`), but their DRAW sheets are their own
+        // `TextureAssets.Npc[type]` (595-598) — the fishron-hazard /
+        // wyvern-segment precedent.
+        NpcKind::BlackDragonfly => 595,
+        NpcKind::BlueDragonfly => 596,
+        NpcKind::GreenDragonfly => 597,
+        NpcKind::OrangeDragonfly => 598,
+        NpcKind::YellowDragonfly => 600,
+        // W4-d33 wiring — the fairy critters + the windy balloon draw
+        // their own `TextureAssets.Npc[type]` sheets (583/584/585/594);
+        // the net ids already ride the vanilla types, but the explicit
+        // rows keep the draw-sheet census complete (the dragonfly
+        // precedent). d42 batch-2/3's rows, constants-copy (keep-one
+        // d37c-E3).
+        NpcKind::FairyCritterPink => 583,
+        NpcKind::FairyCritterGreen => 584,
+        NpcKind::FairyCritterBlue => 585,
+        NpcKind::WindyBalloon => 594,
         // W4-c8 — the TruffleWormDigger's bestiary entry folds onto the
         // TruffleWorm (Hide=true), but its DRAW sheet is its own NPC_375
         // (the fishron-hazard precedent). The eight crawlers ride cs_id.
@@ -1661,6 +1697,11 @@ pub(crate) const HOLIDAY_ZOMBIE_SHEETS: &[u32] = &[319, 320, 321, 331, 332];
 /// its 9-row humanoid strip, 490 its 8-row flap strip
 /// (`Main.npcFrameCount`, `Main.cs:67132`).
 pub(crate) const BLOOD_MOON_SHEETS: &[u32] = &[489, 490];
+
+/// W4-g5 — the two unclaimed aiStyle-8 casters' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `BLOOD_MOON_SHEETS`.
+pub(crate) const G5_CASTER_SHEETS: &[u32] = &[172, 693];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
@@ -1922,6 +1963,20 @@ pub(crate) const STYLE16_SHEETS: &[u32] = &[
     615, // the Dolphin
 ];
 
+/// W4-d33 — the dragonfly sheets: one sheet per colour, exactly as the
+/// vanilla's `TextureAssets.Npc[type]` — the Black (595), Blue (596),
+/// Green (597), Orange (598), Red (599), Yellow (600) and Gold (601)
+/// Dragonflies each draw their own `NPC_<id>` art. Keyed by the vanilla
+/// net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const DRAGONFLY_SHEETS: &[u32] = &[595, 596, 597, 598, 599, 600, 601];
+
+/// W4-d33 wiring — the fairy critters' + the windy balloon's sheets: one
+/// sheet per kind, exactly as the vanilla's `TextureAssets.Npc[type]`
+/// (583/584/585 the 4-row fairy strips, 594 the balloon's 8-column
+/// colour strip — `Main.cs:23861`'s `Frame(8, 1, frame.Y)`). Keyed by the
+/// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+/// d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+pub(crate) const FAIRY_BALLOON_SHEETS: &[u32] = &[583, 584, 585, 594];
 /// W4-c7 — the firefly family's sheets (the aiStyle-64 wiring): one sheet
 /// per kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the
 /// Firefly (355), the Lightning Bug (358), the Lavafly (654) and the
@@ -2246,6 +2301,10 @@ fn uses_generic_anchor(kind: NpcKind) -> bool {
             | NpcKind::ChaosBall
             | NpcKind::BurningSphere
             | NpcKind::WaterSphere
+            // W4-d33 wiring — the windy balloon's dedicated arm
+            // (`Main.cs:23857-23878`) anchors at Top with origin
+            // (fw/2, 0), NOT the generic bottom anchor.
+            | NpcKind::WindyBalloon
     )
 }
 
@@ -4496,6 +4555,71 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d33 — the dragonflies draw their own sheets
+            // (`DRAGONFLY_SHEETS`) at `SetFrameSize`'s integer-division
+            // row height over `Main.npcFrameCount[type]` = 4
+            // (`Main.cs:67141-67142`). Scale stays 1 (the row writes no
+            // scale) and none rotates (the aiStyle-114 arm writes no
+            // rotation) — the generic centred anchor.
+            NpcKind::BlackDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(595), npc_rows(595), n, w, h)
+            }
+            NpcKind::BlueDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(596), npc_rows(596), n, w, h)
+            }
+            NpcKind::GreenDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(597), npc_rows(597), n, w, h)
+            }
+            NpcKind::OrangeDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(598), npc_rows(598), n, w, h)
+            }
+            NpcKind::RedDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(599), npc_rows(599), n, w, h)
+            }
+            NpcKind::YellowDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(600), npc_rows(600), n, w, h)
+            }
+            NpcKind::GoldDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(601), npc_rows(601), n, w, h)
+            }
+            // W4-d33 wiring — the fairy critters draw their own 4-row
+            // sheets (`FAIRY_BALLOON_SHEETS`) at `SetFrameSize`'s
+            // integer-division row height over
+            // `Main.npcFrameCount[583..585]` = 4 (`Main.cs:67142`); the
+            // aiStyle-112 FindFrame arm writes rotation = vx * 0.1
+            // (`NPC.cs:69838`) — the rotation whitelist below carries
+            // them. Scale stays 1 (the row writes none).
+            NpcKind::FairyCritterPink => {
+                pumpkin_moon_draw(assets.npc_sheet(583), npc_rows(583), n, w, h)
+            }
+            NpcKind::FairyCritterGreen => {
+                pumpkin_moon_draw(assets.npc_sheet(584), npc_rows(584), n, w, h)
+            }
+            NpcKind::FairyCritterBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(585), npc_rows(585), n, w, h)
+            }
+            // W4-d33 wiring — the windy balloon's DEDICATED draw arm
+            // (`Main.cs:23857-23878`): the NPC_594 sheet is an 8-COLUMN
+            // colour strip (`Frame(8, 1, frame.Y)` — the raw ai[2]
+            // colour 1..7 picks the column; `Frame(8)` the balloon-only
+            // first column). The anchor is `Top` with origin
+            // `(frame_w/2, 0)`, rotation = the balloon's vx*0.05, scale
+            // = the SLAVE's scale (1 while slave-less — the C#'s
+            // `scale4` default). The slave-tinted balloon double-draw
+            // (`nPC.GetAlpha/GetColor`, `:23874-23875`) + the
+            // DrawNPC_SlimeItem cargo overlay (`:23872`) are the
+            // documented visual seams — the plain balloon column draws
+            // (the port's tint rides the generic light path).
+            NpcKind::WindyBalloon => {
+                let tex = assets.npc_sheet(594);
+                // `Utils.Frame` (`Utils.cs`): INTEGER division — the
+                // 8-column strip's cell width loses the remainder.
+                let fw = tex.map_or(32.0, |t| (t.w as i32 / 8) as f32);
+                let fh = tex.map_or(46.0, |t| t.h);
+                // `position5 = Top - screenPos`, origin (fw/2, 0): the
+                // quad's top-left sits at (Top.X - fw/2, Top.Y).
+                (tex, fh, [fw, fh], [n.x + w * 0.5 - fw * 0.5, n.y])
+            }
             // W4-c7 — the firefly family draws its own sheet
             // (`FIREFLY_SHEETS`) at `SetFrameSize`'s integer-division row
             // height over `Main.npcFrameCount[type]` (355/358/654 four
@@ -4530,6 +4654,10 @@ pub(crate) fn draw_npcs(
             // W4-c9 — the snail family + its shimmer target draw their
             // own sheets (`SNAIL_SHEETS`) at `Main.npcFrameCount[type]`
             // rows (359/360/655 six, 677 four — `Main.cs:67121`/`:67125`)
+            // W4-c9 — the snail family draws its own sheets
+            // (`SNAIL_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (359/360/655 six — `Main.cs:67121`/`:67125`; the 677
+            // draw deduped to c7's firefly arm)
             // with the generic centred anchor. The 359 scale roll
             // (`Next(80,111) * 0.01f`) and the 677 scale latch
             // (`Next(75,111) * 0.01f`) ride `n.scale` — `scaled_anchor`
@@ -4583,6 +4711,18 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // W4-g5 — the two casters' own NPC_172/NPC_693 sheets (3-frame
+            // strips, `Main.npcFrameCount[172/693]` = 3), the generic
+            // centred anchor (the pumpkin arm's shape). The RuneWizard's
+            // alpha ramp rides the generic `n.alpha` fade below; the
+            // LibrarianSkeleton's Extra[289] book-circle overlay
+            // (`Main.cs:22825-22860`) is the render follow-up.
+            NpcKind::RuneWizard => {
+                pumpkin_moon_draw(assets.npc_sheet(172), npc_rows(172), n, w, h)
+            }
+            NpcKind::LibrarianSkeleton => {
+                pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -4698,6 +4838,11 @@ pub(crate) fn draw_npcs(
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
         } else if n.kind == NpcKind::MoonLordHead {
             flip_uv(moon_lord_head_uv(tex, n.frame()), flip_dir > 0)
+        } else if n.kind == NpcKind::WindyBalloon {
+            // `Main.cs:23861` — `Frame(8, 1, frame.Y)`: the raw ai[2]
+            // colour picks the COLUMN on the 8-wide single-row strip
+            // (the frame index the FindFrame case wrote).
+            flip_uv(balloon_frame_uv(tex, n.frame()), flip_dir > 0)
         } else {
             flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };

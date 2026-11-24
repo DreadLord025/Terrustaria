@@ -186,6 +186,12 @@ pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// shot (the AI_003 shooter block's `num170 = 82` default,
 /// `NPC.cs:59403`); the hostile twin of the flame arrow 2.
 pub const FLAMING_ARROW_HOSTILE: u16 = 82;
+/// `ProjectileID.DesertDjinnCurse` (596, `ProjectileID.cs`) — the Djinn's
+/// curse volley (`NPC.cs:21155`, W4-g5): 8×8, aiStyle 107, hostile,
+/// alpha 255, ignoreWater, timeLeft 180, tileCollide false
+/// (`Projectile.cs:6450-6460`). The aiStyle-107 flight + the Kill explosion
+/// land with the projectile parity phase.
+pub const DJINN_CURSE: u16 = 596;
 /// S1-P-i17 — the special-arrow family (`ProjectileID.cs:556-2566`; the
 /// ammo items' `shoot` values, `itemdata.rs`). The per-kind effects live in
 /// `special_arrows.rs` (the AI_001 arms, the StatusNPC debuffs, the Kill()
@@ -268,6 +274,10 @@ pub const EYE_FIRE: u16 = 101;
 /// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
 /// penetrate -1, extraUpdates 2).
 pub const FLAMES_TRAP: u16 = 188;
+/// `ProjectileID.MartianTurretBolt` (435) — the Martian Turret's bolt
+/// (`Projectile.cs:5056-5063`: 10x10, aiStyle 1, hostile, ignoreWater;
+/// the aiStyle-73 shot request, `npc_ai_style73::TurretBolt`).
+pub const MARTIAN_TURRET_BOLT: u16 = 435;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -1006,6 +1016,14 @@ pub const INFERNO_BLAST: u16 = 296;
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
 pub const FROST_BOLT: u16 = 359;
+/// `ProjectileID.RuneBlast` (129) — the Rune Wizard's shadow beam
+/// (W4-g5, `Projectile.cs:2180-2190`: 14x14, aiStyle 28, alpha 255,
+/// penetrate -1, hostile, tileCollide false).
+pub const RUNE_BLAST: u16 = 129;
+/// `ProjectileID.LibrarianSkeletonBook` (1092) — the Librarian Skeleton's
+/// book shot (W4-g5, `Projectile.cs:10186-10194`: 16x16, aiStyle 18,
+/// hostile, penetrate -1, timeLeft 420).
+pub const LIBRARIAN_BOOK: u16 = 1092;
 /// The fishing bobbers (S1-P-i35): the plain pole family 360-366
 /// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
 /// Hotline 381/382, the Blood rod 760 and the Scarab 775
@@ -1998,6 +2016,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5056-5063` — the Martian Turret's bolt (435):
+            // 10x10, aiStyle 1, hostile, ignoreWater (the overlay below);
+            // the stock penetrate 1 (`:774`), timeLeft 3600 (`:787`),
+            // tileCollide (`:775`) — the arm writes no override. The
+            // aiStyle-73 shot's carrier (W4-c11).
+            MARTIAN_TURRET_BOLT => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:5064-5071` — the Scrambler's bolt (436): 10x10,
             // aiStyle 1, hostile, ignoreWater. (`SCRAMBLER_SHOT` is the
             // same-id alias — S1-D-5 deleted its duplicate arm.) The
@@ -2858,6 +2893,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:4497-4507` — the frost staff's bolt: 14x14, aiStyle 28,
             // alpha 255, `penetrate = 2` (coldDamage — no slot field yet).
             FROST_BOLT => (14.0, 14.0, 28, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2180-2190` — the Rune Wizard's RuneBlast (129, W4-g5):
+            // 14x14, aiStyle 28, alpha 255, `penetrate = -1`, hostile,
+            // `tileCollide = false`. The stock 3600 life (the NPC's shoot
+            // overrides it to 300, `NPC.cs:21272`). The flight arm is
+            // `ai_frost_bolt` (the shared aiStyle-28 first-tick Item28 cue
+            // + the 129's 6-dust Next(4)/Next(5) block).
+            RUNE_BLAST => (14.0, 14.0, 28, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:10186-10194` — the Librarian Skeleton's book (1092, W4-g5):
+            // 16x16, aiStyle 18, hostile, `penetrate = -1`, `timeLeft =
+            // 420`. The stock `tileCollide = true` (`:775`) stands. The
+            // flight arm is `ai_librarian_book` (the 45-tick hover, the
+            // aim turn, the 9-speed home, the page-gore trail).
+            LIBRARIAN_BOOK => (16.0, 16.0, 18, -1, 420, 0, true, false, false, RESET_STATE),
             // `:6461-6470` + `ApplyGemStaffStats` (`:10683-10689`) — the
             // Amber Staff's bolt, the gem-bolt family's seventh kind.
             GEM_BOLT_AMBER => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),
@@ -4224,6 +4272,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 TIME_LEFT_DEFAULT,
                 0,
                 true,
+            // `Projectile.cs:6450-6460` — the Djinn's curse (596, W4-g5):
+            // 8x8, aiStyle 107, hostile, alpha 255, ignoreWater (the
+            // overlay below), timeLeft 180, tileCollide false; the stock
+            // penetrate 1 (`:774`). The flight arm is `ai_djinn_curse`
+            // (the shared 107 homing tail `:33653-33677` + the 596 dust
+            // ring's Next(3) early-RETURN quirk `:33617-33630`); the
+            // death explosion is `djinn_curse_kill` (`:72470-72502`).
+            DJINN_CURSE => (
+                8.0,
+                8.0,
+                107,
+                1,
+                180,
+                0,
+                false,
                 false,
                 false,
                 (false, -2, false, -1, 255, 1.0),
@@ -4502,6 +4565,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 1015-1017). The 145 row's dropped alpha/ignoreWater is the
             // pre-existing M3-ITEM-6 deviation (its row comment), unchanged.
             || matches!(kind, 146..=149 | 1015..=1017),
+            || kind == SHADOWFLAMES,
+            // W4-c11 — `Projectile.cs:5062`: the Martian Turret's bolt
+            // (435) sets `ignoreWater = true` (the aiStyle-73 shot's row).
+            || kind == MARTIAN_TURRET_BOLT,
+            // W4-g5 — `Projectile.cs:6457`: the Djinn's curse (596) sets
+            // `ignoreWater = true` (the `wet = false` spawn write
+            // `:10886-10889`).
+            || kind == DJINN_CURSE,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4846,6 +4917,8 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         102 => 2,
         206 => 5,
         254 => 5,
+        // W4-c11 — `Main.cs:8532`: the Martian Turret bolt's 4-frame sheet.
+        435 => 4,
         436 => 4,
         447 => 4,
         448 => 3,
@@ -5023,6 +5096,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-g5 — the 1092 book's 54-frame sheet (`Main.cs:8720`): the 6×9
+        // grid (`Main.cs:33197`'s `Frame(6, 9, frame/9, frame%9)`). The
+        // 129 RuneBlast keeps the stock 1 (no `projFrames` override).
+        LIBRARIAN_BOOK => 54,
         _ => 1,
     }
 }
@@ -5146,5 +5223,31 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-c11 witness — `Projectile.cs:5056-5063`: the Martian Turret's
+    /// bolt (435) is 10x10, aiStyle 1, hostile, `ignoreWater = true`, with
+    /// the stock penetrate 1 (`:774`), tileCollide (`:775`), timeLeft 3600
+    /// (`:787`) and extraUpdates 0 — the arm writes no override. The
+    /// aiStyle-73 shot (`npc_ai_style73::TurretBolt`) spawns through
+    /// `spawn_hostile`, which reads exactly this row.
+    #[test]
+    fn the_martian_turret_bolt_row_matches_the_csharp() {
+        let d = proj_data(MARTIAN_TURRET_BOLT).expect("the 435 row");
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":5058-5059");
+        assert_eq!(d.ai_style, 1, ":5060");
+        assert!(d.ignore_water, ":5062");
+        assert_eq!(d.penetrate, 1, ":774 stock");
+        assert!(d.tile_collide, ":775 stock");
+        assert_eq!(d.time_left, 3600, ":787 stock");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.arrow && !d.trap, "the arm sets neither");
+        assert_eq!(d.alpha, 0, ":779 stock");
+        assert_eq!(d.scale, 1.0, ":785 stock");
+        // `Main.projFrames[435] = 4` (`Main.cs:8532`) — the sheet slices 4.
+        assert_eq!(proj_frames(MARTIAN_TURRET_BOLT), 4);
+        // The Scrambler twin (436) shares the shape but is a distinct row
+        // (its ignoreWater stays the documented S1-D-5 derivation gap).
+        assert_ne!(proj_data(MARTIAN_TURRET_BOLT), proj_data(BRAIN_SCRAMBLER));
     }
 }

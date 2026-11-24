@@ -69,6 +69,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+mod npc_ai_style65;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
@@ -148,6 +149,60 @@ mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
 mod npc_ai_style75;
+// W4-d31 (research/25 row 83): the cultist-ritual family (the
+// CultistTablet 437 / CultistDevote 438, NPC.cs:36757-36925) - WIRED on
+// the style axis (the d10 activation contract: npc.rs's 83 arm + the
+// world_sim pooled branch + the ritual link/spawn/526-owner-re-pin
+// passes); the 437/438 kinds ride the roster wave (W4-d40 7fec14aa), so
+// the dispatch is dormant until they merge (see the module doc).
+mod npc_ai_style83;
+mod npc_ai_style86;
+// W4-d32 style 87: UNWIRED Big Mimic machine (NPC.cs:37471-37826) -
+// the 473-476 kinds + the axis arm wait on the roster wave (the
+// style86 precedent; see the module doc).
+mod npc_ai_style87;
+// W4-d32 style 88: UNWIRED Mothron machine (NPC.cs:37827-38351) -
+// the 477 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style88;
+// W4-d32 style 89: UNWIRED Mothron Egg machine (NPC.cs:38352-38393) -
+// the 478 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style89;
+// W4-d32 style 90: UNWIRED Mothron Spawn machine (NPC.cs:38394-38628) -
+// the 479 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style90;
+// W4-d32 style 91: UNWIRED Granite Flyer machine (NPC.cs:38629-38809) -
+// the 483 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style91;
+// W4-d32 style 92: UNWIRED Target Dummy machine (NPC.cs:38810-38857) -
+// the 488 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style92;
+// W4-d33 (research/25 rows 99-127): the MISSING aiStyle band's unwired
+// pure machines, one module per style (the npc_ai_style73 precedent).
+mod npc_ai_style99;
+mod npc_ai_style100;
+mod npc_ai_style101;
+mod npc_ai_style102;
+mod npc_ai_style103;
+mod npc_ai_style104;
+mod npc_ai_style111;
+mod npc_ai_style112;
+mod npc_ai_style113;
+mod npc_ai_style114;
+mod npc_ai_style115;
+mod npc_ai_style116;
+mod npc_ai_style117;
+mod npc_ai_style118;
+mod npc_ai_style119;
+mod npc_ai_style121;
+mod npc_ai_style122;
+mod npc_ai_style125;
+mod npc_ai_style126;
+mod npc_ai_style127;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
@@ -177,6 +232,9 @@ mod npc_transform_visuals;
 // dispatch claim is the wiring wave (the npc_ai_style39 precedent).
 mod npc_hit_effect_a;
 mod npc_ai_style21;
+mod npc_ai_style23;
+mod npc_ai_style25;
+mod npc_ai_style26;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;

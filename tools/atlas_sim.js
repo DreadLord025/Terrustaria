@@ -375,6 +375,8 @@ const GLOW_NAMES = constStringList(assetsSrc, 'GLOW_SHEET_NAMES');
 // The renamed-away rows had no file on main, so the loader skipped them and
 // the rename is pixel-neutral (L8B_REMOVED stays empty in the fallback).
 const { execSync } = require('child_process');
+   // batch-E: af957ee4 is the S1-L-8b-mount-data merge commit whose tree
+   // also carries the pinned static-sheet list (kept as the fallback below).
 const L8B_PINNED_ADDITIONS = [
   'Mount_Glow_DrillRing', 'Mount_Glow_DrillSeat', 'Mount_Glow_DrillDiode',
   'Glow_283', 'Glow_284', 'Glow_285', 'Glow_370',

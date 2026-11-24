@@ -4084,6 +4084,31 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The dragonflies (W4-d33): the noGravity flyers' net seed rides
+        // the hover ctor (the net state overwrites the position below;
+        // the aiStyle-114 machine takes over on the first tick).
+        crate::npc::NpcKind::BlackDragonfly
+        | crate::npc::NpcKind::BlueDragonfly
+        | crate::npc::NpcKind::GreenDragonfly
+        | crate::npc::NpcKind::OrangeDragonfly
+        | crate::npc::NpcKind::RedDragonfly
+        | crate::npc::NpcKind::YellowDragonfly
+        | crate::npc::NpcKind::GoldDragonfly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The fairy critters + the windy balloon (W4-d33 wiring): the
+        // noGravity flyers' net seed rides the hover ctor (the net state
+        // overwrites the position below; the aiStyle-112/113 machines
+        // take over on the first tick). d42 batch-2/3's seed arms,
+        // constants-copy (keep-one d37c-E3).
+        crate::npc::NpcKind::FairyCritterPink
+        | crate::npc::NpcKind::FairyCritterGreen
+        | crate::npc::NpcKind::FairyCritterBlue
+        | crate::npc::NpcKind::WindyBalloon => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         // W4-c7 — the firefly family (355/358/654/677): the noGravity
         // glow critters seed bare at the net position (the Plantera
         // minion arm's shape — the machine takes over on the first tick
@@ -4114,6 +4139,12 @@ fn npc_seed(
         | crate::npc::NpcKind::DuckWhite
         | crate::npc::NpcKind::DuckWhite2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // E8 merge: the c10 12-critter seed tail dropped (d40/c8's seeds above).
+        // W4-g5 — the two casters ride the hover ctor like the other
+        // casters (`spawn_hover`; aiStyle 8, the d38 precedent).
+        crate::npc::NpcKind::RuneWizard | crate::npc::NpcKind::LibrarianSkeleton => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

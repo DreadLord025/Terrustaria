@@ -15,12 +15,12 @@
 //! "Wiring engine (M7-WIRE-2)", ride that style). No dynamic
 //! `aiStyle` reassignment to 73 exists; no second NPC kind rides it.
 //!
-//! The port's roster has no `NpcKind::MartianTurret` (the saucer's
-//! `MartianSaucerTurret` 393 is a different kind on aiStyle 76), and
-//! `update_rng`'s aiStyle axis has no style-73 arm — the module lands
-//! UNWIRED (the ForceBubble `npc_ai_style72.rs` / BlazingWheel
-//! `npc_ai_style21.rs` precedent). The machine keys on the vanilla
-//! `npc_type` until the roster wave.
+//! WIRED by W4-c11: the roster carries `NpcKind::MartianTurret` (387,
+//! the wire id 214) and `update_rng`'s aiStyle axis claims style 73
+//! (`npc.rs::ai_073_martian_turret` — the session candidate, netMode 0,
+//! classic difficulty, the one-tick `just_hit` flag; the shot queues on
+//! `wants_hostile_shot` and the sim's drain spawns the 435 row). The
+//! machine still keys on the vanilla `npc_type` (the module's seam).
 //!
 //! ## The machine
 //!
@@ -65,18 +65,20 @@
 //! `the_shot_consumes_the_four_draws_in_order` replays them against a
 //! mirrored oracle stream.
 //!
-//! The materialize dust ring (`:35133-35166`) is a VISUAL: eight
+//! The materialize dust ring (`:35133-35166`) draws EIGHT
 //! `Dust.NewDust` calls per fading tick whose draws all live inside
-//! `Dust.NewDust` itself (`Dust.cs:170-175`/`:190` — the pool-gate
-//! `Next`, the position/velocity/frame/scale draws). The dust system
-//! is unported (S1-E-2/S1-E-3), so the ring is skipped wholesale — the
-//! `npc_lights.rs` / ForceBubble precedent: skipping an arm whole
-//! leaves the `Main.rand` stream untouched, because in the port there
-//! is no dust consumer drawing those values. [`turret_materialize_dust_plan`]
+//! `Dust.NewDust` itself (`Dust.cs:153-193` — the pool-gate rolls, the
+//! position/velocity/frame/scale draws). [`turret_materialize_dust_plan`]
 //! ports the ring's branch structure (the spin angle, the four
-//! offsets/scales, the alternating mirror) and counts only — no RNG
-//! parameter; the wiring wave must draw the `Dust.NewDust` internals
-//! in C# order when the dust pass lands.
+//! offsets/scales, the alternating mirror); [`turret_materialize_ring`]
+//! (the W4-e2 batch-6 STAGED emitter adopted verbatim by the W4-c11
+//! retire, keep-one - research/356 §3) draws the internals in C# order
+//! on the caller's `UpdateNPCs` stream through the live pool. The pure
+//! `style73_step` itself still takes the ring count-only (the plan seam);
+//! the adapter (`npc.rs::ai_073_martian_turret`) drains the plan into the
+//! ring AFTER the arm returns and BEFORE the gravity tail — on fade
+//! ticks the arm makes no other draws (the early `return` precedes the
+//! shot cycle), so the stream order is the C#'s own (research/356 §3).
 //!
 //! `TargetClosest` (`NPC.cs:77652-77781`, the `npc_target.rs` port),
 //! `AI_GlobalFiringDistanceCheck` and `Lighting.AddLight` draw nothing.
@@ -99,12 +101,14 @@
 //!
 //! See docs/ANALYSIS.md "The Martian Turret (S1-D-3 aiStyle-73,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-c11 (the axis' 73 arm + the gravity/collision tail + the activated ring); the defaults row stays as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_ai_caster::global_firing_distance_check;
 use crate::npc_ai_style37::{attack_damage_for_projectiles, rotated_by};
 use crate::npc_target::{target_closest, TargetCandidate};
+use glam::Vec2;
+use tr_core::particles::{Color, DustPool, DustRng, SpawnCtx};
 use tr_core::unified_random::UnifiedRandom;
 use tr_core::World;
 
@@ -163,9 +167,10 @@ pub struct Style73Outcome {
     /// `EntityLights` feed. `None` on non-387 ticks (no other kind
     /// rides the style).
     pub light: Option<(i32, i32, [f32; 3])>,
-    /// The materialize dust ring plan (`:35133-35166`) — the visual
-    /// skip's branch structure, count-only (module docs). `Some` on
-    /// each fading tick (`ai[1] < 120`), `None` otherwise.
+    /// The materialize dust ring plan (`:35133-35166`) — the geometry
+    /// seam the adapter drains into [`turret_materialize_ring`] (the
+    /// live-pool draw, module docs). `Some` on each fading tick
+    /// (`ai[1] < 120`), `None` otherwise.
     pub materialize_dust: Option<TurretMaterializeDust>,
     /// The shot request (`:35215`): the type-435 bolt spawned at the
     /// muzzle `Center - (0, 10)` with the jittered ×14 velocity, the
@@ -195,8 +200,9 @@ pub struct TurretBolt {
     pub knock_back: f32,
 }
 
-/// The materialize ring's geometry (`NPC.cs:35131-35166`), count-only
-/// — the dust spawn itself is the documented visual skip (module docs).
+/// The materialize ring's geometry (`NPC.cs:35131-35166`) — the plan
+/// the adapter feeds to [`turret_materialize_ring`] (the live-pool
+/// draw, module docs).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TurretMaterializeDust {
     /// `num1019 = ai[1] / 60f` AFTER the increment (`:35131`) — also
@@ -255,10 +261,11 @@ pub fn turret_find_frame(frame_row: u32, frame_counter: f32, ai0: f32) -> (u32, 
 }
 
 /// The materialize ring's geometry for one fading tick — the branch
-/// structure of `NPC.cs:35131-35166` without the `Dust.NewDust` draws
-/// (module docs). `ai1` is the value AFTER the tick's increment;
-/// `center` is `base.Center` (the turret never moves during the fade —
-/// the X decay runs but the caller's integration is what moves it).
+/// structure of `NPC.cs:35131-35166`, RNG-free (the pool draws ride
+/// [`turret_materialize_ring`], module docs). `ai1` is the value AFTER
+/// the tick's increment; `center` is `base.Center` (the turret never
+/// moves during the fade — the X decay runs but the caller's
+/// integration is what moves it).
 pub fn turret_materialize_dust_plan(ai1: f32, center: (f32, f32)) -> TurretMaterializeDust {
     // `:35131-35132` — num1019 and the spin vector. `1.5f * ((float)
     // Math.PI * 2f)` is the f32 product chain, widened to double for
@@ -283,6 +290,62 @@ pub fn turret_materialize_dust_plan(ai1: f32, center: (f32, f32)) -> TurretMater
         placements[i * 2 + 1] = (center.0 + spin.0 * scale + ox, center.1 + spin.1 * scale + oy);
     }
     TurretMaterializeDust { spin_factor, spin: (rx * 1.0, ry * 0.4), placements }
+}
+
+/// Sites 35157/35162 — the Martian Turret (387)'s materialize ring
+/// (`NPC.cs:35133-35166`, aiStyle 73). The [`turret_materialize_dust_plan`]
+/// seam computes the 8 placements: for each of the four offsets
+/// ((0,-15)×0.15, (0,-5)×0.3, (0,5)×0.6, (0,20)×0.45) a MIRRORED pair —
+/// first at `Center + spin*scale + offset`, then `spin *= -1` and the
+/// twin. Every dust is type-226 `NewDust(Center, 0, 0, 226, 0, 0, 100,
+/// default, 0.5)`; post noGravity, position = the placement, velocity =
+/// Zero. The plan's `placements` array is in C# order (the pair
+/// interleaving).
+///
+/// ACTIVATED by W4-c11 retire: this is the W4-e2 batch-6 STAGED emitter
+/// (`npc_dust.rs::turret_materialize_ring`, e2 tip `bfc081305`, staged
+/// at `9912498fc`) adopted VERBATIM — the keep-one owner moves to the
+/// machine's own module now that the kind + axis arm are wired (the
+/// e2 doc's "STAGED — the style-73 machine is unwired" precondition is
+/// discharged). The e2 copy DROPs at merge (research/356 §3). The
+/// draws ride the caller's `UpdateNPCs` stream through the verbatim
+/// pool internals (`Dust.cs:153-193`, the Everscream precedent).
+pub fn turret_materialize_ring<R: DustRng>(
+    cx: f32,
+    cy: f32,
+    placements: &[(f32, f32); 8],
+    rng: &mut R,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for &(px, py) in placements.iter() {
+        let idx = dust.new_dust(
+            rng, ctx, world, Vec2::new(cx, cy), 0, 0, 226,
+            0.0, 0.0, 100, Color::default(), 0.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = Vec2::new(px, py);
+        d.velocity = Vec2::ZERO;
+    }
+}
+
+/// The arm's `Lighting.AddLight` source for the draw-side feed
+/// (`app/frame/draw.rs`, the ForceBubble precedent — the sim's outcome
+/// light is discarded, the feed recomputes from state): while
+/// `ai[1] < 120` the fade light scales by `ai[1] / 60` (`:35167`, the
+/// post-increment value the arm reads), else the constant
+/// (0.1, 0.5, 0.7) (`:35175`). Both sit at `((int)Center.X / 16,
+/// (int)(Center.Y - 10) / 16)` — the C# truncates each quotient. RNG-free.
+pub fn turret_light(ai1: f32, center: (f32, f32)) -> (i32, i32, [f32; 3]) {
+    let rgb = if ai1 < 120.0 {
+        let f = ai1 / 60.0;
+        [0.1 * f, 0.5 * f, 0.7 * f]
+    } else {
+        [0.1, 0.5, 0.7]
+    };
+    (center.0 as i32 / 16, (center.1 - 10.0) as i32 / 16, rgb)
 }
 
 /// One fixed step of the aiStyle-73 arm (`NPC.cs:35102-35217`), in C#
@@ -353,7 +416,8 @@ pub fn style73_step(
             // (the counter is private — the wiring step pins it too,
             // the FindFrame pair function's input is 0 on fade ticks).
             npc.frame = 0;
-            // `:35131-35166` — the dust ring (the count-only plan seam).
+            // `:35131-35166` — the dust ring (the plan seam; the adapter
+            // drains it into the live-pool draw).
             out.materialize_dust = Some(turret_materialize_dust_plan(npc.ai[1], (cx, cy)));
             // `:35167` — the fading blue light, num1019-scaled.
             let num1019 = npc.ai[1] / num1018;
@@ -448,9 +512,11 @@ mod tests {
     use super::*;
     use crate::npc::NpcKind;
 
-    /// A turret-shaped NPC: the roster has no MartianTurret kind yet,
-    /// so the fixture rides a placeholder kind with the C# box through
-    /// `size_override` and the 200-HP life (the style72 convention).
+    /// A turret-shaped NPC: the pure-module fixture rides a placeholder
+    /// kind with the C# box through `size_override` and the 200-HP life
+    /// (the style72 convention — the machine keys on the `npc_type`
+    /// parameter, not the kind; the LIVE wiring rides
+    /// `NpcKind::MartianTurret`, `npc.rs::ai_073_martian_turret`).
     fn turret(x: f32, y: f32) -> Npc {
         let d = &MARTIAN_TURRET;
         let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
@@ -845,6 +911,28 @@ mod tests {
         assert!((p2.1 - (1000.0 - plan.spin.1 * 0.3 - 5.0)).abs() < 0.001);
     }
 
+    /// `NPC.cs:35167`/`:35175` — the draw-side light feed: the fade
+    /// scales by ai[1]/60 below 120, then the constant (0.1, 0.5, 0.7);
+    /// both truncate EACH quotient ((int)Center.X / 16, not (int)(X/16)).
+    #[test]
+    fn the_light_feed_fades_then_pins_the_constant() {
+        // Fade at ai[1] = 30: factor 0.5; centre (1000.9, 1000.9) →
+        // (int)1000.9/16 = 62, (int)990.9/16 = 61.
+        let (x, y, rgb) = turret_light(30.0, (1000.9, 1000.9));
+        assert_eq!((x, y), (62, 61));
+        assert_eq!(rgb, [0.1 * 0.5, 0.5 * 0.5, 0.7 * 0.5]);
+        // The last fade tick (119) still scales; 120 pins the constant.
+        let f = 119.0f32 / 60.0;
+        let (_, _, rgb) = turret_light(119.0, (0.0, 0.0));
+        assert_eq!(rgb, [0.1 * f, 0.5 * f, 0.7 * f]);
+        let (x, y, rgb) = turret_light(120.0, (32.9, 26.5));
+        assert_eq!((x, y, rgb), (2, 1, [0.1, 0.5, 0.7]), ":35175 solid");
+        // Negative-centre truncation toward zero: (int)(-0.5) = 0 and
+        // (int)(-10.5)/16 = -10/16 = 0 (C# integer division truncates).
+        let (x, y, _) = turret_light(121.0, (-0.5, -0.5));
+        assert_eq!((x, y), (0, 0));
+    }
+
     /// The RNG-by-construction witness: every non-shot path (the fade,
     /// the solid idle, the out-of-view hold, the client) consumes ZERO
     /// draws — the `UnifiedRandom` state is pinned across the calls.
@@ -871,5 +959,96 @@ mod tests {
             style73_step(&mut n2, &w, &[cand(1100.0, 1000.0)], 0, 387, false, 1, 1.0, &mut rng);
         }
         assert_eq!(rng.next(), oracle.next(), "the hold/client paths drew nothing");
+    }
+
+    /// A permissive spawn ctx for the ring witnesses: the whole world
+    /// on-screen, the full dust budget — the pool never culls (the
+    /// `npc.rs::update_rng` scratch-ctx convention).
+    fn ring_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// W4-c11 retire — sites 35157/35162 ACTIVATED: the ring emitter
+    /// (the e2 batch-6 STAGED body adopted verbatim) spawns EIGHT
+    /// type-226 dusts, all noGravity, velocity Zero, position = the
+    /// plan's placements in C# pair order. The mirror replays the pool
+    /// internals on a twin stream — the draw census is the pool's own
+    /// (the e2 `w4_e2_turret_materialize_ring_eight_placements` shape).
+    #[test]
+    fn the_ring_draws_eight_placements_in_csharp_order() {
+        let w = air();
+        let c = ring_ctx(&w);
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(171);
+        let mut mirror = UnifiedRandom::new(171);
+        let plan = turret_materialize_dust_plan(60.0, (1000.0, 1000.0));
+        turret_materialize_ring(1000.0, 1000.0, &plan.placements, &mut rng, &mut pool, &c, &w);
+        for &(px, py) in plan.placements.iter() {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(1000.0, 1000.0), 0, 0, 226,
+                0.0, 0.0, 100, Color::default(), 0.5,
+            );
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.position = Vec2::new(px, py);
+            d.velocity = Vec2::ZERO;
+        }
+        let live: Vec<_> = (0..8).map(|i| pool.slot(i)).collect();
+        assert!(live.iter().all(|d| d.active), "all eight slots taken");
+        for i in 0..8 {
+            assert_eq!(pool.slot(i).dust_type, 226);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).alpha, 100);
+            assert_eq!(pool.slot(i).velocity, Vec2::ZERO);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+        }
+        assert!(!pool.slot(8).active, "exactly eight spawns");
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-c11 retire — the ring's per-dust internals census: on an empty
+    /// pool with the permissive ctx, ONE type-226 `NewDust(Center, 0, 0)`
+    /// draws exactly SIX values in the C# order (`Dust.cs:153-193`):
+    /// position X `Next(1)`, position Y `Next(1)` (the 0×0 box clamps to
+    /// 5×5 → `Next(num-4)` = `Next(1)`), velocity X `Next(-20,21)`,
+    /// velocity Y `Next(-20,21)`, frame Y `Next(3)`, scale
+    /// `Next(-20,21)`. Type 226 matches NO tweak-chain arm and is NOT
+    /// dangerous dust — no extra draws. Eight dusts = 48 draws/fade tick.
+    #[test]
+    fn the_ring_consumes_six_pool_draws_per_dust() {
+        let w = air();
+        let c = ring_ctx(&w);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(2024);
+        let mut oracle = UnifiedRandom::new(2024);
+        let plan = turret_materialize_dust_plan(30.0, (1000.0, 1000.0));
+        turret_materialize_ring(1000.0, 1000.0, &plan.placements, &mut rng, &mut pool, &c, &w);
+        for i in 0..8 {
+            // The default block's six draws, in order (`Dust.cs:164-175`).
+            let px = 1000.0 + oracle.next_max(1) as f32 + 4.0;
+            let py = 1000.0 + oracle.next_max(1) as f32 + 4.0;
+            let vx = oracle.next_range(-20, 21) as f32 * 0.1;
+            let vy = oracle.next_range(-20, 21) as f32 * 0.1;
+            let fy = 10 * oracle.next_max(3) + 60;
+            let scale = (1.0 + oracle.next_range(-20, 21) as f32 * 0.01) * 0.5;
+            // The post-writes discard position/velocity — pin the
+            // surviving fields against the oracle's draws.
+            let d = pool.slot(i);
+            assert_eq!(d.frame_y, fy, "dust {i} frame row (+30 per >=100 loop)");
+            assert_eq!(d.scale, scale, "dust {i} scale");
+            // frame_x: 10*226 − 1000*2 (the >= 100 loop, `Dust.cs:180-186`).
+            assert_eq!(d.frame_x, 260, "dust {i} frame col");
+            let _ = (px, py, vx, vy); // consumed by the position/velocity overwrites
+        }
+        assert_eq!(rng.next(), oracle.next(), "exactly 48 draws consumed");
     }
 }
