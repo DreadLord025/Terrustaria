@@ -120,7 +120,6 @@ pub fn good_world_latches_invulnerability(
 /// the extra move fires. The damage rows (`:21467-21471` — 112 restores
 /// `defDamage`, 666 rides `GetAttackDamage_CappedAtMaster(32f)`,
 /// `NPC.cs:7041-7045`) wait on the port's difficulty scale.
-#[allow(dead_code)] // the 112/666 kinds' wiring consumes the counter
 pub fn vile_spit_counter_tick(ai0: f32) -> (f32, bool) {
     let mut ai0 = ai0 + 1.0;
     if ai0 > 3.0 {
@@ -131,7 +130,6 @@ pub fn vile_spit_counter_tick(ai0: f32) -> (f32, bool) {
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`) about the origin: the f32
 /// cos/sin of the f64 angle, the XNA rotation direction.
-#[allow(dead_code)] // the Solar Flare 516 kind's wiring consumes the rotation
 fn rotated_by(v: (f32, f32), radians: f64) -> (f32, f32) {
     let num = radians.cos() as f32;
     let num2 = radians.sin() as f32;
@@ -144,7 +142,6 @@ fn rotated_by(v: (f32, f32), radians: f64) -> (f32, f32) {
 /// draws in that order), `RotatedBy(-π/4)`, the `Y > 0.2` clamp, then
 /// `6f + NextFloat() * 4f` (the THIRD draw). `dir` is the already
 /// normalized `player.Center - npc.Center`.
-#[allow(dead_code)] // the Solar Flare 516 kind's wiring consumes the launch
 pub fn solar_flare_launch_velocity(dir: (f32, f32), rng: &mut UnifiedRandom) -> (f32, f32) {
     // `:21391-21394` — `Vector2.HasNaNs()` → `-Vector2.UnitY`.
     let mut v = if dir.0.is_nan() || dir.1.is_nan() {
@@ -175,7 +172,6 @@ pub fn solar_flare_launch_velocity(dir: (f32, f32), rng: &mut UnifiedRandom) -> 
 /// falling back to `(direction, 0)`, and the `|velocity| < 6` → `×1.05`
 /// boost. Returns the new (velocity, rotation delta). `aim` is the
 /// normalized player delta.
-#[allow(dead_code)] // the Solar Flare 516 kind's wiring consumes the steer
 pub fn solar_flare_steer(
     vel: (f32, f32),
     aim: (f32, f32),
@@ -204,11 +200,12 @@ pub fn solar_flare_steer(
     (out, rotation)
 }
 
-/// One fixed step of the aiStyle-9 arm for the ported sphere kinds
-/// (25/30+665/33) — `NPC.cs:21377-21571` minus the unported per-type
-/// branches (516's homing `:21380-21406`/`:21497-21515`, the 112/666
-/// counter/damage `:21465-21495`) and the dust/light emissions (the
-/// documented skips — see the module header for the exact rand order).
+/// One fixed step of the aiStyle-9 arm — `NPC.cs:21377-21571`. The ported
+/// kinds are the spheres (25/30+665/33), the Vile Spits (112/666) and the
+/// Solar Flare (516). The dust/light emissions are the documented skips
+/// (see the module header for the exact rand order); the 516 launch's three
+/// draws and the 33 `Next(5)` dust gate are the only rand sites (the latter
+/// stays skipped with its dust).
 ///
 /// The seam: `TargetClosest` rides `npc_target::target_closest` (the
 /// `EverLastingTicker` is not plumbed into `Npc::update` yet — the 0
@@ -221,13 +218,46 @@ pub fn sphere_family_step(
     world: &World,
     player: &Player,
     flags: Style9Flags,
-    _rng: &mut UnifiedRandom,
+    rng: &mut UnifiedRandom,
 ) {
     // The C# arm keys on the VANILLA type (`this.type`, NPCID: BurningSphere
     // 25 / ChaosBall 30 / WaterSphere 33) - `net_id()` carries it; `to_u16`
     // is the port's INTERNAL protocol space (data.rs:1006-1009) and would
     // mis-route the speed ladder (MERGER-L7 first-run fix).
     let npc_type = npc.kind.net_id();
+    // `:21380-21406` — the Solar Flare's fade-in, one-shot launch and the
+    // collision/proximity death. The launch's three draws (NextDouble /
+    // NextDouble / NextFloat) ride the caller's stream even though the
+    // `target == 255` straight aim below overwrites the velocity on this
+    // first tick (the C#'s own order — verbatim, the witnesses pin it).
+    if npc_type == 516 {
+        // `:21382-21385` — `alpha += 40` while `< 220` (peaks at 240).
+        if npc.alpha < 220 {
+            npc.alpha += 40;
+        }
+        // `:21386-21401` — the one-shot `RotatedByRandom` launch.
+        if npc.ai[0] == 0.0 {
+            npc.ai[0] = 1.0;
+            let (cx, cy) = npc.center();
+            let (pcx, pcy) = player.center();
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            // `Vector2.Normalize` — a zero delta yields NaN (0/0), which
+            // the helper's `HasNaNs` arm folds to `-UnitY` (`:21391-21394`).
+            let len = (dx * dx + dy * dy).sqrt();
+            let (vx, vy) = solar_flare_launch_velocity((dx / len, dy / len), rng);
+            npc.vx = vx;
+            npc.vy = vy;
+        }
+        // `:21402-21405` — collideX/Y or within 20 px of the player:
+        // `StrikeNPCNoInteraction(9999)` → the hp-0 death fold.
+        let (cx, cy) = npc.center();
+        let (pcx, pcy) = player.center();
+        let dist = ((pcx - cx) * (pcx - cx) + (pcy - cy) * (pcy - cy)).sqrt();
+        if npc.collide_x || npc.collide_y || dist < 20.0 {
+            npc.hp = 0;
+        }
+    }
     // `:21407-21449` — the ONE-SHOT launch: only while `target == 255`
     // (the SetDefaults sentinel). `TargetClosest()` (`:21409`,
     // `NPC.cs:77652-77666`) picks and faces the player first.
@@ -272,9 +302,68 @@ pub fn sphere_family_step(
             npc.dont_take_damage = true;
         }
     }
+    // `:21465-21489` — the Vile Spits' counter: damage restore (112 →
+    // defDamage; 666 → `GetAttackDamage_CappedAtMaster(32f)`, the classic
+    // endpoint 32 — the difficulty scale is unported), the `ai[0]` ++/clamp
+    // and the `ai[0] == 2` double-move (`position += velocity` ahead of the
+    // generic integration). The 20-dust burst + the sound 4 style 9 are the
+    // documented skips (the module header's rand order).
+    if npc_type == 112 || npc_type == 666 {
+        let (counter, extra_move) = vile_spit_counter_tick(npc.ai[0]);
+        npc.ai[0] = counter;
+        if extra_move {
+            npc.x += npc.vx;
+            npc.y += npc.vy;
+        }
+    }
+    // `:21490-21495` — a Vile Spit inside a solid tile dies
+    // (`StrikeNPCNoInteraction(9999)` → the hp-0 fold; the `_ = Main.netMode`
+    // discard is dead code).
+    if npc_type == 112 || npc_type == 666 {
+        let (w, h) = npc.size();
+        if crate::player::Player::solid_collision(world, npc.x, npc.y, w, h) {
+            npc.hp = 0;
+        }
+    }
     // `:21496` — `EncourageDespawn(100)` (`NPC.cs:7249-7256`): the port's
     // `encourage_despawn` keeps the -1 sentinel semantics.
     npc.encourage_despawn(100);
+    // `:21497-21515` — the Solar Flare's per-tick homing steer + the early
+    // return (it skips the dust loop and the 0.4 spin below).
+    if npc_type == 516 {
+        let (cx, cy) = npc.center();
+        let (pcx, pcy) = player.center();
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (vel, rot) = solar_flare_steer((npc.vx, npc.vy), (dx / len, dy / len), npc.facing, npc.rotation);
+        npc.vx = vel.0;
+        npc.vy = vel.1;
+        npc.rotation = rot;
+        // The 516 row is noTileCollide FALSE (`NPC.cs:15405`), so the C#
+        // runs `UpdateCollision` — the blocked axes flag into collideX/Y
+        // for the NEXT tick's `:21402` death. The flyer stand-in's shape
+        // (`integrate_flyer_collision`, `NPC.cs:92523-92580`): probe each
+        // axis, flag + stop on a block, integrate the free axis.
+        let (w, h) = npc.size();
+        npc.old_vx = npc.vx;
+        npc.old_vy = npc.vy;
+        let nx = npc.x + npc.vx;
+        npc.collide_x = crate::player::collides_rect(world, nx, npc.y, w, h);
+        if npc.collide_x {
+            npc.vx = 0.0;
+        } else {
+            npc.x = nx;
+        }
+        let ny = npc.y + npc.vy;
+        npc.collide_y = crate::player::collides_rect(world, npc.x, ny, w, h);
+        if npc.collide_y {
+            npc.vy = 0.0;
+        } else {
+            npc.y = ny;
+        }
+        return;
+    }
     // `:21516-21567` — the dust loop. The emissions (and their rand
     // draws, incl. type 33's `Next(5)` at `:21545`) are the documented
     // skip; the loop's only STATE write is the Chaos Ball's `alpha = 255`

@@ -5,20 +5,24 @@
 //! 48/49/51/60/62/66/93/121/137/150/151/152/156/226/158/634/660 —
 //! `NPC.cs:9364`/`:9378`/`:9409`/`:9543`/`:9572`/`:9629`/`:10052`/`:10470`/
 //! `:10739`/`:10890`/`:10905`/`:10921`/`:10979`/`:11916`/`:15471`/`:17166`/
-//! `:17342`). The port models four of them: CaveBat 49, JungleBat 51,
-//! Hellbat 60, VoodooDemon 66 (`npc/data.rs::ai_style`). This module ports
-//! the whole arm's STRUCTURE with the branches those four types take; the
-//! unported types' own branches (226's velocity-sign facing `:22876-22894`,
+//! `:17342`). The port models ALL 17: the S1-D-3 four (CaveBat 49,
+//! JungleBat 51, Hellbat 60, VoodooDemon 66) plus the W4-d23 family —
+//! Harpy 48, Demon 62, GiantBat 93, Slimer 121, IlluminantBat 137, IceBat
+//! 150, Lavabat 151, GiantFlyingFox 152, RedDevil 156, VampireBat 158,
+//! FlyingSnake 226, SporeBat 634, QueenSlimeMinionPurple 660
+//! (`npc/data.rs::ai_style`). W4-d23 landed the previously-skipped
+//! per-type branches verbatim: 226's velocity-sign facing `:22876-22894`,
 //! 158's surface flee + 7-cap approach `:22899-22970` + Transform(159)
 //! `:23346-23355` + double `ai[1]++` `:23357-23360`, 226's 4/2.5 approach
 //! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`, 48's wet arm
-//! `:23333-23345` + feather shot `:23416-23436`, 156's trident shot
-//! `:23458-23484`) are cited skips — they land with their kinds.
+//! `:23333-23345` + feather shot `:23416-23436` (type 38, damage 15, speed
+//! 6), 156's trident shot `:23458-23484` (type 115, damage 80, the ±50
+//! jitters + the velocity×5 origin + the ×100 muzzle offset).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
-//! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
+//! `npc.rs::update_cave_bat` routes the family kinds through [`bat_ai`],
 //! feeds `Entity.wet` via the `is_wet` pass + the session-player
-//! `TargetCandidate`/`players_wet` slices, drains [`DemonSickleShot`] into
+//! `TargetCandidate`/`players_wet` slices, drains [`Style14Shot`] into
 //! `wants_hostile_shot` (type 44, damage 21; the sim's timed-shot pass
 //! applies the `timeLeft = 300` write, `NPC.cs:23450`), and integrates
 //! through the no-gravity `integrate_flyer_collision` stand-in
@@ -29,16 +33,21 @@
 //! match; no f1701eb0-class defect found). Every other module is
 //! byte-identical.
 //!
-//! RNG by construction: the ONLY `Main.rand` draws on the ported paths are
-//! the VoodooDemon/Demon (62/66) shot arm's — two `Next(-100, 101)` aim
-//! jitters, X first then Y (`NPC.cs:23446-23447`), on the shot ticks
-//! `ai[0] == 20/40/60/80` with `Collision.CanHit`; otherwise ONE
-//! `Next(300)` reset roll per tick, drawn only when the firing-distance
-//! flag holds (the C# `&&` short-circuits, `:23453`). The bat kinds
-//! (49/51/60) draw nothing. `TargetClosest` is RNG-free (the Manhattan
-//! scan, `NPC.cs:77652-77781`). The witness tests below pin the stream
-//! position for each case (written, NOT run — code-only mode).
-// WIRED by the S1-D-3 bat/fish reconcile (`update_cave_bat`'s migration).
+//! RNG by construction: the `Main.rand` draws on the ported paths are
+//! the shot arms' — the VoodooDemon/Demon (62/66) two `Next(-100, 101)`
+//! aim jitters, X first then Y (`NPC.cs:23446-23447`), on the shot ticks
+//! `ai[0] == 20/40/60/80` with `Collision.CanHit`, otherwise ONE
+//! `Next(300)` reset roll per tick drawn only when the firing-distance
+//! flag holds (the C# `&&` short-circuits, `:23453`); the Harpy (48) the
+//! same shape at `ai[0] == 30/60/90` with the `400 + Next(400)` reset
+//! (`:23419`/`:23432`); the RedDevil (156) `Next(-50, 51)` jitters at
+//! `ai[0] == 20/40/60/80/100` with the `250 + Next(250)` reset
+//! (`:23463`/`:23469-23470`/`:23481`). The bat kinds (49/51/60) and the
+//! rest of the family draw nothing. `TargetClosest` is RNG-free (the
+//! Manhattan scan, `NPC.cs:77652-77781`). The witness tests below pin the
+//! stream position for each case (written, NOT run — code-only mode).
+// WIRED by the S1-D-3 bat/fish reconcile (`update_cave_bat`'s migration);
+// the full 17-type family by W4-d23.
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -60,15 +69,29 @@ pub struct Style14Env<'a> {
     /// `Main.EverLastingTicker` — the `targetSetFrame` stamp
     /// (`NPC.cs:77780` via `TargetClosest`).
     pub ticker: u64,
+    /// `Main.worldSurface` — the VampireBat's surface-flee gate reads
+    /// `position.Y < worldSurface * 16.0` (`NPC.cs:22901`, W4-d23).
+    pub world_surface: f64,
+    /// `Main.IsItDay()` — the same gate's day term (`:22901`).
+    pub is_day: bool,
+    /// `Main.eclipse` — the same gate's eclipse term (`:22901`).
+    pub eclipse: bool,
 }
 
-/// The type-62/66 shot request — `Projectile.NewProjectile` at
-/// `NPC.cs:23449-23450`: type 44 (`ProjectileID.DemonSickle`,
-/// `ProjectileID.cs`), damage 21, knockback 0, owner `Main.myPlayer`,
-/// spawned at the NPC centre with the jittered aim; the caller sets
-/// `timeLeft = 300` (`:23450`). The pure module never touches the pool.
+/// The type-48/62/66/156 shot request — `Projectile.NewProjectile` at
+/// `NPC.cs:23428`/`:23449`/`:23477`: the Harpy's feather 38 (damage 15,
+/// speed 6), the Demon/VoodooDemon's sickle 44 (damage 21, speed 0.2),
+/// the RedDevil's trident 115 (damage 80, speed 0.2, the velocity×5
+/// origin + the ×100 muzzle offset) — all knockback 0, owner
+/// `Main.myPlayer`; the caller sets `timeLeft = 300`
+/// (`:23429`/`:23450`/`:23478`). The pure module never touches the pool.
+/// (Renamed from `DemonSickleShot` when W4-d23 wired the 48/156 arms.)
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DemonSickleShot {
+pub struct Style14Shot {
+    /// The `ProjectileID` type — 38 / 44 / 115.
+    pub kind: u16,
+    /// The `NewProjectile` damage argument — 15 / 21 / 80.
+    pub damage: i32,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
@@ -82,18 +105,42 @@ const WATER_GROUP: [i32; 11] = [49, 51, 60, 62, 66, 93, 137, 150, 151, 152, 634]
 /// `this.noGravity = true` (`:22851`) is structural: the port's flyer
 /// callers integrate without gravity (the `Npc` struct has no
 /// `no_gravity` field; `update_hover`'s convention). Returns the
-/// VoodooDemon's shot request on the shoot tick, else `None`.
-pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<DemonSickleShot> {
+/// Harpy's feather / the Demon's sickle / the RedDevil's trident on the
+/// shoot tick, else `None`.
+pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<Style14Shot> {
     let net_id = npc.kind.net_id();
     // `:22852-22875` — the tile-bounce clamps.
     bounce(npc);
-    // `:22876-22898` — type 226 faces by velocity sign when the target is
-    // not hittable (unported kind); every other type runs `TargetClosest`
-    // (`:22897`), faceTarget default true, aiStyle 14.
-    target_closest(npc, env.world, env.players, true, 14, env.ticker);
-    // `:22899-23182` — the per-type approach arms: 158/226/660 unported;
-    // the else arm (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
-    generic_approach(npc);
+    // `:22876-22894` — type 226 faces by velocity sign when the target is
+    // not hittable (W4-d23: the FlyingSnake landed); every other type
+    // runs `TargetClosest` (`:22897`), faceTarget default true, aiStyle 14.
+    if net_id == 226 {
+        let num223 = if npc.vx < 0.0 { -1 } else { 1 };
+        let num224 = if npc.vy < 0.0 { -1 } else { 1 };
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+        let p = &env.players[npc.target as usize];
+        let (w, h) = npc.size();
+        if !crate::projectile::can_hit(
+            env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+        ) {
+            npc.facing = num223;
+            npc.direction_y = num224;
+        }
+    } else {
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    }
+    // `:22899-23182` — the per-type approach arms (W4-d23: 158/226/660
+    // landed); the else arm (`:23116-23182`) is the shared 0.1/4 X +
+    // 0.04/1.5 Y.
+    if net_id == 158 {
+        vampire_bat_approach(npc, env);
+    } else if net_id == 226 {
+        flying_snake_approach(npc);
+    } else if net_id == 660 {
+        queen_slime_minion_approach(npc);
+    } else {
+        generic_approach(npc);
+    }
     // `:23183-23332` — the water group. NOTE the C# structure: the wet
     // lift is gated on `base.wet`, but the SECOND approach pass below is
     // not — types 49/51/66 run the generic approach twice per tick, and
@@ -118,9 +165,37 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             generic_approach(npc);
         }
     }
-    // `:23333-23345` — type 48's wet arm (Harpy unported, skip).
-    // `:23346-23355` — type 158's Transform(159) (VampireBat unported).
-    // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`).
+    // `:23333-23345` — type 48's wet arm (W4-d23: the Harpy landed).
+    if net_id == 48 && npc.wet {
+        if npc.vy > 0.0 {
+            npc.vy *= 0.95;
+        }
+        npc.vy -= 0.5;
+        if npc.vy < -4.0 {
+            npc.vy = -4.0;
+        }
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    }
+    // `:23346-23355` — type 158's Transform(159) (W4-d23: the VampireBat
+    // landed; the request rides `wants_transform`, the sim resolves it
+    // through `transform_to_kind` after the tick).
+    if net_id == 158 && env.net_mode != 1 {
+        let p = &env.players[npc.target as usize];
+        let (w, h) = npc.size();
+        let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+        let num229 = p.x + p.width as f32 * 0.5 - cx;
+        let num230 = p.y + p.height as f32 * 0.5 - cy;
+        if (num229 * num229 + num230 * num230).sqrt() < 200.0
+            && npc.y + h < p.y + p.height as f32
+            && crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            )
+        {
+            npc.wants_transform = Some(159);
+        }
+    }
+    // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`; 158's second
+    // `ai[1]++` rides inside).
     drift(npc, env);
     // `:23410-23413` — the client stops here.
     if env.net_mode == 1 {
@@ -132,7 +207,36 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     let pcx = p.x + p.width as f32 / 2.0;
     let pcy = p.y + p.height as f32 / 2.0;
     let flag24 = global_firing_distance_check(cx, cy, pcx, pcy);
-    // `:23416-23436` — type 48's feather shot (Harpy unported, skip).
+    // `:23416-23436` — type 48's feather shot (W4-d23: the Harpy landed).
+    if net_id == 48 {
+        npc.ai[0] += 1.0;
+        if npc.ai[0] == 30.0 || npc.ai[0] == 60.0 || npc.ai[0] == 90.0 {
+            let (w, h) = npc.size();
+            if crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            ) {
+                // `:23423-23427` — the 6-speed jittered aim; the X jitter
+                // draws BEFORE the Y jitter (`:23425-23426`).
+                let num235 = 6f32;
+                let num236 = pcx - cx + rng.next_range(-100, 101) as f32;
+                let num237 = pcy - cy + rng.next_range(-100, 101) as f32;
+                let num238 = num235 / (num236 * num236 + num237 * num237).sqrt();
+                // `:23428-23429` — NewProjectile(38, 15, 0f) at the
+                // centre; timeLeft 300 is the caller's write.
+                return Some(Style14Shot {
+                    kind: crate::projectile::HARPY_FEATHER,
+                    damage: 15,
+                    x: cx,
+                    y: cy,
+                    vx: num236 * num238,
+                    vy: num237 * num238,
+                });
+            }
+        } else if flag24 && npc.ai[0] >= (400 + rng.next_max(400)) as f32 {
+            // `:23432-23435` — the reset roll (the `&&` short-circuit).
+            npc.ai[0] = 0.0;
+        }
+    }
     // `:23437-23457` — the Demon/VoodooDemon sickle shot.
     if net_id == 62 || net_id == 66 {
         npc.ai[0] += 1.0;
@@ -151,7 +255,9 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
                 let num243 = num240 / (num241 * num241 + num242 * num242).sqrt();
                 // `:23449-23450` — NewProjectile(44, 21, 0f) at the
                 // centre; timeLeft 300 is the caller's write.
-                return Some(DemonSickleShot {
+                return Some(Style14Shot {
+                    kind: crate::projectile::DEMON_SICKLE,
+                    damage: 21,
                     x: cx,
                     y: cy,
                     vx: num241 * num243,
@@ -166,7 +272,47 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             npc.ai[0] = 0.0;
         }
     }
-    // `:23458-23484` — type 156's trident shot (RedDevil unported, skip).
+    // `:23458-23484` — type 156's trident shot (W4-d23: the RedDevil
+    // landed). `if (this.type != 156) return;` — the arm is the last.
+    if net_id != 156 {
+        return None;
+    }
+    npc.ai[0] += 1.0;
+    if npc.ai[0] == 20.0
+        || npc.ai[0] == 40.0
+        || npc.ai[0] == 60.0
+        || npc.ai[0] == 80.0
+        || npc.ai[0] == 100.0
+    {
+        let (w, h) = npc.size();
+        if crate::projectile::can_hit(
+            env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+        ) {
+            // `:23467-23473` — the 0.2-scale aim with the ±50 jitters
+            // (X first, `:23469-23470`).
+            let num245 = 0.2f32;
+            let mut num246 = pcx - cx + rng.next_range(-50, 51) as f32;
+            let mut num247 = pcy - cy + rng.next_range(-50, 51) as f32;
+            let num248 = num245 / (num246 * num246 + num247 * num247).sqrt();
+            num246 *= num248;
+            num247 *= num248;
+            // `:23476` — `vector25 += base.velocity * 5f` BEFORE the
+            // spawn; `:23477` — the ×100 muzzle offset on the position.
+            let ox = cx + npc.vx * 5.0;
+            let oy = cy + npc.vy * 5.0;
+            return Some(Style14Shot {
+                kind: crate::projectile::UNHOLY_TRIDENT_HOSTILE,
+                damage: 80,
+                x: ox + num246 * 100.0,
+                y: oy + num247 * 100.0,
+                vx: num246,
+                vy: num247,
+            });
+        }
+    } else if flag24 && npc.ai[0] >= (250 + rng.next_max(250)) as f32 {
+        // `:23481-23484` — the reset roll.
+        npc.ai[0] = 0.0;
+    }
     None
 }
 
@@ -248,6 +394,172 @@ pub fn generic_approach(npc: &mut Npc) {
     }
 }
 
+/// The VampireBat's approach (`NPC.cs:22899-22970`, W4-d23): the
+/// surface-flee gate (above the surface on a non-eclipse day → face up +
+/// reverse), then the 0.2 accel / 7-cap arms — X's opposite-side
+/// double-add is 0.1 and the near-zero brake 0.05 (the ±4 windows), Y
+/// the same shape at ±7.
+fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
+    // `:22901-22905`.
+    if (npc.y as f64) < env.world_surface * 16.0 && env.is_day && !env.eclipse {
+        npc.direction_y = -1;
+        npc.facing *= -1;
+    }
+    // `:22906-22937`.
+    if npc.facing == -1 && npc.vx > -7.0 {
+        npc.vx -= 0.2;
+        if npc.vx > 4.0 {
+            npc.vx -= 0.1;
+        } else if npc.vx > 0.0 {
+            npc.vx += 0.05;
+        }
+        if npc.vx < -7.0 {
+            npc.vx = -7.0;
+        }
+    } else if npc.facing == 1 && npc.vx < 7.0 {
+        npc.vx += 0.2;
+        if npc.vx < -4.0 {
+            npc.vx += 0.1;
+        } else if npc.vx < 0.0 {
+            npc.vx -= 0.05;
+        }
+        if npc.vx > 7.0 {
+            npc.vx = 7.0;
+        }
+    }
+    // `:22938-22969`.
+    if npc.direction_y == -1 && npc.vy > -7.0 {
+        npc.vy -= 0.2;
+        if npc.vy > 4.0 {
+            npc.vy -= 0.1;
+        } else if npc.vy > 0.0 {
+            npc.vy += 0.05;
+        }
+        if npc.vy < -7.0 {
+            npc.vy = -7.0;
+        }
+    } else if npc.direction_y == 1 && npc.vy < 7.0 {
+        npc.vy += 0.2;
+        if npc.vy < -4.0 {
+            npc.vy += 0.1;
+        } else if npc.vy < 0.0 {
+            npc.vy -= 0.05;
+        }
+        if npc.vy > 7.0 {
+            npc.vy = 7.0;
+        }
+    }
+}
+
+/// The FlyingSnake's approach (`NPC.cs:22971-23037`, W4-d23): X the
+/// generic shape at 0.2 accel / ±4 cap; Y the slower 0.1 accel with the
+/// 0.05 double-add / 0.03 brake, cap ±2.5 (the C#'s `(double)` compares
+/// promote exact f32 values against exactly-representable ±2.5 — the
+/// f32 comparison is identical, the generic arm's note).
+fn flying_snake_approach(npc: &mut Npc) {
+    // `:22973-23004`.
+    if npc.facing == -1 && npc.vx > -4.0 {
+        npc.vx -= 0.2;
+        if npc.vx > 4.0 {
+            npc.vx -= 0.1;
+        } else if npc.vx > 0.0 {
+            npc.vx += 0.05;
+        }
+        if npc.vx < -4.0 {
+            npc.vx = -4.0;
+        }
+    } else if npc.facing == 1 && npc.vx < 4.0 {
+        npc.vx += 0.2;
+        if npc.vx < -4.0 {
+            npc.vx += 0.1;
+        } else if npc.vx < 0.0 {
+            npc.vx -= 0.05;
+        }
+        if npc.vx > 4.0 {
+            npc.vx = 4.0;
+        }
+    }
+    // `:23005-23036`.
+    if npc.direction_y == -1 && npc.vy > -2.5 {
+        npc.vy -= 0.1;
+        if npc.vy > 2.5 {
+            npc.vy -= 0.05;
+        } else if npc.vy > 0.0 {
+            npc.vy += 0.03;
+        }
+        if npc.vy < -2.5 {
+            npc.vy = -2.5;
+        }
+    } else if npc.direction_y == 1 && npc.vy < 2.5 {
+        npc.vy += 0.1;
+        if npc.vy < -2.5 {
+            npc.vy += 0.05;
+        } else if npc.vy < 0.0 {
+            npc.vy -= 0.03;
+        }
+        if npc.vy > 2.5 {
+            npc.vy = 2.5;
+        }
+    }
+}
+
+/// The QueenSlimeMinionPurple's approach (`NPC.cs:23038-23115`, W4-d23):
+/// the tunable arm — `num225` 0.35 X accel (the double-add is the FULL
+/// accel, the brake half), `num226` 0.3 Y accel (the double-add full, the
+/// brake ×0.75), caps ±6 X / ±5 Y. The C#'s inner `if (this.type == 660)`
+/// re-write is dead in the port (the arm is 660-only) — the four
+/// constants ride directly.
+fn queen_slime_minion_approach(npc: &mut Npc) {
+    let num225 = 0.35f32;
+    let num226 = 0.3f32;
+    let num227 = 6f32;
+    let num228 = 5f32;
+    // `:23051-23082`.
+    if npc.facing == -1 && npc.vx > -num227 {
+        npc.vx -= num225;
+        if npc.vx > num227 {
+            npc.vx -= num225;
+        } else if npc.vx > 0.0 {
+            npc.vx += num225 * 0.5;
+        }
+        if npc.vx < -num227 {
+            npc.vx = -num227;
+        }
+    } else if npc.facing == 1 && npc.vx < num227 {
+        npc.vx += num225;
+        if npc.vx < -num227 {
+            npc.vx += num225;
+        } else if npc.vx < 0.0 {
+            npc.vx -= num225 * 0.5;
+        }
+        if npc.vx > num227 {
+            npc.vx = num227;
+        }
+    }
+    // `:23083-23114`.
+    if npc.direction_y == -1 && npc.vy > -num228 {
+        npc.vy -= num226;
+        if npc.vy > num228 {
+            npc.vy -= num226;
+        } else if npc.vy > 0.0 {
+            npc.vy += num226 * 0.75;
+        }
+        if npc.vy < -num228 {
+            npc.vy = -num228;
+        }
+    } else if npc.direction_y == 1 && npc.vy < num228 {
+        npc.vy += num226;
+        if npc.vy < -num228 {
+            npc.vy += num226;
+        } else if npc.vy < 0.0 {
+            npc.vy -= num226 * 0.75;
+        }
+        if npc.vy > num228 {
+            npc.vy = num228;
+        }
+    }
+}
+
 /// The Hellbat's second pass (`NPC.cs:23200-23263`): the same X shape as
 /// the generic arm but a 0.07 double-add / 0.03 brake, and the slower Y
 /// (0.04 / 0.03 double-add / 0.02 brake, cap ±1.5).
@@ -299,13 +611,18 @@ pub fn hellbat_approach(npc: &mut Npc) {
 }
 
 /// The drift cycle (`NPC.cs:23356-23409`): `ai[1]++` (158's second
-/// increment is its own unported branch), the >200 gate with the
+/// increment, W4-d23), the >200 gate with the
 /// dry-target + line-of-sight reset, the per-type accel/cap rows
 /// (48/62/66: 0.12/0.07/3/1.25; else 0.2/0.1/4/1.5), the >1000 wrap, the
 /// `ai[2]` vertical/horizontal shove and the ±300 wrap.
 fn drift(npc: &mut Npc, env: &Style14Env<'_>) {
     let net_id = npc.kind.net_id();
     npc.ai[1] += 1.0; // `:23356`.
+    // `:23357-23360` — 158's second increment (W4-d23: the VampireBat
+    // counts twice per tick).
+    if net_id == 158 {
+        npc.ai[1] += 1.0;
+    }
     if npc.ai[1] > 200.0 {
         // `:23361-23409`.
         let p = &env.players[npc.target as usize];
@@ -419,6 +736,11 @@ mod tests {
             players_wet: wet,
             net_mode: 0,
             ticker: 7,
+            // Deep-underground night: the 158 surface-flee gate stays shut
+            // for every pre-W4-d23 witness (the gate's own pins set them).
+            world_surface: 30.0,
+            is_day: false,
+            eclipse: false,
         }
     }
 

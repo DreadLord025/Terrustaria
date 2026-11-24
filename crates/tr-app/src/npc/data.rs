@@ -455,6 +455,9 @@ impl NpcKind {
             NpcKind::MourningWood => 325,
             NpcKind::Splinterling => 326,
             NpcKind::Pumpking => 327,
+            // W4-c6 style-59 wiring: the blade keeps its vanilla id 328
+            // (`NPC.cs:13158-13174`; the slot sits between the Pumpking's
+            // 327 and the Hellhound's 329 — free in the port's id space).
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
@@ -612,6 +615,57 @@ impl NpcKind {
             NpcKind::Necromancer => 283,
             NpcKind::NecromancerArmored => 284,
             NpcKind::DiabolistRed => 285,
+            // The man-eater family (W4-d23, aiStyle 13): the four vanilla
+            // ids 43/56/101/175 are the QueenBee/Creeper/DD2JavelinT1/
+            // DD2DrakinT3 protocol slots (`to_u16`'s bijection guard), so
+            // they take the next-free port-local band 354-357; the two
+            // bulbs keep their vanilla ids (259/260 free).
+            // `NPC.cs:9293-9307` / `:9474-9488` / `:10186-10201` /
+            // `:11208-11222` / `:12332-12347` / `:12348-12363`.
+            // E8 merge (d37 tables): AngryTrapper rides 743 (the vanilla
+            // 175 is d23's cs_id; the 357 slot is d37's SeaSnail); the
+            // ManEater/Snatcher/Clinger dups drop (d34@269/276 + d35@718
+            // own them), the FungiBulb/GiantFungiBulb dups drop (d37@385/
+            // 386 own them).
+            NpcKind::AngryTrapper => 743,
+            // The aiStyle-9 spit/flare family (W4-d23): VileSpit 112 was
+            // rowed by d35 at protocol 455 (the roster's claim — the
+            // vanilla 112 slot is the AncientCultist's, `to_u16`'s guard).
+            // SolarFlare 516 / VileSpitEoW 666 are UNROWED: the reconcile
+            // directive parks them on the 400+ free band (408/411) even
+            // though their vanilla slots are free — the d37-354-399
+            // collision's union numbering (research/108 addendum).
+            // `NPC.cs:10326-10341` / `:15394-15408` / `:17418-17433`.
+            // E8 merge: VileSpit's 455 is d35's 724 (the dup drop);
+            // VileSpitEoW collapses to d43's VileSpitEaterOfWorlds@666
+            // (the same vanilla 666); SolarFlare 408 keeps (d41's 516
+            // dup dropped at its merge).
+            NpcKind::SolarFlare => 408,
+            // The aiStyle-14 flyer family (W4-d23): the five ROWED kinds
+            // adopt their roster protocol ids (Harpy 48 → d34's 275,
+            // GiantBat 93 → d35's 441, Slimer 121 → d35's 458,
+            // IlluminantBat 137 → d35's 460, FlyingSnake 226 → d37's 360
+            // — the vanilla slots are the LeechHead/FlyingDutchman/
+            // StardustCellBig/SolarDrakomireRider/WyvernBody2's, `to_u16`'s
+            // bijection guard). The nine UNROWED kinds take the 400+ free
+            // band (Demon 62 → 400, IceBat 150 → 401, Lavabat 151 → 402,
+            // GiantFlyingFox 152 → 403, RedDevil 156 → 404, VampireBat
+            // 158 → 405, Vampire 159 → 406, SporeBat 634 → 407,
+            // QueenSlimeMinionPurple 660 → 409) even where the vanilla
+            // slot is free (634/660) — the d37-354-399 collision's union
+            // numbering (research/108 addendum). `NPC.cs:9360-9372` /
+            // `:9567-9581` / `:10047-10060` / `:10466-10478` /
+            // `:10735-10747` / `:10885-10929` / `:10974-10988` /
+            // `:11911-11924` / `:15466-15493` / `:17161-17174` /
+            // `:17338-17350`.
+            // E8 merge (d37 tables): the Harpy/Demon/GiantBat/Slimer/
+            // IlluminantBat/FlyingSnake dups drop (d34@275/279 + d35@710/
+            // 727/729 + d37@360 own them); the IceBat/Lavabat/GiantFlyingFox/
+            // RedDevil/VampireBat/Vampire dups drop (g8@757-762 own them);
+            // SporeBat rides 634, QueenSlimeMinionPurple rides 660 (the
+            // d43 stand-ins drop at its merge).
+            NpcKind::SporeBat => 634,
+            NpcKind::QueenSlimeMinionPurple => 660,
             // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
             // the vanilla ids 87-92 collide with the port-local
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
@@ -988,7 +1042,20 @@ impl NpcKind {
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
         }
-    }
+    
+            // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
+            // exist in the enum via d23's style-14 wave, but g8 (757-762)
+            // and d43 (666) are NOT in main yet, so d23 carries their id
+            // rows at its own free-band ids. RE-KEY OBLIGATION: when g8 /
+            // d43 land, move these arms to 757-762 / 666 (d37 table E3).
+            NpcKind::IceBat => 401,
+            NpcKind::Lavabat => 402,
+            NpcKind::GiantFlyingFox => 403,
+            NpcKind::RedDevil => 404,
+            NpcKind::VampireBat => 405,
+            NpcKind::Vampire => 400,
+            NpcKind::VileSpitEoW => 411,
+}
 
     /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
     /// bijection over the whole kind roster (`S1-F-1`); the unmatched ids
@@ -1222,6 +1289,7 @@ impl NpcKind {
             325 => NpcKind::MourningWood,
             326 => NpcKind::Splinterling,
             327 => NpcKind::Pumpking,
+            // W4-c6 style-59 wiring: the blade's vanilla id (`to_u16`).
             329 => NpcKind::Hellhound,
             330 => NpcKind::Poltergeist,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
@@ -1350,6 +1418,24 @@ impl NpcKind {
             283 => NpcKind::Necromancer,
             284 => NpcKind::NecromancerArmored,
             285 => NpcKind::DiabolistRed,
+            // The man-eater family (W4-d23): the port-local 354-357 band
+            // + the two bulbs' free vanilla ids (`to_u16` above).
+            // E8 merge: 743 (the 354-356 slots are d37's/d34's; the
+            // ManEater/Snatcher/Clinger/FungiBulb/GiantFungiBulb dups
+            // dropped - d34/d35/d37's decode arms above).
+            743 => NpcKind::AngryTrapper,
+            // The aiStyle-9 spit/flare family (W4-d23): the d35-rowed 455
+            // + the unrowed 400+ band (`to_u16` above).
+            // E8 merge: the 455/411 dups dropped (d35@724 / d43@666);
+            // SolarFlare 408 keeps.
+            408 => NpcKind::SolarFlare,
+            // The aiStyle-14 flyer family (W4-d23): the five rowed roster
+            // ids + the nine unrowed 400+ band (`to_u16` above).
+            // E8 merge: the 12 flyer dups dropped (d34/d35/d37/g8's
+            // decode arms above); SporeBat 634 + QueenSlimeMinionPurple
+            // 660 renumbered (the d37 tables).
+            634 => NpcKind::SporeBat,
+            660 => NpcKind::QueenSlimeMinionPurple,
             // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
             // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
             // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
@@ -1618,7 +1704,16 @@ impl NpcKind {
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
             _ => return None,
         })
-    }
+    
+            // d23's g8/d43-owned decode arms (see the to_u16 note above).
+            401 => NpcKind::IceBat,
+            402 => NpcKind::Lavabat,
+            403 => NpcKind::GiantFlyingFox,
+            404 => NpcKind::RedDevil,
+            405 => NpcKind::VampireBat,
+            400 => NpcKind::Vampire,
+            411 => NpcKind::VileSpitEoW,
+}
 
     /// `npc.townNPC` (`NPC.cs:6537`) — the flag the town `SetDefaults`
     /// cases raise: the town roster, the goblin pair and the Travelling
@@ -2271,6 +2366,24 @@ impl NpcKind {
             NpcKind::JungleBat => "NPC_Hit_1",
             NpcKind::Hellbat => "NPC_Hit_1",
             NpcKind::VoodooDemon => "NPC_Hit_21",
+            // The aiStyle-14 flyer family (W4-d23): NPCHit1 for
+            // 48/93/121/137/150/151/152/158/159/634/660 (`NPC.cs:9368`/
+            // `:10056`/`:10474`/`:10743`/`:10894`/`:10909`/`:10924`/
+            // `:15475`/`:15489`/`:17170`/`:17346`), NPCHit21 for 62/156
+            // (`:9576`/`:10983`), NPCHit23 for 226 (`:11920`).
+            NpcKind::Harpy
+            | NpcKind::GiantBat
+            | NpcKind::Slimer
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat
+            | NpcKind::Vampire
+            | NpcKind::SporeBat
+            | NpcKind::QueenSlimeMinionPurple => "NPC_Hit_1",
+            NpcKind::Demon | NpcKind::RedDevil => "NPC_Hit_21",
+            NpcKind::FlyingSnake => "NPC_Hit_23",
             NpcKind::EaterOfSouls => "NPC_Hit_1",
             NpcKind::Hornet => "NPC_Hit_1",
             NpcKind::MeteorHead => "NPC_Hit_3",
@@ -2715,6 +2828,21 @@ impl NpcKind {
             // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
             // `:14311`/`:14326`/`:14340`, the `:14584` range row).
             // E8 merge: the 12-critter hit rows are c8/d40's above.
+            // The man-eater family (W4-d23): all six NPCHit1
+            // (`NPC.cs:9303`/`:9484`/`:10197`/`:11218`/`:12342`/`:12358`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Hit_1",
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // carry `HitSound = null` (`NPC.cs:10334`/`:17426`/`:15402`) —
+            // no hit cue (the `_ => return None` fallthrough).
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCHit1` (`NPC.cs:13166`,
+            // `SoundID.cs:1257` = (3, 1)). The blade is `dontTakeDamage`,
+            // so the cue only plays on a force-kill path — the row is
+            // carried for the census.
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2876,6 +3004,23 @@ impl NpcKind {
             NpcKind::JungleBat => "NPC_Killed_4",
             NpcKind::Hellbat => "NPC_Killed_4",
             NpcKind::VoodooDemon => "NPC_Killed_24",
+            // The aiStyle-14 flyer family (W4-d23): NPCDeath1 for 48/660
+            // (`NPC.cs:9370`/`:17347`), NPCDeath4 for
+            // 93/150/151/152/634 (`:10058`/`:10896`/`:10911`/`:10926`/
+            // `:17172`), NPCDeath6 for 137/158/159 (`:10745`/`:15477`/
+            // `:15490`), NPCDeath24 for 62/156 (`:9578`/`:10985`),
+            // NPCDeath26 for 226 (`:11922`). The Slimer 121 writes NO
+            // DeathSound row (`:10466-10478`) — the `_ => return None`
+            // fallthrough (the C# null default).
+            NpcKind::Harpy | NpcKind::QueenSlimeMinionPurple => "NPC_Killed_1",
+            NpcKind::GiantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::SporeBat => "NPC_Killed_4",
+            NpcKind::IlluminantBat | NpcKind::VampireBat | NpcKind::Vampire => "NPC_Killed_6",
+            NpcKind::Demon | NpcKind::RedDevil => "NPC_Killed_24",
+            NpcKind::FlyingSnake => "NPC_Killed_26",
             NpcKind::EaterOfSouls => "NPC_Killed_1",
             NpcKind::Hornet => "NPC_Killed_1",
             NpcKind::MeteorHead => "NPC_Killed_3",
@@ -3321,6 +3466,24 @@ impl NpcKind {
             // squeak; every other critter `NPCDeath1`.
             // E8 merge: the GoldMouse NPCDeath4 + the 12-critter death
             // rows are d40/c8's above (the dup drops).
+            // The man-eater family (W4-d23): all six NPCDeath1
+            // (`NPC.cs:9305`/`:9486`/`:10199`/`:11220`/`:12344`/`:12360`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Killed_1",
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 NPCDeath9
+            // (`NPC.cs:10335`/`:17427`); 516 `DeathSound = null`
+            // (`:15403`) — the `_ => return None` fallthrough.
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => "NPC_Killed_9",
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCDeath1` (`NPC.cs:13167`,
+            // `SoundID.cs:1315` = (4, 1)) — the despawn's `checkDead` plays
+            // it (`:78186-78194`); the one `Next(-10,11) * 0.01` pitch roll
+            // (`LegacySoundPlayer.cs:693`) rides the death-sound batch on
+            // the `UpdateNpcs` stream (`world_sim/npcs.rs`'s dead pass,
+            // the S1-E-21c convention — NOT the style-59 arm).
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3504,6 +3667,24 @@ impl NpcKind {
             // The aiStyle-14 bat block (`NPC.cs:22851`) — the bat family and
             // the Voodoo Demon (66, `NPC.cs:9629`).
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => true,
+            // The aiStyle-14 flyer family (W4-d23): the same AI-head
+            // `noGravity = true` (`NPC.cs:22851`) reaches all thirteen —
+            // their SetDefaults rows write none, the axis arm does (the
+            // four-bat row's precedent). The Vampire 159 is aiStyle 3
+            // (gravity walker), NOT here.
+            NpcKind::Harpy
+            | NpcKind::Demon
+            | NpcKind::GiantBat
+            | NpcKind::Slimer
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::RedDevil
+            | NpcKind::VampireBat
+            | NpcKind::FlyingSnake
+            | NpcKind::SporeBat
+            | NpcKind::QueenSlimeMinionPurple => true,
             // The aiStyle-5 flyers' SetDefaults rows: Eater of Souls (6,
             // `:8744`), Hornet (42, `:9291`), Meteor Head (23, `:9073`),
             // Servant of Cthulhu (5, `:8730`), the volley bees (210/211,
@@ -3529,6 +3710,9 @@ impl NpcKind {
             // kb 0.2 (`NPC.cs:17747-17750`); the 34/289 rows are
             // d34/d38's below (E8 keep-both).
             | NpcKind::WaterBoltMimic
+            // W4-c6 style-59 wiring: the blade's `noGravity = true`
+            // (`NPC.cs:13168`; kb 0, `:13170`).
+            | NpcKind::PumpkingBlade
             | NpcKind::Piranha
             | NpcKind::Shark => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
@@ -3711,6 +3895,18 @@ impl NpcKind {
             // noGravity is the aiStyle-24 head's per-tick write (`:25325`,
             // the AngryNimbus precedent - the superset addition).
             NpcKind::GoldBird => true,
+            // The man-eater family (W4-d23): all six `SetDefaults` rows
+            // write `noGravity = true` (`NPC.cs:9295`/`:9477`/`:10188`/
+            // `:11210`/`:12334`/`:12350`).
+            NpcKind::ManEater
+            | NpcKind::Snatcher
+            | NpcKind::Clinger
+            | NpcKind::AngryTrapper
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => true,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // write `noGravity = true` (`NPC.cs:10336`/`:17428`/`:15404`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => true,
             _ => false,
         }
     }
@@ -3759,6 +3955,8 @@ impl NpcKind {
             NpcKind::Scarecrow6 | NpcKind::Scarecrow7 | NpcKind::Scarecrow8 | NpcKind::Scarecrow9 |
             NpcKind::Scarecrow10 | NpcKind::Splinterling | NpcKind::ZombieElf | NpcKind::ZombieElfBeard |
             NpcKind::ZombieElfGirl | NpcKind::GingerbreadMan | NpcKind::Yeti => 3,
+            // aiStyle 3 — the Vampire (159), the VampireBat's Transform
+            // target (`NPC.cs:15485`, W4-d23): the fighter walker.
             // The Frost Moon walkers (S1-F-13c slice B) - aiStyle 3:
             // NPC.cs:13420 (348), :13434 (349), :13448 (350), :13461 (351).
             NpcKind::Nutcracker | NpcKind::NutcrackerSpinning | NpcKind::ElfArcher | NpcKind::Krampus => 3,
@@ -3818,12 +4016,38 @@ impl NpcKind {
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
+            // aiStyle 9 — the spit/flare family (W4-d23): 112 (`NPC.cs:10330`),
+            // 516 (`:15398`), 666 (`:17422`).
+            NpcKind::VileSpit | NpcKind::SolarFlare | NpcKind::VileSpitEoW => 9,
             // aiStyle 11 - NPC.cs:9170
             NpcKind::SkeletronHead => 11,
             // aiStyle 12 - NPC.cs:9187
             NpcKind::SkeletronHand => 12,
+            // aiStyle 13 - NPC.cs:9299 (43), :9480 (56), :10193 (101),
+            // :11214 (175), :12338 (259), :12354 (260): the man-eater
+            // family (W4-d23).
+            | NpcKind::AngryTrapper
             // aiStyle 14 - NPC.cs:9378, :9409, :9543, :9629
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => 14,
+            // aiStyle 14 — the W4-d23 flyer family (NPC.cs:9364 (48),
+            // :9572 (62), :10052 (93), :10470 (121), :10739 (137),
+            // :10890 (150), :10905 (151), :10921 (152), :10979 (156),
+            // :15471 (158), :11916 (226), :17166 (634), :17342 (660)).
+            // The Vampire (159) is aiStyle 3 — the transform target, NOT
+            // a style-14 member (its row rides the aiStyle-3 group below).
+            NpcKind::Harpy
+            | NpcKind::Demon
+            | NpcKind::GiantBat
+            | NpcKind::Slimer
+            | NpcKind::IlluminantBat
+            | NpcKind::IceBat
+            | NpcKind::Lavabat
+            | NpcKind::GiantFlyingFox
+            | NpcKind::RedDevil
+            | NpcKind::VampireBat
+            | NpcKind::FlyingSnake
+            | NpcKind::SporeBat
+            | NpcKind::QueenSlimeMinionPurple => 14,
             // aiStyle 15 - NPC.cs:9392
             NpcKind::KingSlime => 15,
             // aiStyle 16 - NPC.cs:9465, :9508, :9615
@@ -3906,6 +4130,8 @@ impl NpcKind {
             NpcKind::MourningWood | NpcKind::Everscream => 57,
             // aiStyle 58 - NPC.cs:13146
             NpcKind::Pumpking => 58,
+            // aiStyle 59 - NPC.cs:13162 (W4-c6 style-59 wiring: the
+            // Pumpking's blade, the style's only member — the census).
             // aiStyle 60 - NPC.cs:13373 (`S1-F-13c` slice B)
             NpcKind::IceQueen => 60,
             // aiStyle 61 - NPC.cs:13390
@@ -4485,6 +4711,10 @@ impl NpcKind {
             // 586's row is the full-life base of the life-scaled cap).
             NpcKind::TorchZombie => 1.0,
             NpcKind::ArmedTorchZombie => 1.0,
+            // The Vampire (159, W4-d23) — the 159/349 spin arm's 6f cap
+            // (`NPC.cs:57409-57438`, the `npc_ai3_speeds` ladder's own
+            // arm); the row is the cap pin the walker family reads.
+            NpcKind::Vampire => 6.0,
             _ => return None,
         })
     }
@@ -4849,6 +5079,23 @@ impl NpcKind {
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => (32.0, 32.0),
             NpcKind::CaveBat => (22.0, 18.0),
+            // The aiStyle-14 flyer family (W4-d23): the thirteen kinds'
+            // SetDefaults boxes — 48 24x34 (`NPC.cs:9362-9363`), 62/156
+            // 28x48 (`:9570-9571`/`:10977-10978`), 93/137 26x20
+            // (`:10050-10051`/`:10737-10738`), 121/660 40x30
+            // (`:10468-10469`/`:17340-17341`), 150/151/158 22x22
+            // (`:10888-10889`/`:10903-10904`/`:15469-15470`), 152 38x34
+            // (`:10919-10920`), 159 18x40 (`:15483-15484`), 226 34x50
+            // (`:11914-11915`), 634 22x18 (`:17164-17165`).
+            NpcKind::Harpy => (24.0, 34.0),
+            NpcKind::Demon | NpcKind::RedDevil => (28.0, 48.0),
+            NpcKind::GiantBat | NpcKind::IlluminantBat => (26.0, 20.0),
+            NpcKind::Slimer | NpcKind::QueenSlimeMinionPurple => (40.0, 30.0),
+            NpcKind::IceBat | NpcKind::Lavabat | NpcKind::VampireBat => (22.0, 22.0),
+            NpcKind::GiantFlyingFox => (38.0, 34.0),
+            NpcKind::Vampire => (18.0, 40.0),
+            NpcKind::FlyingSnake => (34.0, 50.0),
+            NpcKind::SporeBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
             // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
@@ -4876,6 +5123,8 @@ impl NpcKind {
             NpcKind::HeadlessHorseman => (74.0, 70.0),
             NpcKind::MourningWood => (164.0, 154.0),
             NpcKind::Pumpking => (100.0, 100.0),
+            // W4-c6 style-59 wiring: the blade's 80x80 box
+            // (`NPC.cs:13160-13161`).
             NpcKind::Hellhound => (46.0, 30.0),
             NpcKind::Poltergeist => (24.0, 44.0),
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
@@ -5214,6 +5463,18 @@ impl NpcKind {
                 (28.0, 22.0)
             }
             // E8 merge: the c10 12-critter size tail dropped (d40/c8's rows).
+            // The man-eater family (W4-d23): 43/56/101/175 30x30
+            // (`NPC.cs:9297-9298`/`:9478-9479`/`:10191-10192`/
+            // `:11212-11213`), 259 20x20 (`:12336-12337`), 260 36x36
+            // (`:12352-12353`).
+            NpcKind::ManEater | NpcKind::Snatcher | NpcKind::Clinger | NpcKind::AngryTrapper => (30.0, 30.0),
+            NpcKind::FungiBulb => (20.0, 20.0),
+            NpcKind::GiantFungiBulb => (36.0, 36.0),
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 16x16
+            // (`NPC.cs:10328-10329`/`:17420-17421`), 516 26x26
+            // (`:15396-15397`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => (16.0, 16.0),
+            NpcKind::SolarFlare => (26.0, 26.0),
         }
     }
 
@@ -5531,6 +5792,14 @@ impl NpcKind {
             NpcKind::Snail => 359,
             NpcKind::GlowingSnail => 360,
             NpcKind::MagmaSnail => 655,
+            // W4-c6 style-59 wiring — NO hand row for the blade: its
+            // bestiary entry is Hide=true (`NPCID.cs:3398-3403`'s draw
+            // modifiers) and folds onto the Pumpking in
+            // `try_entry_for_npc`, so the net-id fallback reads the folded
+            // 327 — the s1_f_3 cs_id==net_id invariant (the fishron
+            // hazards' L-B gate fix, the destroyer precedent). The vanilla
+            // type 328 rides `to_u16`/`texture_net_id`; the machine reads
+            // its own kind (the aiStyle-59 axis).
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -5587,6 +5856,12 @@ impl NpcKind {
             // (`NPC.cs:68552`) on its 15-row strip; the Old Man (37) on 21.
             NpcKind::AngryBones => 15,
             NpcKind::OldMan => 21,
+            // The Vampire (159, W4-d23) rides `FindFrame`'s humanoid-group
+            // case list (`NPC.cs:68569`) on its 15-frame strip
+            // (`Main.npcFrameCount[159]` = 15, `Main.cs:67082`); the C#'s
+            // `ExtraFramesCount` set carries no 159 (`NPCID.cs:10464`),
+            // so the walk band wraps at 15.
+            NpcKind::Vampire => 15,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -5697,6 +5972,8 @@ impl NpcKind {
                 // W4-c8 — the TruffleWormDigger's `behindTiles = true`
                 // row (`NPC.cs:13790`): the digger draws under the tiles.
                 | NpcKind::TruffleWormDigger
+                // The Clinger's `behindTiles = true` row (`NPC.cs:10190`,
+                // W4-d23 — the family's only behind-tiles member).
         )
     }
 
@@ -5827,6 +6104,23 @@ impl NpcKind {
             NpcKind::JungleBat => 34,
             NpcKind::Hellbat => 46,
             NpcKind::VoodooDemon => 140,
+            // The aiStyle-14 flyer family (W4-d23): 48 100 (`NPC.cs:9367`),
+            // 62 120 (`:9575`), 93 100 (`:10055`), 121 60 (`:10473`),
+            // 137 200 (`:10742`), 150 30 (`:10893`), 151 160 (`:10908`),
+            // 152 220 (`:10923`), 156 600 (`:10982`), 158/159 750
+            // (`:15474`/`:15488`), 226 260 (`:11919`), 634 16 (`:17169`),
+            // 660 120 (`:17345`).
+            NpcKind::Harpy | NpcKind::GiantBat => 100,
+            NpcKind::Demon | NpcKind::QueenSlimeMinionPurple => 120,
+            NpcKind::Slimer => 60,
+            NpcKind::IlluminantBat => 200,
+            NpcKind::IceBat => 30,
+            NpcKind::Lavabat => 160,
+            NpcKind::GiantFlyingFox => 220,
+            NpcKind::RedDevil => 600,
+            NpcKind::VampireBat | NpcKind::Vampire => 750,
+            NpcKind::FlyingSnake => 260,
+            NpcKind::SporeBat => 16,
             // `SetDefaults` case 6: 40; case 42: 48; case 23: 26.
             NpcKind::EaterOfSouls => 40,
             NpcKind::Hornet => 48,
@@ -6053,6 +6347,8 @@ impl NpcKind {
             NpcKind::MourningWood => 14000,
             NpcKind::Splinterling => 1200,
             NpcKind::Pumpking => 26000,
+            // W4-c6 style-59 wiring: the blade's `lifeMax = 5000`
+            // (`NPC.cs:13165`).
             NpcKind::Hellhound => 1800,
             NpcKind::Poltergeist => 1250,
             // S1-D-3ff wave A — the `SetDefaults` lifeMax rows: 16 90
@@ -6404,6 +6700,18 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 5,
             // E8 merge: the c10 12-critter lifeMax tail dropped (d40/c8's rows).
+            // The man-eater family (W4-d23): 43 110 (`NPC.cs:9302`), 56 60
+            // (`:9483`), 101 320 (`:10196`), 175 300 (`:11217`), 259 90
+            // (`:12341`), 260 300 (`:12357`).
+            NpcKind::ManEater => 110,
+            NpcKind::Snatcher => 60,
+            NpcKind::Clinger => 320,
+            NpcKind::AngryTrapper => 300,
+            NpcKind::FungiBulb => 90,
+            NpcKind::GiantFungiBulb => 300,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
+            // `lifeMax = 1` (`NPC.cs:10333`/`:17425`/`:15401`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 1,
         }
     }
 
@@ -6700,6 +7008,8 @@ impl NpcKind {
             NpcKind::MourningWood => 120,
             NpcKind::Splinterling => 100,
             NpcKind::Pumpking => 50,
+            // W4-c6 style-59 wiring: the blade's `damage = 65`
+            // (`NPC.cs:13163`).
             NpcKind::Hellhound => 80,
             NpcKind::Poltergeist => 90,
             // S1-D-3ff wave A — the `SetDefaults` damage rows: 16 20
@@ -7059,6 +7369,36 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
             // E8 merge: the c10 12-critter damage tail dropped (d40/c8's rows).
+            // The man-eater family (W4-d23): 43 34 (`NPC.cs:9300`), 56 25
+            // (`:9481`), 101 70 (`:10194`), 175 100 (`:11215`), 259 24
+            // (`:12339`), 260 70 (`:12355`).
+            NpcKind::ManEater => 34,
+            NpcKind::Snatcher => 25,
+            NpcKind::Clinger => 70,
+            NpcKind::AngryTrapper => 100,
+            NpcKind::FungiBulb => 24,
+            NpcKind::GiantFungiBulb => 70,
+            // The aiStyle-9 spit/flare family (W4-d23): 112/666 dmg 65
+            // (`NPC.cs:10331`/`:17423`), 516 dmg 100 (`:15399`).
+            NpcKind::VileSpit | NpcKind::VileSpitEoW => 65,
+            NpcKind::SolarFlare => 100,
+            // The aiStyle-14 flyer family (W4-d23): 48 dmg 25
+            // (`NPC.cs:9365`), 62 32 (`:9573`), 93 45 (`:10053`), 121 45
+            // (`:10471`), 137 75 (`:10740`), 150 18 (`:10891`), 151 50
+            // (`:10906`), 152 80 (`:10922`), 156 50 (`:10980`), 158 60
+            // (`:15472`), 159 80 (`:15486`), 226 85 (`:11917`), 634 13
+            // (`:17167`), 660 50 (`:17343`).
+            NpcKind::Harpy => 25,
+            NpcKind::Demon => 32,
+            NpcKind::GiantBat | NpcKind::Slimer => 45,
+            NpcKind::IlluminantBat => 75,
+            NpcKind::IceBat => 18,
+            NpcKind::Lavabat | NpcKind::RedDevil | NpcKind::QueenSlimeMinionPurple => 50,
+            NpcKind::GiantFlyingFox => 80,
+            NpcKind::VampireBat => 60,
+            NpcKind::Vampire => 80,
+            NpcKind::FlyingSnake => 85,
+            NpcKind::SporeBat => 13,
         }
     }
 }

@@ -682,6 +682,27 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | HellArmoredBonesSpikeShield
             | HellArmoredBonesMace
             | HellArmoredBonesSword
+            // W4-d23 — the Vampire (159) rides the plain
+            // `walker_step_fighter` machine (`update_skeleton`), so its
+            // `ai[3]` is free for the idle counter; its moan is the
+            // 159-only `Next(500)` arm (`NPC.cs:57352-57355`,
+            // `fighter_ambient_moans`' case 29 style 7), NOT the
+            // family's `Next(1000)` (159 is absent from the `:57340`
+            // list) — the Blood Zombie's kind-gate precedent.
+            | Vampire
+            // W4-d22 (style-3 axis): the shared core's newly claimed plain
+            // walkers — their `ai[3]` is the C# idle counter now (the core
+            // reads it at the `:57336` chase gate). None of these ids sits
+            // in the moan type lists (`NPC.cs:57340-57364`), so the moan
+            // emitter stays draw-free for them; the counter is the change.
+            // The martian engineer/zapper/walker (386/389/520) and the
+            // officer (383) are NOT here — their head machines own ai[2]/
+            // ai[3] state (the deferred per-type ports).
+            | GrayGrunt
+            | PirateCaptainsMate
+            | Scutlix
+            | VortexSoldier
+            | SolarSpearman
     )
 }
 

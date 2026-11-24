@@ -677,6 +677,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        // W4-c6 style-59 — the Pumpking blade's two-link arm chain
+        // (`TextureAssets.PumpkingArm`, `Main.cs:22693`): drawn from the
+        // blade toward its carrier, one full-sheet quad per link.
+        "PumpkingArm",
         // The towers' per-pillar glow masks (`Main.cs:24177-24233`): each
         // pillar's arm draws four ghost copies of its own sheet at the
         // velocity-rotated offsets.
@@ -1265,6 +1269,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_325",
         "NPC_326",
         "NPC_327",
+        // W4-c6 style-59 wiring: the Pumpking blade's own sheet
+        // (`PUMPKING_BLADE_SHEET` — the draw arm asks `npc_sheet(328)`).
+        "NPC_328",
         "NPC_329",
         "NPC_330",
         // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per
@@ -1525,6 +1532,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_485",
         "NPC_486",
         "NPC_487",
+    // W4-d23 — the man-eater / spit-flare / aiStyle-14 flyer families'
+    // own draw sheets (the already-packed siblings ride d34/d37/d40's
+    // rows above).
+    "NPC_175",
+    "NPC_666",
+    "NPC_516",
+    "NPC_150",
+    "NPC_151",
+    "NPC_152",
+    "NPC_156",
+    "NPC_158",
+    "NPC_159",
+    "NPC_634",
+    "NPC_660",
 ];
 
 
@@ -2124,7 +2145,9 @@ pub struct AmbienceTex {
 // c7/d40's slots above own them) = 320.
 // + W4-c10's 8 waterfowl sheets (362-365/602/603/608/609; the
 // 12-critter tail dropped - d40/c8's slots above own them) = 328.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
+// + W4-d23's 12 portrait slots (175/112/666/516/150/151/152/156/158/159/634/660; the
+// 43/56/101/259/260/48/62/93/121/137/226 sheets already ride the rows above) = 340.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 340] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2223,6 +2246,10 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
         362, 363, 364, 365, 602, 603, 608, 609,
         // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
+        // W4-d23 — the man-eater (43-260 band), aiStyle-9 spit/flare and
+        // aiStyle-14 flyer portrait slots, appended last so the earlier
+        // slots keep their indexes.
+        175, 112, 666, 516, 150, 151, 152, 156, 158, 159, 634, 660,
     ];
 
 
@@ -3162,6 +3189,20 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_603").copied(),
                 atlas.sheet("NPC_608").copied(),
                 atlas.sheet("NPC_609").copied(),
+                // W4-d23 — the man-eater / spit-flare / flyer-14
+                // portrait strips, parallel to BESTIARY_NPC_SHEET_IDS.
+                atlas.sheet("NPC_175").copied(),
+                atlas.sheet("NPC_112").copied(),
+                atlas.sheet("NPC_666").copied(),
+                atlas.sheet("NPC_516").copied(),
+                atlas.sheet("NPC_150").copied(),
+                atlas.sheet("NPC_151").copied(),
+                atlas.sheet("NPC_152").copied(),
+                atlas.sheet("NPC_156").copied(),
+                atlas.sheet("NPC_158").copied(),
+                atlas.sheet("NPC_159").copied(),
+                atlas.sheet("NPC_634").copied(),
+                atlas.sheet("NPC_660").copied(),
             ],
 
 

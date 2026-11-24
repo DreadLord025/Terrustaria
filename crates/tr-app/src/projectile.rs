@@ -924,6 +924,15 @@ pub struct Projectile {
     /// (`:11139`) — all unported state; the field rides for completeness
     /// and stays 0 on every ported shot.
     pub bonus_crit_chance: i32,
+    /// `Projectile.bannerIdToRespondTo` (`Projectile.cs:710`, reset 0) —
+    /// the banner the hostile shot's `Damage_EVP` strength reads
+    /// (`:14832-14835`). `FindBannerToAssociateTo` (`:11104-11117`) sets it
+    /// from the spawning NPC's `BannerID()` (`EntitySource_Parent`); the
+    /// port's hostile-shot drain stamps it from the requester's kind (the
+    /// `wants_hostile_shot` owner slot). 0 = no banner association (the
+    /// player's shots and the unassociated hostiles). W4-g4 P1 (the
+    /// W4-d22 reconcile fold).
+    pub banner_id_to_respond_to: i32,
     /// S1-P-i16 — one slot's queued child-spawn requests for the pool's
     /// post-AI drain: `(kind, x, y, vx, vy, damage, knock_back, ai0, ai1,
     /// time_left_delta)`. The dart split machines (the Ichor Dart's fan
@@ -1039,6 +1048,7 @@ impl Default for Projectile {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
+            banner_id_to_respond_to: 0,
             wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,
@@ -5461,6 +5471,18 @@ impl Projectile {
         self.ai_style1_flight(world, true);
     }
 
+    /// W4-d22: the Hornet's stinger (55) — `AI_001` with the flight counter
+    /// at rest. The kind is on the `flag3 = false` list (`Projectile.cs:
+    /// 55954`), so `ai[0]` never climbs and the `>= 15` gravity never fires
+    /// (`:57568-57579`); the generic rotation (`:57750`) + the ±16 clamp
+    /// (`:57764`) + the tile-kill movement stand. The `:55490-55494` trail
+    /// dust (one dust 18, noGravity) is the pool-wide dust skip (no RNG in
+    /// the pool — the slice-A precedent), so the `UpdateProjectiles` stream
+    /// stays untouched by construction.
+    fn ai_hornet_stinger(&mut self, world: &World) {
+        self.ai_style1_flight(world, false);
+    }
+
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
     /// branch, the default arm `Projectile.cs:25143-25158` + the tile-kill
     /// scan `:25726-25737` + the lava/shimmer kills `:25739-25750`): the
@@ -7629,6 +7651,36 @@ impl Projectile {
                 self.ai[0] = 200.0;
             }
         }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-56 arm (`Projectile.cs:28845-28866`): the Flaming
+    /// Scythe 329 (W4-c6 style-59 — the style's only rowed kind). The
+    /// one-time latch copies the spawn `ai0`/`ai1` into
+    /// `rotation`/`spriteDirection` (the blade's fire-time pose,
+    /// `NPC.cs:33230`); the ×1.05 spin-up runs while the Manhattan speed
+    /// is under 16 (STRICTLY <); the direction follows the velocity's X
+    /// sign (0 reads +1) and the rotation advances by the speed × 0.025 ×
+    /// direction. RNG-free — no `Next` anywhere in the arm.
+    fn ai_flaming_scythe(&mut self, world: &World) {
+        // `:28847-28852` — the one-tick latch.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.rot = self.ai[0];
+            self.sprite_direction = -(self.ai[1] as i32);
+        }
+        let speed = self.vel.x.abs() + self.vel.y.abs();
+        // `:28853-28856` — the spin-up gate.
+        if speed < 16.0 {
+            self.vel *= 1.05;
+        }
+        // `:28857-28864` — the direction (the else arm covers vx == 0).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        // `:28865` — the rotation uses the POST-spin-up velocity.
+        self.rot +=
+            (self.vel.x.abs() + self.vel.y.abs()) * 0.025 * self.direction as f32;
+        // HandleMovement after the AI (`:17015`): `tileCollide = false`
+        // (`:4223`) — the free-move branch (`:20445`).
         self.kill_step(world);
     }
 
@@ -13859,13 +13911,17 @@ fn trail_segments(
 /// (BookOfSkullsSkull 837) has its own arm and gates first. S1-D-3q adds the
 /// BulletSnowman 110 (the Frost Legion Gangsta's bottle): the first-tick
 /// `ai[1]` latch + the alpha-15 fade, also on the `flag3 = false` list
-/// (`Projectile.cs:55962`).
-const AI_STYLE_1_RIDERS: [u16; 5] = [
+/// (`Projectile.cs:55962`). W4-d23 adds the HarpyFeather 38: NO per-type
+/// hook (the C# carries none — the `:54002-55945` head has no 38 arm),
+/// but `case 38` sits on the `flag3 = false` list (`:55953`), so the
+/// rider's resting flight (no counter, no gravity) is its whole AI.
+const AI_STYLE_1_RIDERS: [u16; 6] = [
     GREEN_LASER,
     PURPLE_LASER,
     VENOM_FANG,
     SKY_FRACTURE,
     BULLET_SNOWMAN,
+    HARPY_FEATHER,
 ];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
@@ -14732,6 +14788,13 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// `Player.SceneMetrics.NPCBannerBuff` (`Player.cs:44197-44199`) — the
+    /// per-banner strength flags the hostile shots' `Damage_EVP` reads
+    /// through `GetBannerBuffEffect(this.bannerIdToRespondTo, ..)`
+    /// (`Projectile.cs:14832`). The world-sim pass feeds the snapshot before
+    /// `update` (the `set_disco` precedent — the pool cannot borrow the App);
+    /// empty = no banners (the pool-only tests). W4-g4 P1 (the W4-d22 fold).
+    npc_banner_buff: Vec<bool>,
 }
 
 impl Default for ProjectilePool {
@@ -15121,6 +15184,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            npc_banner_buff: Vec::new(),
         }
     }
 
@@ -15194,6 +15258,34 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// `Player.SceneMetrics.NPCBannerBuff` as the hostile shots' `Damage_EVP`
+    /// banner arm reads it (`Projectile.cs:14832` → `Player.cs:44197`). The
+    /// world-sim pass feeds the per-tick snapshot before `update`. W4-g4 P1.
+    pub fn set_npc_banner_buff(&mut self, flags: Vec<bool>) {
+        self.npc_banner_buff = flags;
+    }
+
+    /// `Player.GetBannerBuffEffect(int bannerType, out effect)`
+    /// (`Player.cs:20483-20492`) over the pool's banner snapshot: the classic
+    /// `(DamageDealt, DamageReceived)` pair when the banner stands, `None`
+    /// otherwise. The classic `BannerEffect(1f)` sample is the port's
+    /// 1.5/0.75 pair (`tr_core::bestiary`). W4-g4 P1.
+    fn banner_buff_for(&self, banner: i32) -> Option<(f32, f32)> {
+        if banner <= 0 {
+            return None;
+        }
+        self.npc_banner_buff
+            .get(banner as usize)
+            .copied()
+            .filter(|b| *b)
+            .map(|_| {
+                (
+                    tr_core::bestiary::BANNER_DAMAGE_DEALT,
+                    tr_core::bestiary::BANNER_DAMAGE_RECEIVED,
+                )
+            })
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -17134,6 +17226,14 @@ impl ProjectilePool {
                                     world,
                                 )
                             }
+                            // W4-d22 — the Hornet's stinger (55): on the
+                            // `flag3 = false` flight-counter list
+                            // (`Projectile.cs:55954`), so the counter rests
+                            // and the generic gravity never fires — it flies
+                            // dead straight. The `:55490-55494` trail dust
+                            // (one dust 18, noGravity) is the pool-wide dust
+                            // skip (no RNG in the pool, the slice-A precedent).
+                            HORNET_STINGER => self.slots[i].ai_hornet_stinger(world),
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => {
@@ -17493,6 +17593,17 @@ impl ProjectilePool {
                             self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
                         }
                         18 => self.slots[i].ai_demon_scythe(world),
+                        // `AI()`'s `else if (this.aiStyle == 56)`
+                        // (`Projectile.cs:28845-28866`) — the Flaming Scythe
+                        // (329, W4-c6 style-59, the style's only rowed kind):
+                        // the one-tick rotation/sprite latch off ai0/ai1,
+                        // the ×1.05 spin-up under the 16-Manhattan gate and
+                        // the speed-scaled rotation. The style's arm does
+                        // NOT move the projectile — the C#'s HandleMovement
+                        // tail (`:17015`) owns it; the port's shared
+                        // `kill_step` rides the `tileCollide = false`
+                        // free-move branch (`:20445`).
+                        56 => self.slots[i].ai_flaming_scythe(world),
                         // `AI()`'s `else if (this.aiStyle == 12)`
                         // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
                         // water stream (22): the scale decay, the gravity and
@@ -23416,6 +23527,21 @@ impl ProjectilePool {
                 }
                 p.ai[0] = 1.0;
             }
+            // `Projectile.cs:13353-13356` — `if ((Main.netMode != 2) &
+            // ownedBySomeone && Main.player[owner].GetBannerBuffEffect(
+            // targetNPC, out var effect)) dmg = (int)(dmg *
+            // effect.DamageDealt.Sample(Main.Difficulty))`: the placed-banner
+            // strength multiplies the rolled hit damage AFTER DamageVar and
+            // BEFORE the armor-pen add / strike (the C# order). The port is
+            // the host (netMode 0). RNG-free. W4-g4 P1 (the W4-d22 fold).
+            if owned_by_someone {
+                if let Some(pl) = player.as_deref() {
+                    if let Some((dealt, _)) = pl.banner_buff_for_npc(npcs[idx].kind.cs_id() as i32)
+                    {
+                        dmg = (dmg as f32 * dealt) as i32;
+                    }
+                }
+            }
             // `:13579-13584` — `SpawnHitVisuals` + `StatusNPC` (the whip
             // debuffs, `ApplyWhipDebuffs` `:11727-11750`) and the tag
             // application run BEFORE `StrikeNPC` (`:13649`) in the C#. The
@@ -23905,6 +24031,20 @@ impl ProjectilePool {
         if !inside {
             return;
         }
+        // `Projectile.cs:14831-14835` — `int num3 = Main.DamageVar(this.damage,
+        // 0f - Main.player[owner].luck); if (Main.player[myPlayer].
+        // GetBannerBuffEffect(this.bannerIdToRespondTo, out var effect)) num3
+        // = (int)(num3 * effect.DamageReceived.Sample(Main.Difficulty))`: the
+        // placed-banner strength cuts the hostile shot's damage. The port's
+        // hostile lane carries the raw damage (the DamageVar/luck roll is the
+        // recorded EVP deviation — the `hurt_with_source` seam); the banner
+        // multiplier rides the same value, RNG-free. `bannerIdToRespondTo`
+        // is the spawning NPC's banner (`FindBannerToAssociateTo` `:11104`).
+        // W4-g4 P1 (the W4-d22 reconcile fold).
+        let damage = match self.banner_buff_for(p.banner_id_to_respond_to) {
+            Some((_, received)) => (p.damage as f32 * received) as i32,
+            None => p.damage,
+        };
         // `Projectile.cs:14862-14870` — `bool dodgeable =
         // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
         // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
@@ -23923,6 +24063,7 @@ impl ProjectilePool {
         if hit_landed && p.kind == crate::projectile::SHADOWFLAMES {
             player.buffs.add_buff(23, 240);
         }
+        player.hurt_with_source(damage, cx, rng, p.is_damage_dodgeable(), p.kind);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -25449,6 +25590,118 @@ mod tests {
         assert!(npc.hp < npc.max_hp);
         // `:14112-14119`: a single-hit projectile applies no immunity.
         assert_eq!(npc.immune[0], 0);
+    }
+
+    /// W4-g4 P1 (the W4-d22 reconcile fold) — the projectile PVE banner
+    /// arm (`Projectile.cs:13353-13356`): an owned shot's hit damage is
+    /// multiplied by `DamageDealt` (classic 1.5) when the victim's banner
+    /// stands. Differential witness: the banner and no-banner rigs share
+    /// the seed and the player snapshot, so the per-hit crit + DamageVar
+    /// draws are identical — the banner's stream equals the baseline's
+    /// (the arm is RNG-free) and the hit deals strictly more. WRITTEN NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_g4_the_projectile_pve_banner_buff_multiplies_the_damage_rng_free() {
+        let run = |banner: bool| {
+            let mut world = ground();
+            let mut npc = one_npc(&world);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            let mut player = crate::player::Player::spawn(&world);
+            // The blue slime's banner (69) stands in the scene window.
+            player.npc_banner_buff[69] = banner;
+            let mut pool = ProjectilePool::new();
+            pool.spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                10,
+                12.0,
+                false,
+            )
+            .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.update(
+                &mut world,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            (npc.max_hp - npc.hp, rng)
+        };
+        let (base_dealt, base_rng) = run(false);
+        let (banner_dealt, banner_rng) = run(true);
+        assert!(base_dealt > 0, "the baseline hit lands");
+        assert!(
+            banner_dealt > base_dealt,
+            "the banner's ×1.5 lands more ({banner_dealt} vs {base_dealt})"
+        );
+        assert_eq!(
+            banner_rng.seed, base_rng.seed,
+            "the banner arm draws nothing — the stream matches the baseline"
+        );
+    }
+
+    /// W4-g4 P1 — the hostile shot's EVP banner arm
+    /// (`Projectile.cs:14832-14835`): the spawning NPC's banner
+    /// (`bannerIdToRespondTo`, `FindBannerToAssociateTo` `:11114`) cuts
+    /// the shot's damage by `DamageReceived` (classic 0.75). Differential
+    /// witness: the banner and no-banner rigs share the seed — the arm
+    /// is RNG-free, the hit deals strictly less. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g4_the_hostile_evp_banner_buff_cuts_the_damage_rng_free() {
+        let run = |banner: bool| {
+            let w = ground();
+            let mut player = crate::player::Player::spawn(&w);
+            let (pcx, pcy) = player.center();
+            let mut pool = ProjectilePool::new();
+            // The cave bat's banner (7) — the hostile shot's spawner.
+            let mut flags = vec![false; 320];
+            flags[7] = banner;
+            pool.set_npc_banner_buff(flags);
+            let slot = pool
+                .spawn_hostile(
+                    100,
+                    Vec2::new(pcx - 5.0, pcy - 5.0),
+                    Vec2::new(2.0, 0.0),
+                    100,
+                    0.0,
+                )
+                .unwrap();
+            pool.slots_mut()[slot].banner_id_to_respond_to = 7;
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.update(
+                &mut w.clone(),
+                &mut [],
+                Some((pcx, pcy)),
+                None,
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            (player.max_hp - player.hp, rng)
+        };
+        let (base_dealt, base_rng) = run(false);
+        let (banner_dealt, banner_rng) = run(true);
+        assert!(base_dealt > 0, "the baseline hostile hit lands");
+        assert!(
+            banner_dealt < base_dealt,
+            "the banner's ×0.75 lands less ({banner_dealt} vs {base_dealt})"
+        );
+        assert_eq!(
+            banner_rng.seed, base_rng.seed,
+            "the banner arm draws nothing — the stream matches the baseline"
+        );
     }
 
     #[test]
@@ -31352,6 +31605,7 @@ mod phasmal_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
+            banner_id_to_respond_to: 0,
             wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,
@@ -31761,6 +32015,7 @@ mod ritual_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
+            banner_id_to_respond_to: 0,
             wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,

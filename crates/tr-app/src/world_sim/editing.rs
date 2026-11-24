@@ -7746,6 +7746,20 @@ fn resolve_melee_strike(
                 } else {
                     raw
                 };
+                // `Player.cs:44303-44306` — `if (this.GetBannerBuffEffect(nPC,
+                // out var effect)) dmg = (int)(dmg * effect.DamageDealt.Sample(
+                // Main.Difficulty))`: the placed-banner strength multiplies the
+                // class-scaled damage BEFORE the crit roll and DamageVar (the
+                // C# order — `:44298` crit, `:44342` variance). RNG-free.
+                // W4-g4 P1 (the W4-d22 reconcile fold).
+                let raw = match app
+                    .player
+                    .as_ref()
+                    .and_then(|p| p.banner_buff_for_npc(n.kind.cs_id() as i32))
+                {
+                    Some((dealt, _)) => (raw * dealt) as i32 as f32,
+                    None => raw,
+                };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -8952,6 +8966,40 @@ mod tests {
             *b.rngs.stream(crate::app::RngKey::UpdatePlayers),
             state_0,
             "luck 1.0 rerolled DamageVar"
+        );
+    }
+
+    /// W4-g4 P1 (the W4-d22 reconcile fold) — the melee banner-buff arm
+    /// (`Player.cs:44303-44306`): a placed banner multiplies the
+    /// class-scaled damage by `DamageDealt` (classic 1.5) BEFORE the crit
+    /// roll / DamageVar. Differential witness: the banner and no-banner
+    /// rigs share the seed, so the pre-strike draws (crit + DamageVar)
+    /// are identical — the banner's stream equals the baseline's (the
+    /// arm is RNG-free) and the hit deals strictly more. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g4_the_melee_banner_buff_multiplies_the_damage_rng_free() {
+        let mut base = melee_app();
+        seed_stream(&mut base, 3);
+        let hp0 = base.npcs[0].hp;
+        mine_frames(&mut base, 1);
+        let base_dealt = hp0 - base.npcs[0].hp;
+        assert!(base_dealt > 0, "the baseline hit lands");
+        let base_state = base.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+        let mut banner = melee_app();
+        seed_stream(&mut banner, 3);
+        // The blue slime's banner (69) stands in the scene window.
+        banner.player.as_mut().unwrap().npc_banner_buff[69] = true;
+        mine_frames(&mut banner, 1);
+        let banner_dealt = hp0 - banner.npcs[0].hp;
+        assert!(
+            banner_dealt > base_dealt,
+            "the banner's ×1.5 lands more ({banner_dealt} vs {base_dealt})"
+        );
+        assert_eq!(
+            *banner.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            base_state,
+            "the banner arm draws nothing — the stream matches the baseline"
         );
     }
 

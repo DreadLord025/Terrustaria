@@ -251,6 +251,12 @@ pub const QUEEN_BEE_STINGER: u16 = 719;
 /// velocity/damage/knockback; `Projectile.cs:10078-10086`: 10x10,
 /// aiStyle 200, alpha 255, penetrate -1, ignoreWater). W4-c10.
 pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.Stinger` (55, `ProjectileID.cs`) — the Hornet's shot
+/// (`NPC.cs:50796`'s type 55, dmg `(int)(10*scale)`, the post-spawn
+/// `timeLeft = 300` `:50797`; `Projectile.cs:1375-1383`: 10×10, hostile,
+/// aiStyle 1, penetrate −1, tileCollide; the `flag3 = false` flight list
+/// `:55954` keeps the counter at rest — dead-straight, no gravity).
+pub const HORNET_STINGER: u16 = 55;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
@@ -472,6 +478,10 @@ pub const GREEK_FIRE_1: u16 = 326;
 pub const GREEK_FIRE_2: u16 = 327;
 /// `ProjectileID.GreekFire3` (328) — the Greek fire's third size.
 pub const GREEK_FIRE_3: u16 = 328;
+/// `ProjectileID.FlamingScythe` (329, `Projectile.cs:4215-4225`) — the
+/// Pumpking blade's volley shot (W4-c6 style-59): 80x80, aiStyle 56,
+/// hostile, penetrate -1, no tile collide, timeLeft 420, light 0.25.
+pub const FLAMING_SCYTHE: u16 = 329;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
@@ -951,6 +961,11 @@ pub const FLAMELASH: u16 = 34;
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
 pub const DEMON_SICKLE: u16 = 44;
+/// `ProjectileID.HarpyFeather` (38) — the Harpy's hostile feather
+/// (`NPC.cs:23428`, W4-d23): 14x14, aiStyle 1, hostile, penetrate −1,
+/// tileCollide true (`Projectile.cs:1207-1216` — the `aiStyle = 0` write
+/// at `:1211` is overwritten by the `aiStyle = 1` at `:1214`).
+pub const HARPY_FEATHER: u16 = 38;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -1640,6 +1655,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         BALL_OF_FROST => 0.8,                  // `:3364`
         MAGNET_SPHERE_BALL => 0.5,             // `:3376`
         GOLEM_EYE_BEAM => 0.3,                 // `:3436`
+        FLAMING_SCYTHE => 0.25,                // `:4219` (W4-c6 style-59)
         CHRISTMAS_HOOK => 0.5,                 // `:4256`
         MINI_RETINA_LASER => 0.75,             // `:4736`
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
@@ -2175,6 +2191,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:4215-4225` — the Flaming Scythe (329, W4-c6
+            // style-59): 80x80, aiStyle 56 (the spin flight, `:28845-28866`),
+            // hostile, `penetrate = -1`, `tileCollide = false`,
+            // `timeLeft = 420`; the `light = 0.25f` rides
+            // `set_defaults_light` below.
+            FLAMING_SCYTHE => (
+                80.0,
+                80.0,
+                56,
+                -1,
+                420,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
             ),
             // `Projectile.cs:9199-9206` — the ice chunk: 16x16, aiStyle 1,
             // `penetrate = -1`, `extraUpdates = 2`, `timeLeft = 220`,
@@ -2776,6 +2809,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
             // `timeLeft = 300` (`NPC.cs:23450`).
             DEMON_SICKLE => (48.0, 48.0, 18, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
+            // `:1207-1216` — the harpy feather (the Harpy's hostile shot,
+            // `NPC.cs:23428`, W4-d23): 14x14, aiStyle 1 (the `:1214` write
+            // over `:1211`'s 0), `penetrate = -1`, the stock 3600 life and
+            // `tileCollide = true`; the spawn site overrides `timeLeft =
+            // 300` (`NPC.cs:23429`). 38 IS on the `flag3 = false` list
+            // (`:55953`) — the flight counter rests, no gravity: the
+            // feather flies dead straight (`ai_style1_rider`'s resting
+            // flight; the AI_STYLE_1_RIDERS gate carries the kind).
+            HARPY_FEATHER => (14.0, 14.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
             // `penetrate = 5`, `scale = 0.9f`.
             DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
@@ -3845,6 +3887,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d22 — `Projectile.cs:1375-1383`: the Hornet's stinger
+            // (55): 10x10, hostile, `penetrate = -1`, aiStyle 1,
+            // `tileCollide = true`; the stock 3600 life (the AI_005 arm
+            // overrides to 300 post-spawn, `NPC.cs:50797`). It is on the
+            // `flag3 = false` flight-counter list (`:55954`), so it flies
+            // dead straight (no gravity) — the `ai_hornet_stinger` arm.
+            HORNET_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
             // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
             // alpha 255, timeLeft 300 (the stock tileCollide true).

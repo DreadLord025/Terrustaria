@@ -1504,6 +1504,11 @@ fn portrait_data(
         (NpcKind::HeadlessHorseman, _) => (sheet_i, 70.0, 74.0, 70.0, white),
         (NpcKind::MourningWood, _) => (sheet_i, 154.0, 164.0, 154.0, white),
         (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        // W4-c6 style-59 wiring: the blade's portrait rests its 80x80
+        // `SetDefaults` box (`NPC.cs:13160-13161`) — the Hide=true entry
+        // (`NPCID.cs:3398-3403`) folds onto the Pumpking, so this arm
+        // never renders (the ForceBubble precedent); the shape stands.
+        (NpcKind::PumpkingBlade, _) => (sheet_i, 80.0, 80.0, 80.0, white),
         (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
         // The Frost Moon wave family (`S1-F-13c` slice B): the portrait
@@ -1656,6 +1661,104 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(10.0);
             (sheet_i, h, h, h, white)
+        },
+        // The man-eater family (W4-d23): the portraits rest the sheet's
+        // own row height over `Main.npcFrameCount[type]` (43/56/175 three
+        // frames, 101 five, 259 four, 260 two — `Main.cs:67082`), the
+        // frame width the sheet's own.
+        (NpcKind::ManEater | NpcKind::Snatcher | NpcKind::AngryTrapper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::Clinger, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::FungiBulb, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::GiantFungiBulb, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // The aiStyle-9 spit/flare family (W4-d23): the spits rest the
+        // single-frame 16x16 sheet (`Main.npcFrameCount[112/666]` = 1);
+        // the flare the 4-row strip over the 26x26 box
+        // (`Main.npcFrameCount[516]` = 4 — `Main.cs:67082`).
+        (NpcKind::VileSpit | NpcKind::VileSpitEoW, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::SolarFlare, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        // The aiStyle-14 flyer family (W4-d23): the portraits rest the
+        // sheet's own row height over `Main.npcFrameCount[type]`
+        // (48 six, 62/156/634 five, 93/121/137/150/151/152/158/226/660
+        // four, 159 fifteen — `Main.cs:67082`), the frame width the
+        // sheet's own.
+        (NpcKind::Harpy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::Demon | NpcKind::RedDevil, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::SporeBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::GiantBat | NpcKind::IlluminantBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::Slimer | NpcKind::QueenSlimeMinionPurple, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::IceBat | NpcKind::Lavabat | NpcKind::VampireBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::GiantFlyingFox, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 42.0, h, white)
+        }
+        (NpcKind::FlyingSnake, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(50.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::Vampire, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 38.0, h, white)
         }
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).

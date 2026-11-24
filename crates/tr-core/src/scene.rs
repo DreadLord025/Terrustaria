@@ -253,6 +253,11 @@ pub struct Auras {
     pub sunflower: bool,
     pub cat_bast: bool,
     pub shadow_candle: bool,
+    /// `SceneMetrics.hasBanner` (`SceneMetrics.cs:136`) — any strength-
+    /// enabled banner in the scan window; the MonsterBanner (147) 2-tick
+    /// indicator grant reads it (`Player.cs:25552-25555`). W4-g4 P1 (the
+    /// W4-d22 reconcile fold).
+    pub banner: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -428,6 +433,7 @@ impl SceneMetrics {
             sunflower: self.has_sunflower,
             cat_bast: self.has_cat_bast,
             shadow_candle: self.shadow_candle_count > 0,
+            banner: self.has_banner,
         }
     }
 

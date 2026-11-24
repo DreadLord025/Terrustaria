@@ -80,6 +80,9 @@ mod npc_ai3_speeds;
 // S1-D-3z (zombie fighter audit): the AI_003 obstacle scan tail
 // (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.
 mod npc_ai_fighter_scan;
+// W4-d22 (NPC aiStyle 3): the shared AI_003_Fighters core — the
+// walk/jump/fall/knockback/door-bash phases for the plain-walker family.
+mod npc_ai_style3;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
 // W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
@@ -93,6 +96,10 @@ mod npc_ai_unicorn;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
+mod npc_ai_style17;
+mod npc_ai_style18;
+mod npc_ai_style19;
+mod npc_ai_style20;
 mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
@@ -150,6 +157,10 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-d23 (aiStyle-13): UNWIRED man-eater family (43/56/101/175/259/260,
+// NPC.cs:22615-22847) - the six kinds + the axis claim are the wiring
+// step (the npc_ai_style17/20 precedent).
+mod npc_ai_style13;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style47;
@@ -177,6 +188,7 @@ mod npc_transform_visuals;
 // dispatch claim is the wiring wave (the npc_ai_style39 precedent).
 mod npc_hit_effect_a;
 mod npc_ai_style21;
+mod npc_ai_style22;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
