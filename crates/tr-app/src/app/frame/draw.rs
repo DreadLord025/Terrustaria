@@ -490,6 +490,8 @@ impl App {
                         quantised,
                         atmo,
                         rain_alpha,
+                    );
+                    let sky_light = tile_color(sky_tint);
                     // W4-g70 lane 8: the whole `SetBackColor` chain
                     // (`Main.cs:63452-63924`) in byte space — the blood-moon
                     // night, the eclipse tint, the biome/graveyard dims, the
@@ -914,6 +916,17 @@ impl App {
                                 let g = 0.3 + (270 - self.mouse_text_color as i32) as f32 / 400.0;
                                 self.entity_lights.add(x, y, [0.9, g, 0.2]);
                             }
+                            // W4-c11: the Tesla Turret's blue light — the
+                            // ai[1]/60-scaled fade (`NPC.cs:35167`) then
+                            // the constant (0.1, 0.5, 0.7) (`:35175`), at
+                            // the truncated centre tile 10 px up. RNG-free.
+                            NpcKind::MartianTurret => {
+                                let (x, y, rgb) = crate::npc_ai_style73::turret_light(
+                                    n.ai[1],
+                                    (pos.x + w / 2.0, pos.y + h / 2.0),
+                                );
+                                self.entity_lights.add(x, y, rgb);
+                            }
                             _ => {}
                         }
                         // W4-g8 lane 1 batch 1 — the AI machine's per-tick
@@ -922,16 +935,7 @@ impl App {
                         // `ai_light`; feed it here (the npc_lights precedent).
                         if let Some((x, y, rgb)) = n.ai_light {
                             self.entity_lights.add(x, y, rgb);
-
-        }                            // W4-c11: the Tesla Turret's blue light — the
-                            // ai[1]/60-scaled fade (`NPC.cs:35167`) then
-                            // the constant (0.1, 0.5, 0.7) (`:35175`), at
-                            // the truncated centre tile 10 px up. RNG-free.
-                            NpcKind::MartianTurret => {
-                                let (x, y, rgb) = crate::npc_ai_style73::turret_light(
-                                    n.ai[1],
-                                    (pos.x + w / 2.0, pos.y + h / 2.0),
-                                self.entity_lights.add(x, y, rgb);
+                        }
                         // W4-d31 style83 wiring — the cultist tablet's
                         // constant light (`NPC.cs:36921-36924`:
                         // `AddLight(Center, 0.8, 0.75, 0.55)`). Keyed on the
@@ -953,7 +957,10 @@ impl App {
                                 crate::entity_lights::XAnchor::Center,
                             );
                             let y = crate::entity_lights::tile_y(
+                                pos,
                                 h,
+                                crate::entity_lights::XAnchor::Center,
+                            );
                             self.entity_lights.add(x, y, [0.8, 0.75, 0.55]);
                         }
                     }
@@ -1059,6 +1066,7 @@ impl App {
                             let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
                             let cy = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
                             self.entity_lights.add(cx, cy, [0.3, 0.25, 0.1]);
+                        }
                         // W4-g56 — `AI_154_VoidLens`'s `VoidLensHelper.Update`
                         // (`Projectile.cs:52195` → `VoidLensHelper.cs:34-38`):
                         // `AddLight(Center, 0.4, 0.2, 0.9)` — the Vector2
@@ -1162,6 +1170,7 @@ impl App {
                             crate::proj_lights_a::proj_lights_a(p, mounted_center, self.disco)
                         {
                             self.entity_lights.add(x, y, rgb);
+                        }
                         // W4-c39 (the surviving graft, research/114 §1c) —
                         // `AI_166_Dove`'s lantern light cast
                         // (`Projectile.cs:47568-47569`): `(1, 0.6, 0.1) *
@@ -2415,6 +2424,7 @@ impl App {
                             screen,
                             self.mouse_text_color,
                         );
+                    }
                     // W4-g13 — the Main.cs dust-site draw-call feeds (batch 3,
                     // sites 17-23). They roll the bare `Main.rand` slot
                     // (`rngs.global()`) and spawn into the dust pool, so they
@@ -2680,6 +2690,7 @@ impl App {
                     // world-effect range.
                     crate::rain::draw_splashes(
                         dust, renderer, lookups, light, draw_cam, world_zoom, screen,
+                    );
                     // The cart wheel sparks (213/260/211/107) — `Main.DrawDust`'s
                     // self-lit 213|260 gray + the light-tinted 211/107 generic
                     // path, the same world-content range as the rain/sand dust.
@@ -3750,7 +3761,6 @@ impl App {
                         // are fused into this call — the recorded deviation.
                         && !self.hide_ui
                     {
-                    } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
                         // S1-W4-g81 residuals — `Main.DrawInterface_9_WireSelection`
                         // (`Main.cs:46196-46204` → `WiresUI.HandleWiresUI`,
                         // `WiresUI.cs:698-702`): the tool-mode radial's Update+Draw,
@@ -3971,6 +3981,7 @@ impl App {
                             if toggled == Some(true) {
                                 self.audio.play("Menu_Tick");
                             }
+                        }
                         // `NewCraftingUI.OnActivate` (`:904`):
                         // `_selectedRecipeIndex = Main.numAvailableRecipes < 0
                         // ? null : Main.availableRecipe[Main.focusRecipe]` —
@@ -4387,7 +4398,6 @@ impl App {
                                 self.world.day_time,
                                 self.world.moon_phase,
                             ),
-                        );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`, the C#'s
                         // only call site): the linger's per-draw decay, after
@@ -5021,6 +5031,7 @@ impl App {
                                         self.settings.applied_ui_scale(screen.x, screen.y),
                                         border,
                                     );
+                                }
                                 // `:55988-55995`: no death hover → the
                                 // revenge marker's UseMouseOver money row.
                                 if !death_hovered {
@@ -5823,11 +5834,15 @@ mod w4_g75_final_sweep_tests {
         );
 
         }
-        }mod w4_e7_global_flicker_tests {
+}
+
+#[cfg(test)]
+mod w4_e7_global_flicker_tests {
     use super::bounce_oscillator;
 
     /// W4-e7 lane 23 — the masterColor pulse (`Main.cs:18225-18235`): +0.05
     /// per frame from the 1f init, flipping at the rails. WRITTEN NOT RUN.
+    #[test]
     fn w4_e7_master_color_bounces_at_the_rails() {
         // Init 1f / dir 1 (Main.cs:66833-66834): the first step clamps to 1
         // and flips dir to -1.
@@ -5841,6 +5856,7 @@ mod w4_g75_final_sweep_tests {
         assert_eq!((v, d), (0.0, 1.0), "the bottom rail flips");
     }
     /// The martianLight pulse (`Main.cs:18251-18261`): +0.015 per frame.
+    #[test]
     fn w4_e7_martian_light_bounces_at_the_rails() {
         let (v, d) = bounce_oscillator(1.0, 1.0, 0.015);
         assert_eq!((v, d), (1.0, -1.0));
@@ -5848,11 +5864,13 @@ mod w4_g75_final_sweep_tests {
         assert!((v - 0.985).abs() < 1e-6 && d == -1.0);
         let (v, d) = bounce_oscillator(0.01, -1.0, 0.015);
         assert_eq!((v, d), (0.0, 1.0));
+    }
     /// The oscillator stays bounded in [0, 1] and reverses at the rails (the
     /// demon_torch 0.01 shape): deterministic and RNG-free, so the flicker
     /// phase is a pure function of the frame count. The C# clamp holds one
     /// frame at each rail before descending (the `> 1` / `< 0` flip fires on
     /// the overshoot step), so the value never leaves the unit interval.
+    #[test]
     fn w4_e7_the_oscillator_stays_bounded_and_rng_free() {
         let (mut v, mut d) = (1.0f32, 1.0f32);
         let mut saw_bottom = false;
@@ -5868,8 +5886,6 @@ mod w4_g75_final_sweep_tests {
         assert!(d == 1.0 || v > 0.0, "the reversal climbs back");
     }
 
-// balance-close (union shared delimiter)
-}}))
 }
 
 #[cfg(test)]
