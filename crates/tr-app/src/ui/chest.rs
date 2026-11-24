@@ -314,7 +314,7 @@ fn draw_button(
     // `:282-308` joins phase 5 / M3-STORE-2.)
     let sound = update_hover(p, id, hovering);
     if sound != 0 {
-        p.audio.play("Menu_Tick");
+        p.audio.play_menu("Menu_Tick");
     }
 }
 
@@ -410,7 +410,7 @@ pub(crate) fn scroll(app: &mut crate::app::App, notches: i32, mouse: Vec2) -> bo
     for _ in 0..notches.unsigned_abs() {
         if scroll_notch(&mut app.chest_scroll_row, notches > 0, max_items) {
             // `ChestUI.cs:325` — `SoundEngine.PlaySound(12)`.
-            app.audio.play("Menu_Tick");
+            app.audio.play_menu("Menu_Tick");
         }
     }
     true // `Main.cs:17443` — `flag = false`

@@ -6932,6 +6932,358 @@ Deviations: the chat UI landed with S1-E-10b (below); the port's
 `ConditionalDialogue` (the pending-dialogue half, `NPC.cs:6539`) is not
 ported; the C#'s `nextDialogue` branch (`:93768-93771`) comes with it.
 
+### W4-d120 re-pin (2026-11-21, code-only mode)
+
+The ladder was re-verified line-by-line against `NPC.cs:93766-94821` and
+re-pinned; **code-only mode** — no compiler/tests invoked, the new census
+witnesses are written not run.
+
+- **The flag renames**: the presence scan's ids were always the C#'s
+  (`:93831-93854`), but four fields were misnamed — 160 is the TRUFFLE
+  (`flag10`, not the Party Girl), 229 the PIRATE (`flag12`, not the
+  Zoologist), 208 the PARTY GIRL (`flag14`), 353 the STYLIST (`flag15`).
+  The Dryad's 238 / Clothier's 237 / Tinkerer's 309 / Painter's 251 /
+  Dye Trader's 260 neighbour lines now gate on the right neighbours.
+- **The real Party Girl (208) ladder** (`:94410-94456`): `Next(7)` UP
+  FRONT (before the event text), then the DD2/male/Stylist gates, then
+  the seven fixed lines 265/266/267/269/270/271/272 (268 is the male-gate
+  line, not a switch arm). The old port carried the Truffle's (160,
+  `:94302-94341`) ladder here; the Truffle kind is unported, so that
+  ladder has no consumer yet.
+- **The new arms**: the Stylist (353, `:94614-94749` — the moon-phase
+  fixed band 5/4 + the `StylistChatter` rows), the Tavernkeep (550,
+  `:94784-94787` → `Lang.BartenderChat`, `Lang.cs:331-338` — the T3-first
+  tier line), the Sleeping Golfer (589), the Bound Goblin (105 → dialog
+  120), the Bound Mechanic (123 → 156) and the Webbed Stylist (354 →
+  `Next(315, 319)`).
+- **The two pick directions** (`LanguageManager.cs:392-411`): the
+  `SelectRandom` chatter picks the REVERSE index (`--num == index`:
+  index 0 answers the LAST matching row), the `FindAll` mixed arms
+  (Nurse/Tinkerer/Mechanic/Stylist) the FORWARD row (`array[num - k]`).
+  The tr-core registry keeps the Dictionary's INSERTION order
+  (`text_order`) because the order is behaviour. The count draw ALWAYS
+  fires — even `Next(0)` advances the stream (`UnifiedRandom.cs:140`).
+- **The event census** (`:94860-94895`): the 1/3 roll fires only while
+  the event is active (`&&` short-circuit); the party's
+  `HasNoPartyText` gate (`NPCID.cs:10461`: 441/453) sits AFTER the roll;
+  an empty category pick declines the event and the next event rolls.
+  The Tax Collector's `(roll == 0) & flag` arms use the NON-short-circuit
+  `&` — all four `Next(6)` draws fire even with every neighbour absent.
+- **The live triggers** (`talk_to_npc`): the graveyard zone, the party,
+  the rain-not-storm, the happy windy day, the storm, the lanterns, the
+  Moon Lord and the DD2 T3 latches all read live App state now; the
+  player feeds (`statDefense`, `Player.head` vanity/armor headSlot,
+  `NormalizedLuck` ±cap ratio, `Player.Male` via the session draft's
+  cloth style, `anglerQuestFinished`) replaced the stubs. `Main.raining`
+  reads the LIVE `Rain` latch (`world.raining` only mirrors it at save).
+- **The FreeCakeDialogue** (`ConditionalDialogue.cs:51-66` — the only
+  registered conditional): the talk arm consumes the `NPC.freeCake`
+  latch a natural party sets (`BirthdayParty.cs:106`), gifts the cake
+  (3750, `QuickSpawnItem` → the inventory slot walk, overflow drop at
+  the player centre), then draws the `Cake{Next(1,4)}` text. The 10-tick
+  `CheckDialogue` refresh (`NPC.cs:90519-90532`) collapses to the talk
+  (the condition is the world-level latch, not per-NPC state). EVERY
+  dusk clears the latch (`Main.cs:65222`); `world_clear` clears it too
+  (`WorldGen.cs:6945`).
+- **Remaining deviations**: the Old Man (37), Truffle (160), Steampunker
+  (178), Pirate (229), Cyborg (209), Skeleton Merchant (453), Santa
+  (142), the unconscious Bartender (579) and the town pets/slime arms
+  (`:94804-94819`) have no ported kinds — their ladder arms wait for the
+  kinds; `Main.remixWorld` and `WorldGen.crimson` stay false (the port
+  carries no world-evil flag); the cake gift's `newAndShiny`/pickup-sound
+  side effects ride the port's existing pickup seams, not the talk.
+
+### W4-d120 kind census + the remaining GetChat arms (2026-11-21, code-only mode)
+
+The directive's "kinds WITH rows" census, read off the PUSHED branches
+(`git rev-list a725acb0..origin/<lane>`), not memory:
+
+- **d35 (71-140, eb0f1005, 8 ahead)**: 33 kinds landed — NONE has a
+  `GetChat` arm (the Werewolf 104 / Clown 109 etc. are enemies; the C#
+  ladder `NPC.cs:93766-94821` carries no case for any of them). The
+  Truffle 160 is NOT in d35's band — it sits in d36's 141-210 lane.
+- **d34 (1-70, 4012a7f3, 2 ahead)**: the **OldMan 37** kind + identity
+  rows ARE claimed and pushed (phase 1, protocol id 268) — d120 ports
+  NO OldMan rows; only its `GetChat` arm (`:94017-94037`) lands here.
+- **d37 (211-280, 750d8e44, 1 ahead)**: the **Pirate 229** kind IS
+  claimed (protocol id 361, the `is_town_npc_like` extension included) —
+  only its `GetChat` arm (`:94569-94609`) lands here.
+- **d40 (421-490, 8fe1d6d3, 12 ahead)**: the **SkeletonMerchant 453**
+  kind IS claimed at its VANILLA protocol id 453 (batch 10;
+  `is_town_npc_like` carries the `NPC.cs:6860` row, the ctor friendly
+  flag, the humanoid FindFrame arm) — only its `GetChat` arm
+  (`:94762-94775`) lands here.
+- **d36 (141-210) / d39 (351-420) / d41 (491-560) / d42 (561-630) /
+  d43 (631-697)**: 0 ahead — the SantaClaus 142, Truffle 160,
+  Steampunker 178, Cyborg 209 and BartenderUnconscious 579 kinds are
+  UNCLAIMED. d120 ports the small SetDefaults rows itself (the claim
+  doc `tools/_d120_claim.md`, pushed FIRST): the five town kinds +
+  their `GetChat` arms, 3 kinds per commit.
+- **f43 (79a037f5)** owns the town pets 637/638/656 + the town slimes
+  670/678-684 SPAWN arms (`town_arrival_pets.rs`, id-keyed, unwired);
+  its census §Port-gaps-2 assigns the pet/slime ENUM rows to d43 —
+  d120 leaves those kinds and their `:94804-94819` arms to the
+  d43/f43 wiring lane. **c41**'s two pushed commits are docs-only
+  (the town-gate witnesses) — no kind claims there.
+
+The five new kinds' protocol ids ride the port-local 241-245 band
+(free in `to_u16`/`from_u16`/`render_key` on main AND on every pushed
+sibling — the d34 266-275, d37 354-399, d35 429-461, d40 430-488
+bands all clear it). cs_id/net_id keep the vanilla types. The
+SetDefaults rows are verbatim (`NPC.cs:10791-10804` Santa,
+`:11003-11016` Truffle, `:11252-11265` Steampunker, `:11682-11695`
+Cyborg — NPCHit4/500 HP/def 30/kb 0.25, `:16554-16568` the
+unconscious Bartender — 34x8, aiStyle 0, NPCDeath6, rarity 1); all
+five carry `SpecificallyImmuneTo {31}` (`NPCID.cs`'s
+DebuffImmunitySets rows). The bestiary entries follow
+`AddTownNPCs_Manual` (`BestiaryDatabaseNPCsPopulator.cs:809-831`);
+579 is `Hide = true` (`NPCID.cs:5178-5184`) — it folds onto the
+Tavernkeep's row (the Sleeping Angler precedent).
+
+Deliberate deviations (this slice):
+
+1. **The housing-PLACEMENT set stays narrow** — the four town kinds
+   join `is_town_resident()` (the save/resident-count set, the
+   M4-TOWN-19 Zoologist/Princess precedent) and `is_town_npc_like()`
+   (the C# `townNPC` flag's talk/melee/net consumers) and so
+   `is_friendly()`, but NOT `is_town_npc()` (the narrow
+   `quick_find_home` placement set): the arrival-ladder gates +
+   housing placement are the c41/f43/d118 lanes' surgery. The
+   unconscious Bartender 579 is a bound transient (NOT `townNPC` in
+   the C#) — it joins only `is_friendly()`'s bound list; its
+   talk-gate (`Main.cs:43047`'s explicit `579`) rides the same
+   pre-existing bound-form gap as 105/106/123/354/376/589 (the
+   `is_town_npc_like` gate the talk arm reads).
+2. **Sheets deferred** — NPC_142/160/178/209/579 are NOT packed: the
+   skyline atlas stands at 8115 px (main set) / 8119 px (full set)
+   against the 8192 bound (`tools/atlas_sim.js` re-measured); the
+   ~1100-px town strips do not fit (the wyvern/d35 precedent). The
+   draw arms read `npc_sheet` → None → skip; the bestiary portraits
+   rest the SetDefaults box.
+3. **The AI arms**: Santa/Truffle/Steampunker/Cyborg ride the
+   `update_guide` town-wander stand-in (the M4-TOWN roster's shape;
+   the faithful aiStyle-7 machine is `npc_ai_town.rs`, the b3 lane);
+   BartenderUnconscious holds still (aiStyle 0, the bound-form
+   precedent — the 579→550 talk transform is the wiring lane's).
+4. **The `npc_add_height` town list** gains the five kinds (the C#
+   `townNPC && ai[0] == 5` sitting row, `Main.cs:22169-22181`); the
+   Steampunker's `num = 2f` row (`:22064` region) and the
+   unconscious Bartender's `num = -2f` (`:22152-22155`) are carried.
+5. **The SkeletonMerchant chat arm's category pick** is the C#'s
+   `Language.RandomFromCategory` (`LanguageManager.cs:413-419` — the
+   FORWARD `keys[Next(count)]` index over `_categoryGroupedKeys`),
+   NOT the reverse `SelectRandom` the other mixed arms' chatter rows
+   use; the Cyborg's `FindAll` row IS forward (`array4[num12 - 5]`).
+   The Santa/Truffle/Steampunker ladders draw their fixed-band
+   `Next(3)/(6)/(5)` UP FRONT, before `HasSpecialEventText`
+   (`:94280`/`:94304`/`:94344`) — the Party Girl precedent.
+6. **The Pirate's mixed arm draws FIRST** (`:94571-94573`:
+   `Next(6 + FindAll length)` before the event text), the
+   `!Player.Male` gate rides `Next(5)`, and the fixed band skips 276
+   (273/274/275/277/278/279).
+
+### W4-d120 final census (2026-11-21, code-only mode) — GetChat complete + the sibling cross-notes
+
+The FULL `NPC.GetChat` census (`NPC.cs:93766-94821`, every arm read
+against `crates/tr-app/src/npc_chat.rs` + the pushed f38/f41/g58 diffs):
+
+- **All 40 arms accounted for** (39 type cases + the `IsTownSlime` set
+  arm). The 36 type cases 17/18/19/20/37/38/54/105/107/106/108/123/
+  124/22/142/160/178/207/208/209/227/228/229/354/353/368/376/369/453/
+  441/579/550/589/588/633/663 were ported by the re-pin + arms A/B/C;
+  the LAST four (637/638/656 pets + the `IsTownSlime` arm
+  `:94816-94819`) land in arms D — type-keyed until d43/f43 merge.
+  The pet filters are DOT-LESS (`CatChatter.Chatter` matches
+  `Chatter_1/2/3`, `Lang.cs:360-373` — the `BloodMoonFishing` shape);
+  `Lang.GetSlimeType`'s colour words (`:375-406`) feed
+  `Slime<Colour>Chatter.Chatter` (`:408-411`). The slime colour is the
+  recorded Blue default until d43's `SlimeVariant` kinds arrive (the
+  port's `Npc.slime` field carries no town-slime colours yet).
+- **The happiness-mood lines are NOT GetChat arms** (the g58/f38 naming
+  census): the mood report rides `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch + the `ReportHappiness` BUTTON
+  (`NPCInteractions.cs:289-312`, g58 P2) and the homeless text rides
+  `RequestHome` (`:314-368`, `TownNPCMood_<Name>.NoHome` + the
+  Zoologist `Transformed` suffix + the pet/slime category overrides +
+  the Truffle's `HousingRequirements_Truffle` tail) — g58's lane, not
+  the ladder. The only in-ladder mood-adjacent line is the Dryad's
+  cola override (`:94012-94015`, ported).
+- **f38 vs f41 union**: both branches carry the SAME
+  `check_dialogue`/`cake_chat` block (f41 = f38's + the gift-before-
+  text draw-order note, research/70 §3). d120's `talk_to_npc` already
+  drains the gift side effects BEFORE the Cake text draw (the
+  `the_party_girl_gifts_the_cake_then_draws_the_text` +
+  `a_full_inventory_overflows_the_cake_to_a_world_drop` witnesses pin
+  the order) — the merger keeps ONE copy of the block (f41's comment
+  superset) and d120's talk seam; no behaviour conflict.
+- **g58's zoologist re-pin**: g58 D2 moves the lycantrope predicate to
+  `happiness::should_bestiary_girl_be_lycantrope` (shared with the
+  mood report's `Transformed` suffix). d120's inline copy
+  (`npc_chat.rs` zoologist) is the SAME predicate (`NPC.cs:93753-
+  93764`) — the merger keeps g58's shared-fn call; no behaviour
+  conflict.
+
+**The sign-half compose verify (f22b, `NPCChatPanel-sign`)** — f22's
+`ui/npc_chat.rs` diff read against `NPCChatPanel.cs` line-by-line:
+
+- `interactions(sign_open, edit_sign)` = Close (`inter[52]`) + the
+  sign's Edit/Save toggle (`inter[48]`/`[47]`, `OpenSign.GetText`
+  `NPCInteractions.cs:22-29`) — matches the registry order (Close
+  registered `:515`, OpenSign `:516`) and `PrepareInteractions`'
+  Condition filter (`:164-175`). VERIFIED.
+- `interaction_rects`' per-button walk (x += width + 30, `:135`; the
+  `num % 4 == 0` reset, `:103-107`; the 260-px shrink `:113-117`) —
+  VERIFIED for the ≤4-button rows the port renders. The C#'s row
+  reset also steps y (`num / 4 * 22`, `:106`) and
+  `_neededInteractionLines = ceil(count/4)` (`:174`) grows the panel;
+  f22 keeps `INTERACTION_LINES = 1` — correct while only Close+Sign
+  render, but the Shop/Happiness/Home rows (g58/f38's buttons) push
+  the count past 4: the merger must make the line count DYNAMIC
+  (`ceil(labels.len()/4)`) and add the y-step. Recorded for the
+  panel-merge lane; no d120 edit (f22 owns the file half). The exact
+  2-hunk patch against f22's tip `be73b87b5` is PUBLISHED in the retire
+  note (research/143 §1 — the dynamic `interaction_lines` fn +
+  `panel_rect`'s live-count parameter, and `interaction_rects`' y-step).
+- The caret (`DrawText :236-262`): f22 gates `edit_sign &&
+  !lines.is_empty()`, measures the last line at scale 1, advances the
+  20-frame `TextBlinker` (the `ChestUI.cs:175-179` shape = the panel's
+  own `++count >= 20` toggle `:254-258`), draws "|" at state on —
+  VERIFIED. The IME composition half (`:242-253`) is recorded
+  unported (f22's note). One C# nuance: the panel's blinker fields
+  are per-panel state (`:20-22`), f22 threads the chest editor's
+  `TextBlinker` type — same maths, the instance is the caller's.
+- `CanHoldConversation` (`:276-283`: talkNPC < 0 → sign != -1) and
+  the sign-open `allowRichText = false` path (`:38`, the
+  `DrawBorderStringFourWay` branch `:232`) — f22's phase B wires the
+  sign gate; d120's text-only panel keeps the rich-text branch (the
+  talk case). VERIFIED consistent.
+
+**The shop-button chain (census complete)** — `GetChat` answers the
+talk line (`Main.cs:43081-43082`); the SHOP is a panel interaction
+(`OpenShop`, `NPCInteractions.cs:44-77`): label `Lang.inter[28]` =
+"Shop" (the Painter's second row `Shop(227, 25, "GameUI.PainterDecor")`
+`:512` labels "Decor"), `Interact` → `Main.OpenShop(shopIndex)`
+(`Main.cs:40459-40467`: playerInventory, stackSplit 9999, npcChatText
+CLEARED, SetNPCShopIndex, SetupShop, sound 12 — ZERO draws in the
+chain). d120 lands the claimed kinds' registry rows in
+`shop_index_for_kind` (Santa 9 / Truffle 10 / Steampunker 11 / Cyborg
+14, `:496-501`) + the cs_id-keyed Pirate 17 / SkeletonMerchant 20
+twins; the stock for 9/10/11/14 is d122's pushed `shop.rs` cases
+(`Chest.cs:2091-2135`/`:2360`), the Tavernkeep 21 row stays d122's
+(no duplicate). The port's `try_open_town_shop_at_cursor` drains the
+same OpenShop effects (the cursor-open stand-in); the BUTTON row is
+the panel lane's (f22's `interaction_rects` generalizes it). The
+no-shop set: Nurse 18 / OldMan 37 / Guide 22 / TaxCollector 441 /
+Angler 369 / the bound forms / the pets+slimes. The full 25-row
+registry (`Initialize`, `:488-512`): 17→1, 19→2, 20→3, 38→4, 54→5,
+107→6, 108→7, 124→8, 142→9, 160→10, 178→11, 207→12, 208→13, 209→14,
+227→15, 228→16, 229→17, 353→18, 368→19, 453→20, 550→21, 588→22,
+633→23, 663→24, 227→25 (decor).
+
+**The BartenderUnconscious 579 spawn census (the d41 cross-note)** —
+the C# spawn arm is `NPC.SpawnAnNPC`'s else-if (`NPC.cs:1656-1659`):
+`!NPC.savedBartender && DD2Event.ReadyToFindBartender &&
+!NPC.AnyNPCs(579) && Main.rand.Next(80) == 0 && !this.waterTile` →
+`SpawnNPC(spawnTileX*16+8, spawnTileY*16, 579)` (the `SpawnNPC`
+wrapper `:5238-5267` → `NewNPC` with the natural-spawn source; the
+slime-1 rerolls `:5240-5250` never fire for 579). The gate reads:
+`ReadyToFindBartender => NPC.downedBoss2` (`DD2Event.cs:87` — the
+EoW/BoC down, NOT a DD2-invasion flag). Chain position (tab-depth
+census): the arm is a TOP-LEVEL else-if of `SpawnAnNPC`'s big ladder
+(3 tabs, `:1656`) — the sibling AFTER the wall-244 marble-critter
+block (`:1584`, whose inner `spawnTileY > worldSurface` gate `:1597`
+holds the surface-critter chain) and BEFORE the spider-wall arm
+(`:1660`); it fires on ANY spawn tile the earlier arms declined
+(no biome gate of its own beyond `!waterTile`). The draw is the BARE
+`Main.rand.Next(80)` (no RollLuck), and `savedBartender` raises on
+the 550 TRANSFORM — the talk's `AI_000_TransformBoundNPC(i, 550)`
+(`:19857-19860`) runs `Transform(550)` THEN
+`AI_007_TownEntities_UpdateSavedStates` (`:44884-44894`), whose
+switch case 550 sets the flag (`NPC.cs:52934-52963`, the set at
+`:52959-52961`); the same update also runs per-tick from the town AI
+(`:53185`), so a housed Tavernkeep keeps it raised. Not on the 579
+spawn. The bound 579 also skips
+`TargetClosest` (`:19864-19868`) and floats in liquid (`:19869+`,
+the Sleeping Angler twin). d41's pushed tip is a CLAIM only
+(4ed22f0b3, band 491-560, "DD2 band 548-560 mine") — 579 is OUTSIDE
+that band (d42's 561-630); d42's tip is a non-compiling WIP
+checkpoint (88df58090). d120 owns the 579 KIND + chat arm (the claim
+doc); the SPAWN arm + the 579→550 talk transform stay the wiring
+lane's (c41/f43's town-spawn surgery or d42's kind lane) — this
+census is the cross-note for whichever lands it. NO spawn code in
+d120 (the directive's scope: census + cross-note).
+
+**The d36 collision keep-one note (for the d37c matrix)** — the
+SantaClaus 142 / Truffle 160 / Steampunker 178 kinds: d120's claim
+(dad8db3d9, 2026-11-21 05:48 +0200, pushed) PREDATES d36's claim
+(65e481f96, 06:03 +0200, an EMPTY commit — no files, no census doc).
+d36's band claim (141-210, port-local proto 731-780 per research/108)
+covers the three types, but d120's kinds A commit (2891b0bd8, 06:27)
+already carries the verbatim SetDefaults rows + protocol band 241-243
++ bestiary/town-flag/frame/netglue joins + the witnesses. KEEP-ONE:
+**d120's rows are the landed truth** (claimed first, code pushed);
+d36 must SKIP 142/160/178 in its census (like its own c4b-157 /
+d23b-175 skips) and renumber its remaining ~47 kinds into 731+
+without the three. The Cyborg 209 is ALSO d120's (241-245 band) —
+d36's band ends at 210, so 209 is inside it too: skip it as well.
+The BartenderUnconscious 579 is outside d36's band (no collision).
+Protocol-space note: d120's 241-245 band is free in
+`to_u16`/`from_u16`/`render_key` on main + every pushed sibling (the
+claim doc's census — no `=> 241..245` arm exists on any of them);
+research/108's §3 plan (d37's reconcile, 05:31) predates d120's
+claim and lists 237-249 among the base roster's "reserved holes —
+cs-owned, never reassign". The matrix must RESOLVE that tension:
+d120's five kinds sit in that hole (241-245) with the claim-first
+right (dad8db3d9 05:48 < d36's 06:03 empty claim; the kinds code
+2891b0bd8/e4e400629 pushed). The keep-one resolution: add the d120
+block (5 kinds, proto 241-245, cs 142/160/178/209/579) to the union
+plan's "keep untouched" list and strike 241-245 from the reserved
+holes (237-240/246-249 stay reserved). If the matrix instead holds
+the holes sacred, d120's band renumbers to the 731+ port-local
+corridor AHEAD of d36's block (the d35 renumber precedent — five
+`to_u16`/`from_u16` arms + the witness pins, cs_id/net_id unchanged);
+either way the KINDS stay d120's, only the protocol ids move.
+
+### W4-d120 RETIRE (2026-11-21, code-only mode) — GetChat-40 COMPLETE + the lane hand-offs
+
+The retire pass (research/143, the lane tips re-read from origin):
+
+- **GetChat COMPLETE — all 40 arms accounted** (36 type cases + arms D's
+  pets 637/638/656 + the `IsTownSlime` set arm). The declaration + the
+  per-arm roster: research/143 §4. The happiness/homeless lines are
+  BUTTONS (g58), the shop is the OpenShop button (d120's registry rows
+  landed) — no ladder gaps remain. The selection ladder needs NO
+  further ports; the remaining chatter scope is other lanes' (the
+  panel buttons f22c/g58/f38, the 579 spawn arm, the d43/f43 kinds).
+- **The f22c dynamic-gap patch published** (research/143 §1): the exact
+  2-hunk diff against f22 tip `be73b87b5` — `INTERACTION_LINES` →
+  `interaction_lines(count) = count.div_ceil(4)` (`NPCChatPanel.cs:174`),
+  `panel_rect` takes the live count (`chat_box_height` already carries
+  the `:68` growth), `interaction_rects` adds the `num/4*22` y-step
+  (`:106`). Count ≤ 4 keeps today's pixels exactly. No d120 code edit —
+  f22 owns the sign-aware file (d120's copy is the pre-sign text-only
+  version, unchanged).
+- **The d43 slime colour words are ALREADY wired** (research/143 §2):
+  d43's tip is 0 ahead of main (claim-only, no SlimeVariant town kinds);
+  d120's arm keys on the vanilla type (`is_town_slime(ty)` +
+  `slime_chat_colour`'s full `Lang.GetSlimeType` switch, all eight words
+  witness-pinned) — the moment f43's license arms spawn a kind with
+  cs_id 670/678-684 the correct `Slime<Colour>Chatter` answers with ZERO
+  d120 edits. The port's wild-slime `SlimeVariant` enum
+  (`npc/data.rs:14-24`) is NOT the town vehicle (no Old/Rainbow/Copper).
+- **The 579 spawn contract published** (research/143 §3, for d42b / the
+  spawn lane): the full arm (`NPC.cs:1656-1659` — tab-depth, the
+  short-circuit gate order, the bare `Next(80)`, the Bottom-anchored
+  34×8 placement), the 579→550 talk transform
+  (`AI_000_TransformBoundNPC` → `UpdateSavedStates` case 550 raises
+  `savedBartender`, the bottom-anchored hp-ratio Transform + homeless
+  home), the port's rescue-fn/cadence precedents, and the NEW collision:
+  d42 batch 1 (`3836a2d1a` 06:46) re-lands the 579 kind AFTER d120's
+  claim-first push (`e4e400629` 06:28) — the d37c matrix keeps d120's
+  row (protocol 245), d42's 579 hunks drop at the merge (its other
+  578/580-582 kinds untouched). d41 stays claim-only 491-560 (579
+  outside); the spawn arm is unclaimed on every pushed tip.
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
@@ -7337,8 +7689,12 @@ Deviations:
 - **Death from a DoT drain clamps at 0 hp** вЂ” resolved by M2-BUFF-3: the
   `KillMe` reasons (`:19361-19385`) now flow through `regen.rs`'s `DotDeath`
   (see "DoT debuffs (M2-BUFF-3)" below).
-- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
-  deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
+- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) —
+  LANDED by W4-d79 phase 6: `update_mana_regen`'s refill trigger queues
+  `Player::pending_mana_refill` at the live box; the `UpdatePlayers` drain
+  plays the unpositioned case-25 `MaxMana` chime (no draws, no Stop) + the
+  5× dust-45 burst (each `Next(20,26)*0.1` scale drawn BEFORE its
+  `NewDust`). See "The sound pitch/pool census rewire (W4-d79)" below.
 - **The `DebugOptions.ManaV2` block is the SHIPPED mana machine** — S1-P-i19
   corrected the earlier "debug cheat, not ported" reading: the static ctor
   sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and nothing in the
@@ -18528,11 +18884,13 @@ Three scope notes, none of which change the ported numbers:
   the port yet. Those rows must not reach the price helper until that
   subsystem lands; the ported shops (case 1 and the rest of M4-TOWN) never
   set the field.
-- **`discountAvailable` has no writer yet**: the C# refreshes it from
-  `discountEquipped` (`Player.cs:25638`), which the Discount Card accessory
-  sets (`:14973`/`:14995`). The equipment/update-equips pass is S1-C-12;
-  `App::discount_available` defaults `false` (the exact pre-Discount-Card
-  state) and the price arms already consume it.
+- **`discountAvailable`'s writer landed with W4-f37** (2026-11-21): the C#
+  refreshes it from `discountEquipped` (`Player.cs:25636-25639` — only while
+  `Main.npcShop <= 0`, an open shop LATCHES the value), which the Discount
+  Card 854 (`:14971-14974`) and the Greedy Ring 3035 (`:14995`) arm per tick
+  (`ResetEffects` clears, `:18759`). `Player::discount_equipped` carries the
+  flag; `world_sim/player.rs` mirrors it into `App::discount_available` on
+  the shop-closed ticks. See "The shop price math completion (W4-f37)" below.
 - **The f32 casts are part of the contract**: the discount multiply
   truncates through the C#'s `(int)` cast (no rounding вЂ” 7 Г— 0.8f = 5, not
   6), the adjustment multiply/divide round through `Math.Round`'s
@@ -18540,6 +18898,138 @@ Three scope notes, none of which change the ported numbers:
   (`40000 @ 0.75` sells for 10666, not the 10667 the old port printed by
   dividing first). Golden vectors pin every arm in
   `shop.rs::tests`.
+
+## The shop price math completion (W4-f37, 2026-11-21)
+
+The price-MATH lane over the S1-C-11 chain: the Discount Card writer, the
+faithful `ShopHelper.ProcessMood` and the captured `currentShoppingSettings`.
+C# cites inline; the witnesses are written (not run — the code-only swarm).
+The shop inventories (d122/d123) and the happiness UI (g58) are co-lanes —
+this lane owns the multiplier/discount arithmetic only.
+
+- **The Discount Card writer** (`Player.cs:2634`/`:14971-14974`/`:14990-14996`/
+  `:18759`/`:25636-25639`): `Player::discount_equipped` arms from the 854 and
+  3035 accessory rows, clears in `ResetEffects`; `world_sim/player.rs` mirrors
+  it into `App::discount_available` ONLY on shop-closed ticks — an open shop
+  latches the open-time value (the vanilla never re-reads it while
+  `npcShop > 0`). Witnesses: the per-item grant/clear + the latch both ways.
+- **`ShopHelper.ProcessMood` re-ported 1:1** (`ShopHelper.cs:95-181`) — the
+  former port deviated in six places, all fixed:
+  1. the `loveStruck` ×0.9 head (`:99-102`) runs BEFORE the exclusions (the
+     travelling sellers keep it, UNROUNDED — the early return skips the cents
+     tail); the flag derives from the NPC's live buff-119 slots
+     (`NPC.cs:92057-92060`);
+  2. `Main.remixWorld` (`:103`) drops EVERY town NPC out at 1.0 — the port
+     reads `World.seeds`' REMIX bit;
+  3. the Princess (663) branches (`:122-131`): `flag = false` kills her crowd
+     multiply (num = 1f) AND her LoveSpace, but the crowded REPORT still
+     lands; alone (< 2 house AND < 2 village) she hates the loneliness at the
+     sentinel;
+  4. the crowd scan counts EVERY town NPC (`:298-323` — the former port
+     counted Guides only), minus the not-really-town trio (37/368/453) and
+     the different-housing-category roommates (`TownRoomManager.cs:153-161`;
+     the pets' category 1 has no ported kinds). The Tavernkeep (550) counts
+     even though the shared `is_town_npc_like` omits him;
+  5. the biome traits judge the PLAYER's zones
+     (`BiomePreferenceListTrait.cs:44` — `IsInBiome(info.player)`), NOT the
+     NPC's home scene, and apply the SINGLE best-affection row
+     (`AffectionLevel` Love 100 > Like 50 > Dislike -50 > Hate -100) — the
+     former port multiplied every matching row against a home-anchor biome
+     classification. The Forest/Underground rows ride the special getters
+     (`Player.cs:3823-3847`): `BelowSurface = Center tile Y > worldSurface`,
+     `Forest = !AnyBiome && !BelowSurface` (Desert counts as a biome);
+  6. the cents round is `Math.Round`'s BANKER'S default (`:179` — the
+     `shop.rs::round_half_to_even` helper), not away-from-zero. The traits
+     also run at the sentinel (no `< 1000` gate at `:152-168`) — the report
+     collects them, the clamp tames the product.
+- **The neighbor table** (`AllPersonalitiesModifier.cs:12-506`): the former
+  "the Guide carries none" note was WRONG — case 22 exists (`:451-468`).
+  `happiness.rs::neighbor_preferences` now carries all 20 ported-kind cases
+  verbatim (ids of unported kinds stay in the rows, they never match). The
+  Princess's up-to-3 random loves (`:15-36`) draw off the bare `Main.rand`
+  (`app.rngs.global()` — the talk/shop open runs outside every SwapRandom
+  block), type-deduped (the `bool[NPCID.Count]` scan), each pick removed
+  before the next draw; everyone else likes a nearby Princess (`:37-40`).
+  `MoodFlag::NpcAffection` carries the VANILLA id (the rows reference
+  unported kinds).
+- **`currentShoppingSettings` is captured ONCE per `SetTalkNPC`**
+  (`Player.cs:4375-4390`): the talk open latches `App::shop_mood`; the closes
+  (`SetTalkNPC(-1)` — the walk-away, the chat Close button, the recall
+  teleport) reset it to `NotInShop` = 1.0 (`ShoppingSettings.cs:9-13`).
+  `Main.OpenShop` (`Main.cs:40459-40467`) does NOT recompute it — the port's
+  shop-open re-capture fires only for the collapsed chat-button entry (the
+  recorded #9 deviation, `talk_npc = None`), so the Princess's draws fire
+  once per talk. `GetNurseHealCost` (`Main.cs:40100`) reads the LATCH — the
+  former per-call `process_mood` re-scan was wrong (it also re-rolled the
+  Princess's loves every frame).
+- **The Stylist hair-restyle charge** (`Main.cs:43786-43799`):
+  `shop.rs::hair_restyle_cost` — style +100000 / color +20000, the Discount
+  Card's `(int)((float)x * 0.8f)`, the mood float multiply truncating to int
+  FIRST, then the banker's `/10000` round and the whole-gold ×10000 snap.
+  The f32 bits ARE the contract: `100000 × 0.95f` rounds to the exact
+  95000.0 f32 (the product 94999.9988 sits within half an ulp of it) → the
+  9.5 tie → 10 (even) → 10 gold; `× 0.85f` lands the exact 8.5 tie → 8
+  (even); `120000 × 1.06f` truncates to 127199 (not the decimal 127200).
+  The hair-window UI itself stays the M4-TOWN-17 deviation — the helper is
+  pinned by its golden vectors until the window lands.
+- **Dead code stays out**: `GetSkeletonMerchantPrices` (`ShopHelper.cs:64-88`)
+  and `GetTravelingMerchantPrices` (`:90-93`) have NO callers in 1.4.5.8
+  (whole-tree grep) — the port keeps the math out of the price path (the
+  travelling-merchant witness records the formula).
+- **Scope residuals**: the town pets (`NPCID.Sets.IsTownPet`) and the
+  SantaClaus 142 / Truffle 160 / Steampunker 178 / Cyborg 209 / Pirate 229
+  kinds have no ported `NpcKind`s — their exclusion/affection rows land with
+  the kinds; the `housingCategory` filter is a no-op until a category-1 kind
+  ships. The `shopSpecialCurrency` arm still waits for the
+  `CustomCurrencyManager` (the S1-C-11 note stands).
+
+### The doc-sweep town lane 2 (W4-f37, 2026-11-21)
+
+The DOC-SWEEP pass over ANALYSIS + research/23/11/22/29 + the shop/town docs
+for unported town mechanics with a C# source. Four real gaps landed (each
+its own commit, witnesses written not run); the rest are co-lane claims or
+recorded deviations. The full sweep table is `docs/research/73-doc-sweep-town.md`.
+
+- **CollectTaxes anniversary pair + head-index payer filter**
+  (`Player.cs:24129-24155`): `Main.tenthAnniversaryWorld` doubles BOTH the
+  50c rate and the 25g cap (`:24133-24137`) — `clock.rs::collect_taxes` reads
+  `SeedFlags::TENTH_ANNIVERSARY`, the `>=` gate and the strict `>` clamp ride
+  the doubled cap. The payer count is `!homeless && !IsTownPet &&
+  TypeToDefaultHeadIndex > 0` (`:24145`), NOT `is_town_resident` — the housed
+  DD2 Bartender (550, head 24) now PAYS, the bound/rescue six ride freed-row
+  `net_id`s and are excluded by kind, `is_town_pet` guards the future pets.
+- **The nurse heal presentation tail** (`Main.cs:40103-40178`): the paid arm
+  spawns `HealEffect(statLifeMax2 - statLife)` BEFORE the life fills
+  (`:40112`, the `potions.rs::spawn_heal_text_on` seam — the click draws the
+  `CombatText.cs:88-89` jitters on the bare-`Main.rand` global stand-in) +
+  the PRE-heal life-band dialog ladder 227/228/229/230 (`:40113-40128`,
+  strict `<` f64 compares); the poor purse answers `Next(3)` → 52/53/54,
+  nothing-to-heal draws `Next(3)` then RE-DRAWS `Next(1,3)` under ChildSafety
+  (`:40159-40162`, both draws spend the stream, the blood line 55 drops).
+  The sound-12/Item4 cues are g21's hunk; the portrait hop is g58's.
+- **The tax payout dialog tail** (`Main.cs:40217`/`:40222`): the paid arm
+  answers `Lang.dialog(Next(380,384))` AFTER the coin split BEFORE the purse
+  zero, the empty purse answers `Next(390,401)`; both draws ride the global
+  stand-in, the coin-spawn draws stay on UpdatePlayers. The latch divide +
+  player-centre origin are g58's `a027138d8` hunk (cross-noted).
+- **The Stylist hair-window STATE machine** (`Main.cs:43653-44138`):
+  `hair_window.rs` ports open/cancel/buy/force-close/price/buy-label/HSL-seed
+  + the stylist list (`HairstyleUnlocksHelper.cs:51-111`). `Player.hair`/
+  `hair_color` fields land (`Player.cs:2568`/`:2554`), the hair-layer tint
+  rides `PlayerCompositeState.hair_color` (the default reproduces the HAIR
+  constant), the `render_key` gates the tint mix on non-default (G6
+  bit-identical default frames). The panel DRAW stays M4-TOWN-17; the
+  scroll/cell pure fns are g22's; `UnlockedMaxHair` (`:43695`) is DEAD CODE
+  (zero callers) — unported. The `.trplayer` sidecar carries no hair row, so
+  a bought style does not survive a world swap (the M6-SAVE deviation).
+- **Co-lane claims verified, NOT duplicated**: the Zoologist `altTexture == 2`
+  report suffix (g58's `should_bestiary_girl_be_lycantrope` + the
+  `Transformed` category), the tax payout latch divide + player-centre
+  (g58 `a027138d8`), the Angler `(mood+1)/2` rarity (g58 `468db5928`, the
+  `angler.rs:164` formula already carries it), the nurse sound-12/Item4
+  (g21), the reforge latch read (g58 `13be13a6a`), the hair-window scroll/
+  cell (g22). The `UpdateAltTexture` state machine + transition effects are
+  g61's "alt-texture halves" claim — f37 adds no `alt_texture` field.
 
 ## The shop buy/sell transactions (S1-P-i44, 2026-11-19)
 
@@ -38780,7 +39270,8 @@ Mana regen delay (`ApplyManaRegenerationDelay` `:19396-19416`,
 - The full-bar trigger now fires only when a point was granted THIS chunk
   (flag4), matching `:19550` — an idling full bar no longer re-fires.
 - `manaRegenDelayBonus` has NO grant source in the source (`:18656` is its
-  only write) and the arcane crystal is unported — both stay folded out.
+  only write, 0f) — folded out. The arcane crystal's READ arms landed with
+  W4-d117 (below); the 5339 use arm stays the crystals/powerups lane's.
 
 Mana Sickness (buff 94) — **not for weapons**:
 - `CheckMana` has NO buff grant; the ONLY grant site is `ApplyLifeAndOrMana`
@@ -38799,6 +39290,120 @@ Mana Sickness (buff 94) — **not for weapons**:
   (the star-pickup heat `:35071` has no port seam). The
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
+
+## W4-a6 — the permanent power-up consumables (Player.cs:45192-45423)
+
+The `powerups.rs` machine rides the boss-spawner/recall press-edge shape:
+the use START arms the swing on the press edge, the grant fires at
+`ItemTimeIsZero && itemAnimation > 0` mid-swing, `ApplyItemTime` re-arms
+the cadence and the generic consume tail (`:43280-43326`) pays ONE only
+when the grant fired. Refused arms keep re-checking each action tick and
+never consume.
+
+- **Achievement targeting (reconcile fix, research/138)**: the C#
+  `HandleSpecialEvent` completes ONE row's condition
+  (`GetCondition("STAR_POWER", "Use").Complete()`); the first a6 pass used
+  the `notify_custom("Use")` broadcast (every `Flag("Use")` row at once) —
+  LESS faithful than g88's `complete_named` / c36's `complete_condition`.
+  The reconcile adds the row-targeted `AchievementManager::
+  complete_condition` (c36's shape, the keep-one at the merge) and the
+  crystal/fruit/torch arms now call it: STAR_POWER / GET_A_LIFE /
+  TOPPED_OFF / GAIN_TORCH_GODS_FAVOR each complete ONLY their own row.
+  Life crystal's event 0 stays a NO-OP (no case 0,
+  `AchievementsHelper.cs:288-379`).
+- **Galaxy Pearl ownership (reconcile fix)**: the persistence owner is
+  `Player.used_galaxy_pearl` (the `.plr` slot `:54784`/`:55258` — the C#
+  `RecalculateLuck` reads the player field directly, `:29142-29145`);
+  `update_luck` mirrors it into the `LuckState.used_galaxy_pearl` consumer
+  before every recalculation (the g90 lane-7 shape). The first a6 pass
+  latched the LuckState copy directly — no Player field to persist.
+- **Aegis Crystal f32 order (reconcile fix)**: the +0.2 `lifeRegenTime`
+  add rides its OWN `RegenInputs.aegis_crystal` slot, applied BETWEEN the
+  base +1 (`:19112`) and the crimson +1 folded into `extra_time`
+  (`:19117-19120`) — the g90 lane-7 shape. Pre-summing `0.2 + 1.0` into
+  `extra_time` (the first a6 pass) reorders the C#'s f32 accumulation.
+- **Booster row order (reconcile fix)**: `UpdatePermanentBoosters`' rows
+  now run in the C#'s own order — Aegis Fruit +4, Gummy Worm +3, Ambrosia
+  triple LAST (`:12853-12866`; g89's verbatim order).
+- **TRAINING_DAY (reconcile addition)**: both world book flags standing
+  fires progression 40 every tick from the player pass
+  (`Player.cs:25695-25698`, the g90 lane-7 hook; idempotent once
+  completed).
+- **NPC statics as World fields**: `combatBookWasUsed` /
+  `combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed` /
+  `boughtCat/Dog/Bunny` are `Main`-global statics in the C#; the port
+  stores them on `World` (the S1-P-i35 `combat_book_was_used`
+  standing-in) and persists them in the wld flags block at their C# tail
+  offsets (1939 / 2036 / 2037 / 2021-2023) behind their version gates
+  (204 / 259 / 260 / 217). The golden fixture's bytes there are all 0, so
+  the pinned divergence set stays exactly killCount[1]/claimable[1]/
+  treeTop[0]/manifest.
+- **Pet licenses (4829/4830/4910)**: the port ships no TownCat/TownDog/
+  TownBunny `NpcKind` (637/638/656) and no `TownNPCProfiles.RollVariation`,
+  so the LIVE `AnyNPCs` scan never answers today — a bought license's use
+  is refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
+  no resident pet. The purchase arm (flag + `Misc.License*Used` chat)
+  is ported; the town arrival gates (`Main.cs:65900-65911`) are the
+  deferred consumer of the bought flags. **Exchange-fail fold (retire
+  pass, research/138 §11.3 — the g87 closeout `26620538e` shape):** when
+  a town-pet kind lands and the scan answers, the arm now consumes one
+  and posts `Misc.PetExchangeFail` (`NPC.cs:80914-80917` —
+  `RerollVariation` returns false with no profile, `:80935-80938`),
+  never a silent consume; no flag re-raise, no license re-print. The
+  Success leg (`RerollVariationForNPCType` → `RollVariation` +
+  `Misc.PetExchangeSuccess`, `:80910-80912`) is the remaining merge
+  debt — it lands WITH `TownNPCProfiles`. **Activation contract
+  UPDATED (D5 correction pass, research/138 §12.2):** the kinds leg is
+  DONE — g10 `5dee28650` landed ALL-11 town pets WIRED (637/638/656/
+  670/678-684, `npc/data.rs` vanilla-id arms + bestiary `net_id`s; the
+  seal-era d43 premise was stale — d43 carries zero commits, main
+  `a725acb04` still has no arms) → f43's splice (f43b lane:
+  `town_arrival_pets.rs` at `79a037f5e`, UNWIRED whole-chain, ports the
+  arrival gates + the exchange chain incl. the profiles/rosters/names;
+  variation roll on `Main.rand`, name on `WorldGen.genRand`) → the
+  one-line Success/Fail chat dispatch in the merged use arm (the exact
+  hunk published in 138 §12.2). Witnesses:
+  `a_bought_license_without_a_resident_pet_refuses` +
+  `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
+  mere liveness); the positive Success witness is witnessable on g10's
+  tip (a 637/638/656 kind EXISTS) but lands WITH the f43b splice + the
+  hunk, not before (138 §12.2's updated boundary).
+- **g87 re-adjudication (research/138 §10 FINAL + §11.3 retire)**: g87
+  `dfbcaf94b` pushed the same three families (3335/5289/licenses); its
+  closeout `26620538e` (local over the pushed tip at the retire probe)
+  then FOLDED all three a6 deltas — the Demon Heart `CheckCanUse` start
+  refusal (`:52051-52054`), the full QuickSpawnItem walk (deposit +
+  chime/notify + void vault + prefix-preserved overflow, the roll on
+  UpdatePlayers), and the live license scan + `!bought` guard + the
+  PetExchangeFail line. The §10 keep-owns stand (a6's machine is the
+  single-seam cluster owner; g87's module dedups onto it at the merge —
+  now a shape-identical dedup, no semantic conflict). g87's `.trplayer`
+  v7 `dh` line still collides with the g88 superset's v7 (DROP — the
+  fields are f44's L1-only `.plr` lane). Both minecart ports are
+  NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
+  g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
+  rides the SEALED 107-byte-head v18 union at offsets 57-59 (138 §12.1's
+  ARBITER receipt — g88 d09d7e10a research/103 §L3-ARBITER FINAL A3
+  authority, D3 restated verbatim; the seal's g71d 59-61 seats, §11.2's
+  101-head/51-53 seats and the five-way 68-byte table §5a are superseded).
+- **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
+  deposit walk with the per-slot chime + `NotifyItemPickup`, the void
+  vault as the LAST resort and the overflow world drop at the player
+  centre with the prefix preserved (the reforge-return overflow
+  precedent). `newAndShiny`/`enemyGrabDelayTime` are UI/MP-only (the
+  SP `ApplySpawnOwnership` arm is a no-op, `WorldItem.cs:296-305`).
+- All `NetMessage.SendData(4/51/61)` sync rows are MP-only — the port is
+  single-player (netMode 0), so they fold out; the `Main.netMode == 0`
+  chat/flag arms are the ones ported.
+- **Drones (5451/5738)**: `ItemCheck_TryDestroyingDrones` is ported 1:1
+  (the mid-swing `controlUseItem && ItemTimeIsZero && !mouseInterface`
+  kill of the owner's 1020/1105 projectiles, `releaseUseItem = false`,
+  the `CheckCanUse_Inner` use-start refusal and the shoot suppression).
+  The 1020/1105 projectile AI is unported (no `proj_data` row — the spawn
+  seam returns `None`), so in live play the counts never rise and the arm
+  is dormant; the machine is ported against the pool state for when the
+  drone AI lands. `mouseInterface` folds to `!inventory_open` (the port's
+  standing-in — the UI-hover flag has no field).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
@@ -38822,8 +39427,11 @@ Mana Sickness (buff 94) — **not for weapons**:
 ### RNG order
 No new RNG draws. `check_mana`, `apply_mana_regen_delay` and
 `update_mana_regen` are pure arithmetic; the full-bar dust's 5×
-`Main.rand.Next(20,26)` (`:19555`) stays deferred to M6-AUDIO (the trigger
-is returned, not drawn). The potion drink's `ManaEffect` combat text draws
+`Main.rand.Next(20,26)` (`:19555`) was deferred to M6-AUDIO (the trigger
+is returned, not drawn) — **W4-d79 phase 6 landed it**: the engine stays
+draw-free, the `UpdatePlayers` drain rolls the 5×(1 scale + 6 `NewDust`)
+draws at the C#'s update position (before the sticky-dust drain,
+`:25995` < `:27654`). The potion drink's `ManaEffect` combat text draws
 ride the existing `UpdatePlayers` stream through the cuffs' drain
 convention — no new stream, no reorder. The weapon pay's crit/spawn rolls
 are unchanged (the pay now always succeeds, so the downstream rolls run on
@@ -38838,6 +39446,341 @@ read/grep (the `Player` field additions, the `update_survival` feed, the
 (`regen.rs` ×6, `player.rs` ×3, `world_sim/editing.rs` ×6, the rewritten
 `projectile.rs` Last Prism pair) are WRITTEN, NOT RUN — **no compiler
 invoked**.
+
+### The W4-d117 regen census fill (i12/i37 leftovers)
+
+A second line-by-line census of `UpdateManaRegen`/`ApplyNebulaBuffMana`
+(`Player.cs:19418-19585`) against `regen.rs` after the i12/i37 waves. The
+movement curve, Mana Sickness and the potion drink were already complete;
+the gaps were the booster read arms, two input feeds and the Update tail:
+
+- **`ApplyNebulaBuffMana` (`:19565-19585`) was unported** — the FIRST call of
+  `UpdateManaRegen` (`:19421`), before the delay countdown. Added
+  `regen.rs::apply_nebula_buff_mana` + `RegenState::nebula_mana_counter`
+  (`Player.nebulaManaCounter` `:928`): counter += tier, ONE `if ≥ 6` grant
+  (not a loop — tier 3 still grants at most +1/tick), `≥ max` clamp
+  (`:19575`), tier-0 counter wipe (`:19583`, NOT ResetEffects). The tier
+  field `Player.nebula_level_mana` (`:926`) lands with its ResetEffects
+  zero (`:18755`); the WRITE lane (`UpdateBuffs_NebulaBuffs` `:12070-12079`
+  deriving 1..3 from the live 176-178 slot, the `NebulaLevelup` grant
+  `:57050-57053`) stays the buff-scan lane's.
+- **`usedArcaneCrystal`'s two read arms were unported** — delay −0.05/tick
+  (`:19430-19433`) and regen +`statManaMax2/50` (`:19453-19456`, AFTER the
+  still doubling, BEFORE the fill-curve scale). Added as
+  `RegenInputs::used_arcane_crystal` + `Player.used_arcane_crystal` (`:856`,
+  a permanent — no ResetEffects clear; the use arm `:45399-45404` and the
+  player-file round-trip `:54783`/`:55257` stay the crystals/powerups lane's).
+- **WRONG (movement curve feed):** `moving_x` was `vx != 0` alone; the C#
+  (`:19241`) needs `velocity.X != 0f && grappling[0] < 0` — a hooked player
+  keeps the ×1.25 life ramp. Fixed in the `update_survival` feed.
+- **MISSING (expert feed):** `expert_mode` stayed at its default `false` in
+  the feed; the C# reads `Main.expertMode` (`:19254`). Now fed from
+  `buffs.expert_mode` — the expert-world ramp halving (and the well-fed
+  cancel) actually runs.
+- **MISSING (Update tail):** `Player.Update`'s post-`UpdateManaRegen` clamps
+  (`:25996-26003`: negative `manaRegenCount` → 0, over-max `statMana` → max)
+  were absent. Added UNCONDITIONALLY after the port's hp gate — the C#
+  clamps a dead player's fields too.
+- **Folded out (recorded):** `manaRegenDelayBonus` (`:19425`) — `:18656`'s
+  0f is its only write. The `DebugOptions.DrawManaEstimates` block
+  (`:19486-19531`, flag TRUE at `DebugOptions.cs:84`) computes a sustain
+  estimate whose only consumer is a discarded `f.ToString("F2")` (`:19528`)
+  — zero state writes, pure dead computation, not ported.
+
+Witnesses (`regen.rs` ×5: the nebula cadence/clamp/wipe, the pre-delay
+ordering, both crystal arms with the +4-after-doubling order pin, the
+expert/well-fed matrix; `player.rs` ×3: the grappled-movement ramp+delay
+split, the field flow through `update_survival`/ResetEffects, the dead-
+player tail clamps) are WRITTEN, NOT RUN — code-only mode, no compiler
+invoked.
+
+### The W4-f49 mana-regen second half (i12/i19/i37/i52 leftovers)
+
+The continuation of the d117 census on `task/W4-f49-mana-regen-2` (branched
+on 0dbcb013). Four remaining pieces, each re-censused against the C#:
+
+- **Mana Sickness stacking — already faithful, witnessed.** The grant stacks
+  ADDITIVELY: `AddBuff_TryUpdatingExistingBuffTime` (`Player.cs:5410-5418`)
+  reads `BuffID.Sets.AddBuffTimeAdditivelyToCap[94] = 600` (`BuffID.cs:53`),
+  so a second drink inside the window lifts `buffTime` 300 → 600 (capped),
+  not a refresh. The reduction is one ASSIGN per scan tick (`:10326`,
+  `0.25 × buffTime/300`), so it can exceed 0.25 (up to 0.5 at the cap) but
+  never compounds across ticks. 94 is absent from
+  `BuffTimeIsExtendedWithGameDifficulty` (`BuffID.cs:50`) — expert worlds do
+  not extend it. The port's `buffs.rs` additive-cap + the `apply_mana_sickness_arm`
+  assign already matched; `w4_f49_mana_sickness_stacks_additively_to_the_six_hundred_cap`
+  pins it. The death buff-sweep (`UpdateDead` `:16995-17002`, 94 is not
+  `Main.persistentBuff`) stays the death-system lane's (recorded gap,
+  `world_sim/player.rs` DW-2 note).
+- **Mana-flower auto-potion — the `CheckMana` flower lane landed.** The pure
+  `regen::check_mana` (the pool-side pay) has no inventory reach; the new
+  `potions::check_mana_with_flower[_on]` is the App-level twin running the
+  WHOLE `CheckMana` (`Player.cs:52576-52617`): the entry clear (`:52578`),
+  the enough-mana pay (`:52579-52586`), then the flower arm (`:52588-52609`)
+  — `QuickMana()` (`:52592`) + the post-drink RE-CHECK/pay (`:52594-52601`);
+  a failed/absent drink falls to the SAME ManaV2 empty arm (`:52602-52606`).
+  The weapon use path (`world_sim/editing.rs`'s `ActuallyPayMana` site) now
+  calls it; the borrow restructure re-binds the player per site so the drink
+  can walk the inventory. The entry clear runs BEFORE the drink, so the
+  drink's `UndoSlowMagicUse` gate (`:51946`) sees `slowMagicUse == false` —
+  the mid-swing timer shrink never fires on the flower path (the C# order).
+  The Last Prism interval pay (`AI_075`, `Projectile.cs:66613`) runs pool-side
+  on `&mut Player`; it records a `wants_prism_flower_drink` intent on the
+  short+flower interval and the `world_sim/projectiles.rs` pass-tail drains it
+  through the same twin on the `UpdateProjectiles` stream (`Main.cs:17775`) —
+  the `pending_spear_hold`/`drain_npc_hit_sounds` convention. `quick_mana` /
+  `spawn_heal_text` grew `_on(key)` variants so the two callers keep their own
+  named streams. `blockQuickMana` (`:52576`'s third arg) is false at every
+  source call site; the parameter is kept for structure.
+- **Magnet pickup — the Treasure Magnet grant landed.** The `mana_magnet` /
+  `life_magnet` flags + their accessory/buff grants + the `GrabFlags` feed
+  were already live (S1-P-i52); the `treasure_magnet` flag had NO Player
+  field/grant/reset/feed. Added `Player.treasure_magnet` (`:936`), the
+  Treasure Magnet 5010 grant (`ApplyEquipFunctional` `:14551-14553`), the
+  Hand Of Creation 5126 `treasureMagnet` half (`:15292`, split off the shared
+  `4056 | 5126` chisel arm), the `ResetEffects` clear (`:18493`) and the
+  `world_sim/items.rs` `GrabFlags` feed. The +150 range row on EVERY kind
+  (`GetItemGrabRange` `:35149-35152`, `Item.treasureGrabRange = 150`) was
+  already in `item.rs::get_item_grab_range`. The nebula-trio / 4143 consume
+  arms (`PickupItem` `:35045-35058`/`:35080-35098`) stay out — their
+  `NebulaLevelup` buff-scan derivation is the c16/c17 buff-effects lane's
+  (in flight), and the mana-band tier write (`UpdateBuffs_NebulaBuffs`
+  `:12070-12079`) has no port writer yet; d117 landed the regen READ side.
+  *(Superseded by the W4-f49 DOC-SWEEP lane 12 below: the consume arms, the
+  `NebulaLevelup` grant AND the tier writer all landed on this branch — the
+  f12 buff-frame lane owns only the Life-regen/Damage CONSUMERS now.)*
+- **Arcane crystal 5339 USE arm — landed here (was the crystals/powerups
+  lane's).** `world_sim/editing.rs::use_arcane_crystal` ports
+  `ItemCheck_UseShimmerPermanentItems` (`Player.cs:45399-45404`): the
+  `!usedArcaneCrystal && ItemTimeIsZero && itemAnimation > 0` gate →
+  `ApplyItemTime` (useTime 45) + `usedArcaneCrystal = true` + the generic
+  consumable tail (stack--, the empty-slot `itemTime = itemAnimation` fold).
+  The flag is a permanent (no ResetEffects clear); d117's two regen read arms
+  (`:19430-19433` delay −0.05, `:19453-19456` regen +max/50) pick it up. The
+  five siblings (5337/5338/5340/5341/5342) stay the crystals/powerups lane's.
+  The 5339 kind joins the mid-swing `is_summon` gate (the same
+  `ItemTimeIsZero && itemAnimation > 0` precondition as the boss spawners).
+
+Witnesses (`potions.rs` ×7: the flower drink+repay, the no-potion V2 arm, the
+blockQuickMana skip, the enough-mana no-drink, the no-timer-shrink order pin,
+the sickness stacking, the stream-key routing; `player.rs` ×1: the treasure
+magnet grants + range feed; `editing.rs` ×3: the crystal use-once, the used
+refusal, the flower weapon drink+fire; `projectile.rs` ×1: the prism flower
+intent) are WRITTEN, NOT RUN — code-only mode, no compiler invoked.
+
+### The W4-f49 DOC-SWEEP lane 12 (mana/magic, 2026-11-21)
+
+The doc-sweep continuation on the same branch: five lane items mined from
+ANALYSIS + the regen/potion censuses (full report:
+`docs/research/85-doc-sweep-mana.md`). Two REAL gaps ported, three census
+verdicts witnessed:
+
+- **The Nebula/4143 pickup consume arms landed** (the f49-first-half leftover
+  above). `world_sim/items.rs`'s `IsAPickup` skip-gate is GONE — all four
+  kinds now consume on touch in the C# `PickupItem` chain order
+  (`Player.cs:35045-35098`): the nebula trio 3453-3455
+  (`ItemID.Sets.NebulaPickup`, `ItemID.cs:1324`) plays the POSITIONED
+  `PlaySound(7, (int)position.X, (int)position.Y)` (the shared
+  `audio::play_grab_sound_at`, split out of the chest-eat chime) and calls
+  the new `Player::nebula_levelup` (`NebulaLevelup` `:57030-57059`: the
+  `DelBuff(i--)` family wipe, tier +1 clamped 0..3, `AddBuff(base + tier −
+  1, 480)`; the buffType rows `Item.cs:31008-31016` map 3453→179, 3454→173,
+  3455→176). The Mana Cloak star 4143 (`:35080-35098`) restores 50 capped
+  AFTER the raw-50 `ManaEffect` text + `TryApplyManaHeat(0.2f, 2f)` — the
+  100-star arm's shape at 50. The nebula PULL arm (`:34953-34956`,
+  `PullItem_Pickup(12f, 5)`) lands with them; the +100 grab-range row was
+  already live (i52). The 4143 PRODUCER (the 723 ManaCloakStar projectile's
+  Kill drop, `Projectile.cs:75174-75177`) stays the projectile-Kill lane's —
+  the consume arm is complete for any 4143 drop.
+- **The mana-band tier WRITER landed** (d117 landed only the READ side).
+  `Player::update_buffs_nebula_buffs` ports `UpdateBuffs_NebulaBuffs`
+  (`:12070-12079`) — the assign-derivation `1 + buffType[b] − base` and the
+  `buffTime == 2 && tier > 1` step-down (buffType−−, buffTime = 480) — wired
+  as the three scan arms 176-178/173-175/179-181 (`:10444-10461`) in the
+  existing buff loop, C# chain order. The `nebula_level_life` /
+  `nebula_level_damage` fields join `nebula_level_mana` with the SHARED
+  `ResetEffects` chained zero (`:18755`). The Life arm's `lifeRegen += 6 ×
+  tier` (`:10451`) and the Damage arm's `0.15 × tier` four-class adds
+  (`:10456-10460`) stay the W4-f12 buff-frame lane's consumers (its
+  `orb_scan` twins on `task/W4-f12-buff-frame-wiring`, 7b9fb486 — NOT in
+  this branch's tree; the merge reconciles one writer). The pickup→writer→
+  reader chain now runs end to end: 3455 → buff 176 → tier 1 →
+  `ApplyNebulaBuffMana`'s 6-counter grant (witnessed).
+- **Mana sickness drink-while-sick — census COMPLETE, witnessed.** No use
+  gate exists for Mana Sickness anywhere in `ItemCheck` (the `:52217` gate
+  reads `potionDelay`, and mana potions are NOT `potion`-flagged —
+  `Item.cs`'s 110 row); a sick player drinks freely, each `AddBuff(94, 300)`
+  stacks additively to 600 (`BuffID.cs:53`), the scan assigns `0.25 ×
+  time/300` (up to 0.5), the recalc tail cuts once per tick. QuickMana rides
+  the same lane (`manaPotionDelay = 0` at `:51937` keeps its gate open). The
+  f49-first-half stacking witness covered the AddBuff cap; the new
+  `potions.rs` witness covers the FULL drink→stack→scan→damage-cut path
+  including the QuickMana drink while sick.
+- **Magic Cuffs damage-to-mana — already faithful, no port needed.** The
+  `Hurt` arm (`:38291-38303`) landed with S1-C-7 wave A (ANALYSIS "The magic
+  cuffs"): raw-`num` restore, max cap, `ManaEffect(num3)`, the
+  before-endurance position. The i19 +40-max rows and the 1595/2221 grants
+  + `ResetEffects` clear are live; the S1-C-7 witnesses pin raw/cap/no-cuffs.
+- **Mana Regeneration Potion buff-6 ladder — already faithful, witnessed.**
+  Item 293 (`Item.cs:4872-4885`: buffType 6, buffTime 28800, NOT
+  potion-flagged) → the `:9964-9967` bool → the engine's four read sites
+  (delay cap 20 pre-V2, extra decrement `:19426-19429`, line doubling
+  `:19449-19452`, `num9 = 1` scaler pin `:19462-19465`). No per-tier ladder
+  exists — one bool, one slot. The new `regen.rs` witness pins all four
+  sites against no-buff twins at equal bar fractions.
+- **Star-power mana crystals 20-ladder — SKIPPED per lane assignment**
+  (g88b owns the crystals lane).
+
+Witnesses (`player.rs` ×4: the levelup ladder/family isolation, the scan
+derive + time-2 step-down on all three families, the end-to-end
+pickup→scan→engine feed, the chained trio reset; `world_sim/items.rs` ×3:
+the trio consume+buff+second-pickup step, the 4143 restore/heat/full-mana
+consume, the nebula 12/5 pull; `potions.rs` ×1: drink-while-sick full path;
+`regen.rs` ×1: the buff-6 four-site ladder) are WRITTEN, NOT RUN — code-only
+mode, no compiler invoked.
+
+### The W4-f49 MANA RESIDUALS (2026-11-21, the five-item follow-up)
+
+Full report + the f12 merge recipe: `docs/research/85-doc-sweep-mana.md`
+(addendum R1-R5). Verdicts:
+
+- **The Charged Blaster Cannon's `flag3` pay was a REAL CheckMana gap —
+  PORTED.** The i22 `charged_blaster_step` hand-rolled the pay: no
+  `manaCost` scale, the pre-V2 refusal KILLED the holder on a short bar,
+  no flower lane. Now `regen::check_mana` (the shipped ManaV2 never
+  refuses — drain to 0, arm the slow cast, holder lives) + the shared
+  `wants_prism_flower_drink` intent (the `:66613` prism convention; the
+  drain walks all slots). The charge clock also hard-coded 1f "no ManaV2"
+  — `:66362` reads `GetSlowMagicUseRate()` (1/2.5 under the slow cast);
+  fixed. The remaining CheckMana sites (439 Laser Machinegun `:66204`,
+  1115 Glacier Fang `:36943`, Life Drain `:42662`, Medusa Head `:44567`,
+  `CommandForbiddenStorm` `:56870`) ride UNPORTED AI bodies — recorded
+  gaps of those lanes, not new ones.
+- **The manaMagnet chain is complete (i52) — three stale notes fixed**
+  (the PORT_MAP cuffs row, `item.rs` GrabFlags' doc, `player.rs`' 4000
+  comment). The 2221 upgrade's delta over 1595 is exactly the magnet;
+  witnessed end to end (equip tick → GrabFlags → +300 range → 12/5 pull →
+  the `:34947` full-mana gate).
+- **The f12 nebula reconcile CONTRACT published** (research/85 R3): the
+  merge keeps f12's `apply_orb_arm` as the ONE tier writer, bridges
+  `orb_scan.nebula_level_mana` → `Player.nebula_level_mana` in `fold_orb`
+  (the regen engine reads the Player field), deletes this branch's three
+  inline scan arms + helper, and LIFTS `update_survival` after the wiring
+  seam — the C# order is scan (`:25566`) → regen (`:25977/:25995`) →
+  GrabItems (`:27428`); the lift also repairs f12's own `buff_life_regen`
+  feed (its fold currently lands after the regen read and is wiped by
+  the next reset before any read sees it).
+- **The star pickup cue is the UNPOSITIONED id-7 Grab chime**
+  (`Player.cs:35067`), NOT Item style 23/25; `ManaEffect` is text-only.
+  The i52 `play_pickup_sound(false, UpdatePlayers)` verified; witnessed
+  (count+1, the pitch draw, the silent refusal).
+- **The four mana-potion tiers MATCH the generated rows** (110/50,
+  189/100, 500/200, 2209/400 — `Item.cs:2680/:3701/:7336/:22346`); none
+  potion-flagged; the QuickMana chooser is first-fit. Witnessed.
+
+6 new witnesses WRITTEN, NOT RUN (code-only).
+
+### The W4-f49 MANA FINAL (2026-11-21, the lane's final phase)
+
+Full report + the merger receipt: `docs/research/85-doc-sweep-mana.md`
+(FINAL-STATUS F1-F4). The R3 one-writer contract is EXECUTED on this
+branch (8eb20d8b): the three inline nebula scan arms +
+`update_buffs_nebula_buffs` are DELETED (f12's g27 `apply_orb_arm` is the
+ONE tier writer — the f12 sweep census verified the two writers
+semantically identical), the `fold_orb_nebula_bridge` ASSIGN stub carries
+the three bridge lines f12's `fold_orb` lands at the merge, and
+`nebula_levelup` + both ResetEffects zeros + `items.rs` stay.
+
+**The ordering fix (the lift).** `update_survival` (the regen engine's
+`UpdateLifeRegen`/`UpdateManaRegen` reads, `Player.cs:25977`/`:25995`)
+was LIFTED out of `update_with_grapple` to the world-sim seam in
+`world_sim/player.rs`, AFTER `update_summon_buff_arms` — the `:25566`
+`UpdateBuffs` scan position where f12's `update_buff_frame` hooks — and
+BEFORE the accessory pass. The C# order is scan → `UpdateEquips`
+(`:25633`) → regen (`:25977`/`:25995`) → `GrabItems` (`:27428`); the
+pre-lift position read the PREVIOUS tick's reset-zeroed nebula tier.
+The lift ALSO repairs f12's own `buff_life_regen` feed: on f12's tree the
+fold lands after the regen read and the next tick's reset wipes it
+before any read sees it — the Nebula Life regen add never reached
+`update_life_regen`. The standalone `Player::update` wrapper re-adds the
+call for the no-wiring callers (its nebula tier stays 0 — the wiring
+owns the scan, the f12 gap-3 convention).
+
+**The five CheckMana sites' d-lane census UPDATED** (0e91e70e): d21
+LANDED AI_208 Glacier Fang 1115 (`ai_glacier_fang_shot`, the `:36943`
+charge pay already rides `check_mana`), d19 LANDED AI_185 Life Drain 476
+(`ai_life_drain`, the `:42662` first-tick pay), d10 LANDED AI_100 Medusa
+Head 535 (`ai_medusa_head`, the `:44567` fire pay) — all three on the
+SHARED `regen::check_mana` machine. The 439 Laser Machinegun (`:66204`,
+AI_075's holder arm — no d-lane covers it) and CommandForbiddenStorm
+(`:56870`, the flat 20 pay) stay their lanes'. The `potions.rs`
+constants-copy block pins the five pay amounts (witness pins only — the
+AI lanes read the registry rows).
+
+**The Last Prism flower-lane coverage COMPLETE** (9ee912e71): the one
+missing link was the end-to-end pass-tail — a real 633 holder's
+short-pay intent drained by `update_projectiles` through
+`check_mana_with_flower_on`. Now witnessed (the drink, the re-pay, the
+sickness, the stream isolation).
+
+5 new/re-targeted witnesses WRITTEN, NOT RUN (code-only).
+
+### The W4-f49 MANA RETIRE (2026-11-21, after cded6714)
+
+The retire receipts live in `docs/research/85-doc-sweep-mana.md` (RETIRE
+RT1-RT4). **RT1 — the f12 mutual bridge receipt:** f12's RETIRE (tip
+22ce2a41) receipt 2 said "R3-exec STILL NOT landed" — STALE, written
+against f49 tip 6c0ee2aa2; the execution landed at **8eb20d8b** (the scan
+arms + helper deleted, the `fold_orb_nebula_bridge` ASSIGN stub, the
+`update_survival` lift — all re-verified at cded6714). The mutual record:
+f12-writer-canonical (g27 `apply_orb_arm`, blob c6bcb017b identical at
+f12 22ce2a41 and g27 1cd7ac36) + f49-bridge-stub + lift-EXECUTED. The
+published `fold_orb` hunk compiles as-is (`p.orb_scan.nebula_level_mana`
+— `fold_orb(p, e)` has no scan-state parameter); the three-line stub
+call is the equivalent all-tiers form. The merger-remainder-list FINAL:
+the wiring at the marked seam, the bridge in the SAME commit, `items.rs`
+to f49 wholesale, the `extra_regen` sum kept from f12 (`player.rs:11492`
+— f49's lifted read at :11345 lacks the `buff_life_regen` term), the
+94-drink one-line resolution, the post-merge sweep + anchors verify.
+
+**RT2 — the d79 three-way keep-one:** d79 sweep 2 (b78b02022, tip
+b98130d6) landed a FULL third nebula copy (the consume arms + levelup +
+a second `:12070-12079` scan + the Life/Damage stat folds + a
+Player-method `apply_nebula_buff_mana`). The R3 deletion stands for all
+three trees: the g27 writer is the ONE tier writer, the d117 engine the
+ONE mana cadence (the counter lives in `RegenState`, d79's
+`Player.nebula_mana_counter` drops), f12's `fold_orb` the ONE Life/Damage
+consumer (d79's stat-loop/post-loop folds would double the adds). KEEP:
+the f49 consume arms/levelup/zeros/pull (the cue rewired onto d79's
+`play_grab_sound` single-slot pool facade — f49's `play_grab_sound_at`
+has no Stop/re-create and retires), d79's full-mana refill queue/drain
+(no f49 counterpart; the capture lands on the LIFTED `update_survival`,
+the engine already returns the `refilled` flag). The per-fn C#-position
+single-chain table (13 rows) + the witness keep-one rulings:
+research/85 RETIRE RT2.
+
+**RT3 — the MANA-FAMILY declaration (the merger-bible):** one canonical
+home per family member — the regen ENGINE d117 (`regen.rs`, adopted by
+f49), the nebula mana cadence d117/f49 (`apply_nebula_buff_mana`, the
+counter in `RegenState`), the tier WRITER f12/g27 (`nebula_buffs` via
+`apply_orb_arm`), the tier fields + bridge f49
+(`fold_orb_nebula_bridge`), the pickup grant/consume arms/pull f49
+(`nebula_levelup` + `items.rs` wholesale, the cue on d79's facade), the
+lifecycle zeros f49 + f12's `orb_scan.reset_effects()` (both objects),
+the flower cuffs f49 (the flag chain + the ONE −0.08 fold + the cuffs
+Hurt arm), the shared CheckMana machine f49/i19 (`check_mana` +
+`check_mana_with_flower[_on]`), the potions f49 (the four tiers MATCH,
+the 94 grant ONE line with f12), the sound cues d79 (the pool facades).
+The merged-tick single chain: timer head → both resets → UpdateEquips →
+`update_buff_frame` (scan + bridge) → the LIFTED `update_survival` (+
+the d79 refill capture) → the refill drain → projectiles (the prism
+flower pass-tail) → items (the consume arms → `nebula_levelup`). Full
+table: research/85 RETIRE RT3.
+
+**RT4 — research/85 SEALED.** The report is closed (the SEALED banner +
+RT4); the lane's code half was FINAL at cded6714, the retire phase is
+doc-only. The retire commits: RT1 12d9414d, RT2 b2c9a71f, RT3 fb771bfb,
+RT4 the seal. No further f49 commits touch research/85.
 
 ## The magic guns + tomes use arms (S1-P-i22)
 
@@ -41075,7 +42018,8 @@ excluded, and the Player fields/clocks/scan arms it referenced landed.
   consume-on-touch arms (`PickupItem` `:35045-35098`) are i52's (hearts/
   stars) or have no ported buff route (nebula/mana). `item_space` still
   answers `can_take` for them (the C# predicate), so the seam is one
-  dispatch arm wide.
+  dispatch arm wide. *(Superseded: the nebula/4143 arms landed with the
+  W4-f49 DOC-SWEEP lane 12 — ALL `IsAPickup` kinds now consume on touch.)*
 - The accessory margins (`goldRing`/`manaMagnet`/`lifeMagnet`/
   `treasureMagnet`) ride the `GrabFlags` seam with false defaults - the
   equipment grants are unported families (the `manaMagnet` note at
@@ -41780,7 +42724,9 @@ Code-only round, branch `task/S1-P-i52-heart-star-pickup` pushed unmerged.
    the calendar windows are unported.
 5. **The nebula trio 3453-3455 and the ManaCloak star 4143** (the other
    `IsAPickup` members, `PickupItem` `:35045-35058`/`:35080-35098`)
-   are out of scope — their pickup arms stay unported.
+   are out of scope — their pickup arms stay unported. *(Superseded by the
+   W4-f49 DOC-SWEEP lane 12: all four consume arms + the `NebulaLevelup`
+   ladder + the tier-writer scan arms landed.)*
 6. **The direct-pickup held-item gate** (`inventory[selectedItem].type
    != 0 || itemAnimation <= 0`, `:34919`) is not modelled — the port's
    items pass has no itemAnimation snapshot (the standing ITEMS-2
@@ -43631,6 +44577,381 @@ sides + the 451 integer-division window + the row-less activation pins) and
 `w4_d18_the_proj_pet_contact_ladder` (the unconditional exceptions, the
 388/623/533/755/946/759 conditional windows, the inert-pet refusals, a live
 266 PVE bite through the gate). **No compiler invoked.**
+## Town-spawn census tail (W4-f43)
+
+`town_arrival_pets.rs` ports the unclaimed `UpdateTime_SpawnTownNPCs`
+arms verbatim (census: `docs/research/64-town-spawn-census.md`): the three
+pet-license arms (637/638/656 on `NPC.boughtCat/Dog/Bunny`), the eight town
+slimes (670/678-684 on the `unlockedSlime*Spawn` flags, Green also on
+`GenuineParty`), Santa (142 on `downedFrost && Main.xMas`) and the
+Princess's full flag9 (all 24 town residents, the anniversary override, the
+unlock). Deliberate deviations / recorded gaps:
+
+- **UNWIRED, id-keyed** — the module takes `i32` npc types and injected
+  counts/flags/rolls so it splices without the missing `NpcKind` rows
+  (d36/d43 lanes) or the save-flag widening (`flags.rs:608` currently
+  skips `boughtCat/Dog/Bunny` on load; only the rainbow/red slime flags
+  exist on `World`). Production behaviour is unchanged this wave.
+- **The directive's slime ids 701-707 do not exist** in this decompile
+  (`NPCID.Count = 697`); the real set is 670/678-684 (`NPCID.cs:10119`).
+- **RNG slots**: the table/ladder draw nothing; the license exchange rolls
+  `Main.rand.Next(6)` up to 100 times (`NPC.cs:80941`), and the pet/slime
+  name pick rides `WorldGen.genRand` (`NPC.cs:7311-7322` →
+  `LanguageManager.cs:419`) — a different stream, kept separate in the
+  port (`name_category_for` returns the key only).
+- **`check_xmas` takes the wall-clock date as inputs** — the C# reads
+  `DateTime.Now` (`Main.cs:13120`); the port injects day/month so the
+  sim stays deterministic (the caller supplies the local date).
+- The ladder-order quirks are kept 1:1: slimes pick Copper→Blue→Green→Old→
+  Purple→Red→Yellow→Rainbow (Red before Rainbow, unlike the canSpawn write
+  order), pets close Bunny→Cat→Dog.
+
+Verification: code-only — every arm re-read against the cited C# windows
+(`Main.cs:65542-66116` in ≤100-line reads, `Player.cs:45352-45445`,
+`NPC.cs:80894-80961`/`7311-7325`/`19136-19182`, `Profiles.cs`,
+`TownNPCProfiles.cs`, `LanguageManager.cs:413-420`); 13 witness tests
+WRITTEN NOT RUN — no cargo/rustc/tests/graphify invoked.
+
+## W4-g10 lane 3 — the town pets (637/638/656/670/678-684)
+
+The eleven town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
+`NpcKind` rows and wire to the ALREADY-LANDED pet-aware
+`npc_ai_town::town_npc_ai` machine (`AI_007_TownEntities`,
+`NPC.cs:52965-55561`). Every pet is `aiStyle 7` in `SetDefaults`
+(`NPC.cs:17207-17225` the 637/638 arm, `:17295-17309` 656,
+`:17481-17495` 670, `:17594-17608` the 678-684 arm): 18x20 (the dog
+18x28, the cat's 20-height override `:17213-17216`), dmg 10, def 15,
+250 HP, kb 0.5, value 0, `townNPC + friendly`, `housingCategory 1`.
+Batch 1 landed the ten (637/638/656/670/678-683); batch 2 adds the
+copper slime TownSlimeCopper 684 (the 678-684 arm's last member, the
+`CanConvertIntoCopperSlimeTownNPC` shimmer target `NPCID.cs:10120`) at
+every site — the same rows as the other town slimes.
+
+### The axis claim (disjoint from the in-flight W4-b3 town lane)
+
+The pets ride a KIND-GUARDED axis arm — `7 if self.kind.is_town_pet()`
+(the frost-mob `62 if ElfCopter` precedent) — so the 21 housed town
+residents keep their `update_guide` routing until the W4-b3 town lane
+lands its unguarded `7 =>` arm. The guard keeps the two claims disjoint;
+the merger dedupes the adapters. The pet adapter
+(`npc.rs::ai_007_town_pet_family`) owns only the seams the pure arm
+cannot: the solo `TownEnv` (empty NPC list, the world's live flags, the
+unported statics folded false), a fresh `TownDoorLatch` each tick (the
+pets never open a door — the `h / 16 < 3` gate plus the no-op
+`NoOpTownPetDoors`), and the generic `UpdateNPC` collision tail
+(`integrate_town_pet_collision`, the W4-b3 `integrate_town_collision`
+twin — kept separate so the lanes' edits stay disjoint). The
+`TownOutputs` drain is the town lane's phase 2; the requests are
+discarded but every RNG draw already ran on the caller's stream (the
+eye wiring's `let _ = out` precedent).
+
+### The town-flag predicates
+
+The pets join `is_town_npc()` (the `townNPC` flag — housing, the
+scene-metrics count `SceneMetrics.cs:739`, the Rotten Egg refusal
+`Projectile.cs:23572`, the world-file town block `WorldFile.cs:1717`),
+`is_town_npc_like()` (`isLikeATownNPC`, the stat-ladder gate) and
+`is_friendly()`. They do NOT join `is_town_resident()`: `CollectTaxes`
+(`Player.cs:24145`) and the arrival ladder exclude them, and the party
+refuses them (`BirthdayParty.CanNPCParty` `:66-69`, the
+`world_sim/clock.rs` partyable filter). The contact-damage gate
+(`npc.rs::contact`) skips them on the `friendly` flag
+(`Player.cs:31328`). The save filter (`app/saveglue.rs`) and `to_wld`
+write them in the town block (`SaveNPCs:1717`'s `active && townNPC`).
+
+### The FindFrame arm (`npc_findframe_pet.rs`)
+
+The pets ride `FindFrame`'s humanoid-group case list
+(`NPC.cs:68622-68633`) with the pet overrides: the slime
+`spriteDirection` flip (`:68657-68660`), the state-20/21/22 idle poses
+(`:68680-68917`), the cat's sit row 19 (`:68980-68983`), the dog's idle
+0..7 cycle (`:69491-69508`), the dog/bunny/slime walk stride 12 +
+start-row overrides (`:69532-69571`), the airborne slime hop rows /
+dog air row 8 (`:69601-69654`). `num58 = npcFrameCount -
+AttackFrameCount` and the pets' `AttackFrameCount` rows are 0
+(`NPCID.cs:10465`), so `num58` IS the full row count (28/28/27/14,
+`Main.cs:67147-67152`); `num57 = ExtraFramesCount` (`NPCID.cs:10464`:
+637=18, 638=11, 656=20, slimes=6) bounds the walk wrap.
+
+Deliberate skips: the disabled profile-texture block (`NPC.cs:68637`,
+`if (false && …)`), the `EmoteBubble` spawns (the port has no emote
+system), and the group arm's state branches UNREACHABLE for pets —
+dropped so those states fall through to the idle/walk tail exactly as
+the C#'s own gates make them do: state 6 party talk (`:55289`'s
+`!IsTownPet`), state 7/19 player talk (the branch's own `!IsTownPet`
+gate — a pet in state 7 falls through), state 11 grumble (type 229),
+state 18 Bartender talk (type 550), states 10/13/15/12/14/24 attacks
+(the pets' `AttackType`/`AttackTime` rows are -1, `NPCID.cs:10471-10473`),
+states 3/4/16/17 talk/gossip (`CanTalk` is false for pets,
+`NPC.cs:6633-6643`), state 25 shimmer + state 1001 sleep (unported
+systems). The state-2 small-talk blink and the state-23 ShowItem pose
+are carried verbatim although unreachable today (cheap, keeps the
+pose-reset shape complete). The sitting draw shift (`Main.cs:22178-
+22181`: the cat/bunny/slime sit 10 px deeper, the dog keeps the plain
+-4) lands in `render/entities.rs::npc_add_height`.
+
+### The pet idle RNG census
+
+`AI_007_AttemptToPlayIdleAnimationsForPets` (`NPC.cs:55750-55785`): the
+stationary pet rolls `Next(petIdleChance)` (num20 = 120, the dog 60,
+`:53636-53640`); on 0 the slime takes state 20 with NO state draw
+(num = 0), the cat/bunny roll `Next(20, 23)` (num = 3), the dog
+`Next(20, 22)` (num = 2); then `Next(300)` for the base timer, then the
+per-pet override — the cat state 20 `500 + Next(200)`, the dog state 21
+`100 + Next(100)`, the bunny state 22 `200 + Next(200)`, the slime
+state 20 `180 + Next(240)`. The witnesses pin the draw order + the
+stream position against a mirrored `UnifiedRandom`.
+
+
+Code-only: every row re-read against the cited C# windows; the
+exhaustive-match sites (`to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/`knock_back_resist`/`defense`/`value`/`render_key`/
+`find_frame`/`update_kind_ai`/`debuff_immune_ids`/`npc_seed`/
+`portrait_data`/the draw match) verified to carry the ten pet arms; the
+protocol ids are a bijection (281 arms, no dup); the bestiary credit
+ids are unique; `BESTIARY_NPC_SHEET_IDS` (192) matches the
+`bestiary_npc_sheets` vec (192). The 8 wiring witnesses
+(`npc.rs::w4_g10_town_pet_wiring`, the PETS table carries all eleven)
+are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked**.
+
+### The FINAL phase (2026-11-21) — the activation consumers + the family declaration
+
+The batches landed the eleven kinds WIRED. The FINAL phase lands the
+three activation consumers that ride ON TOP of the kinds (no new kind
+rows) plus the d43r keep-one receipt and the owed pin-fix. All code-only;
+the witnesses are WRITTEN NOT RUN.
+
+**1. The pet-license exchange NPC side (`npc_pet_exchange.rs`).** The
+a6/g87 use-arm machine (`Player.ItemCheck_UsePetLicenses` →
+`LicenseOrExchangePet` → `NPC.UnlockOrExchangePet`, `Player.cs:45352-45365`
+/`:45438-45445`, `NPC.cs:80894-80918`) owns the bought flags, the gate and
+the chat; its else-arm posts `Misc.PetExchangeFail` unconditionally because
+no kind carried 637/638/656 (research/138 §12.2's activation contract,
+step 1). This module IS step 1's consumer: `RerollVariationForNPCType` +
+`RerollVariation` (`NPC.cs:80920-80961`) over the LIVE roster — the
+first-active-resident scan, the ≤100-draw `Main.rand.Next(6)` loop for the
+three `VariantNPCProfile` pets (`Profiles.cs:214-217`), the constant-0
+NO-DRAW legacy roll for the eight town slimes (`Profiles.cs:83-86`), the
+`GivenName` genRand category draw (`Profiles.cs:219-222`, a DIFFERENT
+stream), the `life = lifeMax` heal and the `Spawn_PetExchange` 13-gore
+smoke burst (`ParticleOrchestrator.cs:2691-2700`). **RNG census:** the
+variation roll is the only `Main.rand` slot before the burst; the burst
+draws 8 per gore × 13 = 104 (the `NextVector2Circular(20,20)` angle+radius,
+`Next(61,64)`, the `1 + NextFloat·0.3` scale, `NewGore`'s two velocity
+jitters, then the raw-`Next()` rotation + `NextFloat` speed overwrite);
+the name draw rides `WorldGen.genRand`. The merged `use_pet_license` swaps
+its hardcoded Fail for the reroll result (contract step 4, a one-line
+conditional). **Keep-one (f43):** `town_arrival_pets.rs`
+(`task/W4-f43-town-spawn-2`, UNWIRED) ports the same chain as pure fns over
+a `PetVariationSlot`; its own note says "the wiring lane maps it onto
+`Npc`" — this module is that mapping. At the merge the shared loop +
+rosters dedup onto f43's shape; this module keeps the live-`Npc` scan, the
+heal/name writes and the gore burst f43 leaves to the caller. 7 witnesses
+incl. the POSITIVE Success witnesses the a6/g87 boundary named (the cat
+two-stream roll/heal/name, the legacy-slime fail zero-draw + nonzero
+success, first-resident-only, the 104-draw burst census).
+
+**2. The petting interaction (`player_petting.rs`) — the e10 deferred
+host.** The player-sounds wave (e10) recorded "petting has no field" at
+five sites; this phase lands the state + machine and goes LIVE at each
+fold. `PlayerPettingInfo` (`PlayerPettingInfo.cs:5-77`),
+`NPC.GetPettingInfo`'s side pick + per-kind distance ladder
+(`NPC.cs:80858-80892`: cat 28 / bunny 24 / six slimes 26 / red 22 / copper
+20, the dog keeps the default 36/not-small), `Player.PetAnimal`'s
+floor-snap + repeat-click stop + vanity/hook/mount teardown
+(`Player.cs:33358-33399`), `PetMount`'s toggle + the `(uint)(type-62) <= 3`
+joy gate (`:33339-33356`), `UpdatePettingAnimal`'s talk/drift/control/facing
+stop gates (`:33470-33490`) and the `ApplyHoldStyle` pat arm
+(`:50243-50269`: the `miscCounter % 14 / 7` ThreeQuarters↔Full cycle,
+`-2π·k·direction` with k 0.3 / 0.2 small / 0.36 Chillemt). `Math.Sign`'s
+zero-at-zero is kept (Rust `signum` differs). The folds go live: the
+`Player.petting` field, the four `StopVanityActions` sites
+(sleep/grapple/teleport/revive), the dismount's mount-petting stop
+(`Mount.cs:6163-6166`), the holdStyle 4/5/6 visual-hold gates
+(`Player.cs:50204`/`:50225-50232`), the Fairy Queen light gate (`:50174`),
+the `UpdatePettingAnimal` call at the C# site (`:26124`, before
+sitting/sleeping — `update_with_grapple` gains the npcs/talk_npc inputs,
+all 14 call sites re-armed). **Sound:** the `PalChilletJoy` cue
+(`SoundID.cs:1717`, `pal_chillet_joy`, 0.35 vol) joins `MOUNT_CUSTOM_CUES`
++ `play_petting_joy_sound` (the case-42 façade, the variance-0 NextFloat on
+the audio-only stream) + the pending/take/drain chain. The `PET_THE_PET`
+achievement queues as a request (the drain uses a6's row-targeted
+`complete_condition`, research/138 keep-one — NOT `notify_custom`). **Net:**
+the petting/petSmall bits ride bitsByte23[4]/[5] (`NetMessage.cs:475-476`,
+`MessageBuffer.cs:1043-1044`) through PlayerNet/PlayerState both directions.
+**Census (the Lead's animation/heart/sound question):** the town-pet path
+draws NO particle (the heart emote is the Pal-projectile path's,
+`Main.cs:34270-34275`, emote 0 = EmotionLove) and NO sound (the joy cue is
+PetMount's); the only petting pose is the composite back arm's pat cycle;
+the whole chain draws ZERO sim RNG. 10 witnesses.
+
+**3. The town-slime colour-per-kind mapping
+(`npc_chat.rs::slime_chat_colour`).** The `Lang.GetSlimeType` 8-word switch
+(`Lang.cs:375-406`) over the landed kinds: 670 Blue (the default), 678
+Green, 679 Old, 680 Purple, 681 Rainbow, 682 Red, 683 Yellow, 684 Copper.
+**Keep-one (d120):** `task/W4-d120-town-chatter` ports the same switch
+type-keyed (`slime_chat_colour(ty)`) AND the `GetChat` arms that consume it
+(`NPC.cs:94816-94819`, the `is_town_slime`-guarded
+`Slime{colour}Chatter.Chatter` pick) plus the `dialog_count`/`select_dialog`
+localization machinery. d120's arms key on the VANILLA type
+(`npc.kind.cs_id()`), so they go LIVE the moment these kinds merge — zero
+d120 edits (its research/143 retire item 2). This kind-keyed fn is the
+colour-per-kind deliverable; at the merge it dedups onto d120's type-keyed
+fn (`kind.cs_id()` bridges them, identical words). d120 owns the dispatch —
+this lane does NOT re-port the GetChat arms or the localization machinery.
+1 witness (every kind answers its word, cs_id/net_id match the case, the
+`is_town_slime` guard holds, each category ships Chatter_1..3, the eight
+first lines are pairwise distinct, the default answers Blue).
+
+**4. The d43r keep-one receipt (`tools/_g10_pet_claims.md`).** d43's
+631-697 band rowed the eleven pets too; the keep-one (g10 canonical) is
+already adjudicated by d43 research/304 §2c (→343 per registry-150 §8.7)
+and d37 research/250. The claims-table is the g10-side confirmation + the
+per-kind keeper evidence (the wired superset vs d43's `update_guide` + `{}`
+FindFrame stand-ins) + the d43 drop-hunks + the notify-note to d43r/d37d-E3.
+A `tools/` claim doc (the `_d120_claim.md` convention), NOT a numbered
+research doc — the research-number registry (research/150 §8.7 FROZEN
+NO-SELF-PICKS, new docs ≥360 after round-5) is respected by taking no number.
+
+**5. The owed pin-fix.** The `s1_f_3_every_kind_resolves_a_vanilla_cs_id`
+coverage pin 270→281 (the d37 research/250 g10 owed fix, `npc.rs:28244`):
+the eleven pets grew ALL_KINDS to 281 but the coverage pin still read 270.
+The round-trip bijection test already keys on `ALL_KINDS.len()` (281); the
+pets' cs_id rides the bestiary net_id fallback (the vanilla ids), so
+covered+sentinel = 281.
+
+### The pets-family declaration (one paragraph)
+
+The town-pet family seals as a four-lane machine with one owner per seam:
+**g10** owns the eleven kinds (637/638/656/670/678-684, cs==proto) + the
+kind-guarded `7 if is_town_pet` axis arm + `npc_findframe_pet.rs` + the
+`is_town_pet`/`is_town_slime` gates + the bestiary Friends.* override + the
+FINAL activation consumers (the exchange NPC side `npc_pet_exchange.rs`,
+the petting machine `player_petting.rs`, the colour-per-kind
+`slime_chat_colour`); **d43** drops its eleven bare `update_guide` pet
+stand-ins onto g10 (research/304 §2c, the keep-wired-superset rule);
+**f43** owns the pure-fn exchange chain shape (`town_arrival_pets.rs`) +
+the arrival gates (`Main.cs:65900-65911`) — g10's exchange module is its
+live-`Npc` mapping, the loop/rosters dedup at the merge; **a6/g87** own the
+use-arm cluster (`powerups.rs::use_pet_license`, the bought flags + gate +
+chat) — the Success dispatch is the one-line conditional onto g10's reroll
+result (research/138 §12.2 step 4); **d120** owns the GetChat dispatch + the
+dialog-filter machinery — its type-keyed pet/slime chat arms activate when
+g10's kinds merge (zero d120 edits); **e10**'s deferred petting folds go
+live on g10's `Player.petting` field. The activation order (research/138
+§12.2): kinds (g10, DONE) → arrival (f43) → profiles/reroll wiring (f43 +
+g10's module) → the use-arm Success swap (a6/g87). The petting + colour
+consumers are g10-owned with no sibling kind claim.
+
+### FINAL verification
+
+Code-only: every FINAL row re-read against the cited C# windows
+(`NPC.cs:80858-80961` GetPettingInfo/exchange, `Player.cs:33339-33490`
+petting + `:50174`/`:50204-50269` the hold/light gates,
+`Profiles.cs:83-86`/`:214-222`, `TownNPCProfiles.cs:138-180`,
+`ParticleOrchestrator.cs:2691-2700`, `Lang.cs:375-411`,
+`NetMessage.cs:475-476`/`MessageBuffer.cs:1043-1044`, `SoundID.cs:1717`).
+The d43/d37/d120/f43/a6 verdicts re-read at their live tips. The 26 FINAL
+witnesses (7 exchange + 10 petting + 1 colour + the 8 batch wiring) are
+WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+## Pet-arrival SPLICE (W4-f43b, research/368)
+
+The f43 census tail (`town_arrival_pets.rs`, UNWIRED) is SPLICED to the
+live machine — the a6f Success-leg activation contract's legs 2+3
+(research/138 §12.2). The g10 kinds (`5dee28650`, all eleven town pets
+637/638/656/670/678-684 WIRED) and the a6 powerups machine (`0766c8df9`)
+merge into this branch as the dependency base; the splice itself:
+
+- **The arrival gates**: `town_arrival.rs`'s LADDER grows 21→32 (the
+  eleven g10 kinds at the C# tail seats, `Main.cs:66066-66113` — the
+  Red-before-Rainbow quirk kept); `condition_holds` spells the pet/slime
+  arms (`:65900-65943`) and the Princess's FULL flag9 (the 24-roster
+  conjunction + the anniversary/unlock overrides, replacing the
+  unlock-only stub). `world_sim/npcs.rs` assembles `TailFlags` from the
+  World + the live `GenuineParty` + the `checkXMas` season read (the
+  wall-clock date injected ONCE PER CHECK — the party-roll boundary
+  predicts the check tick, no per-tick clock read enters the sim;
+  `forceXMasForever` = the endlessChristmas micro seed). Santa 142's arm
+  stays CLOSED — no ported Santa kind (d36's lane); the pure fns keep it
+  verbatim.
+- **The arrival unique-data**: `spawn_town_tail_unique_data` =
+  `GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80839-80856`) at the
+  `spawn_town_at` placement seam — the plain-category name draw, the
+  profile variation roll (the license pets' `Next(6)`; the constant 0 for
+  every Legacy/Stacked/Transformable profile), the variant re-name, the
+  shimmer override.
+- **The exchange dispatch**: `exchange_resident_pet` (the live-Npc
+  `RerollVariationForNPCType` adapter — first resident, the ≤100-draw cap,
+  the no-profile false, the legacy-0 roll, the heal + re-name) wired into
+  a6's `use_pet_license` else-arm — the published one-line `if success`
+  key select (`Misc.PetExchangeSuccess`/`Fail`, `NPC.cs:80910-80917`), the
+  roll on `RngKey::UpdatePlayers` (research/138 §10.2's use-context
+  precedent). The LIVE `AnyNPCs` scan answers now (the g10 net ids), so
+  the exchange leg is REACHABLE — the a6/g87 "unwitnessable positive
+  path" boundary is CLOSED.
+- **The save-flag widening** (the `flags.rs:608` load-gap fix): the six
+  newly-owned town-slime unlock World fields (blue/green/old/purple/yellow/
+  copper — the rainbow/red pair were S1-P-i35's, the bought trio a6/g87's),
+  the `.wld` flags read/write owning all eight (v250/v261 gates), the
+  `.trwld` v18 tail (VERSION 17→18: the 3 license bytes — the g87 claimant
+  keep-one — + ALL 8 slime bytes = 11; the rainbow/red pair had no
+  native-save twin, a pre-existing gap f43b closes since its live arrival
+  arms read all eight; the g88h-A3 union seats the license bytes [57..60]
+  of the 107-byte head at the g71c merge, forward-only), and the v18
+  per-record variation byte (`NpcRecord.variation_index`, `SaveNPCs:1731`'s
+  BitsByte payload — the rolled variant survives the reload).
+
+### Deliberate deviations / recorded corrections
+
+- **`WorldGen.genRand` is an ALIAS for `Main.rand`** (`WorldGen.cs:4445`
+  `public static UnifiedRandom genRand => Main.rand;`) — the f43 census's
+  "different stream" reading is CORRECTED. At the arrival site both the
+  variation roll and the name draws ride the active `UpdateTime` swap
+  (`Main.cs:65153`/`:17795`); at the exchange site both ride
+  `UpdatePlayers`. ONE stream per site, not two. The pure fns keep the
+  slots as separate injected closures.
+- **The arrival placement cadence** (pre-existing M4-TOWN-1b deviation):
+  the C# normal town placement (`TrySpawningTownNPC`/`SpawnHomelessNPC` →
+  `SpawnTownNPC` → `NewNPC`, `WorldGen.cs:74869`/`5036`) runs under the
+  `UpdateWorldGen` swap (`Main.cs:17802-17804`), a separate pass from the
+  `UpdateTime`-gated `UpdateTime_SpawnTownNPCs` that only computes the
+  canSpawn table + `prioritizedTownNPCType`. The port folds the placement
+  into the `UpdateTime`-gated `update_npcs` block (M4-TOWN-1b), so the
+  unique-data draws ride `UpdateTime` — the stream that block already
+  uses for its Party Girl `Next(40)`. (The C# Old Man pre-arm DOES call
+  `NewNPC` under `UpdateTime`, `Main.cs:65780`.) A future split of the
+  placement into its own `UpdateWorldGen` pass would re-pin these draws;
+  the folded cadence is the recorded stand-in.
+- **The empty-category name draw**: the C# `RandomFromCategory` would
+  throw on an empty category's `Next(0)`; the port's manager answers
+  `<category>.RANDOM` without a draw (no shipped category is empty — the
+  localization JSON carries all the pet/slime/town categories).
+- **The season clock**: `checkXMas` reads the UTC date (the C# reads
+  `DateTime.Now` local) — the same stand-in `format_created` carries; the
+  gate only feeds Santa 142 (no ported kind), so no sim state rides it
+  today.
+- **The unlock-source writers** (the bound-slime transforms 685/686/687,
+  the King Slime death's blue-spawn, the sparkler/copper shimmer arms)
+  are their own lanes — the flags are owned + persisted here, the
+  rainbow/red/shimmer writers already live (`shimmer.rs`/
+  `world_sim/editing.rs`); the other six flags stay false until their
+  writers land (the C# verdict for a world where those events never
+  happened).
+- **d43-town-pets DUP**: keep-one g10-canonical (d43 research/343 §2c +
+  d37 research/250 + the g10-side receipt `f34bd2715`); the d43 rows drop
+  at the merge per its published drop-hunks. This branch merges NO d43
+  code.
+
+
+Code-only: every arm re-read against the cited C# windows in ≤100-line
+reads; the seam call sites checked against the actual signatures by
+read/grep. The 5 new splice witnesses (`town_arrival_pets.rs`), the 2
+positive exchange witnesses (`powerups.rs`), the 2 v18 round-trip
+witnesses (`save.rs`) + the re-pinned DW truncation fixtures and the
+`wld/mod.rs` six-flag gate walk are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
 
 ## The Demon Heart / Minecart / Pet License use arms (W4-g87)
 
@@ -47738,3 +49059,878 @@ in `dust_physics.rs` at every lane commit; the lane total is 37
 `w4_d50_*` + 1 `w4_g13_*` transplant = 38 witnesses, all WRITTEN NOT RUN
 (the compile window rides the merge-verify wave, research/131 §8.3.13).
 
+
+### Batch-L merge receipts (the keep-one EXECUTED, 2026-11-22)
+
+- **The use-arm keep-one EXECUTED** (research/263 §6.5 / 138 §12.3): g87's
+  `world_sim/editing/permanent_upgrades.rs` (the three arms + the inline
+  machine + the 8 witnesses) DROPPED; a6's `powerups.rs` machine is the
+  survivor (the START refusal, the reuseDelay tail, the live AnyNPCs scan
+  and the full GetItem walk were already shape-identical there — 138
+  §11.3's cross-receipt). g87's unique witness assertions re-landed on the
+  surviving arm: the used-heart no-swing START pin
+  (`a_second_demon_heart_refuses`), the resident-non-pet no-ApplyItemTime
+  pin, and the three-leg zero-draw UpdatePlayers census
+  (`w4_g87_the_demon_heart_and_license_draw_no_updateplayers`, the 30-tick
+  cadence pins folded in). The dispatch calls dedup onto a6's single
+  `powerup_item_check` seam at the same C#-order slot.
+- **The Success-leg debt CLOSED**: the g10 kinds + the f43b splice landed
+  earlier in this batch — `use_pet_license`'s else-arm dispatches
+  `town_arrival_pets::exchange_resident_pet` (the ≤100-draw reroll on
+  UpdatePlayers, the heal + genRand-alias re-name, and g10's kept
+  13-gore/104-draw PetExchange burst — the batch-L exchange keep-one).
+  The "unwitnessable positive path" deviations above describe the
+  pre-merge branch state and are superseded.
+- **The dh sidecar DROP is DEFERRED, not executed**: the 132 §2f DEFAULT
+  presupposes g88's v11 superset writer + f44's L1 walk/hydration on the
+  merged tree. NEITHER lane is in batch-L — dropping the v7 `dh` line here
+  would strand `extra_accessory`/`unlocked_super_cart` with NO carrier
+  (a lossy merge). The line + the reader arm + the `app/mod.rs` restore
+  pair stay as the in-session carrier; the DROP executes in the batch
+  that lands f44 (+g88), per the §6.2 hunk list (obligation recorded).
+- **The .trwld v18 tail keep-one EXECUTED**: g87's 3-byte claim deduped
+  into f43b's 11-byte tail (3 license + 8 slime); the [57..60] 107-A3
+  union seat stays the g71c forward-only obligation (both lanes' comments
+  re-pinned). The `.wld` gate-217 read/write + the owned-field round-trip
+  rows deduped (a6/f43b's supersets carry the same bytes).
+
+## The sound pitch/pool census rewire (W4-d79, phases 6-7, 2026-11-21, code-only mode)
+
+The MAXMANA case-25 escalation + the orphaned-emitter census pickups, on
+`task/W4-d79-sound-pitch-pool` (continuing phases 1-5).
+
+### Phase 6 — the full-mana refill emitter (Player.cs:19550-19560)
+
+`update_mana_regen` already returned the flag4-gated refill trigger;
+`player.rs`'s `update_survival` call DISCARDED it (the M6-AUDIO
+deferral). Now the return queues `Player::pending_mana_refill` —
+`(position.X, position.Y, width, height)` captured at the regen point
+(`:25995` — the C# reads the live box there, before the movement tail);
+the `world_sim/player.rs` drain (BEFORE the sticky-dust drain — the C#'s
+`UpdateManaRegen` precedes `StickyMovement` `:27654`) plays:
+
+- the UNPOSITIONED `PlaySound(25)` — case 25
+  (`LegacySoundPlayer.cs:963-968`): Volume/Pan only, NO `Main.rand`
+  draw, NO Stop (the `SoundInstanceMaxMana` slot overwrites — the
+  Coins/Chat no-Stop family). `MaxMana` joins `SFX_CUES` (id 25) and
+  `SINGLE_SLOT_CUES` (false flag); the single-slot array grows 16→17.
+  `Sounds/MaxMana.xnb` verified on disk.
+- the 5× dust-45 loop: EACH iteration rolls `Next(20, 26) * 0.1` as the
+  `NewDust` SCALE ARGUMENT (`:19555` — the draw precedes the spawn's
+  own six rolls: pos X/Y `Next(w−4)`/`Next(h−4)`, vel X/Y
+  `Next(-20,21)*0.1`, frame `Next(3)`, scale jitter
+  `(1+Next(-20,21)*0.01)*scale`), alpha 255, default colour, then
+  `noLight`/`noGravity`/`velocity *= 0.5` (`:19556-19558`) on the
+  returned slot (the sentinel included — the C#'s own shape). Dust 45
+  rides no ChildSafety/per-type draw arm. The dust draws are NOT gated on
+  the sound gate — the C# loops regardless of the play's refusal.
+
+All 35 burst draws ride `UpdatePlayers` (the `Main.cs:17754` swap
+covers `Player.Update`). The ManaV2 animation gate (`:19542-19545`)
+already suppresses the trigger mid-swing inside the engine — the queue
+never arms, no draws. The `whoAmI == Main.myPlayer` gate collapses to
+the port's single local player.
+
+**Witness census (which pins cross the regen path).** Every exact-stream
+`UpdatePlayers` pin on this branch was re-read: the dw_4_1 spike rig and
+the i54 Strange Brew rigs spawn FULL-mana players (flag4 false — no
+refill); the i37 QuickMana rig's pinned ticks never cross a 120-chunk at
+max (mana 50-ish of 200, regen ≤ 14/tick); the editing/items/npcs-pass
+witnesses never run `update_survival` at all. NO re-pins needed. The
+W4-d117 sibling's 8 curve witnesses (branch `task/W4-d117-mana-regen-full`,
+not an ancestor) drive `update_survival`/`Player::update` directly —
+the engine stays draw-free and the queue is only drained by
+`update_player`, so they need no +5-draw updates by construction; when
+the branches merge, any d117 witness that asserts an exact
+`UpdatePlayers` stream through `update_player` at a refill tick must
+add the 35-draw burst (none of the 8 do).
+
+### Phase 7 — the orphaned-emitter census (E21 class)
+
+The bank/pool rows with ZERO callers, and the deferred consume arms whose
+seams now exist:
+
+- **Chat (case 24)** — in `SFX_CUES` + `SINGLE_SLOT_CUES` since wave F
+  but never played. Two of the three C# sites have ported seams: the talk
+  open (`Main.cs:43083` — after `SetTalkNPC`, before `GetChat`;
+  `world_sim/npcs.rs::talk_to_npc`) and the Angler turn-in (`:40243` —
+  between the stack decrement and the counter++;
+  `world_sim/npcs.rs::angler_turn_in`). Both unpositioned, draw-free —
+  the `GetChat`/reward rolls keep their stream positions. The DyeTrader
+  site (`:40016`) stays deferred (no ported turn-in seam); the
+  UIWorldCreation `:834` site is front-end (out of the sim census).
+- **The 4143 Mana Cloak Star** (`Player.cs:35080-35097`) — the star
+  arm's 50-mana twin: case-7 Grab pitch (one `Next(-10,11)` on
+  `UpdatePlayers` after the gate), `statMana += 50`,
+  `TryApplyManaHeat(0.2f, 2f)`, `ManaEffect(50)` (the `num2 != 0`
+  gate always true), the cap AFTER the text, `TurnToAir`. NOT in
+  `STAR_KINDS` — the `:34942` flag2 list excludes it, so the full-mana
+  pull gate and the Mana Magnet row never apply; the +12 grab margin was
+  already unconditional (`:35141-35144`). The `IsAPickup` skip gate
+  (`world_sim/items.rs`) now admits it; the nebula trio 3453-3455 stays
+  deferred (no `NebulaLevelup` port).
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).** Phase 6:
+`w4_d79_the_mana_refill_queues_once_at_the_fill` (player.rs — the
+queue-once/live-box/idle-no-refire/animation-gate contract),
+`w4_d79_the_mana_refill_drains_the_chime_and_five_dust_draws`
+(world_sim/player.rs — the exact 35+1-draw twin, the five slots'
+alpha/flags/scale/velocity, the pristine other-stream isolation, the
+no-re-fire), `w4_d79_the_refill_gate_and_the_muted_dust_loop` (the
+mid-swing suppression + the muted-chime dust-still-draws). The
+single-voice stream-neutral test extends to Chat/MaxMana; the bank test
+pins `sound_type("MaxMana") == 25`. Phase 7:
+`w4_d79_the_talk_and_the_angler_turn_in_play_the_chat_cue` (play-once,
+named-stream isolation, the silent re-click/refusal),
+`w4_d79_the_mana_cloak_star_restores_fifty_and_arms_mana_heat` (the
+restore/heat/text/consume contract + the full-mana touch),
+`w4_d79_the_mana_cloak_star_draws_ride_update_players_in_order` (the
+three-draw twin). Verification = whole-block C# re-reads
+(`Player.cs:19418-19563`/`:25977-26003`/`:35043-35110`,
+`LegacySoundPlayer.cs:963-968`/`:957-962`/`:717-727`,
+`Main.cs:43060-43086`/`:40227-40263`, `Dust.cs` via the ported
+`particles.rs` allocator) + hand arithmetic on the chunk crossings.
+
+## The W4-d79 sweep phase (2026-11-21, code-only mode)
+
+The four-family deferral + pool sweep on `task/W4-d79-sound-pitch-pool`
+(continuing phases 6-7), commits `7f3c29da` / `b78b02022` / `5a719d90e` +
+this docs commit.
+
+### Sweep 1 — the DyeTrader Strange Plants turn-in (Main.cs:40002-40020)
+
+The third orphaned Chat site (`:40016`) now has a ported seam. The f37
+(`908482d52`) + g58 (`0d683ec49`) tips port the shop price-math / happiness
+lanes but carry NO turn-in seam (no `GetDyeTraderReward` /
+`ExoticPlantsForDyeTrade` / `NPCChatText_DyeTraderRarePlant` anywhere), so the
+small self-contained arm ports here:
+
+- `world_sim/npcs.rs::dye_trader_turn_in` collapses the `DyeTraderRarePlant`
+  button (`NPCInteractions.cs:443-463`) onto the right-click (the Angler/Nurse
+  treatment). The button's hard-mode `Condition` (`:445-452`) is a UI gate;
+  the `Interact` body carries none, so the collapse runs unconditionally like
+  the Angler turn-in's. The `ExoticPlantsForDyeTrade` scan
+  (`FindItem(bool[])`, `Player.cs:55996-56006`) finds the first live Strange
+  Plant 3385-3388 (`ItemID.cs:1324`), decrements/airs the stack, plays the
+  unpositioned draw-free case-24 Chat between the decrement and the reward
+  (`:40016`), then the dye reward.
+- `give_dye_trader_reward` ports `Player.GetDyeTraderReward`
+  (`Player.cs:56685-56732`): the 14-dye base pool + the hard-mode additions
+  gated on the mech/Plantera/Martian/Moon Lord latches, ONE
+  `Next(list.Count)` pick + the stack-6 spawn at the trader centre on
+  `UpdatePlayers` (the Angler reward convention — the turn-in is the player's
+  item-use interaction under the `Main.cs:17754` swap). The dyes are
+  non-prefixable, so the spawn draws exactly the velocity triplet.
+- The `Lang.DyeTraderQuestChat(gotDye)` line (`Lang.cs:300-304`) draws on the
+  bare global stream via the new `lang::dialog_prefix_keys` —
+  `CreateDialogFilter`'s `key.StartsWith(prefix)` `FindAll` over the flat text
+  table (the sub-category prefixes `DyeTraderSpecialText.HasPlant`/`NoPlant`
+  the grouped-key table misses; the sorted stand-in keeps the index→line
+  mapping deterministic, the S1-L-12c convention).
+- The `npcChatCornerItem = 0` head (`:40004`) has no port field yet (deferred).
+
+Witnesses: `w4_d79_the_dye_trader_turn_in_trades_a_plant_for_a_dye` (the
+trade/empty-hand play counts + the HasPlant/NoPlant lines),
+`w4_d79_the_dye_reward_draws_ride_update_players_in_order` (the pick + 3-float
+`UpdatePlayers` order twin + the global-stream isolation).
+
+### Sweep 2 — the Nebula armor trio pickup + buff lifecycle (Player.cs:35045-35058)
+
+The 3453/3454/3455 consume arm lands via the 4143 pattern (the phase-7
+deferral closed):
+
+- The `IsAPickup` skip gate (`world_sim/items.rs`) admits the trio; the
+  `PickupItem` chain's FIRST arm (before hearts/stars, the C# `else if` order)
+  plays the POSITIONED case-7 Grab (`(int)position.X/Y` casts — unlike the
+  unpositioned heart/star arms, this one attenuates against the camera), one
+  `Next(-10, 11)` pitch on `UpdatePlayers` after the gate, `TurnToAir`, then
+  `NebulaLevelup(inner.buffType)` (3453→179 damage, 3454→173 life, 3455→176
+  mana, `Item.cs:31001-31018`). The netMode-1 send collapses to the local call.
+- `Player` gains `nebula_level_life`/`mana`/`damage` + `nebula_mana_counter`
+  (`Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`). `nebula_levelup` ports
+  the family-wide `DelBuff` sweep (the `i--` rescan) + the clamp-0..3 bump +
+  `AddBuff(type + level - 1, 480)` (`:57030-57059`).
+- `update_buffs_nebula_scan` re-derives the three levels from the live buffs
+  (`UpdateBuffs_NebulaBuffs`, `:12070-12079` — the `buffTime == 2` step-down
+  refreshes the timer to 480). The C# runs these inside the `UpdateBuffs` slot
+  loop AFTER `ResetEffects` zeroes the levels (`:18755`); the port's split-loop
+  convention places the scan just before the buff-stat loop (the timer head
+  already decremented), the reset zeroes at the `ResetEffects` block. The
+  life-regen +6/level and damage +0.15/level folds ride the buff-stat loops
+  (`:10448-10461`).
+- `apply_nebula_buff_mana` ports the 6-count mana regen at the
+  `UpdateManaRegen` head (`:19421`/`:19565-19585`), wired into
+  `update_survival` before the regen machine. Draw-free.
+- The 12/5 nebula pull arm joins the `GrabItems` pull chain
+  (`:34953-34956`, between lifeMagnet-heart and void-vault).
+
+Witnesses: `w4_d79_the_nebula_pickup_levels_the_matching_buff_family` (the
+tier-1/tier-2 sweep + the independent families),
+`w4_d79_the_nebula_pickup_draws_one_pitch_and_no_text` (the one-pitch
+`UpdatePlayers` order twin — no combat-text draw, unlike the heart/star arms).
+
+### Sweep 3 — the SINGLE_SLOT_CUES audit (the MoonlordCry gap)
+
+The C# declares 19 single-instance `SoundEffectInstance` fields
+(`LegacySoundPlayer.cs:56-150`). The 17 `SINGLE_SLOT_CUES` rows + the dedicated
+`pixie_slot` (case 27) covered 18; **MoonlordCry (case 41,
+`SoundInstanceMoonlordCry` `:82`/:301) was the one gap**. Ported via the
+MaxMana/Pixie pattern:
+
+- The `Moonlord_Cry` bank row pins id 41 (`SoundID.MoonLord`,
+  `SoundID.cs:104`) and aliases the `NPC_Killed_10` asset the case re-creates
+  from (`SoundNpcKilled[10]`, `:1370` — no separate `Moonlord_Cry.xnb` ships;
+  the load loop resolves the alias).
+- `play_moonlord_cry` runs the attenuation gate first, draws ONE
+  `Next(-10, 11) * 0.01` pitch (`:1373`) on the caller stream, OVERRIDES the
+  volume with the player-distance falloff `1/(1 + dist)` (`:1371` — the cry's
+  own curve, NOT the camera attenuation) via the new `emit_custom_volume`
+  tail, and overwrites the dedicated `moonlord_cry_slot` WITHOUT a Stop (the
+  Coins/Chat/MaxMana no-Stop family, detach).
+- The two drawing cases (27/41) stay OUT of the draw-free `play_single_voice`
+  pool by contract (the pool is stream-neutral; these cases draw `Main.rand`).
+- Orphaned: no `PlaySound(41)` caller exists in the decompile (the E21 class —
+  the seam is table-complete for the future Moon Lord death wiring, the Pixie
+  precedent).
+
+Witness: `w4_d79_the_moonlord_cry_draws_one_pitch_and_overwrites_without_stop`
+(the one-pitch order twin, the no-Stop re-play, the out-of-range + muted
+draw-free refusals, the id-41 bank pin).
+
+### Sweep 4 — the pitch-pool master status (the sibling-lane bare-play census)
+
+The d79 base (`a725acb0`) carried **86 bare `audio.play(`/`play_at(` call
+sites** across `crates/`; the d79 phases 1-7 retired them all onto the faithful
+per-case pitch/pool paths (HEAD has only the `tracked_sound.rs:191`
+`sink.play()` — the `ActiveSound.Resume` seam, NOT a bare SFX play). The
+sibling sound lanes were re-censused against the base for NEW bare-play
+additions (the merger keep-one notes):
+
+| lane | tip | bare `.play(` count | NEW vs base (86) | verdict |
+| --- | --- | --- | --- | --- |
+| g21-sounds-main-1 | `7da02f439` | 107 | **+21** | menu cues + 2 Chat |
+| g22-sounds-main-2 | `e0f811358` | 89 | **+3** | menu cue drains |
+| g23-sounds-main-3 | `945391e33` | 90 | **+4** | menu cue drains |
+| e9-npc-sounds-2 | `a41b2b72c` | 86 | 0 | clean |
+| e10-player-sounds-wave | `dc55322a7` | 85 | **+5 menu, −6 Roar** | net −1 |
+| f1-proj-sounds-4 | `3eb572f5c` | 86 | 0 | clean |
+| d75-proj-sounds-1 | `382e4625b` | 86 | 0 | clean |
+| d76-proj-sounds-2 | `0a1fdae3a` | 86 | 0 | clean |
+| d77-proj-sounds-3 | `d61e6362d` | 86 | 0 | clean |
+| d80-tracked-sound-layer | `075b954d2` | 86 | 0 | clean |
+
+**The new bare-play sites (all MENU cues — cases 10/11/12, the draw-free
+single-voice pool the d79 `play_menu` façade already covers):**
+
+- **g21** (`app/clicks.rs` +9, `app/loop.rs` +9, `ui/mod.rs` +1,
+  `world_sim/npcs.rs` +2): the town/chatter/settings menu ticks + the two
+  **Chat** sites (`world_sim/npcs.rs:286` the talk open `:43083`, `:644` the
+  Angler turn-in `:40243`). The Chat pair is the SAME seam d79 phase 7 wired
+  through `play_single_voice("Chat", -1, -1)` — the merger keeps the d79
+  pool-routed version (the g21 bare `play("Chat")` bypasses the single-slot
+  overwrite). The 19 menu sites route through `play_menu`/`play_single_voice`
+  on merge (the d79 `chest::play_menu_sound` façade is the canonical path).
+- **g22** (`app/frame.rs` +1, `app/loop.rs` +2): the `IngameOptions.update` /
+  `settings_button_tick` / `menu.take_cue` drains — the per-site menu cue
+  queue (the g22 window census). All cases 10/11/12; route through `play_menu`.
+- **g23** (`app/frame/draw.rs` +1, `chat.rs` +1, `app/loop.rs` +2 shared with
+  g22): the `menu.take_pending_ticks` / `chat.drain_new_text_cues` drains —
+  the achievements/chat menu ticks. All cases 10/11/12; route through
+  `play_menu`.
+- **e10** (`app/loop.rs` +5 menu): the map/inventory toggle cues
+  (`Menu_Open`/`Menu_Close`/`Menu_Tick`). The lane ALSO rewrites the 6
+  `world_sim/editing.rs` `Roar_0` bare plays + the `editing/doors.rs` one onto
+  `play_roar` (the case-15 pool path) — the −6. Net −1 vs base. The 5 new menu
+  sites route through `play_menu`.
+
+**Merger keep-one notes:** every NEW bare-play site on the sibling tips is a
+case-10/11/12 menu cue OR the case-24 Chat pair — all already covered by the
+d79 `play_menu`/`play_single_voice` pool paths. NO new drawing-case bare plays
+(the pitch/pool contract holds). On merge, rewire the sibling bare sites onto
+the d79 façades (`chest::play_menu_sound(app, id)` for the menu cues,
+`play_single_voice("Chat", -1, -1)` for the Chat pair); the g21 Chat pair is a
+direct duplicate of the d79 phase-7 seam (keep d79's). The e9/f1/d75/d76/d77/
+d80 lanes add NO bare plays (their sound work rides the existing pool paths).
+The `tracked_sound.rs` `sink.play()` is the `ActiveSound.Resume` seam (the
+tracked layer, d80's lane) — NOT a bare SFX play, stays.
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).** Sweep 1: 2 (the
+trade/empty-hand contract, the pick+3-float order twin). Sweep 2: 2 (the
+buff-family tier sweep, the one-pitch-no-text order twin). Sweep 3: 1 (the
+cry's one-pitch/no-Stop/refusal contract). Verification = whole-block C#
+re-reads (`Main.cs:40002-40020`, `Player.cs:56685-56732`/`:55996-56006`/
+`:35043-35110`/`:57030-57059`/`:12070-12079`/`:19565-19585`/`:10444-10461`,
+`Lang.cs:300-304`/`:422-425`, `NPCInteractions.cs:443-463`,
+`Item.cs:31001-31018`, `ItemID.cs:1324`, `LegacySoundPlayer.cs:56-150`/
+`:1369-1375`, `SoundID.cs:104`) + the sibling-tip `git grep`/`git diff`
+bare-play census against the `a725acb0` base.
+
+## The W4-d79 PITCH FINAL phase (2026-11-21, code-only mode)
+
+The final-phase census + merge-contract record, commits `2edd40547` +
+this docs commit. The full tables live in
+`docs/research/W4-d79-pitch-final.md`; the five verdicts:
+
+1. **The Nebula 3-WAY keep-one (§F1).** The d79 full-arm port, f49
+   `6c0ee2aa2`'s regen-engine twin and f12 `ee67786ec`'s g27-canonical
+   scan half are ONE C# lifecycle in three homes. The per-fn owner-table
+   rules: the pickup arm + `nebula_levelup` + the chained reset + the
+   12/5 pull stay **d79's**; the scan writer + the Life/Damage stat folds
+   move to **f12's** `buff_effects_orbs.rs::apply_orb_arm`/`fold_orb`
+   (the g27 keep-one canon — the d79 `update_buffs_nebula_scan` + helper
+   + the two fold arms DELETE, as do f49's three inline arms); the mana
+   reader keeps **f49's** `regen.rs` engine form (the counter is
+   `RegenState`'s, the d79 Player-method twin + field DELETE). f12's
+   closeout item 1 publishes the 2-line `fold_orb` bridge
+   (`p.nebula_level_mana = p.orb_scan.nebula_level_mana`, the `:12072`
+   ASSIGN) — it lands WITH the deletions in one merge commit (either
+   half alone is a behaviour bug: double-write or stranded reader). The
+   C#-position single-chain assembly: timer head → both resets → equips
+   → `update_buff_frame` (the scan + fold + bridge) → the LIFTED
+   `update_survival` (the `:25977`/`:25995` regen reads, now post-scan —
+   the lift also repairs f12's own `buff_life_regen` feed) → projectiles
+   → items (the pickup's same-tick hint). The positioned case-7 façade
+   keeps d79's `play_grab_sound` (the `:718-722` Stop-then-recreate;
+   f49's emit-only `play_grab_sound_at` is the D4-era shape — its two
+   call sites re-point). The witness re-targets are listed per-test.
+2. **The ALL-CASE census FINAL (§F2).** The `LegacySoundPlayer.cs`
+   switch surface script-diffed vs the port: all 43 in-band cases (0-42)
+   accounted — 41 ported (this tree or the siblings: case 20 FemaleHit →
+   e10, case 37 star-hit → g23), **case 39 Drip the one in-band gap**
+   (the gore pool's documented sound drop; the drop note's "no draws"
+   claim is corrected — the tile-hit arm `Gore.cs:953` draws one
+   `Next(2)` inside the call, the wet arm `:965` is draw-free). Six
+   out-of-band gaps (47-52 guitar / 53-62 drums / 63-64 research /
+   65 Queen Slime ambient / 66 cursed-flame ambient) are ALL
+   unported-CALLER E21 deferrals — no bare-play regression anywhere.
+   The 19-field single-instance census stays closed (sweep 3).
+3. **The d80 co-lane composes clean (§F3).** d80 `075b954d2`'s tracked
+   entity loops add ZERO bare plays; its `TrackedStyle::by_name` +
+   `test_keep_alive` seams extend the same `tracked_sound.rs` layer; the
+   `ActiveSound.Resume` `sink.play()` (`:191`) is the shared seam both
+   lanes keep (not a `PlaySound` case, no RNG). The merge keeps d79's
+   audio.rs wholesale + d80's bank rows/test seams.
+4. **The sibling rewire is mechanical (§F4).** The exact per-site
+   rewrite-table: g21 +21 (19 menu → `play_menu`, 2 Chat → DELETE, d79's
+   phase-7 seams win), g22 `250488c34` +12 raw (9 prod + 3 test rigs;
+   the RETIRE tip supersedes sweep-4's `e0f811358` +3; the prod menu
+   sites + the front-end seed Chat → `play_single_voice`), g23 +6
+   (4 unique after the direction-B union), e10 `432dd5ab1` +10 prod
+   menu / −7 Roar / the cart-fallback rewrite. Every added
+   site is a draw-free pool cue — the rewrites change instance-pool
+   behaviour, never RNG. The three façade keep-one rulings: MaxMana
+   (d79's pool path wins, e10's mana-blade expiry PRODUCER keeps +
+   re-points), Hungry (BOTH producers keep — the C# plays at the
+   UpdateBuffs expiry AND the drink re-entry; ONE façade, e10's
+   `play_voice_style("Hungry")`; f12's bare `play("hungry")` deletes),
+   the voice picker (e10's `hurt_voice` chain wholesale, d79's
+   variant-1 stand-in superseded). The g21 Destroyer `Roar_0` bare play
+   is wrong twice — the int overload's default Style 1
+   (`SoundEngine.cs:102`) means `Roar_1`; d79's `play_roar(1, …)` wins.
+5. **The exact bare census (§F2 tail).** Base `a725acb04`: 88 prod + 2
+   test-rig = 90 sites; d79 HEAD: **0**. The per-tip prod/test splits
+   (the brace-depth `#[cfg(test)]` classification, every ambiguous site
+   hand-verified) supersede sweep-4's filtered counts: g21 109+2,
+   g22 96+5, g23 92+2, e10 91+2, d80/f49 88+2, f12 89+2 (the +1 is the
+   Hungry drain). The base's 6 `editing.rs` Roar plays are PROD (the
+   summon helpers live after the tests module); the 2 test sites are
+   the flow.rs Bug-17 hover witness's pair.
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).**
+`w4_d79_final_the_case_bank_pins_cover_the_in_band_surface` (audio.rs —
+the per-case bank-id pins incl. the zombie-family rows, the 17-row pool
+table + its no-Stop trio, the two drawing cases' pool exclusion, the
+sibling-gap/drop refusals),
+`w4_d79_final_the_nebula_owner_table_holds_on_this_tree` (player.rs —
+the pre-merge contract: the scan's assign-derivation + time-2 step-down,
+the levelup sweep/climb, the per-6 mana pay + tier-0 wipe, the reset
+zero + the same-tick re-derive). Verification = the whole-block C#
+re-reads cited per census row (`LegacySoundPlayer.cs`'s three switches,
+`SoundEngine.cs:93-108`, `Gore.cs:940-968`, `Player.cs:12110-12140`/
+`:46506-46730`, `ItemSlot.cs:1280-1298`, `NPC.cs:45759`/`:50093`,
+`Projectile.cs:46925-46945`) + the per-tip `git diff`/`git grep`
+censuses with the per-file `mod tests` split.
+
+## The W4-d79 PITCH SEAL (2026-11-21, code-only mode)
+
+The seal phase, commits `b2c9aa1d2` (the Drip port) + the seal docs
+commit; the full receipts in `docs/research/W4-d79-pitch-final.md`
+§S1-§S5. The four verdicts:
+
+1. **The f49 mutual receipt (§S1).** f49's SEALED tip `0d1f941af`
+   (research/85 RT1-RT4) read d79 at sweep 4 and published its own
+   13-row keep-one (RT2). The d79 F1 owner-table and RT2 AGREE on every
+   canonical home (scan = f12/g27 `apply_orb_arm`, folds = f12
+   `fold_orb`, mana = d117/f49 `regen.rs` engine, the positioned cue =
+   d79 `play_grab_sound`, the bridge-ASSIGN-with-deletions ONE commit).
+   Four rows named different surviving TWINS of identical ports
+   (pickup arm / levelup / reset / pull / 4143) — the seal resolves them
+   to **f49's copies** (RT1's items.rs-wholesale instruction already
+   commits to f49's file; the registry buff_type rows verified equal to
+   the hardcoded map; both 4143 arms carry the RAW-50 text-font
+   convention). The merge's d79-side work simplifies to: the scan/fold/
+   reader deletions + ONE cue rewire (`play_grab_sound_at` →
+   `play_grab_sound`) + the anchors-prose reword. f49's R3 execution is
+   DONE on its tree (the tombstones + the bridge stub + the lift); the
+   wiring + bridge + deletions land in ONE merge commit.
+2. **The case-39 Drip gap CLOSED (§S3, `b2c9aa1d2`).** The F2 census's
+   one in-band gap ported small: the `tr-core` `GoreSound` seam (the
+   `GoreCollision` injection pattern) draws the tile-hit arm's `Next(2)`
+   style pick at the C# call-argument position (mid-walk, before the
+   gate — `Gore.cs:953`), the wet arm passes style 2 draw-free (`:965`),
+   the flag4 quiet kinds skip (`:942`); `Audio::play_drip` runs the gate
+   (the `:433` `type != 39` zero-volume exemption — a menu-muted drip
+   still draws), ONE `Next(-30,31)` pitch on `UpdateGores`, the ×0.5
+   volume, the no-Stop `SoundInstanceDrip[3]` overwrite. **An after-walk
+   intent queue was rejected mid-port** — it would move the pitch draw
+   out of the inter-slot stream order (the deliberate-deviation record:
+   the seam is called at the C# statement position, not drained). The
+   in-band census is now **43/43 ported** (20 → e10, 37 → g23 at the
+   merge). 4 witnesses written not run; the ripple/shimmer-light drops
+   stay (draw-free).
+3. **The sibling rewire ledger at the CURRENT tips (§S2).** g21 moved
+   `7da02f439` → `7596fb262` (+5: three Unlock clicks → the case-22 pool
+   + two hover ticks → `play_menu`); e10 moved `432dd5ab1` → `8e0d951fc`
+   (+0 bare — the buff-station family rides `play_use_sound`); g22/g23
+   unchanged (direction B stands). The ledger: 54 raw − 4 shared − 2
+   Chat-deletes = **48 rewire targets (45 prod + 3 test) + 3 deletes**;
+   the per-lane execution split g21 24+2 / g22 12 / g23 2-unique / e10
+   10+1. The sibling resume sessions (g21c/g22-canonical/e10c) were
+   probed — not yet spawned; the §S2 tables are their contract. d80
+   re-censused at `a6bcf736a`: 90 bare = the base, the F3 zero-overlap
+   verdict holds.
+4. **The six E21 task-seeds (§S4)** — owner-lanes named: the instrument
+   seam (47-52/53-62, the item-use census + e26 luck), c24-journey-ui
+   (63/64 sacrifice click), the d33/d43 NPC lanes (65 QueenSlime AI_121),
+   d8-proj-ai-71-80 (66 type-75 bomb). No bare-play regression; the
+   pitch-family bible (§S5) is the merger-bible entry. **SEALED — no
+   further d79 commits planned.**
+
+### Batch-L merge receipts (the S1 keep-one EXECUTED, 2026-11-22)
+
+- **The d79-side deletions landed** (the S1 bridge-ASSIGN-with-deletions
+  contract's d79 half): `update_buffs_nebula`/`update_buffs_nebula_scan`
+  + the `update_with_grapple` call, the two stat-fold arms (the
+  `173|174|175` life add + the four-class 0.15 damage add), the
+  Player-method `apply_nebula_buff_mana` + its `update_survival` head
+  call, the `Player.nebula_mana_counter` field (+ init) and the
+  duplicate `:18755` reset-zero copy — all DELETED. The ONE tier writer
+  stays f12/g27's `apply_orb_arm` (NOT in batch-L — the wiring seam +
+  the `fold_orb_nebula_bridge` stub mark its slot; until f12 lands the
+  tier rides the pickup's same-tick hint, the f12 gap-3 convention).
+  The ONE mana reader is the d117/f49 `regen.rs` engine form.
+- **The four identical-twin survivorships resolved to f49** per §S1:
+  the pickup arm (f49's registry `buff_type` read, REWIRED onto d79's
+  `play_grab_sound` — the ONE cue rewire; `play_grab_sound_at` retired,
+  the chest-eat delegate re-pointed, bodies identical so the rewire is
+  behaviour-neutral), `nebula_levelup`, the Player-zero reset lines,
+  the 12/5 pull arm and the 4143 Mana Cloak arm — f49's copies survive;
+  d79's hardcoded-map pickup twin dropped. The `IsAPickup` gate stays
+  f49's gate-REMOVED shape (d79's exclusion-list skip dropped).
+- **The cue façades are d79's** (the Lead's "pickup-cue = d79"): the
+  whole `audio.rs` façade wave + the case-39 Drip port + the DyeTrader
+  turn-in + the moonlord-cry slot land as-is; the full-mana refill
+  queue/drain lands on the LIFTED `update_survival` seam.
+- **Witness re-targets**: d79's pickup-ladder twin folded into
+  `w4_f49_the_nebula_pickups_grant_their_family_buff_and_vanish` (its
+  Player-field + family-independence assertions carried over); the
+  stream-exact one-pitch twin
+  (`w4_d79_the_nebula_pickup_draws_one_pitch_and_no_text`) KEPT as-is;
+  `w4_d79_final_the_nebula_owner_table_holds_on_this_tree` re-targeted
+  to the bridge stub + the engine counter (the scan/time-2-step
+  assertions move to f12's witnesses when that lane lands); the refill
+  witnesses land clean.
+- **The sibling rewire-table (§S2) is NOT this batch's scope** —
+  g21/g22/g23/e10/d80 are other batches' lanes; their 48 targets + 3
+  deletes execute against the published tables when those lanes merge.
+
+## Shop happiness UI (W4-g58, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/happiness.rs` + `ui/npc_chat.rs` + `ui/shop_happiness.rs`
++ `ui/savings.rs` land the happiness dialogue, the shop price-multiplier
+chrome, the FULL preference DATA tables and the savings coin pile. A
+follow-up deviation round resolves the five constants-off items recorded
+below (the Princess RNG head + HateLonely, the Zoologist shapeshift suffix,
+the Tavernkeep town twin, the player-zone biome judge, the DrawSavings
+pile). **Code-only mode**: no compiler/tests invoked; the witness tests are
+written not run, verified by re-reading the C#.
+
+What landed:
+
+- **The DATA tables** (`happiness.rs`): `biome_preferences_by_id` ports all
+  25 `PersonalityDatabasePopulator.Populate_BiomePreferences` rows
+  (`PersonalityDatabasePopulator.cs:27-147`) keyed on the C# NPCID — the
+  unported kinds (142 Santa, 160 Truffle, 178 Steampunker, 209 Cyborg,
+  229 Pirate, 550 Tavernkeep) carry their rows too;
+  `neighbor_preferences_by_id` ports the whole
+  `AllPersonalitiesModifier.ModifyShopPrice_Relationships` switch
+  (`AllPersonalitiesModifier.cs:41-505`) in the C# `if` order (the report
+  prepends, so the order is the read order). The kind-keyed views ride
+  `NpcKind::cs_id`; a neighbor row for an UNPORTED kind drops out (the
+  vanilla can never house that kind). `biome_name_key` maps the
+  `AShoppingBiome.NameKey` rows — the Underground key is
+  `NormalUnderground` (`UndergroundBiome.cs:7`).
+- **The mood pass** (`process_mood`): the crowd gate now reads the whole
+  town roster (`is_town_resident` minus `IsNotReallyTownNPC`'s 37/368/453,
+  `ShopHelper.cs:363-371`) instead of the Guide alone; the neighbor rows
+  push `MoodFlag::NpcAffection` and the universal LikePrincess row
+  (`AllPersonalitiesModifier.cs:37-40`, ×0.94 for every non-Princess with
+  a nearby Princess) lands; the evil-biome arm names the biome
+  (`HateBiomeNamed`, `_dangerousBiomes` order Corruption/Crimson/Dungeon,
+  `ShopHelper.cs:28-34`/`:353-356`).
+- **The report builder**: `ShoppingSettings` (`ShoppingSettings.cs:3-14`),
+  `shopping_settings` = `ShopHelper.GetShoppingSettings` (`:49-62`),
+  `happiness_report` folds the flags through `AddHappinessReportText`'s
+  PREPEND (`:188-196`: `text + report + " "`, the category
+  `TownNPCMood_{NPCID.Search.GetName(netID)}`, the `{BiomeName}`/
+  `{NPCName}` substitutes), `npc_full_name` = `NPC.GetFullnameByID`
+  (`NPC.cs:7010-7020` — the live resident's `Game.NPCTitle` given-name
+  title, else the type name), the LikePrincess row's dedicated
+  `LikeNPC_Princess` key (`ShopHelper.cs:252-259`).
+- **The dialogue button**: `App.set_talk_npc` ports `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch (`Player.cs:4375-4394` — the open runs
+  GetShoppingSettings, the close resets NotInShop); all six latch sites
+  repointed (talk open/close, the Close click, the two chest prologues,
+  the recall teleport). `ReportHappiness` (`NPCInteractions.cs:289-312`)
+  draws as the chat panel's second interaction: Condition =
+  `!NPC.CanShowHomelessText(talkNPC) && HappinessReport != ""`
+  (`NPC.cs:94828-94841`), label `UI.NPCCheckHappiness`, Interact = sound 12
+  + `npcChatText = HappinessReport` (the talk latch stays). The button-row
+  rect math generalizes `NPCChatPanel.DrawButtons` (`:93-135`): index 0
+  Close, index 1 Happiness, `x += width + 30`, wrap every 4.
+- **The shop chrome** (`ui/shop_happiness.rs`, `Main.cs:41790-41797`): the
+  `Lang.inter[28]` "Shop" label at (504, invBottom=258), the
+  `UI/NPCHappiness` 4-frame icon strip whose band rides the nested ternary
+  (≤0.82 → 0, ≤1 → 1, ≤1.1 → 2, else 3 — `:41794`), drawn at the
+  frame-centre origin at (504+12, invBottom+108), and the
+  `ToString("P0")` percent ("89 %") at (504+26, invBottom+98) — the
+  offsets are the `Main.cs:67266-67269` statics; the text rides
+  `Utils.DrawBorderStringFourWay`'s ±2 px ring tinted
+  `White * (mouseTextColor/255)`.
+
+Deviations resolved (W4-g58 deviation round, 2026-11-21, code-only mode):
+
+- **The Princess's random three-loves head + HateLonely** — LANDED.
+  `AllPersonalitiesModifier.cs:15-36` draws `Main.rand.Next(list.Count)`
+  three times on the BARE `Main.rand` (the call chain `SetTalkNPC` <-
+  `HoverOverNPCs` <- `DrawMouseOver` <- `DrawInterface_39_MouseOver`,
+  `Main.cs:43081`/`:42939`/`:45150`, runs outside every `SwapRandom`
+  stage), so the port threads `NamedRngs::global()` through
+  `process_mood`/`shopping_settings` (the `roll` closure). The list is the
+  nearby resident TYPES in ascending NPCID order, deduped
+  (`nearbyNPCsByType` is a `bool[NPCID.Count]`, `ShopHelper.cs:152-156`);
+  each pick `RemoveAt`s (no replacement) and applies a Love x0.88 whose
+  report key is the dedicated `LoveNPC_{NPCID.Search.GetName(npcType)}`
+  (`LoveNPCByTypeName`, `ShopHelper.cs:243-250` -> `MoodFlag::PrincessLove`).
+  Her crowd gate (`ShopHelper.cs:122-130`): `flag = false` (no LoveSpace),
+  `num = 1f` (the crowd multiply is inert), and HateLonely + the 1000
+  sentinel when fewer than 2 within-house AND fewer than 2 within-village
+  neighbors (`MoodFlag::HateLonely`). The personality traits now run
+  UNCONDITIONALLY (the C# `:164-168` has no `< 1000` gate — the old port's
+  gate was itself a deviation; the sentinel rides the clamp at `:178` but
+  the report rows + the RNG draws still land).
+- **The Zoologist's shapeshift report suffix** — LANDED. `altTexture == 2`
+  (`ShopHelper.cs:191-194`) is exactly `NPC.ShouldBestiaryGirlBeLycantrope()`
+  (`NPC.cs:93753-93764`): `UpdateAltTexture` (`:90225-90227`) writes
+  `altTexture = 2` on that predicate, a pure world-state gate (a blood-moon
+  night, or a full-moon `moonPhase == 0` night). No alt-texture field is
+  needed: `should_bestiary_girl_be_lycantrope(blood_moon, day_time,
+  moon_phase)` derives it, `shopping_settings` reads the world clock, and
+  `prepend_report` appends the `Transformed` category suffix
+  (`TownNPCMood_BestiaryGirlTransformed`). The `npc_chat.rs` Zoologist arm
+  reuses the shared predicate.
+- **The Tavernkeep town twin** — LANDED (the premise was false). There is
+  NO separate event Bartender: `NPCID.DD2Bartender = 550` IS the town
+  Tavernkeep (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle 7,
+  `friendly = true`); NPCID 109 is the Clown, and 109 is only the port's
+  WIRE id (`to_u16`), not his `cs_id` (which resolves 550 through the
+  bestiary). The crowd gate re-derives `townNPC && !IsNotReallyTownNPC`
+  (admit `DD2Bartender`, drop the Travelling Merchant 368 — the only
+  ported `IsNotReallyTownNPC` kind), and `neighbor_preferences`' kind roster
+  adds `DD2Bartender` so his rows (`:213-230`) + the rows that name him
+  (the Angler `:141-158`, the Demolitionist `:177-194`) resolve.
+- **The home-anchor biome judge** — LANDED (the M4-TOWN-2 convention was
+  wrong). `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
+  PLAYER's zones (`info.player`, `:44`), NOT the home tile, and picks the
+  HIGHEST affection among the matching biomes applying ONE row
+  (`ApplyPreference`, `:55-73`). The "moot for the two-row tables" claim
+  was false — a player can be in two biomes at once (e.g. Hallow +
+  Underground). `AffectionLevel::affection_value` ports the enum ordering
+  (Love 100 / Like 50 / Dislike -50 / Hate -100, `AffectionLevel.cs:5-8`);
+  `biome_is_in` ports each `AShoppingBiome.IsInBiome` (Forest =
+  `ShoppingZone_Forest` = `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+  `Player.cs:3823-3847`; Underground = `ShoppingZone_BelowSurface`;
+  Mushroom = `ZoneGlowshroom`; the rest the zone flags). `process_mood`
+  scans the PLAYER centre and applies the single highest-affection row;
+  `classify_biome` (the first-match collapse) is removed.
+- **`ItemSlot.DrawSavings`' coin pile** — LANDED (`ui/savings.rs`).
+  `ItemSlot.DrawSavings` (`:3704-3741`) sums the four banks
+  (`Utils.CoinsCount` `:1019-1046`, `CoinsCombineStacks` `:1062-1076` cap
+  9,999,999,999, `CoinsSplit` `:1048-1060`), draws the bank-icon pile
+  (4076 Void Vault / 3813 Defender's Forge / 346 Safe / 87 Piggy Bank —
+  `GetItemDrawFrame` returns the full texture, no `itemAnimations` row)
+  and `DrawMoney`'s vertical arm (`:3686-3701`). `CoinSlot.DrawItemCoin`
+  (`:240-254`) uses `TextureAssets.Coin[type-71]` — the 8-frame SPIN
+  strips (`Images/Coin_0..3`, `AssetInitializer.cs:367-370`), NOT the
+  single-frame `Item_71..74` icons; the assets loader packs them and
+  `Lookups::coin_strip_frame` slices them. `CoinSlotState` gains the
+  `Savings[4]` array + `update_savings` (`71 + slot`,
+  `SavingsCoinJumpScale` 10, `:225-228`/`:337`/`:341`); `UpdateSlotAnims`
+  steps Savings first (`:359-361`). The pile draws between the Shop label
+  (`Main.cs:41790`) and the happiness icon (`:41792`) at (504, invBottom).
+
+Deviations still constants-off (each rides its own lane):
+
+- ~~The pets' `housingCategory` filter~~ — LANDED (the latch round,
+  2026-11-21, `f6c6007d4`). `ShopHelper.cs:305` admits a crowd neighbor
+  only when `!WorldGen.TownManager.CanNPCsLiveWithEachOther_ShopHelper`
+  (`TownRoomManager.cs:153-161` — CanLive is housingCategory INEQUALITY,
+  so the negated gate counts SAME-category neighbors: pets crowd pets,
+  never humans). `happiness.rs::crowd_neighbor_counts` reuses the housing
+  lane's `town::can_npcs_live_with_each_other` negated; no pet kind ships,
+  so every ported pair is 0==0 → counted — the filter is armed for the
+  pet lane.
+- ~~The <=0.82 achievement (`Player.cs:4391-4394`)~~ — LANDED (the latch
+  round, `f6c6007d4`). `AchievementManager::complete_row_condition` ports
+  the ROW-TARGETED `GetCondition(row, name).Complete()`
+  (`AchievementsHelper.cs:355-357` case 20 →
+  `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do"; `AchievementCondition.cs:37-47` +
+  `Achievement.cs:93-108`) — NOT the broadcast `notify_custom`, which
+  would close all nine "Do" rows. `set_talk_npc` fires it on the latched
+  adjustment with the `BoundTownNPCs` (`NPCID.cs:10441`, the six ported
+  kinds) + `!homeless` gates. The portrait hop (`DoNPCPortraitHop`) and
+  the corner item stay unported (S1-E-10b's deferral — no portrait
+  system).
+- ~~The nurse-heal cost recompute~~ — LANDED (the latch round,
+  `3ac5432d5`). `currentShoppingSettings` has exactly ONE write site:
+  `Player.SetTalkNPC` (`Player.cs:4383-4390`; the open chain `Main.cs:
+  42939` HoverOverNPCs ← DrawMouseOver `:45150` → `:43081`), and
+  `GetNurseHealCost` (`Main.cs:40100`) reads the LATCHED `PriceAdjustment`
+  with NO NPC-index parameter (`NurseHeal.Interact`, `NPCInteractions.cs:
+  258-261`). `App::nurse_heal_cost`/`nurse_heal` drop the index and read
+  `shopping_settings.price_adjustment`; the fresh `process_mood` + the
+  no-draw closure are deleted — the Princess head draws at the LATCH on
+  `NamedRngs::global()`, the nurse read is draw-free. Mood changes between
+  the talk and the heal do not change the cost (the witness).
+
+The latch round (2026-11-21, code-only mode, `3ac5432d5`/`f6c6007d4`/
+`13be13a6a`/`a027138d8`):
+
+- **The reforge price's happiness interplay** — LANDED (`13be13a6a`).
+  `Main.DrawInventory`'s reforge block (`:41584-41591`) multiplies the
+  LATCHED `currentShoppingSettings.PriceAdjustment` (`:41591`), not a
+  shop-open capture: the vanilla opens the menu through the Tinkerer's
+  CHAT button (`NPCChatText_TinkererReforge`, `Main.cs:40022-40029`), so
+  the talk latch is live. g57 was visual-only (the reveal/popup lane);
+  S1-P-i45 ported the cast chain but fed `shop_mood`. `reforge_click` +
+  the draw-site price both read `shopping_settings.price_adjustment`;
+  the port's collapsed #9 entry keeps the first press's latch (the
+  same-NPC re-click falls through `talk_to_npc` without re-latching,
+  `Main.cs:43077`). **Cross-note (the buy lane)**: `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) ALSO reads the latch —
+  the buy/sell transactions still ride the `shop_mood` capture
+  (`buy_shop_item`/`sell_item`); their repoint rides the shop-transaction
+  lane (S1-P-i44's follow-up), not this round.
+- **The tax-collector payout's happiness interplay** — LANDED
+  (`a027138d8`). `Main.NPCChatText_DoTaxCollector` (`:40180-40225`)
+  DIVIDES the purse by the latched adjustment (`:40184` — a happy
+  collector pays MORE than the accrued purse), the same value
+  `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0 clamp
+  display-only); the coins spawn at `Main.LocalPlayer.Center`
+  (`:40192`/`:40199`/`:40206`/`:40215`), NOT the collector's box.
+  `tax_collector_payout` now divides by `shopping_settings.
+  price_adjustment` and spawns at the player centre (the headless
+  no-player fallback keeps his); the collapsed right-click latches on
+  the first press (the vanilla button's Condition `TalkNPCType == 441`,
+  `NPCInteractions.cs:223-226`, exists only while talking). His roster
+  rows verified live: the biome table (`PersonalityDatabasePopulator.cs:
+  47-51`, Like Snow / Dislike Hallow), the neighbor switch
+  (`AllPersonalitiesModifier.cs:321-342` — the Santa hate row drops, 142
+  unported) and the rows that name him (the Merchant `:43-60`, the Angler
+  `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
+- **The latch-site census** (the round's spine): `currentShoppingSettings`
+  is written ONLY by `Player.SetTalkNPC` (`Player.cs:4383-4390`). The C#
+  call sites: the talk open (`Main.cs:43081`, the `:42939` HoverOverNPCs
+  chain), the bound-NPC transform (`NPC.cs:44889`), the per-tick close
+  (`Player.cs:27500`), the chest/dresser prologues (`Player.cs:32874`/
+  `:32931`/`:33088`), the recall/death/etc. closes (`Player.cs:5007`/
+  `:17015`/`:29109`/`:37648`, `Main.cs:37730`/`:37808`/`:40683`/`:41098`/
+  `:42399`/`:42454`/`:43675`/`:43689`, `TileEntity.cs:292`,
+  `IngameUIWindows.cs:35`, `NewCraftingUI.cs:942`) and the net sync
+  (`MessageBuffer.cs:2264`). The port's `set_talk_npc` covers the landed
+  six (talk open/close, the Close click, the two chest prologues, the
+  recall teleport); the remaining closes ride their own unported systems.
+  The four latch READERS censused: `GetNurseHealCost` (`:40100`),
+  `NPCChatText_DoTaxCollector` (`:40184`) + its display twin (`:39933`),
+  the reforge block (`:41591`), the shop chrome (`:41793` — already
+  latched via the W4-g58 chrome), `GetItemExpectedPrice` (`:35382-35388`,
+  the buy lane's cross-note) and the Stylist hair price (`:43799`, the
+  hair-dye lane) + the Angler reward rarity (`Player.cs:56306`, the quest
+  lane).
+
+Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` x9 original (the
+25-row biome table, the 25-case neighbor switch, the kind-view filter, the
+affection multipliers, the name keys, the report prepend order, the
+neighbor naming, the Princess key, the homeless gate) + the deviation round
+(the Tavernkeep town neighbor, the lycantrope predicate, the Zoologist
+Transformed suffix, the player-not-home biome judge x2, the
+highest-affection single-row pick, the Princess HateLonely, the Princess
+three-loves head RNG draws, the head list-end break, the Princess
+LoveNPC_{name} report key); `happiness.rs::tests` forest_world widened to
+1000 (the faithful Forest predicate needs a non-beach above-surface player
+row); `ui/npc_chat.rs` x3 (the button click replaces the chat text, the
+homeless Condition, the settings reset); `ui/shop_happiness.rs` x3 (the
+icon bands, the P0 text, the chrome positions); `ui/savings.rs` x5 (the
+CoinsCount denominations, the CoinsCombineStacks cap, the CoinsSplit walk,
+the CenteredRectangle truncation, the savings cell draw state);
+`assets.rs` x1 (the coin spin strips pack + slice 8 frames). The latch
+round adds: `app/mod.rs::s1_e_18_tests` x2 (the nurse cost reads the talk
+latch — the homeless→housed mood change is inert until a re-latch; the
+≤0.82 talk fires ONLY its achievement row, the Nurse + loved ArmsDealer +
+Princess 0.79 band), `happiness.rs::w4_g58_tests` x1 (the crowd gate's
+housingCategory filter), `achievements.rs` x1 (the row-targeted complete
+vs the broadcast), `app/flow.rs` x1 (the reforge charge reads the talk
+latch, not the shop capture), `world_sim/npcs.rs` x1 (the tax payout
+divides by the latch — 300/1.5=200, 300/0.75=400 — and spawns at the
+player centre).
+
+The FINAL round (2026-11-21, code-only mode, `468db5928` + the census
+docs; research/240, renumbered from 143 per registry-150 — 143 stays with
+c4's crimsongoldfish retire-hunk):
+
+- **The buy/sell-lane latch repoint** — LANDED. `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) reads the TALK-OPEN
+  LATCH (`currentShoppingSettings.PriceAdjustment`, the only write site
+  `SetTalkNPC` `:4389`); the shop button's Condition (`TalkNPCType ==
+  type`, `NPCInteractions.cs:59-62`) keeps it live at every transaction.
+  `buy_shop_item`/`sell_item` + the shop chrome tuple (`Main.cs:41793`)
+  switch `shop_mood` → `shopping_settings.price_adjustment`; the
+  shop-open capture gates `talk_npc != Some(idx)` (the f37 capture-once
+  contract, research/68 — no second Princess draw) and builds the FULL
+  settings (report included) at the collapsed entry. The Angler reward
+  rarity (`Player.cs:56306`) reads the latch too — his Like-Ocean/
+  Dislike-Desert + neighbor rows ARE ported, the constants-off 1.0 was
+  stale. `shop_mood` stays as the f37 merge-side capture (the buy/sell
+  TRANSACTION halves are g58's S1-P-i44 files; f37's tip still fed the
+  capture — unclaimed, so g58 repointed its own call sites). Witness:
+  the_buy_and_sell_read_the_talk_latch_not_the_shop_capture (homeless
+  Merchant 1.5: buy 60000, sell 26667/5=5333, memo round trip 60000;
+  post-latch housing inert; re-latch 0.95 → 38000).
+- **The happiness REPORT UI** — CENSUSED COMPLETE (research/240 §2).
+  There is NO price-slider/neighbor-list widget in the C# (a full
+  sweep returns zero hits); the report is TEXT in the chat panel. The
+  eight-site surface (the Shop label/savings pile/mood icon/P0 percent,
+  the ReportHappiness button, the report builder, the panel display) is
+  fully ported; the legacy `Main.DrawNPCChatButtons` (`:40474`, the
+  `:40635` HappinessReport gate inside it) is DEAD CODE — no callers in
+  the whole decompilation — correctly unported. No missing halves.
+- **The savings 3-way input** — the g58 CALL-SITE census published as
+  the 142-input (research/240 §3): g58 wires ONE call (the shop-panel
+  (504, invBottom) vertical, through the chrome); d122 wires the reforge
+  (180, 258) horizontal + the shop-panel; g12 wires the shop-panel
+  direct. The C# has exactly three `DrawSavings` callers (`:41637`/
+  `:41791`/`:43862`, the hair window unported). g58 votes KEEP d122's
+  both-arms + medal module (research/142's decision); the merge keeps
+  g58's report-lane chrome gate + d122's chrome body/savings signature.
+- **The portrait hop** — the STATE landed, the DRAW deferred
+  (research/240 §4). `DoNPCPortraitHop` (`Main.cs:40675-40678`) +
+  `npcChatPortraitFrameCounter` + `EaseOutBounce` (`Utils.cs:355-363`) +
+  the `DrawNPCPortrait` lift (`:40355-40359`, `-56·0.25·(1−ease)`, the
+  `num4 == 0` gate — no repeat past frame 119) port; the counter ticks
+  per drawn frame (`:40335`), the hop fires at the talk open
+  (`Player.cs:4401`), the ReportHappiness button (`NPCInteractions.cs:
+  310`), the nurse (`:40177`, unconditional), tax (`:40224`) and angler
+  (`:40262`) tails. The portrait DRAW (the `NpcPortraitBackground` + the
+  Detailed/CloseUp/FullBodyRetro modes + the `DialoguePortraitPreference`
+  setting + the `NPCPortraits` provider dictionaries) stays deferred —
+  no portrait system (S1-E-10b); the d85/g53 co-lanes carry only the
+  BESTIARY portraits, a different system, so the chat-portrait lane is
+  unclaimed. Witnesses: the_portrait_hop_lift_matches_the_bounce +
+  the_portrait_hop_resets_on_the_talk_and_the_report.
+
+The RETIRE round (2026-11-21, code-only; research/241 + the chat-portrait
+port):
+
+- **The chat-portrait DRAW, Detailed arm** — LANDED
+  (`ui/chat_portrait.rs` + `ui/chat_portrait_data.rs`, the hop-state's
+  first consumer). `Main.DrawNPCPortrait` (`Main.cs:40318-40447`) from
+  `NPCChatPanel.Draw` (`:79`): the `Portrait_Window` backdrop
+  (`AssetInitializer.cs:650`) at the chatBack tint
+  `Color(200,200,200,200)` + the provider-resolved portrait sheet at
+  `Color.White`, both centre-origin at
+  `panelTopLeft + (-62, 62) + (0, hop_lift)` (`:40337`/`:40358`), + the
+  `GivenOrTypeName` label (`NPC.cs:6743-6753`) in `FontAssets.ItemStack`
+  at `+(0, 57)` centre-origin (`:40444-40446`). The provider table ports
+  the 21 talkable kinds' `NPCPortraits` rows (`NPCID.cs:5894-6073`): the
+  shimmer condition (`IsShimmerVariant` = variation 1 ∧
+  `ShimmerTownTransform`, `NPC.cs:6713-6723`) swaps the `_shimmer` twin;
+  the Zoologist's four-way lycanthrope selector (`:6010-6012`) resolves
+  in entry order. 44 sheets pack eagerly (the E-4b precedent) through
+  `packed_sheet_names`; the `Lookups.chat_portraits` map + the
+  `npc_portrait_background` rect feed the draw. The hop counter's tick
+  stays at the caller (`frame/draw.rs`, gated `talk_npc.is_some()`),
+  matching the C#'s read-then-increment BEFORE the mode branch.
+  DEVIATIONS (deliberate): the `CloseUp`/`FullBodyRetro` dummy-NPC arms
+  (`:40379-40443`, scissored `DrawNPCDirect` scale 3/2 + the offset
+  dictionaries) draw NOTHING — they need the portrait-dummy system
+  (S1-E-10b's successor lane; the f22 task-seed carries the contract);
+  `Disabled` (preference 3) returns exactly; the dead wobble/sway arms
+  (`:40347-40372`) are dropped as in the hop port; the label's shadow is
+  the port's ±2 four-way ring (the `DrawColorCodedStringWithShadow`
+  stand-in, the panel-text precedent). Witnesses (WRITTEN NOT RUN):
+  the_provider_resolves_the_roster_and_the_conditions (21 kinds + the
+  Zoologist four-way + the 44-sheet packing dedupe) +
+  the_shimmer_gate_needs_variation_one_and_the_transform_set +
+  the_anchor_rides_the_hop_lift (frame 0 → −14, frame 10 → −10.71875,
+  80+/120+ → 0).
+- **The f37 latch-repoint** — published as EXACT HUNKS (research/241)
+  for the f37 lane/merger: five `shop_mood` →
+  `shopping_settings.price_adjustment` swaps at f37 tip `908482d52`
+  (`app/mod.rs:1696`/`:1759`/`:1849`/`:2090`,
+  `frame/draw.rs:1694`/`:1746`); the f37 tip probe found it 8.5 h parked
+  with research/68 published (the key-68 registry winner) — not
+  confirmed dead, so no f37-branch edit (the own-branch rule).
+- **The research renumber** — 143 → 240 per registry-150 §2 (143 stays
+  with c4; the late-push scan assigns d120→237, d42→238, c8→239,
+  g58→240; refs updated, zero `research/143` hits remain).
+- **The family SEALED** (research/242): the happiness family is closed
+  for porting — the bible paragraph pins the ONE canonical price path
+  (the `SetTalkNPC` talk-open latch, `Player.cs:4383-4390` the only write
+  site; every reader — buy/sell/reforge/nurse/tax/angler/chrome — reads
+  it), f37 keeps the pure price math + the merge-side `shop_mood` capture
+  (its five stale readers repoint per research/241), d122 owns the stock
+  rows + medal wallet + the KEEP-winning savings module (research/142);
+  the report UI is COMPLETE text, the legacy buttons dead code, the
+  portrait Detailed arm landed. The dummy-NPC portrait modes ride the
+  f22 task-seed (research/242 §2 — the f22 lane is ALIVE, tip `a2fdf86fb`
+  10:57:48).
+
+The SEAL-VERIFICATION round (2026-11-21 ~14:00, code-only; research/243):
+the four retire commits PUSHED (`2ff3b7062..d0f6275a5`, ls-remote
+confirmed). A fresh 358-tip 237–249 scan finds 240 g58's SOLE claim — NO
+collision, the rename stands; the sibling assignments in 240's renumber
+note are SUPERSEDED (c8/d42/g61 collide on 238, e23/g48 on 237, d120's
+chatter-retire is still 143; those lanes/the merger resolve — a
+correction is appended in research/240). No registry-150b refresh exists
+at any tip (d54 still `38bfd1d22`). The f37 hunks re-verified LINE-EXACT
+at the still-parked tip `908482d52` (~11.2 h) — research/241 is now at
+origin for the f37 lane/merger. f22 RETIRED at `8c1b40a46` (12:04:59,
+family COMPLETE) BEFORE the 242 seed reached origin and carries no
+portrait claim — the CloseUp/FullBodyRetro remainder is UNCLAIMED for a
+successor lane (the `draw_portrait` preference-1/2 replace site stands);
+d120 retired `2408233da`, no compose owed. f22's new 144 collides with
+c4's registry-144 (f22 renames on its own branch).
+
+### Batch-L merge receipts (2026-11-22)
+
+- The talk-open seam composes: g58's `set_talk_npc(Some(i))` settings
+  latch survives + d79's draw-free case-24 Chat chime
+  (`play_single_voice("Chat", -1, -1)`) rides right after it (the
+  `Main.cs:43081`→`:43083` order).
+- `complete_row_condition` keep-one: g58's row-targeted twin becomes an
+  ALIAS onto the a6/c36/g88-established `complete_condition` (the
+  research/138 §3 survivor; bodies semantically identical, the `frac`
+  clear rides the survivor). g58's call sites + witnesses stand.
+- The f37 latch-repoint hunks (research/241) execute at the f37 merge
+  below — the five `shop_mood` → `shopping_settings.price_adjustment`
+  sites against the g58-latched canonical.

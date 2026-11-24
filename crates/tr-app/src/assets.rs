@@ -878,6 +878,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // W4-g58: the shop happiness icon strip (`TextureAssets.NPCHappiness`,
+        // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 frames).
+        "UI/NPCHappiness",
+        // W4-g58 retire: the chat-portrait backdrop
+        // (`TextureAssets.NpcPortraitBackground`,
+        // `AssetInitializer.cs:650` — `Images/TownNPCs/Portraits/
+        // Portrait_Window`). The per-NPC portrait sheets pack in
+        // `load_static_sheets` through
+        // `ui::chat_portrait_data::packed_sheet_names` (the provider
+        // table's expansion — `NPCID.cs:5894-6073`).
+        "TownNPCs/Portraits/Portrait_Window",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1591,6 +1602,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_485",
         "NPC_486",
         "NPC_487",
+        // W4-g10 lane 3 — the town pets' own sheets, keyed by the vanilla
+        // TOWN_PET_SHEETS).
+        "NPC_637",
+        "NPC_638",
+        "NPC_656",
+        "NPC_670",
+        "NPC_678",
+        "NPC_679",
+        "NPC_680",
+        "NPC_681",
+        "NPC_682",
+        "NPC_683",
+        // W4-g10 lane 3 batch 2 — the copper slime's sheet.
+        "NPC_684",
 ];
 
 
@@ -1607,6 +1632,19 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => log::warn!("missing background texture {name}"),
+        }
+    }
+    // W4-g58 retire: the chat-portrait sheets (`NPCID.Sets.NPCPortraits`,
+    // `NPCID.cs:5894-6073`). The C# requests each lazily on first draw
+    // (`BasicNPCPortrait.GetDrawData`, `NPCID.cs:77-80`); the port packs
+    // the ported roster's stems + `_shimmer` twins + the Zoologist `b`
+    // pair up front (the eager static-pack precedent, E-4b) — a missing
+    // file just leaves that portrait undrawn (the texture null-gate,
+    // `Main.cs:40331-40334`).
+    for stem in crate::ui::chat_portrait_data::packed_sheet_names() {
+        let name = format!("TownNPCs/Portraits/{stem}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
         }
     }
     // The projectile sprites (`TextureAssets.Projectile[type]`, the
@@ -1764,6 +1802,20 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
     for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+
+    // `TextureAssets.Coin[0..3]` (`AssetInitializer.cs:367-370`,
+    // `Images/Coin_<i>`): the copper/silver/gold/platinum coin SPIN strips
+    // (8 vertical frames each) `CoinSlot.DrawItemCoin` draws
+    // (`CoinSlot.cs:242-243`, `Frame(1, 8, 0, coinFrame)`). Distinct from
+    // the single-frame `Item_71..74` icons the inventory grid uses — the
+    // shop savings pile (`ItemSlot.DrawSavings` → `DrawMoney`,
+    // `Main.cs:41791`) draws these strips (W4-g58 D5).
+    for i in 0..4u16 {
+        let name = format!("Coin_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
             images.push(img);
         }
     }
@@ -2289,6 +2341,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
         362, 363, 364, 365, 602, 603, 608, 609,
         // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
+        // W4-g10 lane 3 — the town pets (637/638/656/670/678-684),
+        // appended last so the earlier slots keep their indexes.
+        637, 638, 656, 670, 678, 679, 680, 681, 682, 683,
+        // W4-g10 lane 3 batch 2 — the copper slime.
+        684,
     ];
 
 
@@ -2348,6 +2405,11 @@ pub struct Lookups {
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:367-370`):
+    /// the coin SPIN strips — 8 vertical frames each, the
+    /// `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242-243`). The shop
+    /// savings pile draws these (`ItemSlot.DrawSavings`, W4-g58 D5).
+    pub coin_strips: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -2586,6 +2648,21 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/UI/NPCHappiness` (`TextureAssets.NPCHappiness`,
+    /// `Main.cs:41792`): the shop happiness icon strip — 4 horizontal
+    /// frames, the band rides `currentShoppingSettings.PriceAdjustment`
+    /// (`:41794`).
+    pub ui_npc_happiness: Option<tr_render::SheetRect>,
+    /// `Images/TownNPCs/Portraits/Portrait_Window`
+    /// (`TextureAssets.NpcPortraitBackground`, `AssetInitializer.cs:650`):
+    /// the chat portrait's backdrop (`Main.DrawNPCPortrait`,
+    /// `Main.cs:40338`/`:40373`).
+    pub npc_portrait_background: Option<tr_render::SheetRect>,
+    /// The per-NPC chat-portrait sheets (`NPCID.Sets.NPCPortraits`,
+    /// `NPCID.cs:5894-6073`) keyed by sheet name (`Portrait_Merchant`,
+    /// `Portrait_Merchant_shimmer`, … — `ui::chat_portrait` resolves the
+    /// provider's name). The Detailed arm draws them (`Main.cs:40377`).
+    pub chat_portraits: std::collections::HashMap<String, tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2796,6 +2873,7 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            coin_strips: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -3296,6 +3374,20 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_603").copied(),
                 atlas.sheet("NPC_608").copied(),
                 atlas.sheet("NPC_609").copied(),
+                // W4-g10 lane 3 — the town pets' strips, in
+                // BESTIARY_NPC_SHEET_IDS' appended order.
+                atlas.sheet("NPC_637").copied(),
+                atlas.sheet("NPC_638").copied(),
+                atlas.sheet("NPC_656").copied(),
+                atlas.sheet("NPC_670").copied(),
+                atlas.sheet("NPC_678").copied(),
+                atlas.sheet("NPC_679").copied(),
+                atlas.sheet("NPC_680").copied(),
+                atlas.sheet("NPC_681").copied(),
+                atlas.sheet("NPC_682").copied(),
+                atlas.sheet("NPC_683").copied(),
+                // W4-g10 lane 3 batch 2 — the copper slime.
+                atlas.sheet("NPC_684").copied(),
             ],
 
 
@@ -3311,6 +3403,17 @@ atlas.sheet("NPC_442").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
+            npc_portrait_background: atlas.sheet("TownNPCs/Portraits/Portrait_Window").copied(),
+            chat_portraits: crate::ui::chat_portrait_data::packed_sheet_names()
+                .into_iter()
+                .filter_map(|name| {
+                    atlas
+                        .sheet(&format!("TownNPCs/Portraits/{name}"))
+                        .copied()
+                        .map(|s| (name, s))
+                })
+                .collect(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -3597,6 +3700,19 @@ atlas.sheet("NPC_442").copied(),
             rect.width,
             rect.height,
         ))
+    }
+
+    /// One frame of a coin SPIN strip (`CoinSlot.DrawItemCoin`,
+    /// `CoinSlot.cs:242-243`: `TextureAssets.Coin[coinType-71].Frame(1, 8,
+    /// 0, coinFrame)`). Returns `(uv, frame_w, frame_h)` — the frame is
+    /// `width × height/8` (`Utils.Frame`, `Utils.cs:1344-1349`). `kind` is
+    /// 0 copper .. 3 platinum; `frame` is the 0..7 spin row.
+    pub fn coin_strip_frame(&self, kind: usize, frame: i32) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.coin_strips.get(kind)?.as_ref()?;
+        let fw = rect.width;
+        let fh = rect.height / 8;
+        let uv = uv_rect(rect, self.atlas_size, 0, frame * fh as i32, fw, fh);
+        Some((uv, fw as f32, fh as f32))
     }
 
     /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
@@ -4303,6 +4419,27 @@ mod tests {
         // their sheets now arrive through the enumeration instead of the list.
         assert!(lookups.coin_uv(0).is_some());
         assert!(lookups.shuriken_uv().is_some());
+    }
+
+    /// W4-g58 D5: the coin SPIN strips (`TextureAssets.Coin[0..3]`,
+    /// `AssetInitializer.cs:367-370`) pack and slice into 8 vertical frames
+    /// (`CoinSlot.DrawItemCoin`, `CoinSlot.cs:242-243`: `Frame(1, 8, 0,
+    /// coinFrame)`). The shop savings pile draws these.
+    #[test]
+    fn the_coin_spin_strips_pack_and_slice_eight_frames() {
+        let (_, lookups) = content_lookups();
+        for kind in 0..4usize {
+            let rect = lookups.coin_strips[kind].expect("Coin_{kind} packs");
+            // Each frame is width × height/8; frame 0 and frame 7 stay
+            // inside the sheet and differ in V.
+            let (uv0, w0, h0) = lookups.coin_strip_frame(kind, 0).expect("frame 0");
+            let (uv7, w7, h7) = lookups.coin_strip_frame(kind, 7).expect("frame 7");
+            assert_eq!(w0, rect.width as f32);
+            assert_eq!(h0, (rect.height / 8) as f32);
+            assert_eq!((w0, h0), (w7, h7));
+            assert!(uv7[1] > uv0[1], "frame 7 sits below frame 0");
+            assert!(uv7[3] <= (rect.y + rect.height) as f32 / lookups.atlas_size.1 as f32 + 1e-6);
+        }
     }
 
     #[test]

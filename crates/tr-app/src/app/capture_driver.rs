@@ -110,7 +110,9 @@ impl App {
         };
         let effects = self.capture.update(context, &input, &info);
         for cue in effects.cues {
-            self.audio.play(cue);
+            // W4-d79 — the capture-interface cues are the menu cases 10/12
+            // (`CaptureInterface.cs:735`/:870), the single-voice pool.
+            self.audio.play_menu(cue);
         }
         if let Some(action) = effects.toolbar {
             self.run_capture_toolbar(action, &info);
@@ -139,18 +141,19 @@ impl App {
             ToolbarAction::SelectMode(mode) => {
                 // `SoundEngine.PlaySound(12)` + the mode pick + ToggleCamera
                 // (`:1096-1123`).
-                self.audio.play("Menu_Tick");
+                self.audio.play_menu("Menu_Tick");
                 self.capture.interface.selected_mode = mode;
                 if let Some(cue) = self.capture.interface.toggle_camera(true) {
-                    self.audio.play(cue);
+                    // W4-d79 — ToggleCamera's 10/11 edge (`:517`), the pool.
+                    self.audio.play_menu(cue);
                 }
             }
             ToolbarAction::ResetFocus => {
-                self.audio.play("Menu_Tick");
+                self.audio.play_menu("Menu_Tick");
                 self.capture.interface.reset_focus();
             }
             ToolbarAction::ToggleMapFullscreen => {
-                self.audio.play("Menu_Tick");
+                self.audio.play_menu("Menu_Tick");
                 if let Some(m) = self.map.as_mut() {
                     let open = !m.open;
                     m.set_open(open);
@@ -160,12 +163,13 @@ impl App {
                 // `Utils.OpenFolder(SavePath/Captures)` (`:1127`) — the port
                 // has no folder-open seam; the cue plays, the action is a
                 // documented no-op (ANALYSIS).
-                self.audio.play("Menu_Tick");
+                self.audio.play_menu("Menu_Tick");
             }
             ToolbarAction::Close => {
                 // `ToggleCamera(false)` + blockMouse (`:1129-1134`).
                 if let Some(cue) = self.capture.interface.toggle_camera(false) {
-                    self.audio.play(cue);
+                    // W4-d79 — ToggleCamera's 10/11 edge (`:517`), the pool.
+                    self.audio.play_menu(cue);
                 }
             }
         }
@@ -210,7 +214,10 @@ impl App {
             (self.screen_size().0 / self.zoom, self.screen_size().1 / self.zoom),
         );
         let cue = self.capture.interface.start_camera(capture_settings, full_screen);
-        self.audio.play(cue);
+        // W4-d79 — the shutter (`CaptureInterface.cs:1592`, `SoundID.Camera`
+        // = 40, case 40 `LegacySoundPlayer.cs:1359-1368`): the single-voice
+        // Stop/re-create pool, draw-free.
+        self.audio.play_single_voice(cue, -1.0, -1.0);
     }
 
     /// `CaptureManager.Instance.DrawTick()` (`CaptureManager.cs:99-103`) at

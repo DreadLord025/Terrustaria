@@ -987,6 +987,32 @@ impl NpcKind {
             // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
+            // W4-g10 lane 3 — the town pets ride their VANILLA ids (the
+            // pumpkin/frost precedent): 637/638/656/670/678-684 are all
+            // free in the protocol space (the port-local bands stop at
+            // 353) and the housing/bestiary/`net_id` consumers key on the
+            // vanilla `NPC.type`, so one id serves the wire and the type.
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::TownBunny => 656,
+            NpcKind::TownSlimeBlue => 670,
+            NpcKind::TownSlimeGreen => 678,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
+            NpcKind::TownSlimeCopper => 684,
+            // W4-d120 — the unclaimed chatter kinds' port-local band
+            // (the claim doc `tools/_d120_claim.md`; the vanilla
+            // 142/160/178/209 collide with the crawltipede/Stylist/
+            // kobold/SwampZombie slots above, 579 is free but the family
+            // keeps one band). Free on main + every pushed sibling.
+            NpcKind::SantaClaus => 241,
+            NpcKind::Truffle => 242,
+            NpcKind::Steampunker => 243,
+            NpcKind::Cyborg => 244,
+            NpcKind::BartenderUnconscious => 245,
         }
     }
 
@@ -1616,6 +1642,26 @@ impl NpcKind {
             // W4-c10 roster tail — the twelve critters' vanilla ids
             // (`to_u16` above).
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
+            // W4-d120 — the chatter kinds' port-local band (`to_u16` above).
+            241 => NpcKind::SantaClaus,
+            242 => NpcKind::Truffle,
+            243 => NpcKind::Steampunker,
+            244 => NpcKind::Cyborg,
+            245 => NpcKind::BartenderUnconscious,
+            // W4-g10 lane 3 — the town pets decode at their vanilla ids
+            // (`to_u16` above; `NPCID.cs:11951`/`:11953`/`:11989`/
+            // `:12017`/`:12033-12043`).
+            637 => NpcKind::TownCat,
+            638 => NpcKind::TownDog,
+            656 => NpcKind::TownBunny,
+            670 => NpcKind::TownSlimeBlue,
+            678 => NpcKind::TownSlimeGreen,
+            679 => NpcKind::TownSlimeOld,
+            680 => NpcKind::TownSlimePurple,
+            681 => NpcKind::TownSlimeRainbow,
+            682 => NpcKind::TownSlimeRed,
+            683 => NpcKind::TownSlimeYellow,
+            684 => NpcKind::TownSlimeCopper,
             _ => return None,
         })
     }
@@ -1650,6 +1696,13 @@ impl NpcKind {
                 | NpcKind::Princess
                 | NpcKind::DyeTrader
                 | NpcKind::PartyGirl
+                // W4-d120 — the four town kinds' `townNPC = true` rows
+                // (`NPC.cs:10793`/`:11005`/`:11254`/`:11684`): the
+                // save/resident-count set (the M4-TOWN-19 precedent).
+                | NpcKind::SantaClaus
+                | NpcKind::Truffle
+                | NpcKind::Steampunker
+                | NpcKind::Cyborg
         )
     }
 
@@ -1869,6 +1922,14 @@ impl NpcKind {
                 | NpcKind::Painter
                 | NpcKind::WitchDoctor
         )
+        // W4-g10 lane 3 — the town pets are housed town NPCs too
+        // (`townNPC = true`, `housingCategory 1`): the housing scans,
+        // the scene-metrics count (`SceneMetrics.cs:739` counts every
+        // `townNPC`), the Rotten Egg's refusal (`Projectile.cs:23572`)
+        // and the world-file town block (`WorldFile.cs:1717`) all read
+        // the flag. They are NOT residents ([`is_town_resident`] stays
+        // pet-free — `CollectTaxes`/the arrival ladder exclude them).
+        || self.is_town_pet()
     }
 
     /// `NPC.isLikeATownNPC` (`NPC.cs:6856-6864`: `townNPC || type == 453` —
@@ -1906,7 +1967,44 @@ impl NpcKind {
                     // W4-d40: the Skeleton Merchant's `isLikeATownNPC` row
                     // (`NPC.cs:6860`: `type == 453`).
                     | NpcKind::SkeletonMerchant
+                    // W4-d120 — the four town kinds' `townNPC` flag
+                    // (`NPC.cs:10793`/`:11005`/`:11254`/`:11684`); the
+                    // talk/melee/net consumers read this set.
+                    | NpcKind::SantaClaus
+                    | NpcKind::Truffle
+                    | NpcKind::Steampunker
+                    | NpcKind::Cyborg
             )
+            // W4-g10 lane 3 — the town pets write `townNPC = true` too
+            // (`NPC.cs:17209`/`:17297`/`:17483`/`:17596`), so
+            // `isLikeATownNPC` holds for them (the stat ladder's
+            // `:53014` gate + the door-open gate read it).
+            || self.is_town_pet()
+    }
+
+    /// `NPCID.Sets.IsTownPet` (`ID/NPCID.cs:10118`: 637/638/656/670/
+    /// 678-684) — the kind-level twin of `npc_ai_town::is_town_pet`
+    /// (which keys on the net id). The pets are town NPCs for the
+    /// `townNPC`-flag consumers (housing, the scene-metrics count, the
+    /// Rotten Egg's refusal, the world-file town block) but NOT for the
+    /// resident counts (`CollectTaxes` `Player.cs:24145` and the
+    /// arrival ladder exclude them) nor the party
+    /// (`BirthdayParty.CanNPCParty` `:66-69`).
+    pub fn is_town_pet(self) -> bool {
+        matches!(
+            self,
+            NpcKind::TownCat
+                | NpcKind::TownDog
+                | NpcKind::TownBunny
+                | NpcKind::TownSlimeBlue
+                | NpcKind::TownSlimeGreen
+                | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
+        )
     }
 
     /// `NPC.friendly` (`NPC.cs:8519`'s default `false` plus the `SetDefaults`
@@ -1926,6 +2024,10 @@ impl NpcKind {
                     | NpcKind::WebbedStylist
                     | NpcKind::SleepingAngler
                     | NpcKind::SleepingGolfer
+                    // W4-d120 — the bound Tavernkeep's `friendly = true`
+                    // row (`NPC.cs:16556`), NOT townNPC (`Sets.BoundTownNPCs`,
+                    // `NPCID.cs:10441`).
+                    | NpcKind::BartenderUnconscious
             )
     }
 
@@ -2319,6 +2421,20 @@ impl NpcKind {
             NpcKind::Princess => "NPC_Hit_1",
             NpcKind::DyeTrader => "NPC_Hit_1",
             NpcKind::PartyGirl => "NPC_Hit_1",
+            // W4-g10 lane 3 — the town pets: `SoundID.NPCHit1`
+            // (`NPC.cs:17221` for 637/638, `:17305` for 656, `:17491`/
+            // `:17604` for the slime rows).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Hit_1",
             NpcKind::QueenBee => "NPC_Hit_1",
             NpcKind::SkeletronHead => "NPC_Hit_2",
             NpcKind::WallOfFlesh => "NPC_Hit_8",
@@ -2715,6 +2831,12 @@ impl NpcKind {
             // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
             // `:14311`/`:14326`/`:14340`, the `:14584` range row).
             // E8 merge: the 12-critter hit rows are c8/d40's above.
+            // W4-d120 — SetDefaults HitSound rows: 142/160/178 NPCHit1
+            // (`NPC.cs:10801`/`:11013`/`:11262`), 209 NPCHit4 (`:11690`),
+            // 579 NPCHit1 (`:16563`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => "NPC_Hit_1",
+            NpcKind::Cyborg => "NPC_Hit_4",
+            NpcKind::BartenderUnconscious => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2924,6 +3046,20 @@ impl NpcKind {
             NpcKind::Princess => "NPC_Killed_6",
             NpcKind::DyeTrader => "NPC_Killed_1",
             NpcKind::PartyGirl => "NPC_Killed_1",
+            // W4-g10 lane 3 — the town pets: `SoundID.NPCDeath6`
+            // (`NPC.cs:17222` for 637/638, `:17306` for 656, `:17492`/
+            // `:17605` for the slime rows).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Killed_6",
             NpcKind::QueenBee => "NPC_Killed_66",
             NpcKind::SkeletronHead => "NPC_Killed_2",
             NpcKind::WallOfFlesh => "NPC_Killed_10",
@@ -3321,6 +3457,12 @@ impl NpcKind {
             // squeak; every other critter `NPCDeath1`.
             // E8 merge: the GoldMouse NPCDeath4 + the 12-critter death
             // rows are d40/c8's above (the dup drops).
+            // W4-d120 — SetDefaults DeathSound rows: 142/160/178/209
+            // NPCDeath1 (`NPC.cs:10802`/`:11014`/`:11263`/`:11692`),
+            // 579 NPCDeath6 (`:16564`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+            }
+            NpcKind::BartenderUnconscious => "NPC_Killed_6",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3814,6 +3956,20 @@ impl NpcKind {
             NpcKind::Duck | NpcKind::DuckWhite => 7,
             // E8 merge: the c10 12-critter aiStyle tail dropped - d40/c8's
             // rows above own them (the dup drops; the wiring composes).
+            // W4-g10 lane 3 — the town pets' `aiStyle = 7` rows: the
+            // 637/638 arm (`NPC.cs:17217`), 656 (`:17301`), 670
+            // (`:17487`), the 678-684 arm (`:17600`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -4311,6 +4467,10 @@ impl NpcKind {
             // four `this.aiStyle = 68;` rows of the SetDefaults census.
             // E8 merge: Seagull2/Grebe2's 68 rows are d42's above.
             NpcKind::Duck2 | NpcKind::DuckWhite2 => 68,
+            // W4-d120 — the four town kinds' aiStyle 7 (`NPC.cs:10797`/
+            // `:11009`/`:11258`/`:11688`); the bound Tavernkeep's aiStyle 0
+            // (`:16560`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => 7,
         }
     }
 
@@ -5214,6 +5374,28 @@ impl NpcKind {
                 (28.0, 22.0)
             }
             // E8 merge: the c10 12-critter size tail dropped (d40/c8's rows).
+            // W4-g10 lane 3 — the town pets' `SetDefaults` boxes: the
+            // 637/638 arm's 18x28 base with the 637-only 20-height
+            // override (`NPC.cs:17211-17216`), 656 18x20 (`:17299-17300`),
+            // 670 18x20 (`:17485-17486`), the 678-684 arm 18x20
+            // (`:17598-17599`).
+            NpcKind::TownCat => (18.0, 20.0),
+            NpcKind::TownDog => (18.0, 28.0),
+            NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => (18.0, 20.0),
+            // W4-d120 — SetDefaults width/height rows: the four town kinds
+            // 18x40 (`NPC.cs:10795-10796`/`:11007-11008`/`:11256-11257`/
+            // `:11686-11687`), the bound Tavernkeep 34x8 (`:16558-16559`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+                (18.0, 40.0)
+            }
         }
     }
 
@@ -5259,6 +5441,14 @@ impl NpcKind {
             NpcKind::PartyGirl => 208,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
+            // W4-d120 — the chatter kinds' vanilla types (`NPCID.cs:10961`/
+            // `:10997`/`:11033`/`:11095`/`:11835`); the protocol ids ride
+            // the port-local 241-245 band (`to_u16`).
+            NpcKind::SantaClaus => 142,
+            NpcKind::Truffle => 160,
+            NpcKind::Steampunker => 178,
+            NpcKind::Cyborg => 209,
+            NpcKind::BartenderUnconscious => 579,
             NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
             // The Destroyer head keeps its vanilla type; the body/tail/Probe
             // have NO hand row — like every folded segment family (Devourer/
@@ -5574,8 +5764,15 @@ impl NpcKind {
             | NpcKind::Stylist
             | NpcKind::Zoologist
             | NpcKind::Princess
-            | NpcKind::PartyGirl => 23,
+            | NpcKind::PartyGirl
+            // W4-d120 — the Truffle/Steampunker's 23-row strips
+            // (`Main.npcFrameCount[160/178]`, `Main.cs:67082`).
+            | NpcKind::Truffle
+            | NpcKind::Steampunker => 23,
             NpcKind::Dryad => 21,
+            // W4-d120 — Santa's 25 / the Cyborg's 26 (`Main.cs:67082`).
+            NpcKind::SantaClaus => 25,
+            NpcKind::Cyborg => 26,
             NpcKind::GoblinArcher => 21,
             // W4-d37 — the Pirate (229) rides the humanoid-group arm
             // (`NPC.cs:68590`'s case list) on the 26-row town strip
@@ -5604,6 +5801,20 @@ impl NpcKind {
             // W4-d42 - the humanoid-group case list carries 630
             // (`NPC.cs:68618`), 16 rows (`Main.npcFrameCount[630]`).
             NpcKind::BloodMummy => 16,
+            // W4-g10 lane 3 — the town pets' `Main.npcFrameCount` rows:
+            // 637/638 = 28, 656 = 27, the town slimes 670/678-684 = 14
+            // (`Main.cs`'s npcFrameCount init; `FindFrame`'s pet branches
+            // `NPC.cs:68610-69655` wrap the walk band on these strips).
+            NpcKind::TownCat | NpcKind::TownDog => 28,
+            NpcKind::TownBunny => 27,
+            NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 14,
             _ => 1,
         }
     }
@@ -5635,13 +5846,34 @@ impl NpcKind {
             | NpcKind::Clothier
             | NpcKind::Wizard
             | NpcKind::Stylist
-            | NpcKind::Princess => 7,
+            | NpcKind::Princess
+            // W4-d120 — the Truffle's 7 attack rows (`NPCID.cs:10464`).
+            | NpcKind::Truffle => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
             // W4-d34: the Old Man's `ExtraFramesCount[37] = 5` (`NPCID.cs:10464`).
             NpcKind::OldMan => 5,
             // W4-d37 — the Pirate (229) reserves 10 attack rows
             // (`NPCID.cs:10464`'s ExtraFramesCount set: `229, 10`).
             NpcKind::Pirate => 10,
+            // W4-g10 lane 3 - the town pets' `ExtraFramesCount` rows
+            // (`NPCID.cs:10464`): 637 = 18, 638 = 11, 656 = 20, the town
+            // slimes = 6 - the reserved bottom rows the pet idle poses
+            // (`NPC.cs:68680-68917`'s state-20/21/22 arms) animate through.
+            NpcKind::TownCat => 18,
+            NpcKind::TownDog => 11,
+            NpcKind::TownBunny => 20,
+            NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 6,
+            // W4-d120 - Santa/Steampunker 9, the Cyborg 10
+            // (`NPCID.cs:10464`'s ExtraFramesCount rows).
+            NpcKind::SantaClaus | NpcKind::Steampunker => 9,
+            NpcKind::Cyborg => 10,
             _ => 0,
         }
     }
@@ -6404,6 +6636,25 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 5,
             // E8 merge: the c10 12-critter lifeMax tail dropped (d40/c8's rows).
+            // W4-g10 lane 3 - the town pets' `lifeMax = 250` rows: the
+            // 637/638 arm (`NPC.cs:17220`), 656 (`:17304`), 670
+            // (`:17490`), the 678-684 arm (`:17603`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 250,
+            // W4-d120 - SetDefaults lifeMax rows: 142/160/178/579 250
+            // (`NPC.cs:10800`/`:11012`/`:11261`/`:16562`), 209 500
+            // (`:11691`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,
+            NpcKind::Cyborg => 500,
         }
     }
 
@@ -7059,6 +7310,27 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
             // E8 merge: the c10 12-critter damage tail dropped (d40/c8's rows).
+            // W4-g10 lane 3 - the town pets' `damage = 10` rows: the
+            // 637/638 arm (`NPC.cs:17218`), 656 (`:17302`), 670
+            // (`:17488`), the 678-684 arm (`:17601`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 10,
+            // W4-d120 - SetDefaults damage rows: all five write 10
+            // (`NPC.cs:10798`/`:11010`/`:11259`/`:11689`/`:16561`).
+            NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg
+            | NpcKind::BartenderUnconscious => 10,
         }
     }
 }

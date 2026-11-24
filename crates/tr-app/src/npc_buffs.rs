@@ -848,6 +848,27 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DuckWhite
         | NpcKind::DuckWhite2 => &[31],
         // E8 merge: the c10 12-critter {31} tail dropped (d40/c8's rows above).
+        // W4-g10 lane 3 - the town pets: `NPCID.cs`'s DebuffImmunitySets has
+        // no row for 637/638/656/670/678-684 - the null-row else-branch, no
+        // immunity (`NPC.cs:17826-17832`), same as the town residents.
+        NpcKind::TownCat
+        | NpcKind::TownDog
+        | NpcKind::TownBunny
+        | NpcKind::TownSlimeBlue
+        | NpcKind::TownSlimeGreen
+        | NpcKind::TownSlimeOld
+        | NpcKind::TownSlimePurple
+        | NpcKind::TownSlimeRainbow
+        | NpcKind::TownSlimeRed
+        | NpcKind::TownSlimeYellow
+        | NpcKind::TownSlimeCopper => &[],
+        // W4-d120 - all five carry `SpecificallyImmuneTo {31}` (the
+        // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
+        // 142/160/178/209/579).
+        NpcKind::SantaClaus
+        | NpcKind::Truffle
+        | NpcKind::Steampunker
+        | NpcKind::Cyborg
     }
 }
 

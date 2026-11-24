@@ -1575,7 +1575,7 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                 }
                 app.ingame_options.category = c;
                 // `SoundEngine.PlaySound(10)` (`:220`).
-                app.audio.play("Menu_Open");
+                app.audio.play_menu("Menu_Open");
             }
             other => {
                 app.ingame_options.pending = Some(other);
@@ -1583,11 +1583,11 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                     LeftAction::Close => {
                         app.ingame_options.close();
                         // `Close()`'s `SoundEngine.PlaySound(11)` (`:96`).
-                        app.audio.play("Menu_Close");
+                        app.audio.play_menu("Menu_Close");
                     }
                     LeftAction::Achievements => {
                         app.ingame_options.close();
-                        app.audio.play("Menu_Close");
+                        app.audio.play_menu("Menu_Close");
                         app.achievements_open = true;
                     }
                     // `:252-256`: `Close()` + `IngameFancyUI.OpenKeybinds()`
@@ -1598,7 +1598,7 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                     // openers use; `close_menu` copies the edits back.
                     LeftAction::Keybinds => {
                         app.ingame_options.close();
-                        app.audio.play("Menu_Close");
+                        app.audio.play_menu("Menu_Close");
                         let mut m = crate::menu::Menu::new(
                             app.settings.clone(),
                             app.player_name.clone(),
@@ -1650,7 +1650,7 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                     flip_toggle(&mut app.settings, t);
                     app.apply_settings();
                     // `flag4 && rightHover != -1` → `PlaySound(12)` (`:171-174`).
-                    app.audio.play("Menu_Tick");
+                    app.audio.play_menu("Menu_Tick");
                     return true;
                 }
             }
@@ -1661,7 +1661,7 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                 ) {
                     advance_cycle(&mut app.settings, c);
                     app.apply_settings();
-                    app.audio.play("Menu_Tick");
+                    app.audio.play_menu("Menu_Tick");
                     return true;
                 }
             }

@@ -75,15 +75,47 @@ pub(crate) const TAX_CAP: i32 = 250_000;
 
 /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
 /// Collector's right-click pays the accrued tax purse out in coins — the
-/// platinum→gold→silver→copper split at the player's centre, then the
-/// purse empties. The happiness adjustment scales the payout
-/// (`:40184`); the port's town NPCs carry the plain 1.0.
+/// platinum→gold→silver→copper split at the PLAYER's centre
+/// (`Main.LocalPlayer.Center`, `:40192`/`:40199`/`:40206`/`:40215`), then
+/// the purse empties. The happiness adjustment DIVIDES the payout
+/// (`:40184`: `(int)((float)taxMoney / currentShoppingSettings.
+/// PriceAdjustment)`) — the TALK-OPEN LATCH (`Player.cs:4389`), the same
+/// value `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0
+/// clamp there is display-only). A happy collector (adjustment < 1) pays
+/// MORE than the accrued purse; an unhappy one pays less. His roster rows
+/// are live: the biome table (`PersonalityDatabasePopulator.cs:47-51`,
+/// Like Snow / Dislike Hallow) + the neighbor switch
+/// (`AllPersonalitiesModifier.cs:321-342`, Merchant love / PartyGirl like /
+/// Demolitionist + Mechanic dislike / Santa hate). The paid arm answers
+/// `Lang.dialog(Main.rand.Next(380, 384))` (`:40217`) AFTER the coin
+/// split, BEFORE the purse zero (`:40218`); the empty purse answers
+/// `Next(390, 401)` (`:40222`). Both draws ride the bare-`Main.rand`
+/// stand-in — the click runs outside every swap (S1-A-11 §4). The
+/// portrait hop (`:40224`) is g58's. (batch-L: g58's latch-divide +
+/// player-centre body per research/68 §4 — f37's plain-1.0 twin
+/// superseded — with f37's dialog-tail census kept.)
 pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40224` — the tail of BOTH the
+    // purse>0 and the empty-purse arms).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     if app.world.tax_money <= 0 {
+        // `:40220-40223` — the empty-purse refusal: one of the eleven
+        // "come back later" lines.
+        let roll = app.rngs.global().next_range(390, 401);
+        app.npc_chat_text = crate::lang::dialog(roll);
         return true;
     }
-    let mut num = app.world.tax_money;
-    let (px, py) = app.npcs[npc_idx].center();
+    // `:40184` — the latched-adjustment divide (float divide, int trunc).
+    let mut num =
+        (app.world.tax_money as f32 / app.shopping_settings.price_adjustment) as i32;
+    // The spawn origin: `Main.LocalPlayer.Center` (`:40192`), NOT the
+    // collector's box — the headless no-player tests fall back to his
+    // centre (the vanilla always has a local player).
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or_else(|| app.npcs[npc_idx].center());
     while num > 0 {
         let (kind, stack) = if num > 1_000_000 {
             let stack = num / 1_000_000;
@@ -114,6 +146,9 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
             Vec2::new(px, py),
         );
     }
+    // `:40217` — the paid line draws AFTER the split, BEFORE the zero.
+    let roll = app.rngs.global().next_range(380, 384);
+    app.npc_chat_text = crate::lang::dialog(roll);
     app.world.tax_money = 0;
     true
 }
@@ -179,8 +214,12 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             if app.open_container() == -1 {
                 crate::chest::play_menu_sound(app, 11);
             }
-            app.talk_npc = None;
+            app.set_talk_npc(None); // `SetTalkNPC(-1)` — the settings reset rides it
             app.npc_chat_text.clear();
+            // `Player.SetTalkNPC(-1)` (`Player.cs:4383-4386`):
+            // `currentShoppingSettings = NotInShop` — the mood latch resets
+            // to 1.0 (W4-f37; the shop-open latch rides the same field).
+            app.shop_mood = 1.0;
         }
     }
     // The open arm's gates: a fresh press, no inventory panel over the world.
@@ -207,11 +246,56 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
-    app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // `:43081` - `player.SetTalkNPC(i)`: the seam runs the f37 mood capture
+    // + the g58 report/settings latch in ONE pass (research/68 §4 - the
+    // Princess head draws once per talk change on `NamedRngs::global()`);
+    // f37's inline capture here folded into the seam.
+    app.set_talk_npc(Some(i));
+    // W4-d79 - the orphaned Chat emitter (`Main.cs:43083`,
+    // `SoundEngine.PlaySound(24)` - UNPOSITIONED): case 24
+    // (`LegacySoundPlayer.cs:957-962`) is Volume/Pan only, NO draws, the
+    // slot overwrites WITHOUT a Stop. Draw-free, so the GetChat rolls
+    // below keep their stream positions.
+    app.audio.play_single_voice("Chat", -1.0, -1.0);
+    // `NPC.GetChat`'s nextDialogue arm (`NPC.cs:93768-93771`): the Party
+    // Girl's FreeCakeDialogue (`ConditionalDialogue.cs:50-64`) - the only
+    // registered conditional. The 10-tick CheckDialogue refresh
+    // (`NPC.cs:90519-90532`) collapses to the talk: the condition is the
+    // `NPC.freeCake` latch a natural party sets (`BirthdayParty.cs:106`).
+    // The gift rides `QuickSpawnItem` → `GetOrDropItem` (`Player.cs:7186-
+    // 7197`): the inventory slot walk first, the overflow drop at the
+    // player centre (the bobber-catch shape); the text's `Next(1, 4)`
+    // draw fires AFTER the gift (`:60-63`).
+    if app.npcs[i].kind == NpcKind::PartyGirl && app.world_events.free_cake {
+        app.world_events.free_cake = false;
+        // The cake (3750) stacks to `Item.CommonMaxStack` = 9999 (case 3750
+        // writes no maxStack, `Item.cs:33214-33226` → `:49017`) and carries
+        // no prefix (the Item-variant QuickSpawnItem - no `Prefix(-1)`
+        // roll); the overflow drop's `RequestNewItem` keeps prefix 0.
+        let slot = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0);
+        match slot {
+            Some(s) => app.inventory[s].count += 1,
+            None => {
+                if let Some(p) = app.player.as_ref() {
+                    let (cx, cy) = p.center();
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut app.items,
+                        app.rngs.global(),
+                        3750,
+                        1,
+                        Vec2::new(cx, cy),
+                    );
+                }
+            }
+        }
+        let n = app.rngs.global().next_range(1, 4);
+        let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
+        app.npc_chat_text = text.clone(); // `:43082`
+        return Some(text);
+    }
     // The context off the live state. The world flags the port does not
-    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // carry yet (`Main.remixWorld`, `WorldGen.crimson`) default off —
+    // each noted at its field.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -219,26 +303,69 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     let slime_rain = app.world.slime_rain;
     let hard_mode = app.world.hard_mode;
     let moon_phase = app.world.moon_phase;
-    let raining = app.world.raining;
-    let (life, life_max, deaths) = app
+    // `Main.raining` — the LIVE rain latch (`Rain.is_raining`, the
+    // `Main.cs:64649/:64725` writers); `world.raining` only mirrors it at
+    // save (`saveglue.rs:99`), so the talk reads the event state.
+    let raining = app.rain.is_raining();
+    let (life, life_max, deaths, defense, head) = app
         .player
         .as_ref()
-        .map(|p| (p.hp, p.max_hp, p.deaths_pve as i32))
-        .unwrap_or((0, 0, 0));
+        .map(|p| {
+            // `Player.head` (`Player.cs:35765`): the vanity head's slot when
+            // one is worn, else the armor head's — `GetEffectiveArmor(10/0)
+            // .headSlot`, -1 for air (`Item.cs:48998`'s SetDefaults row).
+            // The port has no loadouts, so the slot itself is the source.
+            let vanity = crate::registry::get(app.equip.armor[10].kind)
+                .map_or(-1, |d| d.head_slot);
+            let head = if vanity >= 0 {
+                vanity
+            } else {
+                crate::registry::get(p.equipped[0]).map_or(-1, |d| d.head_slot)
+            };
+            (p.hp, p.max_hp, p.deaths_pve as i32, p.stat_defense, head)
+        })
+        .unwrap_or((0, 0, 0, 0, -1));
+    // `Player.NormalizedLuck` (`Player.cs:4107-4122`) — the clamped ±cap
+    // ratio the wizard's luck-band gate reads.
+    let luck = app
+        .player
+        .as_ref()
+        .map_or(0.0, |p| crate::npc_chat::normalized_luck(p.luck()));
+    // `Player.Male` (`Player.cs:3405-3409` — `PlayerVariantID.Sets.Male`):
+    // the session draft's cloth style decides; a fresh spawn is variant 0
+    // (male), the same default the render pass documents.
+    let male = app
+        .session_draft
+        .as_ref()
+        .map_or(true, |d| crate::ui::char_creation::is_male(d.skin_variant));
     let angler_quests = app
         .player
         .as_ref()
         .map(|p| p.angler_quests_finished)
         .unwrap_or(0);
     let golfer_score = app.player.as_ref().map(|p| p.golfer_score).unwrap_or(0);
-    // `Player.HasItem(5275)` — the cola the Dryad's line asks about; the
-    // port scans the inventory slots (no equipment scans yet).
-    let has_cola = app.inventory.iter().any(|s| s.kind == 5275);
+    // `Player.HasItem(5275)` (`Player.cs:55894-55904`): the inventory
+    // 0..58 walk with `stack > 0` — the port's grid + trash (the cola is
+    // neither coin nor ammo, so those slots can never hold it).
+    let has_cola = app
+        .inventory
+        .iter()
+        .chain(std::iter::once(&app.equip.trash))
+        .any(|s| s.kind == 5275 && s.count > 0);
     // `DD2Event.DownedInvasionT1/2` — the persisted tier-victory latches
     // (S1-E-12c), NOT the per-run wave-boss death latches.
     let dd2_t1 = app.world.dd2_downed_t1;
     let dd2_t2 = app.world.dd2_downed_t2;
+    let dd2_t3 = app.world.dd2_downed_t3;
     let dd2_ongoing = app.world.dd2_event_ongoing;
+    // The event-text gates (`NPC.cs:94860-94884`): the graveyard zone,
+    // `BirthdayParty.PartyIsUp`, the rain (not storm), the happy windy day
+    // and the storm clock — all live App state now.
+    let zone_graveyard = app.scene_metrics.zone_graveyard;
+    let party_is_up = crate::world_events::party_is_up(&app.world_events);
+    let windy_day = app.wind.happy_windy_day;
+    let storming = app.wind.storming;
+    let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
     let rng = app.rngs.global();
     let mut draw = |n: i32| rng.next_max(n);
     let mut ctx = crate::npc_chat::ChatContext {
@@ -253,29 +380,30 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         moon_phase,
         remix_world: false,    // `Main.remixWorld` — no remix flag in the port
         raining,
-        storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
-        windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
-        zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        storming,              // `Main.IsItStorming` — the wind storm latch
+        windy_day,             // `Main.IsItAHappyWindyDay` — the wind day latch
+        zone_graveyard,        // `Player.ZoneGraveyard` — the scene metrics
+        party_is_up,           // `BirthdayParty.PartyIsUp` (S1-F-14)
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        downed_moonlord: app.world.downed_moon_lord, // `NPC.downedMoonlord`
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
+        dd2_downed_t3: dd2_t3,
         dd2_ongoing,
-        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        lanterns_up, // `LanternNight.LanternsUp` (S1-F-14)
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
-        player_defense: 0,   // `Player.statDefense` — no defense field yet
-        player_male: true,   // `Player.Male` — the spawn default
-        player_head: 0,      // `Player.head` — no armor slots yet
+        player_defense: defense, // `Player.statDefense` (M3-EQUIP-2)
+        player_male: male,       // `Player.Male` — the session draft's cloth style
+        player_head: head,       // `Player.head` — the vanity/armor head slot
         player_deaths_pve: deaths,
-        player_luck: 0.0,    // `Player.NormalizedLuck` — no luck feed yet
+        player_luck: luck,       // `Player.NormalizedLuck` — the clamped ±cap ratio
         player_has_cola: has_cola,
-        angler_quest_finished: false, // `Main.anglerQuestFinished` — unported
+        angler_quest_finished: app.world.angler_quest_finished, // `Main.anglerQuestFinished`
         angler_quests_finished: angler_quests,
         golfer_score,
     };
@@ -398,13 +526,44 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }
     // The Tax Collector's right arm (`NPCInteractions.cs:221-244`'s
     // `TaxCollectorCollectTaxes`): he offers no shop — the click pays the
-    // tax purse out (`Main.NPCChatText_DoTaxCollector`).
+    // tax purse out (`Main.NPCChatText_DoTaxCollector`). The vanilla
+    // button exists only while TALKING (`Condition: TalkNPCType == 441`,
+    // `:223-226`), so the payout reads the talk-open latch
+    // (`Player.cs:4389`); the port's collapse latches on the first press
+    // (`talk_to_npc` ran ahead of this dispatch) and the same-NPC re-click
+    // falls through WITHOUT re-latching (`Main.cs:43077`). A direct call
+    // with no latch (the headless tests) keeps `NotInShop`'s 1.0.
     if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
+        if app.talk_npc != Some(i) {
+            app.set_talk_npc(Some(i)); // the collapsed first-press latch
+        }
         return tax_collector_payout(app, i);
     }
+    // The Dye Trader's Strange Plants turn-in (`NPCInteractions.cs:443-463`'s
+    // `DyeTraderRarePlant` → `Main.NPCChatText_DyeTraderRarePlant`,
+    // `Main.cs:40002-40020`): the button collapses onto the right-click (the
+    // Angler/Nurse treatment) — a plant in hand trades for a dye reward, an
+    // empty hand draws the NoPlant line. The button's hard-mode `Condition`
+    // (`:445-452`) is a UI gate; the `Interact` body carries none, so the
+    // collapse runs unconditionally like the Angler turn-in's.
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::DyeTrader && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        return dye_trader_turn_in(app, i);
+    }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
-    // — the port collapses them onto the right-click).
-    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+    // — the port collapses them onto the right-click). The cost reads the
+    // TALK-OPEN LATCH (`App.shopping_settings`, `Player.cs:4389`) — the
+    // first press latched through `talk_to_npc`; the same-NPC re-click
+    // falls through here WITHOUT re-latching, exactly the C# button reading
+    // `currentShoppingSettings` (`Main.GetNurseHealCost`, `Main.cs:40100`).
+    let Some(_nurse_idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && n.kind == NpcKind::Nurse && {
             let (w, h) = n.size();
             world_pos.x >= n.x
@@ -415,7 +574,11 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) else {
         return try_open_town_shop_at_cursor(app, world_pos);
     };
-    app.nurse_heal(nurse_idx)
+    let healed = app.nurse_heal();
+    // `Main.NPCChatText_DoNurseHeal`'s tail (`Main.cs:40177`): the hop is
+    // UNCONDITIONAL — every arm (paid, short purse, nothing to heal).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
+    healed
 }
 
 /// `Main.CanStartInvasion` (`Main.cs:64414-64432`): `invasionType != 0`
@@ -622,7 +785,25 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
-        _ => return None,
+        // W4-d120 final census: the claimed kinds' registry rows —
+        // `Shop(142, 9)`/`Shop(160, 10)`/`Shop(178, 11)`/`Shop(209, 14)`
+        // (`:496-501`). The STOCK for 9/10/11/14 is d122's lane (its
+        // shop.rs already carries the four cases, `Chest.cs:2091-2135`/
+        // `:2360`); until it merges these indices resolve empty stock.
+        NpcKind::SantaClaus => 9,
+        NpcKind::Truffle => 10,
+        NpcKind::Steampunker => 11,
+        NpcKind::Cyborg => 14,
+        // The sibling lanes' kinds (type-keyed arms' shop twins):
+        // `Shop(229, 17)` (`:504`, d37's Pirate), `Shop(453, 20)`
+        // (`:507`, d40's SkeletonMerchant). `Shop(550, 21)` (`:508`)
+        // is d122's row (its shop-currency lane lands the Tavernkeep
+        // mapping WITH the medal stock) — not duplicated here.
+        _ => match kind.cs_id() {
+            229 => 17,
+            453 => 20,
+            _ => return None,
+        },
     })
 }
 
@@ -704,6 +885,8 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
 /// decrement, the `anglerQuestsFinished++` and the reward
 /// (`Player.GetAnglerReward`, `Player.cs:56302`).
 pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40262` — the tail, handed or not).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     let mut handed = false;
     // `:40232`'s gate: the day's quest is open and this player has not
     // already handed it in (`anglerWhoFinishedToday`'s single-player
@@ -720,6 +903,11 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
                 app.inventory[slot].kind = 0;
             }
             handed = true;
+            // W4-d79 — the orphaned Chat emitter (`Main.cs:40243`,
+            // `SoundEngine.PlaySound(24)` — unpositioned, between the
+            // stack decrement and the counter++): case 24 draws nothing,
+            // so the reward rolls below keep their stream positions.
+            app.audio.play_single_voice("Chat", -1.0, -1.0);
             // `:40244`: the counter++ BEFORE the reward table reads it.
             if let Some(p) = app.player.as_mut() {
                 p.angler_quests_finished += 1;
@@ -752,11 +940,16 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     // `GetAnglerReward`'s `questItemType` — the 5303/5302 Jellyfish arm
     // gates on the current quest fish (`Player.cs:56345-56354`).
     let quest_item = crate::angler::QUEST_POOL[app.world.angler_quest as usize];
-    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` — the
-    // mood pass leaves the town roster at 1.0 (`ShopHelper.cs:103`'s
-    // exclusions do not cover 369, but the port's town NPCs carry no mood
-    // rows for him yet, so the plain 1.0 stands).
-    let adjustment = 1.0f32;
+    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` —
+    // the TALK-OPEN LATCH (`Player.cs:4389`). The vanilla turn-in is the
+    // AnglerQuest chat button (`Condition: TalkNPCType == 369`,
+    // `NPCInteractions.cs:137-140`), so the latch is live; the port's
+    // collapsed right-click latched through `talk_to_npc` ahead of this
+    // dispatch. His rows ARE ported (`happiness.rs`: Like Ocean / Dislike
+    // Desert `PersonalityDatabasePopulator.cs:97-101`, the neighbor switch
+    // `AllPersonalitiesModifier.cs:141-158`) — the old constants-off 1.0
+    // was stale. A direct headless call with no latch keeps NotInShop 1.0.
+    let adjustment = app.shopping_settings.price_adjustment;
     // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
     // the port's one inventory (the armor/bank/loadout scans are
     // constants-off — the port carries neither).
@@ -789,6 +982,102 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
             Vec2::new(ax, ay),
         );
     }
+}
+
+/// `Main.NPCChatText_DyeTraderRarePlant` (`Main.cs:40002-40020`) — the Strange
+/// Plants turn-in: the `ExoticPlantsForDyeTrade` scan (`FindItem(bool[])`,
+/// `Player.cs:55996-56006` — the first live slot 0..58 whose kind is in the
+/// set), the stack decrement, the case-24 Chat cue (`:40016`, unpositioned,
+/// draw-free) and the dye reward (`Player.GetDyeTraderReward`,
+/// `Player.cs:56685-56732`), then the `Lang.DyeTraderQuestChat(gotDye)` line.
+/// The `npcChatCornerItem = 0` head (`:40004`) has no port field yet. The
+/// button's `Condition` is hard-mode-only (`NPCInteractions.cs:445-452`) but
+/// the `Interact` body carries no gate — the port's right-click collapse runs
+/// unconditionally like the Angler turn-in's. Returns whether a plant was
+/// handed in.
+pub(crate) fn dye_trader_turn_in(app: &mut App, dye_trader_idx: usize) -> bool {
+    // `:40005` — the button's MenuTick (the Angler turn-in's `:40230` twin).
+    crate::chest::play_menu_sound(app, 12);
+    let mut got_dye = false;
+    // `ItemID.Sets.ExoticPlantsForDyeTrade` (`ItemID.cs:1324`): the four
+    // Strange Plants 3385-3388. `FindItem(bool[])` scans 0..58 forward; the
+    // port's one inventory is the grid 0..50 (no ammo/coin rows carry plants).
+    if let Some(slot) = app
+        .inventory
+        .iter()
+        .position(|s| s.count > 0 && matches!(s.kind, 3385 | 3386 | 3387 | 3388))
+    {
+        // `:40010-40014` — the stack decrement, the air-out at zero.
+        app.inventory[slot].count -= 1;
+        if app.inventory[slot].count == 0 {
+            app.inventory[slot].kind = 0;
+        }
+        got_dye = true;
+        // W4-d79 — the orphaned Chat emitter's third site (`Main.cs:40016`,
+        // `SoundEngine.PlaySound(24)` — unpositioned, between the decrement
+        // and the reward): case 24 draws nothing, so the reward roll below
+        // keeps its stream position.
+        app.audio.play_single_voice("Chat", -1.0, -1.0);
+        give_dye_trader_reward(app, dye_trader_idx);
+    }
+    // `:40019` — `Lang.DyeTraderQuestChat(gotDye)` (`Lang.cs:300-304`): a
+    // random line from the HasPlant/NoPlant sub-category. The draw rides the
+    // bare global stream (the talk/turn-in handlers run outside every
+    // SwapRandom block, the S1-A-10 contract).
+    let prefix = if got_dye {
+        "DyeTraderSpecialText.HasPlant"
+    } else {
+        "DyeTraderSpecialText.NoPlant"
+    };
+    let keys = crate::lang::dialog_prefix_keys(prefix);
+    if !keys.is_empty() {
+        let index = app.rngs.global().next_max(keys.len() as i32) as usize;
+        app.npc_chat_text = crate::lang::text(&keys[index]);
+    }
+    got_dye
+}
+
+/// The dye reward spawn (`Player.GetDyeTraderReward`, `Player.cs:56685-56732`):
+/// the 14-dye base pool, the hard-mode additions gated on the mech/Plantera/
+/// Martian/Moon Lord latches, ONE `Main.rand.Next(list.Count)` pick, then a
+/// stack-6 `QuickSpawnItem` at the Dye Trader's centre. The roll rides the
+/// `UpdatePlayers` stream (the turn-in is the player's item-use interaction
+/// under the `Main.cs:17754` swap — the Angler reward's convention).
+fn give_dye_trader_reward(app: &mut App, dye_trader_idx: usize) {
+    // `:56688-56692` — the base list, in the C#'s initializer order.
+    let mut list: Vec<u16> = vec![
+        3560, 3028, 3041, 3040, 3025, 3190, 3027, 3026, 3554, 3553, 3555, 2872, 3534, 2871,
+    ];
+    if app.world.hard_mode {
+        // `:56695-56702` — the unconditional hard-mode additions.
+        list.extend_from_slice(&[3039, 3038, 3598, 3597, 3600, 3042, 3533, 3561]);
+        if app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3
+        {
+            list.extend_from_slice(&[2883, 2869, 2873, 2870]); // `:56705-56708`
+        }
+        if app.world.downed_plant_boss {
+            list.extend_from_slice(&[2878, 2879, 2884, 2885]); // `:56712-56715`
+        }
+        if app.world.downed_martians {
+            list.extend_from_slice(&[2864, 3556]); // `:56719-56720`
+        }
+        if app.world.downed_moon_lord {
+            list.push(3024); // `:56724`
+        }
+    }
+    // `:56727` — the pick on the turn-in's `UpdatePlayers` stream.
+    let pick = app
+        .rngs
+        .stream(RngKey::UpdatePlayers)
+        .next_max(list.len() as i32) as usize;
+    let kind = list[pick];
+    let (dx, dy) = app.npcs[dye_trader_idx].center();
+    // `:56728-56731` — `SetDefaults(num)`, `stack = 6`, the gift spawn. The
+    // dyes are non-prefixable (`Item.GetRollablePrefixes` — no dye row), so
+    // `spawn_item_drop_px`'s `roll_prefix(kind, -1)` draws nothing past the
+    // velocity triplet; the spawn joins the same `UpdatePlayers` stream.
+    let rng = app.rngs.stream(RngKey::UpdatePlayers);
+    crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, 6, Vec2::new(dx, dy));
 }
 
 /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`) — the
@@ -990,13 +1279,33 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return false;
     };
     let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
-    let (pcx, pcy) = app
-        .player
-        .as_ref()
-        .map(|p| p.center())
-        .unwrap_or((0.0, 0.0));
-    let mood =
-        crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
+    // W4-g58 final (the f37 capture-once contract, research/68 §4):
+    // `currentShoppingSettings` is captured ONCE per `SetTalkNPC`
+    // (`Player.cs:4387-4390`); `Main.OpenShop` (`Main.cs:40459-40467`) does
+    // NOT recompute it. When the talk latch already names this NPC the
+    // capture stands — no second Princess random-love draw on
+    // `NamedRngs::global()`. The port's collapsed chat-button entry (the
+    // recorded #9 deviation — the shop opens with `talk_npc = None`)
+    // captures HERE, through the SAME `shopping_settings` builder so the
+    // buy/sell latch readers (`Player.cs:35382-35388`) see the mood.
+    if app.talk_npc != Some(idx) {
+        let (pcx, pcy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((0.0, 0.0));
+        let raining = app.world.raining;
+        let settings = crate::happiness::shopping_settings(
+            &app.world,
+            &app.npcs,
+            &app.npcs[idx],
+            (pcx, pcy),
+            raining,
+            app.rngs.global(),
+        );
+        app.shop_mood = settings.price_adjustment;
+        app.shopping_settings = settings;
+    }
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         downed_slime_king: app.world.downed_slime_king,
@@ -1076,7 +1385,6 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         &inv_ids,
         app.world.moon_phase as u32,
     );
-    app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     if !same_shop {
         app.shop_sellback.clear();
@@ -2497,9 +2805,12 @@ pub(crate) fn update_destroyers(app: &mut App) {
             ));
         }
         if ev.roar {
-            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)` (Roar_0).
+            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)`: the int
+            // overload's default Style 1 → `Roar_1` (case 15 draws
+            // NOTHING; the null-or-Stopped slot guard rides
+            // `Audio::play_roar`, research/32 D4).
             let (nx, ny) = (app.npcs[i].x, app.npcs[i].y);
-            app.audio.play_at("Roar_0", nx, ny, 1.0);
+            app.audio.play_roar(1, nx, ny);
         }
         if ev.wants_death {
             // The orphan death wrote life = 0 in place; the death pass
@@ -4603,13 +4914,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         .npcs
         .iter()
         .any(|n| n.kind == NpcKind::TaxCollector && n.hp > 0);
-    // `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
-    // the alive, housed town NPCs (the C# counts every non-pet with a
-    // head index — the port's town roster).
+    // `Player.CollectTaxes`'s payer count (`Player.cs:24142-24149`): the
+    // C# counts `active && !homeless && !NPCID.Sets.IsTownPet[type] &&
+    // NPC.TypeToDefaultHeadIndex(type) > 0` — NOT the town-flag roster:
+    // the Travelling Merchant (368, head 21) and the DD2 Bartender (550,
+    // head 24) PAY when housed (the old `is_town_resident` filter dropped
+    // the Bartender), while the Old Man (37) and the Skeleton Merchant
+    // (453) have no head row (`NPC.cs:7510-7553`) and never pay. The
+    // bound/rescue forms ride freed-row `net_id`s (bestiary fold), so the
+    // head table alone would hand them a payer slot — the six are
+    // excluded by kind (the `ui/housing.rs:100-116` bound-trio rejection
+    // extended to the webbed/sleeping pair). `home.is_some()` is the
+    // port's `!homeless` stand-in.
     app.world.tax_payers = app
         .npcs
         .iter()
-        .filter(|n| n.kind.is_town_resident() && n.hp > 0 && n.home.is_some())
+        .filter(|n| {
+            n.hp > 0
+                && n.home.is_some()
+                && !matches!(
+                    n.kind,
+                    NpcKind::BoundGoblin
+                        | NpcKind::BoundWizard
+                        | NpcKind::BoundMechanic
+                        | NpcKind::WebbedStylist
+                        | NpcKind::SleepingAngler
+                        | NpcKind::SleepingGolfer
+                )
+                && !crate::npc_ai_town::is_town_pet(n.kind.net_id())
+                && crate::ui::housing::type_to_head_index(n.kind.net_id()) > 0
+        })
         .count() as i32;
     // `Main.cs:64995-65003`'s pump.
     let rate = app.world.day_rate();
@@ -5714,11 +6048,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .into_iter()
                 .flatten()
             {
-                // The shared pinned cue map (`world_sim/editing.rs`'s
-                // `kill_cue`): the door/gate dig family pins Dig_1.
-                if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
-                    app.audio.play_at(name, px, py, volume);
-                }
+                // W4-d79 — the faithful per-case path (research/32 D1/D4):
+                // the door/gate dig family draws the case-0 variation +
+                // pitch on `UpdateNPCs` (the bash runs in `NPC.UpdateNPC`,
+                // `Main.cs:17767`), the Dig slot Stop/re-creates.
+                app.audio.play_kill_cue(
+                    cue,
+                    px,
+                    py,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
             }
         }
         if !open {
@@ -5894,6 +6233,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .iter()
             .filter(|n| n.hp > 0 && n.kind.is_town_resident())
             .count() as i32;
+        // W4-f43b: the census-tail flags (`Main.cs:65795-65799` flag8 +
+        // `:65852-65956` the pet/slime/Santa/Princess arms). The season read
+        // is `Main.checkXMas` (`Main.cs:13118-13139`) over the local date —
+        // the C# reads `DateTime.Now` at the check; the port injects the
+        // same wall-clock date ONCE PER CHECK (the Party Girl's `party_roll`
+        // boundary above predicts the check tick, so no per-tick clock read
+        // enters the sim). The gate only feeds Santa 142, who has no ported
+        // kind yet. `forceXMasForever` is the endlessChristmas micro seed
+        // (`WorldGen.cs:572-578`, the loot flags' precedent).
+        let x_mas = if app.town_arrival.check_for_spawns + 1 >= 7200 {
+            let (day, month) = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| {
+                    let (_, m, day) =
+                        crate::ui::world_select::civil_from_days((d.as_secs() / 86_400) as i64);
+                    (day, m)
+                })
+                .unwrap_or((1, 1));
+            crate::town_arrival_pets::check_xmas(
+                day,
+                month,
+                false, // forceXMasForToday — unowned
+                app.world
+                    .micro_seeds
+                    .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+            )
+        } else {
+            false
+        };
+        let tail = crate::town_arrival_pets::tail_flags_from_world(
+            &app.world,
+            app.world_events.genuine_party,
+            x_mas,
+        );
+        // flag9 (`Main.cs:65944-65952`) over the LIVE roster — the 24-type
+        // conjunction by vanilla id + the anniversary/unlock overrides.
+        let princess_flag9 = crate::town_arrival_pets::princess_flag9(&tail, &|t| {
+            crate::town_arrival_pets::resident_count_by_id(&app.npcs, t)
+        });
         let no_dyes: [crate::item::ItemSlot; 0] = [];
         let chosen = {
             let ctx = crate::town_arrival::ArrivalContext {
@@ -5903,6 +6281,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 max_hp,
                 party_roll,
                 residents,
+                tail,
+                princess_flag9,
             };
             // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
             // needs its room ready, and the port's rooms are found by the same
@@ -5941,6 +6321,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
+                        // W4-f43b: `NPC.NewNPC`'s
+                        // `GiveTownUniqueDataToNPCsThatNeedIt`
+                        // (`NPC.cs:80769` → `:80839-80856`) — the given
+                        // name + the profile variation roll (the license
+                        // pets' `Main.rand.Next(6)`, `Profiles.cs:216`) +
+                        // the variant name draw + the shimmer override.
+                        // The whole chain runs under the `UpdateTime` swap
+                        // here (`Main.cs:65153`), and `WorldGen.genRand`
+                        // aliases that same active `Main.rand`
+                        // (`WorldGen.cs:4445`) — ONE stream for both slots.
+                        let shimmered = app.shimmered_npcs.is_shimmered(kind.net_id());
+                        crate::town_arrival_pets::spawn_town_tail_unique_data(
+                            &mut n,
+                            shimmered,
+                            app.rngs.stream(RngKey::UpdateTime),
+                        );
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
@@ -8599,6 +8995,106 @@ mod tests {
         assert!(app.items.len() > before, "the drops spawn");
     }
 
+    /// W4-g58: the payout DIVIDES by the TALK-OPEN LATCHED adjustment
+    /// (`Main.cs:40184` — `(int)((float)taxMoney / PriceAdjustment)`), the
+    /// same value `GetCoinValueText_TaxCollector` displays (`:39933`). A
+    /// happy collector pays MORE than the purse; the latch (not a fresh
+    /// mood) prices the payout; the coins spawn at the PLAYER's centre
+    /// (`Main.LocalPlayer.Center`, `:40192`).
+    #[test]
+    fn the_tax_payout_divides_by_the_talk_latch() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A HOMELESS collector: the NoHome sentinel rides the 1.5 ceiling.
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        t.home = None;
+        app.npcs.push(t);
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        // 300 / 1.5 = 200 copper — LESS than the purse (the unhappy arm).
+        // The split pays denominations (2 silver), so sum the copper VALUE.
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 200, "the latched 1.5 divides the payout");
+        assert_eq!(app.world.tax_money, 0);
+        // The spawn origin is the PLAYER's centre, not the collector's.
+        let pc = app.player.as_ref().unwrap().center();
+        for d in &app.items {
+            assert!(
+                (d.pos.x - pc.0).abs() < 32.0 && (d.pos.y - pc.1).abs() < 48.0,
+                "the coin spawns near the player ({:?} vs {:?})",
+                d.pos,
+                pc
+            );
+        }
+        // House him AFTER the latch (a fresh mood would drop the sentinel)
+        // and hand-latch the happy band: 300 / 0.75 = 400 — MORE than the
+        // purse. The payout reads the latch, so the housing change is inert.
+        app.npcs[0].home = Some((2, 6));
+        app.shopping_settings.price_adjustment = 0.75;
+        app.items.clear();
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 400, "the happy 0.75 divides UP");
+    }
+
+    /// W4-f37 doc-sweep — the payout dialog tail (`Main.cs:40217`/
+    /// `:40222`): the paid arm draws `Next(380, 384)` on the bare-
+    /// `Main.rand` stand-in AFTER the coin split, the empty purse draws
+    /// `Next(390, 401)`; the coin-spawn draws ride UpdatePlayers and never
+    /// touch the global stream.
+    #[test]
+    fn the_tax_payout_answers_the_dialog_rolls() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        let idx = app.npcs.len();
+        app.npcs.push(t);
+        // The paid arm: one Next(380, 384) on the global stream.
+        app.world.tax_money = 200;
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_range(380, 384);
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(roll));
+        assert_eq!(*app.rngs.global(), twin, "one global draw spent");
+        assert_eq!(app.world.tax_money, 0);
+        // The empty purse: one Next(390, 401), no coin spawns.
+        let items = app.items.len();
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_range(390, 401);
+        assert!(tax_collector_payout(&mut app, idx));
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(roll));
+        assert_eq!(*app.rngs.global(), twin, "one global draw spent");
+        assert_eq!(app.items.len(), items, "no coins on the refusal");
+    }
+
     /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
     /// (`Main.cs:64995-65003`): 50 copper per housed town NPC per
     /// `taxRate` clock, capped at 25 gold.
@@ -8624,6 +9120,39 @@ mod tests {
         let capped = world.tax_money;
         crate::world_sim::clock::collect_taxes(&mut world);
         assert_eq!(world.tax_money, capped, "no collection past the cap");
+    }
+
+    /// W4-f37 doc-sweep — the payer filter (`Player.cs:24145`):
+    /// `!homeless && !IsTownPet && TypeToDefaultHeadIndex > 0`, NOT the
+    /// town-flag roster. The housed DD2 Bartender (550, head 24) PAYS
+    /// (the old `is_town_resident` filter dropped him); the bound forms
+    /// ride freed-row `net_id`s and must NOT pay even with a home; a
+    /// homeless NPC never pays; a dead NPC never pays.
+    #[test]
+    fn the_tax_payer_filter_counts_heads_not_town_flags() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let housed = |kind: NpcKind| {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.home = Some((2, 6));
+            n
+        };
+        // The Guide (22, head 1) + the housed Bartender (550, head 24).
+        app.npcs.push(housed(NpcKind::Guide));
+        app.npcs.push(housed(NpcKind::DD2Bartender));
+        // A homeless Merchant: `!homeless` refuses him.
+        let mut homeless = Npc::new(NpcKind::Merchant, 64.0, 100.0, 1, 0.0);
+        homeless.hp = homeless.max_hp;
+        app.npcs.push(homeless);
+        // A housed bound Goblin: his `net_id` folds onto the Tinkerer's
+        // row (head 8), but the C#'s type 105 has no head row — excluded.
+        app.npcs.push(housed(NpcKind::BoundGoblin));
+        // A dead Golfer: `active` refuses him.
+        let mut dead = housed(NpcKind::Golfer);
+        dead.hp = 0;
+        app.npcs.push(dead);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.tax_payers, 2, "Guide + Bartender only");
     }
 
     #[test]
@@ -8904,6 +9433,192 @@ mod tests {
         app.inventory[0].kind = 0;
         angler_turn_in(&mut app, idx);
         assert!(!app.world.angler_quest_finished, "no fish, no hand-in");
+    }
+
+    /// W4-d79 — the orphaned Chat emitter's two sites: the talk open
+    /// (`Main.cs:43083`) and the Angler turn-in (`:40243`) play the
+    /// unpositioned case-24 Chat (draw-free — the `GetChat`/reward rolls
+    /// keep their stream positions). The same-NPC re-click and the
+    /// empty-hand turn-in stay silent.
+    #[test]
+    fn w4_d79_the_talk_and_the_angler_turn_in_play_the_chat_cue() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut g = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        g.hp = g.max_hp;
+        app.npcs.push(g);
+        // The fresh right-press edge talks: one Chat play, no draws.
+        app.place_down = true;
+        let played = app.audio.played_count();
+        let streams: Vec<_> = RngKey::ALL
+            .iter()
+            .map(|k| app.rngs.stream(*k).clone())
+            .collect();
+        assert!(talk_to_npc(&mut app, false).is_some(), "the talk latched");
+        assert_eq!(app.audio.played_count(), played + 1, "the Chat cue played");
+        for (k, s) in RngKey::ALL.iter().zip(streams.iter()) {
+            // GetChat draws on the BARE global stream (the Main.rand
+            // stand-in) — every NAMED stage stream stays pristine.
+            assert_eq!(*app.rngs.stream(*k), *s, "{} untouched", k.name());
+        }
+        // The same-NPC re-click declines (`:43077`) — no second play.
+        let played = app.audio.played_count();
+        assert!(talk_to_npc(&mut app, true).is_none());
+        assert_eq!(app.audio.played_count(), played, "no re-play on re-click");
+        // The Angler turn-in: the Chat cue between the decrement and the
+        // counter++, draw-free (the reward rolls keep their positions).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.angler_quest = 7;
+        let quest = crate::angler::QUEST_POOL[7];
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: quest,
+            name: "Quest Fish",
+            count: 1,
+            prefix: 0,
+        };
+        let mut a = Npc::new(NpcKind::Angler, 32.0, 100.0, 1, 0.0);
+        a.hp = a.max_hp;
+        app.npcs.push(a);
+        let played = app.audio.played_count();
+        assert!(angler_turn_in(&mut app, 0));
+        assert_eq!(app.audio.played_count(), played + 1, "the turn-in Chat");
+        // The same-day refusal plays nothing.
+        let played = app.audio.played_count();
+        angler_turn_in(&mut app, 0);
+        assert_eq!(app.audio.played_count(), played, "the refusal is silent");
+    }
+
+    /// W4-d79 — the DyeTrader Strange Plants turn-in (`Main.cs:40002-40020`):
+    /// the plant scan + decrement, the case-24 Chat cue (`:40016`, draw-free),
+    /// the stack-6 dye reward at the trader's centre, the HasPlant line. An
+    /// empty hand plays only the MenuTick + the NoPlant line (no Chat, no
+    /// reward). The reward pick + spawn ride `UpdatePlayers`; the quest-text
+    /// draw rides the bare global stream.
+    #[test]
+    fn w4_d79_the_dye_trader_turn_in_trades_a_plant_for_a_dye() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.hard_mode = true;
+        // A Strange Plant (3385) in hand, stack 2.
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3385,
+            name: "Strange Plant",
+            count: 2,
+            prefix: 0,
+        };
+        let mut d = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        d.hp = d.max_hp;
+        app.npcs.push(d);
+        let played = app.audio.played_count();
+        let before_items = app.items.len();
+        assert!(dye_trader_turn_in(&mut app, 0), "the plant handed in");
+        // MenuTick (12) + Chat (24) = two plays; the reward spawn is silent.
+        assert_eq!(app.audio.played_count(), played + 2, "the tick + the Chat");
+        assert_eq!(app.inventory[0].count, 1, "the stack drops one");
+        assert!(app.items.len() > before_items, "the dye reward spawned");
+        let drop = app.items.last().unwrap();
+        assert_eq!(drop.count, 6, "the reward is a stack of 6");
+        // The pick is one of the hard-mode pool's dyes.
+        assert!(
+            matches!(
+                drop.kind,
+                3560 | 3028 | 3041 | 3040 | 3025 | 3190 | 3027 | 3026 | 3554 | 3553 | 3555
+                    | 2872 | 3534 | 2871 | 3039 | 3038 | 3598 | 3597 | 3600 | 3042 | 3533
+                    | 3561
+            ),
+            "a base/hard-mode dye, kind {}",
+            drop.kind
+        );
+        assert!(
+            app.npc_chat_text.starts_with("Brilliant")
+                || app.npc_chat_text.starts_with("You bring")
+                || app.npc_chat_text.starts_with("Fantabulous"),
+            "a HasPlant line: {}",
+            app.npc_chat_text
+        );
+        // The empty hand: only the MenuTick, the NoPlant line, no reward.
+        app.inventory[0].kind = 0;
+        app.inventory[0].count = 0;
+        let played = app.audio.played_count();
+        let before_items = app.items.len();
+        assert!(!dye_trader_turn_in(&mut app, 0), "no plant, no hand-in");
+        assert_eq!(app.audio.played_count(), played + 1, "only the MenuTick");
+        assert_eq!(app.items.len(), before_items, "no reward");
+        assert!(
+            app.npc_chat_text.starts_with("Oh no")
+                || app.npc_chat_text.starts_with("You think")
+                || app.npc_chat_text.starts_with("These dye"),
+            "a NoPlant line: {}",
+            app.npc_chat_text
+        );
+    }
+
+    /// W4-d79 — the dye reward's RNG order: ONE `Next(list.Count)` pick on
+    /// `UpdatePlayers` (`Player.cs:56727`), then the spawn's velocity triplet
+    /// (`Item.NewItem`'s three `NextFloat`s; the dyes are non-prefixable so no
+    /// prefix draws). The Chat cue (`:40016`) and the MenuTick draw nothing;
+    /// the quest-text draw rides the bare global stream, NOT `UpdatePlayers`.
+    #[test]
+    fn w4_d79_the_dye_reward_draws_ride_update_players_in_order() {
+        use tr_core::unified_random::UnifiedRandom;
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        // Classic mode: the 14-dye base pool, no progression additions.
+        app.world.hard_mode = false;
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3386,
+            name: "Strange Plant",
+            count: 1,
+            prefix: 0,
+        };
+        let mut d = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        d.hp = d.max_hp;
+        app.npcs.push(d);
+        let seed = 0x0D7E_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let pick = witness.next_max(14); // the base pool's count (`:56727`)
+        let _r1 = witness.next_float(); // the spawn velocity triplet
+        let _r2 = witness.next_float();
+        let _r3 = witness.next_float();
+        let global_before = app.rngs.global().peek();
+        assert!(dye_trader_turn_in(&mut app, 0));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the pick + the three spawn floats, in the C# order"
+        );
+        // The quest-text draw consumed the bare global stream (one Next).
+        assert_ne!(app.rngs.global().peek(), global_before, "the line drew");
+        let base = [
+            3560u16, 3028, 3041, 3040, 3025, 3190, 3027, 3026, 3554, 3553, 3555, 2872, 3534,
+            2871,
+        ];
+        assert_eq!(app.items.last().unwrap().kind, base[pick as usize]);
     }
 
     /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`): the
@@ -20613,6 +21328,142 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+
+    /// W4-f37 — `SetTalkNPC`'s shopping-settings capture
+    /// (`Player.cs:4387-4390`): the talk open latches `shop_mood` from
+    /// `process_mood`; the close (`SetTalkNPC(-1)`, `:4383-4386`) resets it
+    /// to `NotInShop` = 1.0. The Nurse's heal cost reads the LATCH
+    /// (`Main.cs:40100`), not a per-call re-scan.
+    #[test]
+    fn the_talk_open_captures_the_mood_and_the_close_resets_it() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = World::new("mood".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        app.world.world_surface = 120.0;
+        app.world.rock_layer = 140.0;
+        app.world.compute_column_surface();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 60.0 * 16.0;
+        p.y = 120.0 * 16.0 - crate::player::HEIGHT; // feet on the dirt top
+        app.player = Some(p);
+        let mut nurse = Npc::new(NpcKind::Nurse, 62.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        nurse.home = Some((62, 120));
+        nurse.hp = nurse.max_hp;
+        app.npcs.push(nurse);
+        assert_eq!(app.shop_mood, 1.0, "NotInShop before any talk");
+        // The right-press edge opens the talk: the capture lands. The
+        // Nurse alone in the forest: LoveSpace ×0.95 × Hallow-Like? The
+        // player is in the FOREST — the Nurse's rows are Hallow/Snow, no
+        // match → LoveSpace alone = 0.95.
+        app.place_down = true;
+        let text = talk_to_npc(&mut app, false);
+        assert!(text.is_some(), "the talk opened");
+        assert_eq!(app.talk_npc, Some(0));
+        assert!(
+            (app.shop_mood - 0.95).abs() < 0.001,
+            "the captured LoveSpace mood, got {}",
+            app.shop_mood
+        );
+        // The heal cost rides the latch: half life (max 400 rig? the spawn
+        // default 100) — pin the RATIO instead of the absolute: cost =
+        // (missing × 0.95) truncated (no boss ladder, no discount).
+        let player = app.player.as_mut().unwrap();
+        player.hp = player.max_hp - 40;
+        let cost = app.nurse_heal_cost();
+        assert_eq!(cost, (40.0f32 * app.shop_mood) as i32, "the latch rides the cost");
+        // The close resets to NotInShop.
+        app.player.as_mut().unwrap().x = 190.0 * 16.0; // walk out of range
+        let _ = talk_to_npc(&mut app, true);
+        assert_eq!(app.talk_npc, None);
+        assert_eq!(app.shop_mood, 1.0, "SetTalkNPC(-1) → NotInShop");
+    }
+
+    /// W4-f37 — the shop open does NOT re-capture when the talk latch
+    /// already names the NPC (`Main.OpenShop`, `Main.cs:40459-40467`, has
+    /// no settings call): the Princess's random-love draws fire ONCE per
+    /// talk, not again on the shop click. The collapsed entry
+    /// (`talk_npc = None`) captures at the open.
+    #[test]
+    fn the_shop_open_keeps_the_talk_capture_and_draws_once() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = World::new("princess".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        app.world.world_surface = 120.0;
+        app.world.rock_layer = 140.0;
+        app.world.compute_column_surface();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 60.0 * 16.0;
+        p.y = 120.0 * 16.0 - crate::player::HEIGHT; // feet on the dirt top
+        app.player = Some(p);
+        let mut princess = Npc::new(NpcKind::Princess, 62.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((62, 120));
+        princess.hp = princess.max_hp;
+        app.npcs.push(princess);
+        let mut guide = Npc::new(NpcKind::Guide, 66.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        guide.home = Some((66, 120));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // A SECOND neighbor — one alone would trip HateLonely
+        // (`npcsWithinHouse < 2 && npcsWithinVillage < 2`, `:126`). Both
+        // Guides dedup to ONE type → one love draw ×0.88.
+        let mut guide2 = Npc::new(NpcKind::Guide, 58.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        guide2.home = Some((58, 120));
+        guide2.hp = guide2.max_hp;
+        app.npcs.push(guide2);
+        // The talk open: ONE love draw (the single nearby Guide type).
+        app.place_down = true;
+        assert!(talk_to_npc(&mut app, false).is_some());
+        let mood_after_talk = app.shop_mood;
+        assert!(
+            (mood_after_talk - 0.88).abs() < 0.001,
+            "one love ×0.88, got {mood_after_talk}"
+        );
+        let rng_after_talk = app.rngs.global().clone();
+        // The shop open on the SAME NPC: no re-capture, no second draw.
+        let opened = try_open_town_shop_at_cursor(&mut app, Vec2::new(62.5 * 16.0, 119.0 * 16.0));
+        assert!(opened, "the princess shop opened");
+        assert_eq!(app.shop_mood, mood_after_talk, "the latch stands");
+        assert_eq!(
+            *app.rngs.global(),
+            rng_after_talk,
+            "no second random-love draw"
+        );
+        // The collapsed entry: close everything, clear the talk latch,
+        // re-open the shop directly — the capture fires at the open.
+        app.close_shop();
+        app.talk_npc = None;
+        app.shop_mood = 1.0;
+        let opened = try_open_town_shop_at_cursor(&mut app, Vec2::new(62.5 * 16.0, 119.0 * 16.0));
+        assert!(opened);
+        assert!(
+            (app.shop_mood - 0.88).abs() < 0.001,
+            "the collapsed entry captures, got {}",
+            app.shop_mood
+        );
+        assert_ne!(
+            *app.rngs.global(),
+            rng_after_talk,
+            "the collapsed entry's capture drew again"
+        );
     }
 }
 #[cfg(test)]

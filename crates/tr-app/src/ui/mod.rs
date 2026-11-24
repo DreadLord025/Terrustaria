@@ -17,6 +17,10 @@ pub mod char_select;
 pub mod chrome_elements;
 pub mod clipboard;
 pub(crate) mod chest;
+pub(crate) mod chat_portrait;
+pub(crate) mod chat_portrait_data;
+#[cfg(test)]
+mod chat_portrait_tests;
 pub mod chrome;
 pub(crate) mod coin_slot;
 pub mod color;
@@ -43,10 +47,12 @@ pub mod pointer;
 pub mod progress;
 pub mod resource_packs;
 pub mod resources;
+pub(crate) mod savings;
 pub mod save_list;
 pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
+pub(crate) mod shop_happiness;
 pub mod slot;
 pub mod sortable;
 pub mod text;
@@ -738,12 +744,24 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
-    // W4-g50: the `91`-synced emote bubbles anchor on peer players /
-    // projectiles (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`) — the
-    // local slot, the peer snapshots and the projectile pool resolve them.
-    emote_local_id: u32,
-    emote_remote_players: &std::collections::HashMap<u32, crate::net::PlayerNet>,
-    emote_projectiles: &crate::projectile::ProjectilePool,
+    // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`): the
+    // Happiness button draws when the talked NPC is not homeless
+    // (`NPC.CanShowHomelessText`, `NPC.cs:94828-94841`) and the latched
+    // `currentShoppingSettings.HappinessReport` is non-empty.
+    happiness_button: bool,
+    // The chat portrait (W4-g58 retire, `Main.DrawNPCPortrait`,
+    // `Main.cs:40318-40447`): the hop clock (`npcChatPortraitFrameCounter`,
+    // read-then-increment at `:40335` — the caller ticks it after this
+    // pass), `Main.DialoguePortraitPreference` (`Settings.
+    // portrait_preference`) and the Zoologist lycanthrope predicate
+    // (`NPC.ShouldBestiaryGirlBeLycantrope`, the world flags ride the App).
+    portrait_frame_counter: i32,
+    portrait_preference: u8,
+    portrait_lycanthrope: bool,
+    // `CoinSlot.Savings` (`CoinSlot.cs:341`): the shop savings pile's coin
+    // cells (`ItemSlot.DrawSavings`, `Main.cs:41791`, W4-g58 D5). The
+    // banks ride the `player` already passed above.
+    coin_slot: &mut coin_slot::CoinSlotState,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -835,6 +853,35 @@ pub fn draw_hud(
         // while the talk NPC is the Dryad.
         let dryad_status = npc_chat::dryad_status_active(npcs, talk_npc);
         npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, dryad_status);
+        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`) rides
+        // the caller's `happiness_button` gate (the App resolves it).
+        npc_chat::draw_panel(
+            r,
+            lookups,
+            screen,
+            npc_chat_text,
+            happiness_button,
+            pulse,
+            mouse_pos,
+        );
+        // `NPCChatPanel.cs:79` — `Main.DrawNPCPortrait(color,
+        // rectangle.TopLeft())` right after the text, before the buttons
+        // (the port draws the buttons inside `draw_panel`; the portrait
+        // overlays the panel's top-left corner either way — it sits
+        // OUTSIDE the 500-wide box at x−62). The Detailed arm ports;
+        // CloseUp/FullBodyRetro/Disabled gate inside (`chat_portrait`).
+        if let Some(n) = talk_npc.and_then(|i| npcs.get(i)) {
+            let panel = npc_chat::panel_rect(lookups, screen, npc_chat_text, happiness_button);
+            chat_portrait::draw_portrait(
+                r,
+                lookups,
+                n,
+                Vec2::new(panel[0], panel[1]),
+                portrait_frame_counter,
+                portrait_preference,
+                portrait_lycanthrope,
+            );
+        }
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -938,10 +985,16 @@ pub fn draw_hud(
         // (73, invBottom=258), scale 0.755 — the same layout the chest
         // panel draws at (`ui::chest`). The ported stock resolves to ≤39
         // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
-        // end draws air. The happiness label/icon at (504, invBottom)
-        // (`:41790-41797`) and the coin breakdown wait for the chrome
-        // pass (ANALYSIS).
-        if let Some((stock, _mood, _discount)) = shop {
+        // end draws air.
+        if let Some((stock, mood, _discount)) = shop {
+            // The happiness chrome (`:41790-41797`, W4-g58): the "Shop"
+            // label + the DrawSavings coin pile (`:41791`, D5) + the
+            // NPCHappiness icon band + the P0 percent. The pile reads the
+            // player's four banks (`Player.bank/bank2/bank3/bank4`).
+            let banks: Option<[&[ItemSlot]; 4]> =
+                player.map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
+            let savings = banks.as_ref().map(|b| (coin_slot, b));
+            shop_happiness::draw(r, lookups, mood, pulse, savings);
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;

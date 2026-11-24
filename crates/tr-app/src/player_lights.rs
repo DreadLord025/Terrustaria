@@ -481,12 +481,13 @@ pub(crate) fn held_item_lights(
     }
     // `:50152-50173` — 3542 (the Shellphone's beacon) is dust-only
     // (four `Dust.NewDust` draws, no `AddLight`) — skipped wholesale.
-    if kind == 4952 {
+    if kind == 4952 && !p.petting.is_petting {
         // `:50174-50181` — the Fairy Queen's magic item: the light rides
         // `itemLocation + (8·dir, -10·gravDir)` (gravDir = 1 in the port)
         // on top of the holdStyle-6 location (`rest_item_location`),
-        // colour (1, .7, .8) × 1.3. The `petting.isPetting` gate is
-        // unported (folds false); the `Next(40)` dust half is skipped.
+        // colour (1, .7, .8) × 1.3. W4-g10 FINAL: the `petting.isPetting`
+        // gate is LIVE (`:50174` refuses while petting); the `Next(40)`
+        // dust half is skipped.
         let v = loc + Vec2::new(8.0 * dir, -10.0) + pos;
         emit(v, [1.0 * 1.3, 0.7 * 1.3, 0.8 * 1.3]);
     }

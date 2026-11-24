@@ -1313,6 +1313,12 @@ impl Default for PlayerNet {
             channel: false,
         }
     }
+    /// W4-g10 FINAL — `petting.isPetting`/`isPetSmall`
+    /// (`NetMessage.cs:475-476`, bitsByte23[4]/[5]; the receive side
+    /// `MessageBuffer.cs:1043-1044`). The remote draw reads them for the
+    /// pat-arm pose; the port's peer render keeps the flag pair only.
+    pub petting: bool,
+    pub pet_small: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four

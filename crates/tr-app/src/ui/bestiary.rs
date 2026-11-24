@@ -1721,6 +1721,30 @@ fn portrait_data(
         (NpcKind::Princess, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::DyeTrader, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::PartyGirl, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        // W4-g10 lane 3 — the town pets: the sheet's own row height over
+        // the pet strip (28/28/27/14 rows, `Main.npcFrameCount`), the
+        // sheet's own width — the `humanoid_draw` shape the world draw
+        // rides (`render/entities.rs`'s pet arms).
+        (
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper,
+            _,
+        ) => {
+            let rows = entry.kind.humanoid_frame_count();
+            let (fw, fh) = entry_sheet(lookups, entry)
+                .map(|s| (s.width as f32, s.height as f32 / rows as f32))
+                .unwrap_or((38.0, 48.0));
+            (sheet_i, fh, fw, fh, white)
+        }
         (NpcKind::SleepingGolfer, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::WebbedStylist, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
@@ -2404,6 +2428,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d120 — the four town kinds' portraits rest the town twin's
+        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
+        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
+        // the match exhaustive at the flat 34x8 box.
+        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
+            (sheet_i, 48.0, 38.0, 48.0, white)
+        }
+        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
     }
 }
 

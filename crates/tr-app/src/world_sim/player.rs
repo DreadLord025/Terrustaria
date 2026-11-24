@@ -626,7 +626,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             for slot in std::mem::take(&mut app.buff_removals) {
                 let bt = p.buffs.buff_type[slot];
                 if p.try_removing_buff(&app.world, slot, bt, misc_buffs) {
-                    app.audio.play("Menu_Tick");
+                    app.audio.play_menu("Menu_Tick");
                 }
             }
         }
@@ -995,8 +995,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // mounts hold nothing (`MountID.Sets.DontHoldItems`,
             // `MountID.cs:46`) and the umbrella hold (4) is off while
             // mounted, roped or airborne (`Player.cs:50209-50224`).
+            // W4-g10 FINAL: the petting gates are live — holdStyles 4/5/6
+            // hide the item while petting (`:50204`/`:50225-50232`).
             let mounted_blocks_hold = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let petting_blocks_hold = p.petting.is_petting && matches!(hold_style, 4 | 5 | 6);
             let can_visually_hold = !mounted_blocks_hold
+                && !petting_blocks_hold
                 && (hold_style != 4 || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
             // The hooks' centroid relative to the body centre
             // (`Player.cs:36497-36503`): the C# averages ONLY the registered
@@ -1104,6 +1108,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-f37 — `Player.Update`'s post-`UpdateEquips` discount
+            // refresh (`Player.cs:25636-25639`): `if (Main.npcShop <= 0)
+            // discountAvailable = discountEquipped`. `update_with_grapple`
+            // below runs the ResetEffects → UpdateEquips chain that arms
+            // `discount_equipped` (the 854/3035 rows); the shop-open tick
+            // LATCHES the previous value (the vanilla never re-reads it
+            // while `npcShop > 0`), the shop-closed tick mirrors the flag.
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1113,7 +1124,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.rain.is_raining(),
                 Some(&app.wind),
                 rng,
+                // W4-g10 FINAL — `UpdatePettingAnimal`'s roster + talk latch.
+                &app.npcs,
+                app.talk_npc,
             );
+            // W4-f37 — the refresh itself (`Player.cs:25636-25639`): only
+            // the shop-CLOSED ticks copy `discountEquipped` into the App's
+            // `discount_available` mirror; an open shop keeps its latch.
+            if app.shop_npc.is_none() {
+                app.discount_available = p.discount_equipped;
+            }
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
@@ -1183,6 +1203,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // W4-f49 R3 step 4 — THE WIRING SEAM + the lifted regen tick.
+            // f12's `crate::buff_frame_wiring::update_buff_frame(p, …)`
+            // hooks HERE (its phase-2 contract: after
+            // `update_summon_buff_arms`, the `:25566` UpdateBuffs scan
+            // position). Its `fold_orb` carries the nebula bridge ASSIGNs
+            // (`p.nebula_level_mana = s.nebula_level_mana;` + the life/
+            // damage twins — the `Player::fold_orb_nebula_bridge` stub)
+            // and the `buff_life_regen` fold.
+            // The C# order is scan (`:25566`) → `UpdateEquips` (`:25633`)
+            // → `UpdateLifeRegen` (`:25977`) → `UpdateManaRegen`
+            // (`:25995`) → `GrabItems` (`:27428`), so the regen reads run
+            // AFTER the scan/bridge: `update_survival` was LIFTED out of
+            // `update_with_grapple` (the pre-lift position read the
+            // PREVIOUS tick's reset-zeroed tier — and f12's own
+            // `buff_life_regen` fold landed after the read and was wiped
+            // by the next reset before any read; the lift repairs both).
+            // Before the accessory pass is fine — the C# regen reads sit
+            // after UpdateEquips too.
+            p.update_survival(
+                &app.world,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
             // same `UpdateBuffs` slot chain, in its own module so waves A/B
@@ -1351,8 +1393,73 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     );
                 }
             }
+            // W4-d79 — the minecart cues are `SoundID.ItemNN` STYLE plays
+            // (`DelegateMethods.cs:248-256` LandingSound Item53 / BumperSound
+            // Item56, `Player.cs:19870`/:19928 the rolling Item55): the
+            // `SoundEngine.cs:93-99` façade consumes the GetRandomPitch
+            // NextFloat on the audio-only stream, then case 2's per-cue pitch
+            // draw + the 53/55 playing guards + the instance pool
+            // (`LegacySoundPlayer.cs:552-562`/`:612-616`) ride the
+            // `UpdatePlayers` stream — `Player.HorizontalMovement` runs in
+            // `Player.Update` under the `Main.cs:17754` swap. The bare
+            // `play_at` stand-in drew nothing and stacked voices (D1/D4).
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                let style_num: i32 = match cue.cue {
+                    "Item_53" => 53,
+                    "Item_55" => 55,
+                    "Item_56" => 56,
+                    _ => continue,
+                };
+                app.audio.play_npc_item_cue(
+                    style_num,
+                    cue.x,
+                    cue.y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-d79 — the full-mana refill cue + dust burst
+            // (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the
+            // unpositioned `PlaySound(25)` — case 25
+            // (`LegacySoundPlayer.cs:963-968`) is Volume/Pan only, NO
+            // draws, NO Stop (the slot overwrites) — then the 5× dust-45
+            // loop. EACH iteration rolls `Next(20, 26) * 0.1` as the
+            // `NewDust` scale argument (`:19555` — the draw precedes the
+            // spawn's own rolls), alpha 255, then `noLight`/`noGravity`/
+            // `velocity *= 0.5` (`:19556-19558`). The dust draws are NOT
+            // gated on the sound gate — the C# loops regardless. The
+            // draws ride `UpdatePlayers` (the `Main.cs:17754` swap covers
+            // `Player.Update`); the drain sits BEFORE the sticky-dust
+            // drain below — the C#'s `UpdateManaRegen` (`:25995`) precedes
+            // `StickyMovement` (`:27654`) in the update order.
+            if let Some((rx, ry, rw, rh)) = p.take_mana_refill() {
+                app.audio.play_single_voice("MaxMana", -1.0, -1.0);
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        Vec2::new(rx, ry),
+                        rw,
+                        rh,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    // `:19556-19558` — the post-arms write the returned
+                    // slot, the sentinel included (the C#'s own shape).
+                    let slot = app.dust.slot_mut(idx);
+                    slot.no_light = true;
+                    slot.no_gravity = true;
+                    slot.velocity *= 0.5;
+                }
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -1799,6 +1906,20 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some((sx, sy)) = p.take_chillet_sound() {
                 app.audio.play_chillet_sound(sx, sy);
             }
+            // W4-g10 FINAL — the Chillemt petting joy cue (`Player.cs:33354`):
+            // the same case-42 façade, the `pal_chillet_joy` asset.
+            if let Some((sx, sy)) = p.take_petting_joy_sound() {
+                app.audio.play_petting_joy_sound(sx, sy);
+            }
+            // W4-g10 FINAL — the PET_THE_PET achievement request
+            // (`AchievementsHelper.cs:358-360`, HandleSpecialEvent(21)):
+            // the row-targeted `complete_condition` (a6's shape, NOT the
+            // broadcast notify_custom — research/138 keep-one). The
+            // queue's production drain (the g10 host landed the request;
+            // batch-L wires it beside the joy drain).
+            if p.take_pet_achievement() {
+                let _ = app.achievements.complete_condition("PET_THE_PET", "Do");
+            }
             // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
             // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
             // stream (the player tick runs under the `Main.cs:17754` swap).
@@ -1884,6 +2005,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // W4-a6 — `Player.cs:25695-25698` (`Main.myPlayer` block): BOTH
+        // combat books used fires progression event 40 (TRAINING_DAY,
+        // `AchievementInitializer.cs:414-415`) every tick the pair stands —
+        // the notify is idempotent once completed (the g90 lane-7 hook,
+        // research/138 §2; the 4382/5336 uses raise the world flags).
+        if app.world.combat_book_was_used && app.world.combat_book_volume_two_was_used {
+            let _ = app.notify_progression_net(40);
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
@@ -2097,6 +2226,75 @@ mod tests {
         update_player(app, 1.0 / 60.0);
     }
 
+    /// W4-f49 R3 step 4 — the LIFTED regen tick runs at the wiring seam:
+    /// `update_survival` left `update_with_grapple` (its old position read
+    /// the PREVIOUS tick's reset-zeroed nebula tier — the f12 wiring's
+    /// scan + `fold_orb` bridge land after the movement wrapper), and the
+    /// world-sim pass now calls it AFTER `update_summon_buff_arms` (the
+    /// `:25566` scan position where f12's `update_buff_frame` hooks) and
+    /// BEFORE the accessory pass — the C# `UpdateLifeRegen` `:25977` /
+    /// `UpdateManaRegen` `:25995` order. The rig bridges tier 1 mid-tick
+    /// exactly as the merged `fold_orb` would: the lifted read sees it
+    /// the SAME tick (the nebula counter accrues), where the pre-lift
+    /// position would have read the reset's zero. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_lifted_regen_tick_runs_after_the_wiring_seam() {
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 10;
+            p.mana_max = 200;
+            p.regen.mana_regen_delay = 0.0; // the regen line LIVE
+        }
+        // The lift's presence proof: the normal regen line only moves
+        // inside `update_survival` — if the pass dropped the call, the
+        // delay/count stay parked. One pass tick spends the delay
+        // countdown (`:19426-19429`) and derives the regen line.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.regen.mana_regen > 0 || p.regen.mana_regen_count > 0,
+            "the lifted update_survival ran INSIDE the pass"
+        );
+        assert_eq!(
+            p.regen.nebula_mana_counter, 0,
+            "no buff, no bridge: the tier-0 arm zeroes (:19583)"
+        );
+        // The bridged-tier shape: the fold_orb ASSIGN keeps the field
+        // warm through the lifted read (six tier-1 ticks → one point).
+        let mut q = ammo_app();
+        {
+            let p = q.player.as_mut().unwrap();
+            p.mana = 10;
+            p.mana_max = 200;
+            p.regen.mana_regen_delay = 1000.0;
+        }
+        for _ in 0..6 {
+            // The bridge lands at the seam BEFORE the pass's lifted read
+            // would consume it — the rig applies it after the movement
+            // half by driving the two halves directly (the merged frame's
+            // shape; the full-pass twin above pins the call's presence).
+            let p = q.player.as_mut().unwrap();
+            p.update_with_grapple(
+                &q.world,
+                PlayerInput::default(),
+                &[],
+                false,
+                false,
+                false,
+                None,
+                &mut UnifiedRandom::default(),
+                &[],
+                None,
+            );
+            p.fold_orb_nebula_bridge(1, 0, 0);
+            p.update_survival(&q.world, &mut UnifiedRandom::default());
+        }
+        let p = q.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "the lifted read fed the 6-counter grant");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+    }
+
     /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
     /// used to sit inside the `p.dead` branch, so an alive player's removal
     /// requests were never applied (`Main.DrawBuffIcon`'s cancel,
@@ -2260,6 +2458,177 @@ mod tests {
             app.combat_texts.iter().filter(|t| t.active).count(),
             1,
             "the queued amount drained exactly once"
+        );
+    }
+
+    /// W4-d79 — the full-mana refill drain (`Player.cs:19550-19560`): the
+    /// flag4-gated trigger queues at the regen fill; the drain plays the
+    /// unpositioned case-25 chime (draw-free) and rolls EXACTLY the 5×
+    /// `Next(20, 26)` scale + 5×6 `NewDust` draws on `UpdatePlayers`, then
+    /// the tick's own revolver-decay `Next(3)` — the twin replays the whole
+    /// spend. Every other stage stream stays pristine.
+    #[test]
+    fn w4_d79_the_mana_refill_drains_the_chime_and_five_dust_draws() {
+        let mut app = ammo_app();
+        // The camera rides the player so the pool's off-screen cull
+        // (`Dust.cs:97-101`) passes every spawn.
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            // One missing point, the chunk one short of a grant, the delay
+            // expired — the tick's regen line (14, standing) crosses 120
+            // and the LAST point fires the trigger.
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        // The 5× burst: scale draw FIRST (`:19555`), then the spawn's six
+        // (`Dust.cs:167-173` — pos X/Y, vel X/Y, frame Y, scale jitter);
+        // dust 45 rides no ChildSafety/per-type draw arm.
+        let mut want_scales = Vec::new();
+        for _ in 0..5 {
+            let s = twin.next_range(20, 26) as f32 * 0.1;
+            twin.next_max(16); // width 20 − 4
+            twin.next_max(38); // height 42 − 4
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            let jitter = twin.next_range(-20, 21);
+            want_scales.push((1.0 + jitter as f32 * 0.01) * s);
+        }
+        // The tick tail's revolver-decay draw (`Player.cs:42700-42703`).
+        twin.next_max(3);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            app.audio.played_count(),
+            played_before + 1,
+            "the case-25 chime played once"
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "exactly the 5×(1+6) burst draws + the revolver decay"
+        );
+        // The five dust-45 slots: alpha 255, noLight/noGravity, ×0.5
+        // velocity, the rolled scale factor (`:19555-19558`).
+        let live: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 45)
+            .collect();
+        assert_eq!(live.len(), 5, "the burst spawned five dust-45");
+        for (d, &want) in live.iter().zip(want_scales.iter()) {
+            assert_eq!(d.alpha, 255);
+            assert!(d.no_light && d.no_gravity);
+            // The spawn's jitter ×0.01 then ×scale (`Dust.cs:172-173`).
+            assert!((d.scale - want).abs() < 1e-5, "scale {} vs {want}", d.scale);
+            assert!(d.velocity.x.abs() <= 1.0 && d.velocity.y.abs() <= 1.0);
+        }
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The idling full bar never re-fires (`:19550`'s flag4 gate).
+        let played_mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), played_mid, "no re-fire at full");
+    }
+
+    /// W4-d79 — the ManaV2 animation gate (`Player.cs:19542-19545`): the
+    /// point still lands mid-swing, but the trigger stays quiet — no chime,
+    /// no burst draws. And a MUTED listener refuses the chime yet the dust
+    /// loop still draws (the C# loops regardless of the play's gate).
+    #[test]
+    fn w4_d79_the_refill_gate_and_the_muted_dust_loop() {
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Mid-animation: `mana_regen_item_in_use` feeds flag4 = false.
+        app.swing = 10.0 / 60.0;
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        twin.next_max(3); // only the revolver decay — no burst
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().mana,
+            app.player.as_ref().unwrap().mana_max,
+            "the point lands even mid-animation"
+        );
+        assert_eq!(app.audio.played_count(), played_before, "no chime mid-swing");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "the gated trigger draws nothing"
+        );
+        // Muted: the chime gate refuses, the 5× burst still draws.
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let mut l = crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        l.camera_center = (app.camera.x, app.camera.y);
+        app.audio.set_listener(l);
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        for _ in 0..5 {
+            twin.next_range(20, 26);
+            twin.next_max(16);
+            twin.next_max(38);
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+        }
+        twin.next_max(3);
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), played_before, "the muted chime refused");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "the dust loop draws regardless of the sound gate"
+        );
+        assert_eq!(
+            app.dust.slots().iter().filter(|d| d.active && d.dust_type == 45).count(),
+            5,
+            "the muted burst still spawned"
         );
     }
 
@@ -3168,6 +3537,7 @@ mod tests {
             [crate::item::initial_use_sound(3001).unwrap().0 as usize];
         let mut roll = |lo: i32, hi: i32| expect.next_range(lo, hi);
         let _ = crate::sound::item_use_case2(style.style, app.music_pitch, &mut roll);
+        let _ = crate::sound::item_use_case2(style.style, false, &mut roll);
         let expected_delay = expect.next_range(2400, 4201);
         let expected_heal = expect.next_range(70, 121);
         let expected_iframe_roll = expect.next_float();
@@ -3598,5 +3968,45 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    /// W4-f37 — `Player.Update`'s discount refresh (`Player.cs:25636-25639`):
+    /// `if (Main.npcShop <= 0) discountAvailable = discountEquipped`. The
+    /// shop-CLOSED ticks mirror the equipped flag; an OPEN shop latches the
+    /// value it had when it opened — equipping or unequipping the Discount
+    /// Card mid-shop never changes the open shop's prices (the vanilla
+    /// re-reads only after the shop closes).
+    #[test]
+    fn the_discount_available_refresh_latches_while_the_shop_is_open() {
+        let mut app = ammo_app();
+        // No card, no shop: the mirror stays false.
+        tick_ammo(&mut app);
+        assert!(!app.discount_available);
+        // Equip the Discount Card (854) with the shop closed: the refresh
+        // copies `discountEquipped` into the App mirror.
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the closed-shop tick mirrors");
+        // Open a shop, then UNEQUIP: the open shop keeps the latch.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 0;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the open shop latches true");
+        // Close the shop: the next tick re-reads the (now false) flag.
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(!app.discount_available, "the closed-shop tick mirrors");
+        // The reverse latch: open WITHOUT the card, equip mid-shop — the
+        // open shop keeps false until it closes.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(!app.discount_available, "the open shop latches false");
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(app.discount_available);
     }
 }

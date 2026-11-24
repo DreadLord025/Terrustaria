@@ -169,6 +169,18 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// `Main.npcChatPortraitFrameCounter` (`Main.cs:1771`) — the portrait
+    /// hop clock: `DrawNPCPortrait` reads THEN increments it per drawn
+    /// frame (`:40335`), `DoNPCPortraitHop` (`:40675-40678`) resets it to 0.
+    /// The Detailed-arm DRAW consumes it (`ui::chat_portrait`, W4-g58
+    /// retire); CloseUp/FullBodyRetro stay deferred (portrait-system lane)
+    /// (research/240's portrait census).
+    pub(crate) npc_chat_portrait_frame_counter: i32,
+    /// `Player.currentShoppingSettings` (`Player.cs:2916`) — latched by
+    /// `SetTalkNPC` (`Player.cs:4383-4390`): the talk open runs
+    /// `ShopHelper.GetShoppingSettings`, the close resets to `NotInShop`
+    /// (`{1f, ""}`). The happiness button + the shop chrome read it.
+    pub(crate) shopping_settings: crate::happiness::ShoppingSettings,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -208,8 +220,14 @@ pub(crate) struct App {
     /// whenever the shop index changes (`Main.UpdateOldNPCShop`,
     /// `Main.cs:18204-18211`).
     pub(crate) shop_sellback: crate::shop::SellbackHelper,
-    /// The happiness multiplier captured at the open
-    /// (`currentShoppingSettings.PriceAdjustment`).
+    /// The happiness multiplier captured at the shop open — the W4-f37
+    /// capture seam (`world_sim/npcs.rs`'s `try_open_town_shop_at_cursor`,
+    /// gated `talk_npc != Some(idx)`). The TRANSACTION readers (buy/sell/
+    /// reforge/nurse/tax/chrome) all read the `shopping_settings` latch
+    /// instead (`Player.cs:35382-35388` etc. — `currentShoppingSettings`'
+    /// only write site is `SetTalkNPC` `:4389`); this field stays as the
+    /// f37 merge side's shop-open capture (research/240, the buy-lane
+    /// repoint census).
     pub(crate) shop_mood: f32,
     /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
     /// `discountEquipped` when no shop is open; the Discount Card writer
@@ -237,6 +255,36 @@ pub(crate) struct App {
     /// hover animation scale — +0.02/frame toward 1 while hovered, −0.02
     /// toward 1 while not (`:41561-41572`).
     pub(crate) reforge_scale: f32,
+    /// `Main.hairWindow` (`Main.cs:2089`): the Stylist's hair-restyle window
+    /// is open (`OpenHairWindow`, `:43653-43664`). W4-f37: the state machine
+    /// lands here; the panel DRAW is the recorded M4-TOWN-17 deviation.
+    pub(crate) hair_window: bool,
+    /// `Main.oldHairStyle` (`Main.cs:43660`): the hair index latched at the
+    /// window open — Cancel restores it (`:43670`), the price reads the
+    /// change (`:43787`).
+    pub(crate) old_hair_style: i32,
+    /// `Main.oldHairColor` (`Main.cs:43661`): the hair tint latched at the
+    /// open — Cancel restores it (`:43671`), the price reads the change
+    /// (`:43791`).
+    pub(crate) old_hair_color: [u8; 3],
+    /// `Main.hairStart` (`Main.cs:43734`/`:43758`/`:43772`): the style grid's
+    /// first visible index, scrolled ±5 per wheel notch / ±15 per arrow
+    /// click, clamped to `0..=count-15` (`:43778-43785`).
+    pub(crate) hair_start: i32,
+    /// `Main.hBar`/`sBar`/`lBar` (`Main.cs:43655-43657`, reset −1 at the
+    /// open): the HSL slider positions, −1 = "seed from the current colour
+    /// on the first draw" (`:44001-44007`).
+    pub(crate) hair_h_bar: f32,
+    pub(crate) hair_s_bar: f32,
+    pub(crate) hair_l_bar: f32,
+    /// `Main.npcChatFocus1`/`npcChatFocus2` (`Main.cs:43868`/`:43925`): the
+    /// Buy/Cancel labels' hover latches — the hover-edge sound 12 fires on
+    /// the transition (`:43870`/`:43879`/`:43927`/`:43936`).
+    pub(crate) hair_buy_hover: bool,
+    pub(crate) hair_cancel_hover: bool,
+    /// `Main.grabColorSlider` (`Main.cs:43992`): 0 none, 1 hue, 2 saturation,
+    /// 3 lightness — the dragged slider keeps its grab while the mouse holds.
+    pub(crate) hair_grab_slider: i32,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -1746,8 +1794,18 @@ impl App {
         if entry.item == 0 || entry.stack == 0 {
             return false; // `:2043`'s `inv[slot].type <= 0` / `:2060`'s stack gate
         }
-        let price =
-            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
+        // W4-g58 final: the charge reads the TALK-OPEN LATCH
+        // (`currentShoppingSettings.PriceAdjustment`, `Player.cs:35382-35388`
+        // — the ONLY write site is `Player.SetTalkNPC` `:4389`), not the
+        // shop-open `shop_mood` capture: the vanilla shop button's
+        // Condition requires `TalkNPCType == npc.type` (`NPCInteractions.cs`
+        // Shop), so the talk latch is always live at the buy. Same shape as
+        // the reforge repoint (`13be13a6a`, `Main.cs:41591`).
+        let price = crate::shop::buy_price_row(
+            entry,
+            self.discount_available,
+            self.shopping_settings.price_adjustment,
+        ) as u64;
         if self.coins < price {
             return false;
         }
@@ -1805,12 +1863,16 @@ impl App {
             .map(|s| s.value)
             .unwrap_or(crate::itemdata::ITEMS[item.kind as usize].value);
         let amount = self.shop_sellback.get_amount(item.kind, item.prefix);
+        // W4-g58 final: `Player.SellItem` prices through
+        // `GetItemExpectedPrice` (`Player.cs:35170` → `:35383`/`:35388`),
+        // which DIVIDES by the TALK-OPEN LATCH — the same repoint as the
+        // buy above (`shop_mood` stays the f37 shop-open capture).
         let payout = crate::shop::sell_payout(
             value,
             false,
             false,
             self.discount_available,
-            self.shop_mood,
+            self.shopping_settings.price_adjustment,
             item.count,
             amount,
         );
@@ -1875,7 +1937,13 @@ impl App {
             false
         };
         if moved {
-            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+            // W4-d79 — case-7 Grab: one `Next(-10, 11) * 0.01` pitch draw
+            // (`LegacySoundPlayer.cs:725`) + the single-voice Stop/re-create
+            // (`:718-722`), on the bare stream (`SoundEngine.PlaySound(7)`,
+            // `ItemSlot.cs:1515-1520`'s ctx-5 — the reforge click runs outside
+            // every SwapRandom block).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
         }
     }
 
@@ -1891,6 +1959,16 @@ impl App {
     /// roll and the tail consume the bare-`Main.rand` stand-in
     /// (`NamedRngs::global`) — the menu path runs outside every swap
     /// (`S1-A-11` §4).
+    /// `Main.DrawInventory`'s inline block (`Main.cs:41584-41591`): the
+    /// charge reads the LATCHED `currentShoppingSettings.PriceAdjustment`
+    /// (`:41591`), NOT a shop-open capture — the vanilla opens the menu
+    /// through the Tinkerer's CHAT button (`NPCChatText_TinkererReforge`,
+    /// `Main.cs:40022-40029`), so the talk latch is live. The port's
+    /// collapsed entry (the #9 deviation — the menu auto-opens beside the
+    /// shop, `world_sim/npcs.rs`) keeps the first press's talk latch: the
+    /// re-click falls through `talk_to_npc` without re-latching
+    /// (`Main.cs:43077`'s `talkNPC != i` gate), exactly the C# state the
+    /// button reads.
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1900,7 +1978,7 @@ impl App {
                 .map(|s| s.value)
                 .unwrap_or(def.value),
             self.reforge_slot.count.max(1),
-            self.shop_mood,
+            self.shopping_settings.price_adjustment,
             self.discount_available,
         );
         if self.reforge_cooldown > 0 || self.coins < cost {
@@ -1998,6 +2076,88 @@ impl App {
         std::mem::swap(&mut self.equip.trash, &mut self.mouse_item);
     }
 
+    /// `Player.SetTalkNPC` (`Player.cs:4375-4404`): the latch write plus
+    /// the `currentShoppingSettings` refresh — `-1` resets to `NotInShop`
+    /// (`:4383-4386`), a live index runs `ShopHelper.GetShoppingSettings`
+    /// (`:4389`). The ≤0.82 achievement (`:4391-4394`,
+    /// `AchievementsHelper.HandleSpecialEvent(this, 20)` → the
+    /// `TALK_TO_NPC_AT_MAX_HAPPINESS` "Do" row, `AchievementsHelper.cs:
+    /// 355-357`) fires here on the LATCHED adjustment; the bestiary chat
+    /// tracker (`:4381`) rides its own lane. The portrait arm (`:4395-
+    /// 4403`): `npcChatPortrait = null`, then a live NPC with an
+    /// `NPCID.Sets.NPCPortraits` row takes the provider + hops
+    /// (`DoNPCPortraitHop`, `Main.cs:40675-40678`). The provider/draw stay
+    /// deferred (no portrait system); the hop counter ports — every ported
+    /// town kind carries a portrait row (`NPCID.cs:5894-6100`: 22/19/54/
+    /// 38/20/207/107/588/124/17/18/227/208/229/663/142/453/178/353/550/
+    /// 441/368/160/228/108/633/680/678-684/670/638/637/656 + the pets),
+    /// so the `TryGetValue` gate is always-true for the ported roster.
+    pub(crate) fn set_talk_npc(&mut self, idx: Option<usize>) {
+        self.talk_npc = idx;
+        self.shopping_settings = match idx {
+            None => {
+                // `Player.cs:4383-4386`: NotInShop — BOTH latches reset
+                // (research/68 §6: the seam subsumes f37's manual
+                // `shop_mood = 1.0` close writes).
+                self.shop_mood = 1.0;
+                crate::happiness::ShoppingSettings::default()
+            }
+            Some(i) => {
+                let pc = self.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+                let raining = self.world.raining;
+                // The Princess head draws the bare `Main.rand` stand-in
+                // (`NamedRngs::global()`) — the talk-open call chain runs
+                // outside every SwapRandom stage (`Main.cs:43081`).
+                let settings = crate::happiness::shopping_settings(
+                    &self.world,
+                    &self.npcs,
+                    &self.npcs[i],
+                    pc,
+                    raining,
+                    self.rngs.global(),
+                );
+                // f37's capture mirror (research/68 §4/§6 both-fields
+                // resolution): `shop_mood` stays honest for any f37-side
+                // reader; the transaction halves read the settings latch.
+                self.shop_mood = settings.price_adjustment;
+                settings
+            }
+        };
+        // `Player.cs:4391-4394`: `nPC != null && nPC.type >= 0 &&
+        // !NPCID.Sets.BoundTownNPCs[nPC.type] && !nPC.homeless &&
+        // PriceAdjustment <= 0.82f` → HandleSpecialEvent(20). The bound set
+        // (`NPCID.cs:10441`: 105/123/106/685-687/354/376/579/589) — the
+        // port ships six of them; the homeless stand-in is `home == None`.
+        if let Some(i) = idx {
+            let n = &self.npcs[i];
+            let bound = matches!(
+                n.kind,
+                crate::npc::NpcKind::BoundGoblin
+                    | crate::npc::NpcKind::BoundWizard
+                    | crate::npc::NpcKind::BoundMechanic
+                    | crate::npc::NpcKind::WebbedStylist
+                    | crate::npc::NpcKind::SleepingAngler
+                    | crate::npc::NpcKind::SleepingGolfer
+            );
+            if !bound
+                && n.home.is_some()
+                && self.shopping_settings.price_adjustment <= 0.82
+            {
+                let _ = self.achievements.complete_row_condition(
+                    "TALK_TO_NPC_AT_MAX_HAPPINESS",
+                    "Do",
+                );
+            }
+        }
+        // `:4395-4403` — the local-player portrait arm: the provider
+        // clears on EVERY call (the close too); a live portrait-row NPC
+        // re-arms it and hops. The provider is unported (no portrait
+        // system); the hop counter resets here for a live talk.
+        if idx.is_some() {
+            crate::ui::npc_chat::do_npc_portrait_hop(self);
+        }
+    }
+
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
     /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
     /// `dropItemCheck`); the slot item returns to the inventory through
@@ -2015,6 +2175,10 @@ impl App {
         self.shop_mood = 1.0;
         self.in_reforge_menu = false;
         self.return_reforge_slot();
+        // W4-f37 — `Main.DrawHairWindow`'s force-close gate (`:43711`):
+        // `npcShop != 0` cancels the window. The port's shop-close is the
+        // same seam (the reforge menu's force-close rides it too).
+        crate::hair_window::cancel(self, false);
     }
 
     /// `Player.dropItemCheck`'s reforge arm (`Player.cs:5123-5127`): with the
@@ -2122,26 +2286,30 @@ impl App {
         }
     }
 
-    /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
+    /// `Main.GetNurseHealCost` (`Main.cs:40053-40101`): the missing life
     /// plus the removable debuffs x100 — a slot counts when
     /// `Main.debuff[b] && buffTime > 60 && !NurseCannotRemoveDebuff[b]` —
     /// then the boss-progression ladder, the discount and the happiness
-    /// adjustment. The expert x2 stays constants-off (the difficulty
-    /// plumbing rides R-03-6).
-    pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
+    /// adjustment. The adjustment reads the LATCHED `currentShoppingSettings.
+    /// PriceAdjustment` (`:40100`) — the talk-open latch (`Player.SetTalkNPC`,
+    /// `Player.cs:4389`, the `Main.cs:42939`→`:43081` chain), NOT a fresh
+    /// mood pass: mood changes between the talk and the heal do not change
+    /// the price. Draw-free — the Princess head drew at the LATCH site on
+    /// `NamedRngs::global()` (and the Nurse is never the Princess). The
+    /// expert x2 stays constants-off (the difficulty plumbing rides R-03-6).
+    /// (f37's `shop_mood` latch mirrors the same value — research/68 §6's
+    /// both-fields resolution; research/241 Hunk 4 names this read.)
+    pub(crate) fn nurse_heal_cost(&self) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
         let debuffs = player.remountable_debuff_count();
-        let npc = &self.npcs[nurse_idx];
-        let mood =
-            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
         let w = &self.world;
         nurse_heal_cost_for(
             missing,
             debuffs,
-            mood.multiplier,
+            self.shopping_settings.price_adjustment, // `Main.cs:40100` (research/241 Hunk 4)
             &NurseCostFlags {
                 downed_golem: w.downed_golem,
                 downed_plant_boss: w.downed_plant_boss,
@@ -2155,27 +2323,71 @@ impl App {
         )
     }
 
-    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
-    /// → the life to full + the removable debuffs cleared. Returns false
-    /// when the purse is short or there is nothing to heal.
-    pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
-        let cost = self.nurse_heal_cost(nurse_idx);
-        if cost <= 0 || self.coins < cost as u64 {
+    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103-40178`): the paid
+    /// heal — `BuyItem(healCost)` → the HealEffect text + the pre-heal
+    /// life-band dialog (227/228/229/230), the life to full, the removable
+    /// debuffs cleared. The refused heal answers one of 52/53/54
+    /// (`Next(3)`); nothing-to-heal answers 55/56/57 (`Next(3)`, or
+    /// `Next(1, 3)` while ChildSafety is ON — the blood line 55 drops).
+    /// Returns false when the purse is short or there is nothing to heal.
+    /// The C# takes no NPC index — the cost rides the latched settings of
+    /// whoever is talked to (`NurseHeal.Interact`, `NPCInteractions.cs:
+    /// 258-261`; f37's `nurse_idx` param dropped at batch-L, the g58
+    /// signature wins). The sound-12 head + the Item4 success cue are
+    /// W4-g21's (its `nurse_heal` hunk); the portrait hop (`:40177`) is
+    /// g58's.
+    pub(crate) fn nurse_heal(&mut self) -> bool {
+        let cost = self.nurse_heal_cost();
+        if cost <= 0 {
+            // `:40157-40175` — nothing to heal. The `Next(3)` draws FIRST,
+            // then the ChildSafety arm RE-DRAWS `Next(1, 3)` (both draws
+            // spend the stream — the C# does not reuse the first roll).
+            let mut roll = self.rngs.global().next_max(3);
+            if !self.dust.child_safety.disabled {
+                roll = self.rngs.global().next_range(1, 3);
+            }
+            self.npc_chat_text = crate::lang::dialog(55 + roll);
+            return false;
+        }
+        if self.coins < cost as u64 {
+            // `:40140-40155` — `BuyItem` refused: one of the three
+            // "can't afford" lines (`Next(3)` → 52/53/54).
+            let roll = self.rngs.global().next_max(3);
+            self.npc_chat_text = crate::lang::dialog(52 + roll);
             return false;
         }
         let Some(player) = self.player.as_mut() else {
             return false;
         };
+        // `:40112` — `HealEffect(statLifeMax2 - statLife)` BEFORE the life
+        // fills: the text carries the missing amount. The click runs
+        // outside every swap — the jitter draws ride the global stand-in.
+        let missing = player.max_hp - player.hp;
+        // `:40113-40128` — the dialog band reads the PRE-heal life: the
+        // `(double)` compares are exact f64 promotions of the i32 pair.
+        let life = player.hp as f64;
+        let max = player.max_hp as f64;
+        let line = if life < max * 0.25 {
+            227
+        } else if life < max * 0.5 {
+            228
+        } else if life < max * 0.75 {
+            229
+        } else {
+            230
+        };
         player.hp = player.max_hp;
         // The removable debuffs clear (`DoNurseHeal`'s removal block,
-        // `Main.cs:40147`: `Main.debuff[b] && buffTime > 0 &&
+        // `Main.cs:40130-40138`: `Main.debuff[b] && buffTime > 0 &&
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
-        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40110`,
         // `AchievementsHelper.cs:407-410`): the paid amount rides
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
+        crate::potions::spawn_heal_text_with(self, missing, self.rngs.global());
+        self.npc_chat_text = crate::lang::dialog(line);
         true
     }
 
@@ -2213,7 +2425,7 @@ impl App {
             let line = crate::lang::text_args("Achievements.Completed", &[tag]);
             self.chat.new_text(line, [255, 255, 255]);
             // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
-            self.audio.play("Menu_Tick");
+            self.audio.play_menu("Menu_Tick");
             // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
             // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
             let style = crate::achievements::achievement_complete_style();
@@ -2589,7 +2801,7 @@ impl App {
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
-        self.audio.play("Menu_Open");
+        self.audio.play_menu("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
                 self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
@@ -2668,7 +2880,7 @@ impl App {
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
         // `_cancelAction` (the buttons `:321`/:387, Escape's
         // `TryEscapingMenu` :806-810).
-        self.audio.play("Menu_Close");
+        self.audio.play_menu("Menu_Close");
         if is_chest {
             crate::chest::rename_cancel(self);
             return;
@@ -3172,6 +3384,9 @@ impl App {
                     Some((rec.home_x, rec.home_y))
                 };
                 npc.given_name = rec.given_name.clone();
+                // W4-f43b: the v18 per-record variation byte restores the
+                // rolled variant (a pre-v18 record loads 0).
+                npc.variation_index = rec.variation_index;
                 npcs.push(npc);
             }
         }
@@ -3661,6 +3876,7 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            shopping_settings: crate::happiness::ShoppingSettings::default(),
             gpu: None,
             renderer: None,
             post: None,
@@ -3721,7 +3937,21 @@ impl App {
             reforge_cooldown: 0,
             mouse_reforge: false,
             reforge_scale: 0.8, // `Main.cs:67157`
+            // W4-f37 — the hair window's boot state: closed, the latches
+            // empty, the sliders at the −1 "seed on first draw" sentinel
+            // (`Main.cs:43655-43657`), the grid at 0.
+            hair_window: false,
+            old_hair_style: 0,
+            old_hair_color: [0, 0, 0],
+            hair_start: 0,
+            hair_h_bar: -1.0,
+            hair_s_bar: -1.0,
+            hair_l_bar: -1.0,
+            hair_buy_hover: false,
+            hair_cancel_hover: false,
+            hair_grab_slider: 0,
             shop_mood: 1.0,
+            npc_chat_portrait_frame_counter: 0,
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
@@ -5747,26 +5977,27 @@ mod s1_e_18_tests {
     /// (`AchievementsHelper.cs:407-410`). A purse too short never reaches it.
     #[test]
     fn the_nurse_heal_credits_the_paid_copper_to_frequent_flyer() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
         app.player = Some(player);
-        app.npcs.push(crate::npc::Npc::new(
-            crate::npc::NpcKind::Nurse,
-            32.0,
-            100.0,
-            1,
-            0.0,
-        ));
-        let cost = app.nurse_heal_cost(0);
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        app.npcs.push(nurse);
+        // The heal reads the TALK-OPEN latch (`Player.cs:4389`) — the
+        // vanilla opens the dialog before the Heal button exists.
+        app.set_talk_npc(Some(0));
+        let cost = app.nurse_heal_cost();
         assert!(cost > 0, "half life is a heal");
         // Shy of the price: the C# returns before `HandleNurseService`.
         app.coins = cost as u64 - 1;
-        assert!(!app.nurse_heal(0));
+        assert!(!app.nurse_heal());
         assert_eq!(pay(&app), 0);
         // The paid heal credits the exact copper and tops the life up.
         app.coins = cost as u64;
-        assert!(app.nurse_heal(0));
+        assert!(app.nurse_heal());
         assert_eq!(pay(&app), cost);
         assert_eq!(
             app.player.as_ref().unwrap().hp,
@@ -5783,6 +6014,189 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+
+    /// W4-g58 nurse-latch fix: `GetNurseHealCost` (`Main.cs:40100`) reads the
+    /// LATCHED `currentShoppingSettings.PriceAdjustment` — the talk-open
+    /// write (`Player.SetTalkNPC`, `Player.cs:4389`, the `Main.cs:42939`
+    /// HoverOverNPCs → `:43081` chain). Mood changes BETWEEN the talk and
+    /// the heal do not change the cost; only a fresh `SetTalkNPC` re-latch
+    /// picks the new mood up.
+    #[test]
+    fn the_nurse_cost_reads_the_talk_latch_not_a_fresh_mood() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        // A HOMELESS Nurse: the NoHome sentinel (`ShopHelper.cs:107-110`)
+        // rides the 1.5 clamp ceiling — position-independent.
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        nurse.home = None;
+        app.npcs.push(nurse);
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        let cost = app.nurse_heal_cost();
+        assert!(cost > 0);
+        // House her AFTER the talk: a fresh ProcessMood would drop the
+        // sentinel (LoveSpace ×0.95 → 0.95), but the C# cost reads the
+        // latch — unchanged.
+        app.npcs[0].home = Some((2, 6));
+        assert_eq!(
+            app.nurse_heal_cost(),
+            cost,
+            "mood changes between talk and heal do not change the price"
+        );
+        // A fresh latch (re-opening the talk) picks the new mood up.
+        app.set_talk_npc(Some(0));
+        assert!(
+            app.nurse_heal_cost() < cost,
+            "the re-latch reads the housed mood"
+        );
+    }
+
+    /// W4-g58: `Player.SetTalkNPC`'s ≤0.82 achievement arm
+    /// (`Player.cs:4391-4394` → `HandleSpecialEvent(20)` →
+    /// `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do", `AchievementsHelper.cs:355-357`).
+    /// The homeless sentinel (1.5) never fires it; a max-happiness housed
+    /// NPC does — and ONLY that row completes (the "Do" flag is shared).
+    #[test]
+    fn the_max_happiness_talk_fires_only_its_achievement_row() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        nurse.home = None; // the NoHome sentinel → 1.5
+        app.npcs.push(nurse);
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        assert!(!app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // House her beside her LOVED Arms Dealer (`AllPersonalitiesModifier
+        // .cs:61-82`, Love ×0.88) and a Princess (the universal LikePrincess
+        // ×0.94, `:37-40`): LoveSpace ×0.95 × 0.88 × 0.94 = 0.78584 → 0.79
+        // ≤ 0.82 (`ShopHelper.MaxHappinessAchievementPriceMultiplier`).
+        app.npcs[0].home = Some((2, 6));
+        let mut arms = crate::npc::Npc::new(crate::npc::NpcKind::ArmsDealer, 48.0, 100.0, 1, 0.0);
+        arms.hp = arms.max_hp;
+        arms.home = Some((3, 6));
+        app.npcs.push(arms);
+        let mut princess = crate::npc::Npc::new(crate::npc::NpcKind::Princess, 64.0, 100.0, 1, 0.0);
+        princess.hp = princess.max_hp;
+        princess.home = Some((4, 6));
+        app.npcs.push(princess);
+        app.set_talk_npc(Some(0));
+        assert!(
+            app.shopping_settings.price_adjustment <= 0.82,
+            "the housed loved-neighbor mood {} is in the band",
+            app.shopping_settings.price_adjustment
+        );
+        assert!(app
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // The row-targeted hook: the other "Do" rows stay open.
+        assert!(!app.achievements.list.iter().any(|a| a.name == "PET_THE_PET" && a.completed));
+        assert!(!app.achievements.list.iter().any(|a| a.name == "FIND_A_FAIRY" && a.completed));
+    }
+
+    /// W4-f37 doc-sweep — `NPCChatText_DoNurseHeal`'s dialog ladder
+    /// (`Main.cs:40113-40128`): the band reads the PRE-heal life against
+    /// `statLifeMax2` — `< 0.25` → 227, `< 0.5` → 228, `< 0.75` → 229,
+    /// else 230 — and the `HealEffect` text (`:40112`) carries the missing
+    /// amount. The exact-quarter boundaries fall to the NEXT band (the
+    /// compares are strict `<`).
+    #[test]
+    fn the_nurse_dialog_band_reads_the_pre_heal_life() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // (pre-heal life, expected LegacyDialog row) at max 400.
+        for (hp, row) in [(99, 227), (100, 228), (199, 228), (200, 229), (299, 229), (300, 230)] {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 400;
+            player.hp = hp;
+            app.player = Some(player);
+            app.npcs.push(crate::npc::Npc::new(
+                crate::npc::NpcKind::Nurse,
+                32.0,
+                100.0,
+                1,
+                0.0,
+            ));
+            let cost = app.nurse_heal_cost();
+            app.coins = cost as u64;
+            assert!(app.nurse_heal());
+            assert_eq!(
+                app.npc_chat_text,
+                crate::lang::dialog(row),
+                "hp {hp} answers row {row}"
+            );
+            // The HealEffect text: the missing amount, HealLife colour.
+            let t = app
+                .combat_texts
+                .iter()
+                .find(|t| t.active)
+                .expect("the heal text spawned");
+            assert_eq!(t.text, (400 - hp).to_string());
+            assert_eq!(t.color, crate::combat_text::HEAL_LIFE);
+        }
+    }
+
+    /// W4-f37 doc-sweep — the refused heal (`Main.cs:40140-40155`): one
+    /// `Next(3)` on the bare-`Main.rand` stand-in picks 52/53/54; the
+    /// nothing-to-heal arm (`:40157-40175`) draws `Next(3)` then RE-DRAWS
+    /// `Next(1, 3)` while ChildSafety is ON (both draws spend the stream),
+    /// so the blood line 55 never answers under the gate.
+    #[test]
+    fn the_nurse_refusals_draw_the_dialog_rolls() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost();
+        // The poor purse: ONE Next(3) → 52 + roll.
+        app.coins = cost as u64 - 1;
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_max(3);
+        assert!(!app.nurse_heal());
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(52 + roll));
+        assert_eq!(*app.rngs.global(), twin, "one draw spent");
+        // Nothing to heal, ChildSafety OFF (blood on): ONE Next(3) → 55+.
+        app.player.as_mut().unwrap().hp = app.player.as_ref().unwrap().max_hp;
+        app.sync_child_safety(Some(true)); // disabled = true → the gate OFF
+        let mut twin = app.rngs.global().clone();
+        let roll = twin.next_max(3);
+        assert!(!app.nurse_heal());
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
+        assert_eq!(*app.rngs.global(), twin, "one draw spent");
+        // ChildSafety ON (blood off): Next(3) THEN Next(1, 3) — two draws,
+        // the second picks the line (56/57 only).
+        app.sync_child_safety(Some(false));
+        let mut twin = app.rngs.global().clone();
+        let _first = twin.next_max(3);
+        let roll = twin.next_range(1, 3);
+        assert!(!app.nurse_heal());
+        assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
+        assert!((56..=57).contains(&(55 + roll)), "the blood line drops");
+        assert_eq!(*app.rngs.global(), twin, "two draws spent");
     }
 }
 
@@ -5837,6 +6251,11 @@ mod s1_p_i44_tests {
         app.shop_stock =
             crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
         app.shop_mood = 1.0;
+        // W4-g58 final: the transactions read the TALK latch
+        // (`shopping_settings.price_adjustment`, `Player.cs:35382-35388`);
+        // the fixture's mood 1 is the NotInShop default — pinned here so
+        // the price witnesses read the latch, not the stale shop capture.
+        app.shopping_settings.price_adjustment = 1.0;
         app.coins = 1_000_000;
         app
     }
@@ -5883,10 +6302,10 @@ mod s1_p_i44_tests {
 
     #[test]
     fn the_happiness_and_discount_ride_the_buy_charge() {
-        // `Player.cs:35387` — the mood multiplies the buy; `:35373` — the
-        // Discount Card truncates ×0.8 first.
+        // `Player.cs:35387` — the LATCHED mood multiplies the buy; `:35373`
+        // — the Discount Card truncates ×0.8 first.
         let mut app = shop_app();
-        app.shop_mood = 0.75;
+        app.shopping_settings.price_adjustment = 0.75;
         assert!(app.buy_shop_item(0));
         assert_eq!(app.coins, 1_000_000 - 30000);
         let mut app = shop_app();
@@ -5979,6 +6398,75 @@ mod s1_p_i44_tests {
         assert!(app.shop_stock.is_empty());
         assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
         assert_eq!(app.shop_mood, 1.0);
+    }
+
+    /// W4-g58 final — the buy/sell transactions read the TALK-OPEN LATCH
+    /// (`Player.GetItemExpectedPrice`, `Player.cs:35382-35388`:
+    /// `currentShoppingSettings.PriceAdjustment`, the ONLY write site
+    /// `Player.SetTalkNPC` `:4389`), NOT the shop-open `shop_mood` capture.
+    /// The vanilla shop button's Condition requires `TalkNPCType ==
+    /// npc.type` (`NPCInteractions.cs:59-62`), so the latch is always live
+    /// at the transaction; a stale shop capture and a post-latch housing
+    /// change must not move the price.
+    #[test]
+    fn the_buy_and_sell_read_the_talk_latch_not_the_shop_capture() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = shop_app();
+        // A HOMELESS Merchant: the NoHome sentinel rides the 1.5 ceiling
+        // (`ShopHelper.cs:107-110` → the `:178` clamp).
+        let mut merchant = crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 32.0, 100.0, 1, 0.0);
+        merchant.hp = merchant.max_hp;
+        merchant.home = None;
+        app.npcs.push(merchant);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        // The stale shop capture says 1.0 — the C# charge ignores it:
+        // the Mining Helmet 88 (40000) buys at 40000 × 1.5 = 60000
+        // (`:35387`, the f32 multiply is exact here), NOT 40000.
+        app.shop_mood = 1.0;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 60000, "the latched 1.5 prices the buy");
+        // The sell DIVIDES (`:35388`): 40000 / 1.5f = 26666.666 → banker's
+        // 26667, /5 = 5333 per unit; the sellback memo refunds the bought
+        // unit at its 60000 buy price (`Player.cs:35191-35195`), so the
+        // one-unit round trip pays 5333 + (60000 − 5333) = 60000.
+        let item = app.mouse_item;
+        assert_eq!((item.kind, item.count), (88, 1));
+        let payout = app.sell_item(&item);
+        assert_eq!(payout, 60000, "the memo refund rides the latched buy price");
+        assert_eq!(app.coins, 1_000_000, "the round trip is purse-neutral");
+        // A fresh helmet (no memo) sells at the plain latched divide:
+        // 26667 / 5 = 5333.
+        app.shop_sellback.clear();
+        assert_eq!(app.sell_item(&held(88, 1)), 5333);
+        // House him AFTER the latch: a fresh mood pass would drop the
+        // sentinel (LoveSpace ×0.95 → 0.95), but the transactions read the
+        // latch — the buy still charges 60000.
+        app.npcs[0].home = Some((2, 6));
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        let coins = app.coins;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(
+            app.coins,
+            coins - 60000,
+            "the post-latch housing change is inert (the latched 1.5 prices)"
+        );
+        // A re-latch picks the new mood up: the housed Merchant alone is
+        // LoveSpace ×0.95 (`ShopHelper.cs:147-151`). His biome rows are
+        // Like Forest / Dislike Desert (`PersonalityDatabasePopulator.cs:
+        // 32-36`) — neither matches the flow world's player centre (tile
+        // 4,3): the beach band holds (x=4 < 380, y=3 ≤ the ocean level
+        // (2+3.6)/2+40 = 42.8) so Forest fails via `zone_beach`, and the
+        // Merchant carries no Ocean row. The mood is 0.95 → the buy
+        // charges 40000 × 0.95 = 38000.
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.shopping_settings.price_adjustment, 0.95);
+        app.mouse_item = crate::item::EMPTY_SLOT;
+        let coins = app.coins;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, coins - 38000, "the re-latch reads the housed mood");
     }
 
     #[test]

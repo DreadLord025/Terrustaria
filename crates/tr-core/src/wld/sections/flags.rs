@@ -220,9 +220,10 @@ pub fn write(w: &mut Writer, world: &World) {
     // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
     // arrival (`WorldGen.cs:5577-5604`), read at the spawn gates
     // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). The party
-    // girl, the princess and the rainbow slime have World state; the other
-    // unlocks are unowned.
-    w.boolean(false); // unlockedSlimeBlueSpawn
+    // girl, the princess and all eight slime unlocks have World state
+    // (W4-f43b: the six-flag widening for the town-slime arrival arms); the
+    // other unlocks are unowned.
+    w.boolean(world.unlocked_slime_blue_spawn); // unlockedSlimeBlueSpawn
     w.boolean(false); // unlockedMerchantSpawn
     w.boolean(false); // unlockedDemolitionistSpawn
     w.boolean(world.unlocked_party_girl); // unlockedPartyGirlSpawn
@@ -239,6 +240,11 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed
+    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed
+    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn
+    w.boolean(world.unlocked_slime_purple_spawn); // unlockedSlimePurpleSpawn
+    w.boolean(world.unlocked_slime_yellow_spawn); // unlockedSlimeYellowSpawn
     w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
     // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
@@ -605,7 +611,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
-        // WorldFile.cs:2358-2360 — the three town-pet licenses (W4-g87).
+        // WorldFile.cs:2358-2360 — the three town-pet licenses (a6/g87,
+        // deduped at the batch-L merge).
         world.bought_cat = r.bool()?; // boughtCat
         world.bought_dog = r.bool()?; // boughtDog
         world.bought_bunny = r.bool()?; // boughtBunny
@@ -618,7 +625,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.downed_deerclops = r.bool()?;
     }
     if version >= 250 {
-        r.skip(1)?; // unlockedSlimeBlueSpawn
+        // WorldFile.cs:2386-2389 — W4-f43b: owned for the blue slime's
+        // arrival gate (`Main.cs:65912-65915`).
+        world.unlocked_slime_blue_spawn = r.bool()?; // unlockedSlimeBlueSpawn
     }
     if version >= 251 {
         // WorldFile.cs:2396-2403 — the eight unlocks in write order; only the
@@ -629,10 +638,10 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
     }
     if version >= 260 {
-        r.skip(1)?; // peddlersSatchelWasUsed
+        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed
     }
     if version >= 261 {
         r.skip(1)?; // unlockedSlimeGreenSpawn
@@ -641,6 +650,12 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
         r.skip(1)?; // unlockedSlimeYellowSpawn
+        // WorldFile.cs:2432-2440 — W4-f43b: all seven slime bytes owned (the
+        // rainbow/red pair were S1-P-i35's; the other five complete the
+        // town-slime arrival gates, `Main.cs:65916-65943`).
+        world.unlocked_slime_green_spawn = r.bool()?; // unlockedSlimeGreenSpawn
+        world.unlocked_slime_purple_spawn = r.bool()?; // unlockedSlimePurpleSpawn
+        world.unlocked_slime_yellow_spawn = r.bool()?; // unlockedSlimeYellowSpawn
         world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the

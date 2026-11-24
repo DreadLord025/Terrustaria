@@ -197,7 +197,11 @@ impl App {
             let npcs: Vec<save::NpcRecord> = self
                 .npcs
                 .iter()
-                .filter(|n| n.kind.is_town_resident())
+                // W4-g10 lane 3: `SaveNPCs:1717`'s `active && townNPC &&
+                // type != 368` filter — the town pets write `townNPC = true`
+                // too, so they ride the town block (the resident-only filter
+                // would drop them; the C# saves every townNPC).
+                .filter(|n| n.kind.is_town_resident() || n.kind.is_town_pet())
                 .map(|n| save::NpcRecord {
                     kind: n.kind.to_u16(),
                     given_name: n.given_name.clone(),
@@ -206,6 +210,10 @@ impl App {
                     homeless: n.home.is_none(),
                     home_x: n.home.map_or(-1, |(hx, _)| hx),
                     home_y: n.home.map_or(-1, |(_, hy)| hy),
+                    // W4-f43b: `SaveNPCs:1731`'s variation payload — the
+                    // license pets' rolled variant persists (the v18
+                    // per-record tail byte).
+                    variation_index: n.variation_index,
                 })
                 .collect();
             // `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`): the seven
@@ -345,7 +353,7 @@ impl App {
     /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
-        self.audio.play("Menu_Close");
+        self.audio.play_menu("Menu_Close");
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
@@ -362,7 +370,7 @@ impl App {
         // snapshotted the live rain into the file payload above.
         self.save_world();
         // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
-        self.audio.play("Menu_Open");
+        self.audio.play_menu("Menu_Open");
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;

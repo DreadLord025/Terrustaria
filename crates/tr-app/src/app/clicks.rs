@@ -464,7 +464,7 @@ impl App {
         if left && self.cursor_override == CURSOR_FAVORITE {
             let idx = row_favorite_index(context, k);
             if self.toggle_favorite(idx) != 0 {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             return;
         }
@@ -487,7 +487,12 @@ impl App {
                 return;
             }
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab: one `Next(-10, 11) * 0.01` pitch draw
+                // (`LegacySoundPlayer.cs:725`) + the single-voice Stop/re-create
+                // (`:718-722`), on the bare stream (the click handler runs
+                // outside every SwapRandom block, `ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             self.mouse_item = held;
         } else if can_take {
@@ -607,13 +612,19 @@ impl App {
             match pick_item_movement_action(context, &held, idx, &target, equip_ctx) {
                 1 => {
                     if equip_left_click(&mut held, &mut target) {
-                        self.audio.play("Grab"); // `:1023,1057,1075,1083`
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream
+                        // (`ItemSlot.cs:1023,1057,1075,1083`).
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 2 => {
                     let held_dye = registry::get(held.kind).is_some_and(|d| d.dye > 0);
                     if dye_left_click(&mut held, &mut target, held_dye) {
-                        self.audio.play("Grab"); // `:1125,1161,1179,1186`
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream
+                        // (`ItemSlot.cs:1125,1161,1179,1186`).
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 _ => {}
@@ -689,8 +700,18 @@ impl App {
         };
         self.set_equip_cell(context, idx, item);
         // `:1999-2006` — the fifteen kinds play 22 (Unlock), the rest 7.
-        self.audio
-            .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+        // W4-d79 — case 22 is the draw-free single-voice pool, case 7 Grab
+        // one `Next(-10, 11) * 0.01` pitch + pool; both unpositioned, on the
+        // bare stream (the click handler runs outside every SwapRandom block).
+        match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+            "Unlock" => {
+                self.audio.play_single_voice("Unlock", -1.0, -1.0);
+            }
+            _ => {
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
+            }
+        }
         self.stack_split = 30; // `:2007`
         self.ui_right_press = false; // `:2008`
     }
@@ -737,7 +758,10 @@ impl App {
             SwapTarget::Misc(_) => crate::ui::inventory::EQUIP_PAGE_MISC,
             _ => 0,
         };
-        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` on every arm
+        // W4-d79 — case-7 Grab pitch + pool on the bare stream
+        // (`SoundEngine.PlaySound(7)` on every swap arm, `ItemSlot.cs`).
+        self.audio
+            .play_grab_sound(-1.0, -1.0, self.rngs.global());
         true
     }
 
@@ -757,7 +781,9 @@ impl App {
             return; // `:1874-1877`
         }
         self.equip.armor.swap(slot, real);
-        self.audio.play("Grab"); // `:1879` — `SoundEngine.PlaySound(7)`
+        // W4-d79 — case-7 Grab pitch + pool, bare stream (`ItemSlot.cs:1879`).
+        self.audio
+            .play_grab_sound(-1.0, -1.0, self.rngs.global());
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
@@ -897,7 +923,7 @@ impl App {
         if self.ui_left_press {
             if let Some(i) = ui::crafting::filter_hit(screen, self.mouse_pos) {
                 self.craft_filters.click(i);
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
                 return true;
             }
@@ -974,7 +1000,7 @@ impl App {
                 self.focus_recipe = idx as i32;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
             }
             return true;
@@ -1043,7 +1069,11 @@ impl App {
             }
             // `SoundEngine.PlaySound(7)` — the grant sound
             // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-            self.audio.play("Grab");
+            // W4-d79 — case-7 Grab pitch + pool; the craft runs in
+            // `UpdateInventory` outside every SwapRandom block, so the draw
+            // rides the bare-`Main.rand` stand-in (`rngs.global()`).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
@@ -1065,13 +1095,16 @@ impl App {
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
     /// `NPCChatPanel.cs:88-162`): the hover edge plays sound 12
-    /// (`:157-160`) and the Close button's press (`:150-154`) runs
-    /// `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
-    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`) — the talk
+    /// (`:157-160`) and a button's press (`:150-154`) runs its
+    /// `Interact` — Close → `Main.CloseNPCChatOrSign`
+    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`): the talk
     /// latch clears, `npcChatText` empties, sound 11 plays and
-    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). The other
-    /// interaction buttons (shop/happiness/housing/…) are deferred —
-    /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
+    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`);
+    /// Happiness → `ReportHappiness.Interact` (`NPCInteractions.cs:
+    /// 305-311`): sound 12 + `npcChatText = HappinessReport` (the
+    /// portrait hop / corner item are unported). The other interaction
+    /// buttons (shop/housing/…) are deferred — docs/ANALYSIS.md "Town
+    /// chatter UI (S1-E-10b)".
     pub(crate) fn handle_npc_chat_clicks(&mut self) {
         if self.talk_npc.is_none() {
             // `DrawButtons` only runs while the panel draws — `_lastHovered`
@@ -1081,14 +1114,17 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        // The Dryad's status button (`DryadPurification`, W4-g49) — the second
-        // interaction, hover index 1 while its condition holds.
-        let dryad_status = ui::npc_chat::dryad_status_active(&self.npcs, self.talk_npc);
-        let dryad_rect = ui::npc_chat::dryad_status_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) {
+        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`).
+        let happiness = !crate::happiness::can_show_homeless_text(
+            self.talk_npc.and_then(|i| self.npcs.get(i)),
+        ) && !self.shopping_settings.happiness_report.is_empty();
+        let close =
+            ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
+        let happy =
+            ui::npc_chat::happiness_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
+        let hovered = if ui::in_rect(self.mouse_pos, close) {
             0
-        } else if dryad_status && ui::in_rect(self.mouse_pos, dryad_rect) {
+        } else if happy.is_some_and(|r| ui::in_rect(self.mouse_pos, r)) {
             1
         } else {
             -1
@@ -1120,10 +1156,24 @@ impl App {
             // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
             // half is unported; `SetTalkNPC(-1)` + the text clear + sound
             // 11 + the panel's `Close` reset.
-            self.talk_npc = None;
+            self.set_talk_npc(None);
             self.npc_chat_text.clear();
+            // `SetTalkNPC(-1)` (`Player.cs:4383-4386`): NotInShop — the
+            // captured mood resets (W4-f37).
+            self.shop_mood = 1.0;
             crate::chest::play_menu_sound(self, 11);
             self.npc_chat_last_hovered = -1;
+        } else if hovered == 1 && self.ui_left_press {
+            self.ui_left_press = false;
+            // `ReportHappiness.Interact` (`NPCInteractions.cs:305-311`):
+            // `npcChatCornerItem = 0` (unported) + sound 12 +
+            // `npcChatText = currentShoppingSettings.HappinessReport`
+            // (the report REPLACES the chat line — the talk latch stays).
+            crate::chest::play_menu_sound(self, 12);
+            self.npc_chat_text = self.shopping_settings.happiness_report.clone();
+            // `Main.DoNPCPortraitHop` (`:310`) — the hop counter resets
+            // (the portrait draw stays deferred, S1-E-10b).
+            ui::npc_chat::do_npc_portrait_hop(self);
         }
     }
 
@@ -1535,7 +1585,7 @@ impl App {
         }
         // `:45223-45227`: the right release drops the head, sound 12.
         if right_edge {
-            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             self.mouse_npc_index = -1;
             self.mouse_npc_type = -1;
         }
@@ -1586,7 +1636,7 @@ impl App {
                 // `Main.TryMovingNPC:45176-45178`: clear the head, sound 12.
                 self.mouse_npc_index = -1;
                 self.mouse_npc_type = -1;
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 // `SpawnTownNPC`'s relocation arm fires NO_HOBO (progression
                 // 8, `WorldGen.cs:5460`).
                 let _ = self.notify_progression_net(8);
@@ -1636,7 +1686,7 @@ impl App {
             if let Some((head, npc)) =
                 ui::housing::hover(&cells, [self.mouse_pos.x, self.mouse_pos.y], 0.85)
             {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:42060`)
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:42060`)
                 if head == ui::housing::HOUSING_QUERY {
                     // `SetMouseNPC_ToHousingQuery()` (`:42063`).
                     self.mouse_npc_index = -1;
@@ -1710,7 +1760,7 @@ impl App {
                         p.hide_visible_accessory[i] = !p.hide_visible_accessory[i];
                     }
                     // `SoundEngine.PlaySound(12)` (`Main.cs:41438`).
-                    self.audio.play("Menu_Tick");
+                    self.audio.play_menu("Menu_Tick");
                     // `SendData(4)` in MP — the player-info packet is not ported
                     // for this field (`net.rs`'s `hide_visible_accessory` is a
                     // decode-only `u16`), so the flip stays local (ANALYSIS).
@@ -1731,8 +1781,8 @@ impl App {
                 match ui::chrome::pvp_click(&state, &hit) {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
-                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-                        let hostile = if let Some(p) = self.player.as_mut() {
+                        self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
                             p.hostile
                         } else {
@@ -1747,7 +1797,7 @@ impl App {
                     }
                     Some(ui::chrome::PvpClick::SetTeam(i)) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
-                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                        self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                         if let Some(p) = self.player.as_mut() {
                             p.team = i;
                         }
@@ -1781,7 +1831,7 @@ impl App {
                 if let Some(sel) = ui::chrome::page_tab_click(tab, self.equip_page_selected) {
                     self.equip_page_selected = sel;
                     // `SoundEngine.PlaySound(10)` (`:42857`) — the port's cue.
-                    self.audio.play("Menu_Open");
+                    self.audio.play_menu("Menu_Open");
                 }
                 return;
             }
@@ -2051,7 +2101,10 @@ impl App {
         {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             return;
         }
@@ -2114,7 +2167,7 @@ impl App {
                 let channel = self.player.as_ref().is_some_and(|p| p.channel);
                 if !control_torch && !channel && !self.block_mouse {
                     if self.selection.select(self.selected, slot, false) {
-                        self.audio.play("Menu_Tick"); // `Select`, `:506`
+                        self.audio.play_menu("Menu_Tick"); // `Select`, `:506`
                     }
                 }
             }
@@ -2128,7 +2181,7 @@ impl App {
         // through to the pickup arm.
         if left && self.cursor_override == CURSOR_FAVORITE {
             if self.toggle_favorite(slot) != 0 {
-                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             return;
         }
@@ -2136,12 +2189,28 @@ impl App {
             // `OverrideLeftClick`'s cursor-6 arm (`ItemSlot.cs:759-775`): the
             // stack moves to the trash (REPLACING its contents) and the slot
             // turns to air. The research exception (`:762`) rides the Journey
-            // research (unported); the cues are `TrashItem` (`:764`, no port
-            // cue — the recorded gap) then `Grab` (`:765`).
+            // research (unported); the cues are `TrashItem` (`:764`, the
+            // case-42 trackable — W4-d79 closes the bank gap) then `Grab`
+            // (`:766`, the case-7 pitch + pool).
             self.equip.trash = self.inventory[slot].clone();
             self.inventory[slot] = EMPTY_SLOT;
-            self.audio.play("TrashItem"); // no port cue — the recorded gap
-            self.audio.play("Grab");
+            // W4-d79 — `SoundID.TrashItem` (`ItemSlot.cs:764`,
+            // `SoundID.cs:1738`'s `CreateTrackable("trash_item", 2)
+            // .WithVolume(0.55).WithPitchVariance(0.25)`): the case-42 style
+            // façade — the GetRandomPitch NextFloat rides the audio-only
+            // stream, the pinned `_0` variation (the D3 pin), no gameplay
+            // draw. Closes the recorded TrashItem bank gap (research/32 D7).
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == "TrashItem")
+            {
+                self.audio
+                    .play_use_sound(idx as u16, -1.0, -1.0, 0.0, self.rngs.global());
+            }
+            // W4-d79 — case-7 Grab pitch + pool, bare stream
+            // (`ItemSlot.cs:766`).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
             return;
         }
         if left && self.cursor_override == CURSOR_SELL {
@@ -2177,9 +2246,17 @@ impl App {
             if right_edge {
                 if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut target) {
                     self.inventory[slot] = target;
-                    // `AfterItemSwap` (`:1997-2009`).
-                    self.audio
-                        .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                    // `AfterItemSwap` (`:1997-2009`). W4-d79 — case 22 Unlock
+                    // draw-free pool, case 7 Grab pitch + pool, bare stream.
+                    match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+                        "Unlock" => {
+                            self.audio.play_single_voice("Unlock", -1.0, -1.0);
+                        }
+                        _ => {
+                            self.audio
+                                .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                        }
+                    }
                     self.stack_split = 30; // `:2007`
                     self.ui_right_press = false; // `:2008`
                 }
@@ -2210,7 +2287,10 @@ impl App {
             // (`left_click_movement`); the C# plays 7 when an item sits on
             // either side after the move (`ItemSlot.cs:1004-1011`).
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1004-1011`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             self.mouse_item = held;
             self.inventory[slot] = target;
@@ -2305,8 +2385,18 @@ impl App {
                     &item,
                 );
                 self.mouse_item = EMPTY_SLOT;
-                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway.
-                self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway
+                // (`ItemSlot.cs:1229`/:1236). W4-d79 — case 18 Coins is
+                // draw-free (overwrite-no-Stop, `LegacySoundPlayer.cs:866`);
+                // case 7 Grab draws one `Next(-10, 11) * 0.01` pitch + the
+                // single-voice pool (`:718-725`). Bare stream (the click
+                // handler runs outside every SwapRandom block).
+                if paid > 0 {
+                    self.audio.play_single_voice("Coins", -1.0, -1.0);
+                } else {
+                    self.audio
+                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                }
             }
             self.stack_split = 9999; // `:1239`
         } else if right {
@@ -2355,8 +2445,15 @@ impl App {
                 continue; // `:2060-2063` — the purse gate / the depleted row
             }
             if i == 0 {
-                // `:2064-2073` — sound 18 on a valued row, else 7.
-                self.audio.play(if value > 0 { "Coins" } else { "Grab" });
+                // `:2064-2073` — sound 18 on a valued row, else 7. W4-d79 —
+                // case 18 Coins draw-free (no-Stop pool), case 7 Grab one
+                // pitch draw + pool, bare stream (`ItemSlot.cs:2068`/:2072).
+                if value > 0 {
+                    self.audio.play_single_voice("Coins", -1.0, -1.0);
+                } else {
+                    self.audio
+                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                }
             }
             // `RefreshStackSplitCooldown` (`:1774-1784`, `:2089`).
             self.stack_split = if self.stack_split == 0 {
@@ -2380,7 +2477,15 @@ impl App {
         if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
             crate::shop::add_item_to_shop(&mut self.shop_stock, &mut self.shop_sellback, &item);
             self.inventory[slot] = EMPTY_SLOT;
-            self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+            // W4-d79 — sound 18 on the sale (Coins, draw-free no-Stop pool),
+            // 7 on the giveaway (Grab pitch + pool), bare stream
+            // (`ItemSlot.cs:859`/:866).
+            if paid > 0 {
+                self.audio.play_single_voice("Coins", -1.0, -1.0);
+            } else {
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
+            }
         }
     }
 
@@ -2426,11 +2531,16 @@ impl App {
                                 ..item
                             };
                             self.inventory[slot].count -= 1;
-                            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+                            // W4-d79 — case-7 Grab pitch + pool, bare stream
+                            // (`SoundEngine.PlaySound(7)`, the reforge place-one).
+                            self.audio
+                                .play_grab_sound(-1.0, -1.0, self.rngs.global());
                         }
                     } else if item.count == 1 {
                         std::mem::swap(&mut self.inventory[slot], &mut self.reforge_slot);
-                        self.audio.play("Grab");
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream.
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 self.ui_left_press = false;
@@ -2790,7 +2900,10 @@ impl App {
             // `PickItemMovementAction` ctx 3 → action 0 (`ItemSlot.cs:1505-1507`)
             // — the shared movement.
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab"); // `:1010` — `SoundEngine.PlaySound(7)`
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             // `:976-979` — the emptied slot turns to air (the air-normalizing
             // write; the moved-in item keeps its prefix).
@@ -2817,8 +2930,18 @@ impl App {
                         let mut item = target;
                         if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut item) {
                             chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
-                            self.audio
-                                .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                            // `AfterItemSwap` (`:1997-2009`). W4-d79 — case 22
+                            // Unlock draw-free pool, case 7 Grab pitch + pool,
+                            // bare stream.
+                            match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+                                "Unlock" => {
+                                    self.audio.play_single_voice("Unlock", -1.0, -1.0);
+                                }
+                                _ => {
+                                    self.audio
+                                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                                }
+                            }
                             self.stack_split = 30; // `:2007`
                             self.ui_right_press = false; // `:2008`
                             // The ctx-3 `32` tail (`ItemSlot.cs:1750`'s
@@ -2906,7 +3029,7 @@ impl App {
             if !self.pickup_one_into_mouse(&mut slot) {
                 break; // `:1707` refuses
             }
-            self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
+            self.audio.play_menu("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
             // `RefreshStackSplitCooldown` (`:1774-1784`).
             self.stack_split = if self.stack_split == 0 {
                 30 // `:1778`
@@ -6062,6 +6185,9 @@ mod s1_p_i44_shop_click_tests {
         app.shop_stock =
             crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
         app.shop_mood = 1.0;
+        // The transactions read the TALK latch (W4-g58 final,
+        // `Player.cs:35382-35388`) — the fixture pins the NotInShop 1.0.
+        app.shopping_settings.price_adjustment = 1.0;
         app.coins = 1_000_000;
         app
     }

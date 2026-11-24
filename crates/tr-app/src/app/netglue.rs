@@ -644,6 +644,9 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
+                entry.petting = ps.flags_c.get(4);
+                entry.pet_small = ps.flags_c.get(5);
                 let mut relay = ps.clone();
                 relay.player_id = id as u8;
                 // The C# never echoes a snapshot back to its sender
@@ -5199,6 +5202,9 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
+                entry.petting = ps.flags_c.get(4);
+                entry.pet_small = ps.flags_c.get(5);
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -5801,7 +5807,9 @@ impl App {
                     }
                 }
                 if cue != 0 {
-                    self.audio.play(match cue {
+                    // W4-d79 — the chest-open net replay's menu cue rides the
+                    // single-voice pool (cases 10/11/12, draw-free).
+                    self.audio.play_menu(match cue {
                         10 => "Menu_Open",
                         11 => "Menu_Close",
                         _ => "Menu_Tick",
@@ -8182,6 +8190,8 @@ impl App {
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
+            petting: p.petting.is_petting,
+            pet_small: p.petting.is_pet_small,
             ..Default::default()
         };
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
@@ -8881,11 +8891,16 @@ impl App {
         flags_a.set(6, p.facing > 0);
         let mut flags_b = net::BitsByte::new();
         flags_b.set(2, p.vx != 0.0 || p.vy != 0.0);
+        // W4-g10 FINAL — bitsByte23[4]/[5]: petting/petSmall
+        // (`NetMessage.cs:475-476`).
+        let mut flags_c = net::BitsByte::new();
+        flags_c.set(4, p.petting);
+        flags_c.set(5, p.pet_small);
         net::PlayerState {
             player_id: p.id as u8,
             flags_a,
             flags_b,
-            flags_c: net::BitsByte::new(),
+            flags_c,
             flags_d: net::BitsByte::new(),
             selected_item: p.selected as u8,
             x: p.x,
@@ -9656,7 +9671,26 @@ fn npc_seed(
         | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
-        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::GoblinTinkerer
+        // W4-d120 - the four town kinds seed like the town roster.
+        | crate::npc::NpcKind::SantaClaus
+        | crate::npc::NpcKind::Truffle
+        | crate::npc::NpcKind::Steampunker
+        | crate::npc::NpcKind::Cyborg => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-g10 lane 3 - the town pets seed on the column surface like the
+        // town residents (the generic ground ctor; the pet-aware aiStyle-7
+        // machine takes over on the first tick).
+        crate::npc::NpcKind::TownCat
+        | crate::npc::NpcKind::TownDog
+        | crate::npc::NpcKind::TownBunny
+        | crate::npc::NpcKind::TownSlimeBlue
+        | crate::npc::NpcKind::TownSlimeGreen
+        | crate::npc::NpcKind::TownSlimeOld
+        | crate::npc::NpcKind::TownSlimePurple
+        | crate::npc::NpcKind::TownSlimeRainbow
+        | crate::npc::NpcKind::TownSlimeRed
+        | crate::npc::NpcKind::TownSlimeYellow
+        | crate::npc::NpcKind::TownSlimeCopper => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -9701,7 +9735,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
         | crate::npc::NpcKind::WebbedStylist
-        | crate::npc::NpcKind::SleepingGolfer => {
+        | crate::npc::NpcKind::SleepingGolfer
+        // W4-d120 — the bound Tavernkeep seeds like the bound forms.
+        | crate::npc::NpcKind::BartenderUnconscious => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls

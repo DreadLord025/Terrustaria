@@ -820,6 +820,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(GOLD_CRITTER_SHEETS)
             .chain(WATERFOWL_SHEETS)
             .chain(CRITTER_TAIL_SHEETS)
+            .chain(TOWN_PET_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1105,6 +1106,12 @@ fn npc_add_height(n: &Npc) -> f32 {
                 | DyeTrader
                 | PartyGirl
                 | TravellingMerchant
+                // W4-d120 — the four town kinds' `townNPC = true` rows
+                // (the sitting-row gate below, `Main.cs:22169`).
+                | SantaClaus
+                | Truffle
+                | Steampunker
+                | Cyborg
         );
     let v = match n.kind {
         // `:22011` — 125/126 (the Twins) 30, `:22034` 126 again.
@@ -1193,6 +1200,9 @@ fn npc_add_height(n: &Npc) -> f32 {
         WaterStrider => 2.0,
         // `Main.cs:22157` - the 613 row.
         GoldWaterStrider => 2.0,
+        // W4-d120 — `:22021-22024` the Steampunker's (178) `num = 2f`,
+        // `:22152-22155` the bound Tavernkeep's (579) `num = -2f`.
+        Steampunker => 2.0,
         _ => 0.0,
     };
     // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
@@ -1206,6 +1216,24 @@ fn npc_add_height(n: &Npc) -> f32 {
         }
         if n.kind == DyeTrader {
             shift -= 2.0;
+        }
+        // W4-g10 lane 3 — `Main.cs:22178-22181`: the cat (637), the bunny
+        // (656) and the town slimes sit 10 px deeper (the dog 638 keeps
+        // the plain -4). The pets' `townNPC` flag rides `is_town_npc`.
+        if matches!(
+            n.kind,
+            TownCat
+                | TownBunny
+                | TownSlimeBlue
+                | TownSlimeGreen
+                | TownSlimeOld
+                | TownSlimePurple
+                | TownSlimeRainbow
+                | TownSlimeRed
+                | TownSlimeYellow
+                | TownSlimeCopper
+        ) {
+            shift -= 10.0;
         }
     }
     shift * n.scale
@@ -1983,6 +2011,24 @@ pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608,
 pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
     &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
 
+/// W4-g10 lane 3 — the town pets' sheets: one sheet per kind exactly as the
+/// vanilla's `TextureAssets.Npc[type]` — the cat (637), the dog (638), the
+/// bunny (656) and the eight town slimes (670/678-684). Keyed by the vanilla
+/// net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const TOWN_PET_SHEETS: &[u32] = &[
+    637, // the town cat
+    638, // the town dog
+    656, // the town bunny
+    670, // Nerdy Slime
+    678, // Cool Slime
+    679, // Elder Slime
+    680, // Clumsy Slime
+    681, // Diva Slime
+    682, // Surly Slime
+    683, // Mystic Slime
+    684, // Squire Slime (the copper slime, W4-g10 batch 2)
+];
+
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
 /// sheet whose height is not a multiple of its row count loses the leftover
@@ -2452,6 +2498,14 @@ pub(crate) fn draw_player(
         seat_y_offset,
         sleeping: player.sleeping,
         full_rotation,
+        // W4-f37: the live hair tint (`Player.hairColor`, `Player.cs:2554`)
+        // — the hair window's sliders write it; the default reproduces the
+        // former HAIR constant.
+        hair_color: [
+            player.hair_color[0] as f32 / 255.0,
+            player.hair_color[1] as f32 / 255.0,
+            player.hair_color[2] as f32 / 255.0,
+        ],
     };
     let mut layers = assemble_layers(&state, assets);
     // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
@@ -2997,6 +3051,22 @@ pub(crate) fn draw_npcs(
             // The Dye Trader (25 rows) and the Party Girl (23 rows).
             NpcKind::DyeTrader => humanoid_draw(assets.dye_trader.as_ref(), 25, n, w, h),
             NpcKind::PartyGirl => humanoid_draw(assets.party_girl.as_ref(), 23, n, w, h),
+            // W4-g10 lane 3 — the town pets ride the same humanoid anchor
+            // over their own sheets: the cat/dog's 28 rows, the bunny's 27
+            // and the town slimes' 14 (`Main.npcFrameCount`, `Main.cs:67147`/
+            // `:67149`/`:67151-67152`; the pet walk/idle bands animate
+            // through them in `npc.rs`'s `find_frame` pet arms).
+            NpcKind::TownCat => humanoid_draw(assets.npc_sheet(637), 28, n, w, h),
+            NpcKind::TownDog => humanoid_draw(assets.npc_sheet(638), 28, n, w, h),
+            NpcKind::TownBunny => humanoid_draw(assets.npc_sheet(656), 27, n, w, h),
+            NpcKind::TownSlimeBlue => humanoid_draw(assets.npc_sheet(670), 14, n, w, h),
+            NpcKind::TownSlimeGreen => humanoid_draw(assets.npc_sheet(678), 14, n, w, h),
+            NpcKind::TownSlimeOld => humanoid_draw(assets.npc_sheet(679), 14, n, w, h),
+            NpcKind::TownSlimePurple => humanoid_draw(assets.npc_sheet(680), 14, n, w, h),
+            NpcKind::TownSlimeRainbow => humanoid_draw(assets.npc_sheet(681), 14, n, w, h),
+            NpcKind::TownSlimeRed => humanoid_draw(assets.npc_sheet(682), 14, n, w, h),
+            NpcKind::TownSlimeYellow => humanoid_draw(assets.npc_sheet(683), 14, n, w, h),
+            NpcKind::TownSlimeCopper => humanoid_draw(assets.npc_sheet(684), 14, n, w, h),
             // The sleeping Golfer: NPC_589's sheet over the flat 18x34
             // body.
             NpcKind::SleepingGolfer => (
@@ -4583,6 +4653,20 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // W4-d120 — the chatter kinds' own sheets are DEFERRED (the
+            // ~73-px atlas headroom, the wyvern/d35 precedent): npc_sheet
+            // returns None and the draw skips; the arms keep the vanilla
+            // TextureAssets.Npc[type] ids for the atlas-repack wave.
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+            }
+            // The bound Tavernkeep: the flat 34x8 body, one row (the
+            // Sleeping Angler's shape; sheet deferred).
+            NpcKind::BartenderUnconscious => (
+                assets.npc_sheet(579),
+                assets.npc_sheet(579).map_or(8.0, |t| t.h),
+                [34.0, 8.0],
+                [n.x, n.y],
+            ),
         };
         let Some(tex) = tex else {
             continue;

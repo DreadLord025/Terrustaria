@@ -70,6 +70,8 @@ mod npc;
 mod npc_scaling;
 mod npc_chat;
 mod npc_dust;
+mod npc_pet_exchange;
+mod player_petting;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -192,11 +194,15 @@ mod npc_findframe_high2;
 // W4-f4 wave E: the 17 unclaimed out-of-HitEffect gore sites (research/211)
 // — UNWIRED standalone machines, the hosts' wiring is the follow-up round.
 mod npc_hit_effect_e;
+// W4-g10 lane 3: the town pets' FindFrame arm (the humanoid-group body
+// with the pet overrides, NPC.cs:68622-69655).
+mod npc_findframe_pet;
 mod persist;
 mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
+mod hair_window;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;
@@ -211,6 +217,10 @@ mod player;
 mod player_dust2;
 mod player_file;
 mod potions;
+// W4-a6: the permanent power-up consumables — ItemCheck_UseLifeCrystal /
+// UseManaCrystal (Player.cs:45274-45320) + the sibling Use* arms
+// (:45192-45423). Wired into update_editing beside the boss-spawner block.
+mod powerups;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
@@ -352,6 +362,7 @@ mod orch_dust_town;
 mod orch_dispatch;
 mod town;
 mod town_arrival;
+mod town_arrival_pets;
 mod tracked_sound;
 mod touch_damage;
 mod ui;

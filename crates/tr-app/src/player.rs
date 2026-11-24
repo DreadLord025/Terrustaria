@@ -847,6 +847,20 @@ pub(crate) struct SplashDust {
 
 #[derive(Clone, Debug)]
 pub struct Player {
+    /// `Player.hair` (`Player.cs:2568`, default 0): the hairstyle index the
+    /// hair window picks (`Main.DrawHairWindow`, `Main.cs:44117`) and the
+    /// `Player_Hair_*` sheet draw reads. W4-f37: the field lands with the
+    /// hair-window state machine; the world draw still renders the one
+    /// decoded `Player_Hair_1` strip (the 213-sheet decode is the
+    /// char-creation lane's, `ui/char_creation.rs:1701`), so the index is
+    /// state-only until the sheets land. The `.trplayer` sidecar carries
+    /// no hair row (the recorded M6-SAVE deviation) — a bought style does
+    /// not survive a world swap.
+    pub hair: i32,
+    /// `Player.hairColor` (`Player.cs:2554`, `new Color(215, 90, 55)`):
+    /// the hair tint the window's HSL sliders write (`Main.cs:44091-44092`)
+    /// and the hair layer reads. RGB bytes, XNA `Color` order.
+    pub hair_color: [u8; 3],
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
     // crit 4 and a 1.0 damage multiplier; the equipment modifies them
     // (M3-EQUIP).
@@ -1107,6 +1121,37 @@ pub struct Player {
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
+    /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
+    /// tier 0..3. R3 EXECUTED: the tier writer is f12's g27 canonical
+    /// `buff_effects_orbs.rs::apply_orb_arm` (`UpdateBuffs_NebulaBuffs`
+    /// `:12070-12079`); its `fold_orb` bridges `orb_scan.nebula_level_mana`
+    /// onto THIS field (the ASSIGN stub `fold_orb_nebula_bridge`) — the
+    /// regen engine's read side (`RegenInputs.nebula_level_mana`) keeps
+    /// the Player field. `NebulaLevelup` `:57050-57053` grants the buff
+    /// (the 3455 pickup is its only source) and writes the field as a
+    /// same-tick hint; `ResetEffects` zeroes it (`:18755`);
+    /// `RegenState::nebula_mana_counter` is the cadence half the regen
+    /// engine reads (`ApplyNebulaBuffMana`).
+    pub nebula_level_mana: i32,
+    /// `Player.nebulaLevelLife` (`Player.cs:924`): the Nebula Life booster
+    /// tier — the same `UpdateBuffs_NebulaBuffs` derivation on the 173-175
+    /// slot (`:10448-10452`); `NebulaLevelup` `:57046-57049` (the 3454
+    /// pickup). The `lifeRegen += 6 * tier` consumer stays the f12
+    /// buff-frame lane's (its `orb_scan.nebula_level_life` twin); this
+    /// field carries the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_life: i32,
+    /// `Player.nebulaLevelDamage` (`Player.cs:930`): the Nebula Damage
+    /// booster tier — the 179-181 slot (`:10453-10461`), `NebulaLevelup`
+    /// `:57054-57057` (the 3453 pickup). The `0.15 * tier` four-class
+    /// damage consumer stays the f12 buff-frame lane's; this field carries
+    /// the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_damage: i32,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 shimmer
+    /// permanent (`ItemCheck_UseShimmerPermanentItems` `:45399-45404` —
+    /// the crystals/powerups lane owns the use arm). NOT cleared by
+    /// ResetEffects — a permanent unlock (the player-file field `:54783`).
+    /// The regen engine reads it (`:19430-19433`, `:19453-19456`).
+    pub used_arcane_crystal: bool,
     /// `Player.wellFed` — any of the fed tiers 26/206/207 held
     /// (`Player.cs:11933-11967`); gates the re-eat (`:14353`) and the
     /// expert regen halving.
@@ -1372,14 +1417,16 @@ pub struct Player {
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The 5326 use
+    /// (`Player.cs:45218-45221`) rides `powerups::use_artisan_loaf` (W4-a6)
+    /// — the reach formula reads it.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
-    /// is unported, so the flag stays false in play.
+    /// (`Recipe.cs:353-356`). The Torch God's Favor 5043 use
+    /// (`Player.cs:45226-45243`) rides `powerups::use_torch_gods_favor`
+    /// (W4-a6) — it also sets `builder_acc_status[11] = 0` (the
+    /// `UsingBiomeTorches` property, `:3950-3963`).
     pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
@@ -1392,8 +1439,8 @@ pub struct Player {
     pub pinned_dash: i32,
     /// `Player.extraAccessory` (`Player.cs:866`): the Demon Heart's use-grant
     /// (`:45197`) - unlocks the 6th accessory slot in expert mode
-    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use is
-    /// unported, so the flag stays false in play.
+    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use rides
+    /// `powerups::use_demon_heart` (W4-a6).
     pub extra_accessory: bool,
     /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
     /// (the real items equip through `Item.mountType`), re-applied after the
@@ -1407,6 +1454,19 @@ pub struct Player {
     /// bed-sleep state; the bottom is snapped to the bed anchor and the pose
     /// rotates through `full_rotation`.
     pub sleeping: bool,
+    /// `Player.petting` (`Player.cs:2904`, `PlayerPettingInfo`) — the
+    /// pet-the-animal state (W4-g10 lane 3 FINAL): the target slot/type,
+    /// the bottom snap offset, the small-pet flag. The interaction machine
+    /// lives in `player_petting.rs`; the per-tick stop gates ride
+    /// `update_petting_animal` beside the sitting/sleeping updates.
+    pub petting: crate::player_petting::PettingInfo,
+    /// S3/K2 (the d21 compose contract, g10-side seat): the proj-lane
+    /// `TryGetTarget` feed — the resolved live projectile's bottom
+    /// (`PlayerPettingInfo.cs:70-75`: slot active + same type), refreshed
+    /// by the projectile pass when d21's lane lands (batch-D wires the
+    /// writer; until then it stays None and the proj petting path is
+    /// unreachable — the `from_projectile` ctor has no live caller).
+    pub petting_target_bottom: Option<(f32, f32)>,
     /// `PlayerSleepingHelper.timeSleeping` (`:17`): the fully-asleep counter
     /// — `>= 120` (`TimeToFullyFallAsleep`, `:11`) arms the clock's ×5
     /// (`World::day_rate`).
@@ -1595,6 +1655,13 @@ pub struct Player {
     pub potion_of_return_home_position: Option<(f32, f32)>,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.statLifeMax` (`Player.cs:1924`): the PERMANENT life cap — the
+    /// character file's `lifeMax` (`:55221`, clamped to 500) and the Life
+    /// Crystal's +20 (`:45306-45320`) / Life Fruit's +5 (`:45290-45304`)
+    /// use-grants. The crystal/fruit gates read THIS base (not the effective
+    /// `max_hp`), mirroring `mana_max_base`'s shape (`:1931`). A new character
+    /// starts at 100 (`UICharacterCreation.cs`; `Player.Initialize` `:56074`).
+    pub life_max_base: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
@@ -1736,6 +1803,10 @@ pub struct Player {
     /// sim caller feeds the App's swing/reuse timers each tick (the
     /// `frame_inputs` convention); the bare `update` callers keep false.
     pub mana_regen_item_in_use: bool,
+    // W4-d79's nebula field block DELETED at batch-L (the S1 mutual
+    // receipt): the `nebula_level_*` trio lives above (the f49 documented
+    // fields, `Player.cs:924-930`) and the mana counter lives on
+    // `RegenState::nebula_mana_counter` (the d117/f49 engine form).
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -1767,11 +1838,22 @@ pub struct Player {
     /// `Player.goldRing` (`Player.cs:2642`) — the Gold Ring family's coin
     /// grab-range/pull flag: 3033 Gold Ring (`:14980-14983`), 3034 Coin Ring
     /// (`:14984-14989`, + the lucky coin), 3035 Greedy Ring (`:14990-14996`,
-    /// + the lucky coin + `discountEquipped` — the discount half has no port
-    /// consumer yet, the shop-price lane). `ResetEffects` clears it
+    /// + the lucky coin + `discountEquipped` — the discount half rides
+    /// [`Self::discount_equipped`] below, the shop-price lane W4-f37).
+    /// `ResetEffects` clears it
     /// (`:18504`); the consumers are `GetItemGrabRange` (`:35133`) and
     /// `GrabItems`' pull arm (`:34961`).
     pub gold_ring: bool,
+    /// `Player.discountEquipped` (`Player.cs:2634`): the Discount Card 854
+    /// (`ApplyEquipFunctional` `:14971-14974`) and the Greedy Ring 3035
+    /// (`:14990-14996`) arm it per tick; `ResetEffects` clears it
+    /// (`:18759`). The consumer is `Player.Update`'s refresh
+    /// (`:25636-25639`): `if (Main.npcShop <= 0) discountAvailable =
+    /// discountEquipped` — a shop being open LATCHES `discountAvailable`
+    /// (the vanilla keeps the open-time value until the shop closes).
+    /// `App::discount_available` mirrors it on the shop-closed ticks
+    /// (`world_sim/player.rs`); the shop open itself never re-reads it.
+    pub discount_equipped: bool,
     /// `Player.hasLuckyCoin` (`Player.cs:2638`) — the Lucky Coin family's
     /// melee-hit coin proc flag: 855 Lucky Coin (`:14975-14979`), 3034 Coin
     /// Ring (`:14987`), 3035 Greedy Ring (`:14993`). `ResetEffects` clears it
@@ -1796,6 +1878,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.treasureMagnet` (`Player.cs:936`): the Treasure Magnet 5010
+    /// (`ApplyEquipFunctional` `:14551-14553`) and the Hand Of Creation 5126
+    /// (`:15286-15294`, the `treasureMagnet` half of its six-flag row) arm it
+    /// per tick; `ResetEffects` clears it (`:18493`). `GetItemGrabRange` adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`,
+    /// `Item.cs:49965`) — unlike the mana/life magnets it is not kind-gated.
+    /// W4-f49: the field + the two grants + the reset + the `GrabFlags` feed
+    /// (the range row itself already lived in `item.rs::get_item_grab_range`).
+    pub treasure_magnet: bool,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -2158,8 +2249,10 @@ pub struct Player {
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
     /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
-    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
-    /// writer is not ported yet, so the flag stays false in play.
+    /// unlocked by the Minecart Powerup 5289's use (`Player.cs:45207-45211`)
+    /// — `powerups::use_minecart_powerup` (W4-a6) raises it and grants the
+    /// Minecart Mech 3353 (`:45212`); the `UsingSuperCart` property
+    /// (`:3966`, `:55718`) reads it.
     pub unlocked_super_cart: bool,
     /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
     /// player's Super Cart toggle. The UI that flips it is not ported yet.
@@ -2245,6 +2338,15 @@ pub struct Player {
     /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
     /// the case draws nothing, the drain plays `Drown` on no stream.
     pending_drown_sound: bool,
+    /// W4-d79 — the full-mana refill cue + dust burst
+    /// (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the unpositioned
+    /// `PlaySound(25)` (case 25 — Volume/Pan only, no draws, no Stop) plus
+    /// the 5× dust-45 loop, each rolling `Next(20, 26) * 0.1` as the
+    /// `NewDust` scale argument BEFORE the spawn. `(position.X, position.Y,
+    /// width, height)` — the C# reads `base.position`/`width`/`height` live
+    /// at the refill tick; the drain owns the pool + the `UpdatePlayers`
+    /// stream (the sticky-dust convention).
+    pending_mana_refill: Option<(f32, f32, i32, i32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -2294,6 +2396,23 @@ pub struct Player {
     /// position.Y)` — the case-42 trackable façade draws its NextFloat on
     /// the audio-only stream (the `pending_flap_sound` convention).
     pending_chillet_sound: Option<(f32, f32)>,
+    /// W4-g10 FINAL — the Chillemt mounts' PETTING joy cue
+    /// (`Player.PetMount` `Player.cs:33352-33355`, `SoundEngine.PlaySound(
+    /// SoundID.PalChilletJoy, base.Center)` for mount types 62-65):
+    /// `(position.X, position.Y)` — the same case-42 trackable façade as
+    /// the equip cue, a DIFFERENT asset (`pal_chillet_joy`,
+    /// `SoundID.cs:1717`). The `pet_mount` call queues it (the interaction
+    /// runs on the click lane, the drain plays it on the player pass).
+    pending_petting_joy_sound: Option<(f32, f32)>,
+    /// W4-g10 FINAL — the `PET_THE_PET` achievement request
+    /// (`AchievementsHelper.HandleSpecialEvent(player, 21)` →
+    /// `GetCondition("PET_THE_PET", "Do").Complete()`,
+    /// `AchievementsHelper.cs:358-360`): queued by `pet_animal`/`pet_mount`
+    /// on a fresh latch, drained by the interaction caller through the
+    /// row-targeted `complete_condition("PET_THE_PET", "Do")` (a6's
+    /// dispatch, research/138 §3 keep-one — NOT `notify_custom("Do")`,
+    /// which would complete every Do-flag row).
+    pending_pet_achievement: bool,
     /// S1-P-i41 — the QuickMount no-space ladder's `SoundEngine.PlaySound(0,
     /// (int)position.X, (int)position.Y)` (`Player.cs:6057`): `(x, y)` — the
     /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
@@ -2601,8 +2720,39 @@ pub struct Player {
     pub override_fishing_bobber: i32,
     /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
-    /// ResetEffects — a permanent unlock (the player-file field).
+    /// ResetEffects — a permanent unlock (the player-file field). The
+    /// 5341 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// — the permanent +0.2 lifeRegenTime per tick (`:19113-19116`, the
+    /// `regen.rs` `aegis_crystal` input — its own slot so the add runs
+    /// BETWEEN the base +1 and the crimson +1 in the C#'s f32 order). The
+    /// 5337 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit —
+    /// the permanent +4 defense (`UpdatePermanentBoosters`, `:12853-
+    /// 12856`). The 5338 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane
+    /// Crystal — the permanent −0.05 manaRegenDelay per delay tick +
+    /// statManaMax2/50 mana regen (`:19430-19433`, `:19453-19456`). The
+    /// 5339 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia — the
+    /// permanent +0.05 pick/tile/wall speed (`UpdatePermanentBoosters`,
+    /// `:12861-12866`). The 5342 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_ambrosia: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl —
+    /// the permanent +0.03 luck (`RecalculateLuck`, `:29142-29145`). The
+    /// 5340 use rides `powerups::use_shimmer_permanent` (W4-a6). The
+    /// PERSISTENCE OWNER is this Player field (the `.plr` slot
+    /// `:54784`/`:55258`); `update_luck` mirrors it into the consumer
+    /// `LuckState.used_galaxy_pearl` before every recalculation (the g90
+    /// lane-7 shape, research/138 §2 — the C# reads the player field
+    /// directly, the LuckState copy is the port's consumer split).
+    pub used_galaxy_pearl: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2981,6 +3131,10 @@ impl Player {
         };
         Self {
             dead: false,
+            // `Player.cs:2568`/`:2554` — the hairstyle index 0 and the
+            // default hair tint (215, 90, 55).
+            hair: 0,
+            hair_color: [215, 90, 55],
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3025,6 +3179,10 @@ impl Player {
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
+            nebula_level_mana: 0,
+            nebula_level_life: 0,
+            nebula_level_damage: 0,
+            used_arcane_crystal: false,
             stat_defense: 0,
             well_fed: false,
             pick_speed_bonus: 0.0,
@@ -3157,6 +3315,8 @@ impl Player {
             in_water: false,
             sitting: false,
             sleeping: false,
+            petting: crate::player_petting::PettingInfo::default(),
+            petting_target_bottom: None,
             sleep_time: 0,
             sleeping_style: 0,
             offset_for_seat: (0.0, 0.0),
@@ -3217,6 +3377,7 @@ impl Player {
             potion_of_return_home_position: None,
             hp: 100,
             max_hp: 100,
+            life_max_base: 100,
             armor_penetration: 0,
             melee_armor_penetration: 0,
             lava_time: 0,
@@ -3249,6 +3410,8 @@ impl Player {
             mana_flower: false,
             slow_magic_use: false,
             mana_regen_item_in_use: false,
+            // The nebula trio inits above (the f49 fields); d79's duplicate
+            // init + Player counter dropped at batch-L (RegenState owns it).
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -3258,9 +3421,11 @@ impl Player {
             long_invince: false,
             magic_cuffs: false,
             gold_ring: false,
+            discount_equipped: false,
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
+            treasure_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -3388,6 +3553,7 @@ impl Player {
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
+            pending_mana_refill: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3397,6 +3563,8 @@ impl Player {
             pending_retaliate: None,
             pending_dismount: false,
             pending_chillet_sound: None,
+            pending_petting_joy_sound: None,
+            pending_pet_achievement: false,
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
@@ -3484,6 +3652,11 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_crystal: false,
+            used_aegis_fruit: false,
+            used_arcane_crystal: false,
+            used_ambrosia: false,
+            used_galaxy_pearl: false, // `Player.cs:56081`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -3682,8 +3855,9 @@ impl Player {
             self.stop_sleeping();
             return;
         }
-        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping (+ the
-        // petting stop — not ported).
+        // `player.StopVanityActions()` (`:172`): StopPettingAnimal + SitUp +
+        // StopSleeping (W4-g10 FINAL: the petting stop is live).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         self.grappling_active = false;
@@ -3913,6 +4087,15 @@ impl Player {
         std::mem::take(&mut self.pending_drown_sound)
     }
 
+    /// W4-d79 — takes the full-mana refill cue + dust burst
+    /// (`Player.cs:19550-19560`) — `(position.X, position.Y, width, height)`
+    /// captured at the refill tick; the drain plays the unpositioned case-25
+    /// chime and rolls the 5× `Next(20, 26)` dust-scale draws + spawns on
+    /// `UpdatePlayers`.
+    pub(crate) fn take_mana_refill(&mut self) -> Option<(f32, f32, i32, i32)> {
+        self.pending_mana_refill.take()
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3923,6 +4106,35 @@ impl Player {
     /// (`Mount.cs:6285`) — `(position.X, position.Y)` = `mountedPlayer.Center`.
     pub(crate) fn take_chillet_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_chillet_sound.take()
+    }
+
+    /// W4-g10 FINAL — takes the Chillemt petting joy cue
+    /// (`Player.cs:33354`, `SoundID.PalChilletJoy`) — `(position.X,
+    /// position.Y)` = the player's centre at the pet-mount click.
+    pub(crate) fn take_petting_joy_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_petting_joy_sound.take()
+    }
+
+    /// W4-g10 FINAL — takes the `PET_THE_PET` achievement request
+    /// (`AchievementsHelper.cs:358-360`): the drain calls the row-targeted
+    /// `complete_condition("PET_THE_PET", "Do")`.
+    pub(crate) fn take_pet_achievement(&mut self) -> bool {
+        std::mem::take(&mut self.pending_pet_achievement)
+    }
+
+    /// W4-g10 FINAL — `Player.PetMount` (`Player.cs:33339-33356`) + the joy
+    /// queue: the machine latches/stops the petting state (and queues the
+    /// `PET_THE_PET` request); on a fresh Chillemt pet (types 62-65) the
+    /// centre queues the PalChilletJoy play. The caller drains
+    /// `take_pet_achievement` through `complete_condition("PET_THE_PET",
+    /// "Do")` (a6's row-targeted dispatch).
+    pub fn pet_mount_click(&mut self, mount_id: i32) {
+        let info = crate::player_petting::PettingInfo::from_mount(mount_id, false);
+        let joy = self.pet_mount(info);
+        if joy && self.petting.is_petting {
+            let (cx, cy) = self.center();
+            self.pending_petting_joy_sound = Some((cx, cy));
+        }
     }
 
     /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
@@ -3990,6 +4202,55 @@ impl Player {
         }
     }
 
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`): the Nebula booster
+    /// pickup's buff grant (W4-f49 lane 12 — the S1 mutual-receipt survivor,
+    /// d79's line-identical twin dropped at batch-L). The
+    /// `whoAmI != Main.myPlayer` gate is always false in the single-player
+    /// port. The scan deletes EVERY buff in `[type, type+3)` with the C#'s
+    /// `DelBuff(i--)` rescan (the compaction re-presents the next buff at
+    /// the same index — the port's `del_buff` compacts identically, so the
+    /// loop re-reads `i`). Then the family's tier climbs ONE, clamped 0..3
+    /// (`MathHelper.Clamp` — the tier is never negative), and
+    /// `AddBuff(base + tier - 1, 480)` grants the tier's buff id. Only the
+    /// three base ids act; anything else falls through the switch with the
+    /// deletes already done.
+    
+
+    // `Player.UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`): the tier
+    // derivation + the `buffTime == 2` step-down. R3 EXECUTED: this port
+    // copy is DELETED — the g27 canonical writer lives in f12's
+    // `buff_effects_orbs.rs::nebula_buffs` (dispatched by
+    // `apply_orb_arm`, verified semantically identical by the f12 sweep
+    // census: the `:12072` ASSIGN, the tier>1 time-2 step, the 480 re-arm,
+    // the POST-tick-head timer read). The `fold_orb` bridge assigns the
+    // scan's tiers onto the Player fields; the pickup grant
+    // (`nebula_levelup`) and the chained `ResetEffects` zero stay here.
+    // d79's `update_buffs_nebula`/`update_buffs_nebula_scan` twins DELETED
+    // at the batch-L merge (the S1 mutual receipt: three writers on one
+    // buff bar would triple-step the `buffTime == 2` edge); its
+    // Player-method `apply_nebula_buff_mana` twin + `Player.nebula_mana_counter`
+    // also dropped — the d117/f49 regen-engine form (`regen.rs`, the
+    // `RegenState` counter) is the ONE reader.
+
+    /// The fold_orb mana-bridge ASSIGN stub (R3 contract step 2). f12's
+    /// `buff_frame_wiring::fold_orb` carries these three lines verbatim:
+    /// `p.nebula_level_mana = s.nebula_level_mana;` (+ the life/damage
+    /// twins) — an ASSIGN, because the C# `:12072` is assign-derivation
+    /// and `OrbScanState` zero-seeds each tick (`reset_effects`, the
+    /// `:18755` chained clear), so a stale field cannot survive a
+    /// buff-less tick. The bridge is the ONLY writer onto these fields
+    /// besides `nebula_levelup`'s pickup hint (`:57047-57056`, the C#
+    /// runs the grant in `GrabItems` AFTER the scan — the frame order
+    /// player → projectiles → items keeps it a same-tick hint only).
+    /// f12's wiring module is NOT in batch-L; the wiring seam call site
+    /// in `world_sim/player.rs` marks where the bridge lands (the
+    /// bridge-with-deletions ONE-COMMIT contract's remaining half). The
+    /// regen read keeps the Player field (`RegenInputs.nebula_level_mana`).
+    pub(crate) fn fold_orb_nebula_bridge(&mut self, mana: i32, life: i32, damage: i32) {
+        self.nebula_level_mana = mana;
+        self.nebula_level_life = life;
+        self.nebula_level_damage = damage;
+    }
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
@@ -4390,6 +4651,7 @@ impl Player {
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
+        self.pending_mana_refill = None;
         self.pending_flap_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
@@ -4406,7 +4668,8 @@ impl Player {
         self.height = HEIGHT;
         self.width = WIDTH;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
-        // revive clears the sit/sleep state.
+        // revive clears the petting/sit/sleep state (W4-g10 FINAL).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
     }
@@ -5620,9 +5883,9 @@ impl Player {
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
     /// read false in the sim; the port has no master difficulty yet, so the
     /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
-    /// Demon Heart's use-grant (`:45197`) is unported - the flag stays false
-    /// in play until the consumable use lands.
-    fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
+    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87 → the batch-L
+    /// keep-one survivor `powerups::use_demon_heart`, research/263 §6.5).
+    pub fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
         match slot {
             8 | 18 => self.extra_accessory && self.buffs.expert_mode,
             9 | 19 => false, // `Main.masterMode` - unported difficulty
@@ -5757,8 +6020,18 @@ impl Player {
             // so the fold lands here directly — the same sum the C#
             // reaches, one grant path. The Architect's Gizmo Pack (5126)
             // carries the same `chiselSpeed` (`:15293`) plus the range
-            // flag the reach scan reads (`craft.rs`).
-            4056 | 5126 => self.pick_speed_bonus += 0.25,
+            // flag the reach scan reads (`craft.rs`). W4-f49 — the 5126
+            // row's `treasureMagnet` half (`:15292`) lands here too (the
+            // other four flags ride the tile/wall scans + `autoPaint`).
+            4056 => self.pick_speed_bonus += 0.25,
+            5126 => {
+                self.pick_speed_bonus += 0.25;
+                self.treasure_magnet = true;
+            }
+            // W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+            // `Player.cs:14551-14553`): the bare `treasureMagnet` flag —
+            // the +150 grab range on EVERY kind (`:35149-35152`).
+            5010 => self.treasure_magnet = true,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6090,7 +6363,8 @@ impl Player {
             // The Mana Flower (`:15591-15594`), the Arcane Flower
             // (`:14405-14410` — also +5 magic crit / +5% magic damage; the
             // aggro -400 has no port consumer), the Magnet Flower
-            // (`:14455-14457`, its manaMagnet half unported) and the Mana
+            // (`:14455-14458`, its manaMagnet half live since i52 — the
+            // merged arm below) and the Mana
             // Cloak (`:14459-14460`) arm `manaFlower`; the ONE -0.08
             // `manaCost` row applies after the equip loop (`:12962-12965`),
             // so two flowers do not stack. Nature's Gift (`:15110-15113`)
@@ -6197,16 +6471,21 @@ impl Player {
                 self.magic_cuffs = true;
                 self.mana_magnet = true;
             }
+            // The Discount Card (`Player.cs:14971-14974`): 854 arms
+            // `discountEquipped` alone — the shop-price lane's writer
+            // (W4-f37).
+            854 => self.discount_equipped = true,
             // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
             // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
             // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
-            // lucky coin; 3035 Greedy Ring adds `discountEquipped` (no port
-            // consumer — the shop-price lane). The two lucky flags are
-            // always set/cleared together (`:14977-14978`/`:14987-14988`/
-            // `:14993-14994`, `:18760`/`:18762`), so one bool carries both;
-            // the +0.05 luck add is the UpdateEquips TAIL's single
-            // `hasLuck_LuckyCoin` gate (`:13066-13069`), applied once after
-            // the slot loop — NOT per accessory (two rings still add 0.05).
+            // lucky coin; 3035 Greedy Ring adds `discountEquipped`
+            // (`:14995` — the writer the shop-price lane consumes). The
+            // two lucky flags are always set/cleared together
+            // (`:14977-14978`/`:14987-14988`/`:14993-14994`,
+            // `:18760`/`:18762`), so one bool carries both; the +0.05 luck
+            // add is the UpdateEquips TAIL's single `hasLuck_LuckyCoin`
+            // gate (`:13066-13069`), applied once after the slot loop —
+            // NOT per accessory (two rings still add 0.05).
             855 => self.has_lucky_coin = true,
             3033 => self.gold_ring = true,
             3034 => {
@@ -6216,6 +6495,7 @@ impl Player {
             3035 => {
                 self.gold_ring = true;
                 self.has_lucky_coin = true;
+                self.discount_equipped = true;
             }
             // The Magnet Flower 4000's manaMagnet + manaFlower arm lives in
             // the flower-flag block above (deduped keep-one — the per-item
@@ -6498,10 +6778,23 @@ impl Player {
     /// Production always goes through the world-sim's `UpdatePlayers` stage
     /// stream, so this wrapper supplies a scratch seed-0 stream for the
     /// gear-less test players (an armed dodge source would draw from it
-    /// deterministically — nothing else).
+    /// deterministically — nothing else). R3: the wrapper also re-adds the
+    /// lifted `update_survival` regen tick (the wiring seam owns it in
+    /// production; the no-wiring callers keep their regen here).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         let mut scratch = tr_core::UnifiedRandom::default();
-        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch)
+        // g10's petting inputs (`&[], None` — the npcs/talk_npc slots) ride
+        // the batch-L composed signature.
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch, &[], None);
+        // W4-f49 R3 step 4 — the regen tick re-added AFTER the movement
+        // wrapper for the no-wiring callers (the equip tests, the potion
+        // rigs): `update_survival` was lifted out of `update_with_grapple`
+        // to the world-sim wiring seam (the C# regen reads sit after the
+        // scan, `Player.cs:25977`/`:25995`). The inline nebula scan arms
+        // are gone, so this wrapper's nebula tier stays 0 — the same
+        // "the wiring owns the scan" shape the f12 gap-3 werewolf
+        // witnesses record.
+        self.update_survival(world, &mut scratch);
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -6529,6 +6822,11 @@ impl Player {
         // named stream; the dodge rolls and the lava `Hurt` inside the tick
         // draw from it (S1-A-10 — no new persistent stream).
         rng: &mut dyn tr_core::loot::DropRng,
+        // W4-g10 FINAL — `UpdatePettingAnimal` (`Player.cs:26124`)'s inputs:
+        // the live NPC roster (the target liveness/type check) and the App's
+        // talk latch (`talkNPC`, None = -1). The tests pass empty/None.
+        npcs: &[Npc],
+        talk_npc: Option<usize>,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -6639,6 +6937,17 @@ impl Player {
             self.control_up = self.control_right;
             self.control_down = flag3;
         }
+        // `Player.UpdatePettingAnimal` (`Player.cs:26124`) runs BEFORE the
+        // sitting/sleeping updates (`:26125-26126`), after the controls land
+        // — the petting stop gates read this tick's control flags (W4-g10
+        // FINAL; the machine lives in `player_petting.rs`, the NPC roster +
+        // talk latch are the App's, so the call rides the world-sim seam).
+        // S3 feed (the d21 compose contract): the proj-lane TryGetTarget
+        // resolves off `petting_target_bottom` — the field d21's K2 half
+        // lands with its projectile lane (batch-D); until then no live
+        // proj target exists (the from_projectile ctor is unwired), so the
+        // None feed is exact for every current caller.
+        self.update_petting_animal(npcs, talk_npc, self.petting_target_bottom);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -6952,14 +7261,24 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
+        // `ResetEffects`' nebula trio zero (`Player.cs:18755`) — ONE chained
+        // assign clears Damage, Life AND Mana (`nebulaLevelDamage =
+        // (nebulaLevelLife = (nebulaLevelMana = 0))`). The regen COUNTER is
+        // not reset here (the C# leaves it to the tier-0 arm of
+        // `ApplyNebulaBuffMana`, `:19583`).
+        self.nebula_level_mana = 0;
+        self.nebula_level_life = 0;
+        self.nebula_level_damage = 0;
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
-        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false`
-        // (`Player.cs:18491-18492`): the magnet accessories and buff 105
-        // re-arm them per tick (S1-P-i52).
+        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false` /
+        // `treasureMagnet = false` (`Player.cs:18491-18493`): the magnet
+        // accessories and buff 105 re-arm them per tick (S1-P-i52; the
+        // treasure half lands with W4-f49).
         self.mana_magnet = false;
         self.life_magnet = false;
+        self.treasure_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -7067,7 +7386,9 @@ impl Player {
         // owns that clear, gated on the freshly-derived `setVortex`.
         self.set_stardust = false;
         self.set_forbidden = false;
-        self.set_vortex = false;
+        // d79's nebula trio zero DUPLICATE dropped at batch-L (the S1
+        // receipt): the f49 copy above (`mana_regen_bonus` neighbour,
+        // `Player.cs:18755`) is the survivor — identical three lines.
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -7372,6 +7693,13 @@ impl Player {
                 self.dash_type = set.dash_type;
             }
         }
+        // W4-d79's `update_buffs_nebula_scan()` call DELETED at batch-L
+        // (the S1 mutual receipt / R3 step 1): the ONE tier writer is f12's
+        // g27-canonical `buff_effects_orbs.rs::nebula_buffs` via
+        // `update_buff_frame` (not in this batch — the wiring seam in
+        // `world_sim/player.rs` marks its slot); until it lands the tier
+        // rides `nebula_levelup`'s same-tick pickup hint + the reset zero
+        // (the f12 gap-3 convention).
         for bt in self.buffs.active_types() {
             match bt {
                 // S1-E-7 wave A — the potion-buff block, in the C# chain's
@@ -7671,6 +7999,21 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-f49 R3 EXECUTED — the Nebula trio scan arms
+                // (`Player.cs:10444-10461`, the `UpdateBuffs_NebulaBuffs`
+                // helper `:12070-12079`) are DELETED from this inline loop:
+                // the g27 canonical `buff_effects_orbs.rs::apply_orb_arm`
+                // (branch task/W4-f12-buff-frame-wiring, routed EXCLUSIVELY
+                // by `buff_frame_wiring::update_buff_frame`) is the ONE
+                // tier writer. Two writers on one buff bar would double-
+                // step the `buffTime == 2` edge; the one-writer contract
+                // (research/85 R3 + the f12 sweep census) keeps the wiring.
+                // `fold_orb` bridges `orb_scan.nebula_level_*` onto these
+                // Player fields (the assign stub in this tree); the regen
+                // read (`RegenInputs.nebula_level_mana`) keeps the Player
+                // field. The Life/Damage CONSUMERS (`lifeRegen += 6 * tier`
+                // `:10451`, the `0.15 * tier` adds `:10456-10460`) stay
+                // f12's `fold_orb`.
                 _ => {}
             }
         }
@@ -7753,10 +8096,12 @@ impl Player {
         self.update_dye_cache();
         self.jump_boost = false;
         self.no_fall_dmg = false;
-        // `:18504` goldRing, `:18760` hasLuckyCoin — the Gold/Lucky Coin
-        // family's per-tick clears (the equip pass below re-arms them).
+        // `:18504` goldRing, `:18760` hasLuckyCoin, `:18759`
+        // discountEquipped — the Gold/Lucky Coin + Discount Card family's
+        // per-tick clears (the equip pass below re-arms them).
         self.gold_ring = false;
         self.has_lucky_coin = false;
+        self.discount_equipped = false;
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
@@ -7876,10 +8221,26 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
-        // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
-        // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
+        // W4-a6 — `UpdatePermanentBoosters` (`Player.cs:12851-12867`,
+        // called at `:25644` right after `UpdateEquips`): the C#'s OWN row
+        // order — Aegis Fruit +4 (`:12853-12856`), Gummy Worm +3
+        // (`:12857-12860`, the S1-P-i35 row), Ambrosia's speed triple LAST
+        // (`:12861-12866`). The port folds the pass into this post-equip
+        // seam (the Gummy Worm row's convention); the reconcile re-ordered
+        // the fruit row AHEAD of the worm row to the C# order (g89's
+        // verbatim shape, research/138 §2). `pickSpeed -= 0.05` is the
+        // port's signed bonus `pick_speed_bonus += 0.05` (`:4545`'s
+        // `1.0 - bonus` form).
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -7967,6 +8328,10 @@ impl Player {
             match bt {
                 2 => self.accessory_life_regen += 4,
                 165 => self.accessory_life_regen += 6,
+                // W4-d79's Nebula life fold (`Player.cs:10448-10452`,
+                // `lifeRegen += 6 * tier`) DELETED at batch-L (the S1
+                // mutual receipt / R3 step 2): f12's `fold_orb` owns the
+                // `buff_life_regen` consumer — one home per C# line.
                 _ => {}
             }
         }
@@ -8818,7 +9183,17 @@ impl Player {
             self.floor_visuals(world, falling);
         }
 
-        self.update_survival(world, rng);
+        // W4-f49 R3 step 4 — the regen tick LIFTED out of
+        // `update_with_grapple` to the world-sim wiring seam: the C# order
+        // is the scan (`UpdateBuffs` `:25566`) → `UpdateEquips` (`:25633`)
+        // → `UpdateLifeRegen` (`:25977`) → `UpdateManaRegen` (`:25995`) →
+        // `GrabItems` (`:27428`). With f12's `update_buff_frame` the scan
+        // (and the `fold_orb` nebula bridge) lands AFTER this call returns,
+        // so the regen reads must sit after the wiring — the lifted call
+        // lives in `world_sim/player.rs` at the seam. The standalone
+        // `Player::update` wrapper re-adds it for the no-wiring callers.
+        // (The lift also repairs f12's own `buff_life_regen` feed — its
+        // fold landed after the regen read and the next reset wiped it.)
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -9570,6 +9945,19 @@ impl Player {
     /// holdStyle 5/6 arms gate on `!pulley`; `can_visually_hold` gates the
     /// whole chain (`Player.cs:50271`).
     fn apply_hold_composite_arms(&mut self, held: &FrameInputs) {
+        // `Player.cs:50243-50269` — the petting pat arm runs BEFORE the
+        // CanVisuallyHoldItem gate (W4-g10 FINAL): the back arm pats on the
+        // 14-tick miscCounter cycle while petting, even when the held item
+        // is hidden (holdStyles 4/5/6 refuse the visual hold while petting).
+        if self.petting.is_petting {
+            self.composite_back = crate::player_petting::petting_back_arm(
+                self.misc_counter,
+                self.mount.is_active(),
+                self.mount.kind(),
+                self.petting.is_pet_small,
+                self.facing,
+            );
+        }
         if !held.can_visually_hold || held.swing_active {
             return;
         }
@@ -11340,9 +11728,10 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
     /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
-    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
+    /// (`:6161-6162`), the mount-petting stop (`:6163-6166`, W4-g10 FINAL)
+    /// and the 20×42 hitbox restore (`:6176-6193`).
     /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
+    /// system yet).
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
         // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
@@ -11370,6 +11759,12 @@ impl Player {
         // `:6161-6162` — the dismount clears the full rotation.
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
+        // `:6163-6166` — petting the MOUNT itself stops on the dismount
+        // (petting an NPC while riding keeps going — the `petting.mount`
+        // gate; W4-g10 FINAL).
+        if self.petting.is_petting && self.petting.mount {
+            self.stop_petting_animal();
+        }
         // `:6176-6193`: the restore — the 20x42 box from the bottom center;
         // on failure the Y patch accepts the overlap (the collision step
         // resolves it next tick, as in the original). The resize goes through
@@ -11965,7 +12360,9 @@ impl Player {
             self.release_grappling_hooks = true;
             self.grappling_active = false;
         }
-        // `:37424` — `StopVanityActions` (the petting stop is unported).
+        // `:37424` — `StopVanityActions` (W4-g10 FINAL: the petting stop is
+        // live, `Player.cs:33458-33463`).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         // `:37425-37431` — the shimmering / shimmerWet strip. The port has no
@@ -12712,8 +13109,9 @@ impl Player {
             return;
         }
         // `:22619` — `StopVanityActions` (`Player.cs:33458-33463`): stop the
-        // petting animal (unported), sit up and stop sleeping. The port carries
-        // sitting/sleeping, so both run; petting has no field.
+        // petting animal, sit up and stop sleeping (W4-g10 FINAL: all three
+        // live).
+        self.stop_petting_animal();
         self.sit_up();
         self.stop_sleeping();
         // W4-e1 — `:36493` (PlayerFrame's grappling arm): the jump visuals
@@ -13209,6 +13607,12 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-a6 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation (the g90 lane-7 shape, research/138).
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -13811,16 +14215,27 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d79's Player-method `apply_nebula_buff_mana()` head call
+            // DELETED at batch-L (the S1 mutual receipt): the d117/f49
+            // engine form runs it FIRST inside `update_mana_regen`
+            // (`regen.rs`, the `:19421` position, `RegenInputs.
+            // nebula_level_mana` fed below) — ONE reader, ONE counter.
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
                 mana_regen_buff: self.mana_regen_buff,
+                nebula_level_mana: self.nebula_level_mana,
+                used_arcane_crystal: self.used_arcane_crystal,
                 well_fed: self.well_fed,
+                expert_mode: self.buffs.expert_mode,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
-                moving_x: self.vx != 0.0,
+                // `Player.cs:19241`: the halving arm needs BOTH a non-zero
+                // vx AND no hook — grappled movement keeps the ×1.25 lane.
+                moving_x: self.vx != 0.0 && !self.grappling_active,
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
+                grappling: self.grappling_active,
                 dot_regen: dots.regen,
                 dot_resets_time: dots.resets_time,
                 dot_fast_lane: dots.fast_lane,
@@ -13843,6 +14258,11 @@ impl Player {
                     && self.vy.abs() < 0.05
                     && !self.mana_regen_item_in_use,
                 crimson_regen: self.crimson_regen,
+                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot so the add
+                // lands BETWEEN the base +1 and the crimson row (the C#'s
+                // f32 order; the g90 lane-7 shape, research/138 §2).
+                aegis_crystal: self.used_aegis_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -13892,6 +14312,30 @@ impl Player {
                     height: self.height,
                 });
             }
+                // W4-d79 — `Player.cs:19550-19560`: the local player's
+                // full-bar `PlaySound(25)` + the 5× dust-45 burst. The
+                // engine returns the flag4-gated trigger (the ManaV2
+                // animation gate already suppressed it mid-swing); the
+                // drain plays the unpositioned chime and rolls the dust
+                // draws on `UpdatePlayers` (the queue convention — the
+                // tick has no `Audio`/`DustPool` borrow). The C# reads
+                // `base.position`/`width`/`height` at THIS point in
+                // `Player.Update` (`:25995`), before the movement tail.
+                self.pending_mana_refill =
+                    Some((self.x, self.y, self.width as i32, self.height as i32));
+            }
+        }
+        // `Player.Update`'s post-UpdateManaRegen tail (`Player.cs:
+        // 25996-26003`): runs UNCONDITIONALLY (outside the port's hp gate —
+        // the C# clamps a dead player's fields too). A negative regen
+        // counter zeroes (no C# lane writes it negative — a defensive pin),
+        // and an over-max bar (a same-tick pickup/drink landed past the
+        // engine's chunk clamps) snaps back to the max.
+        if self.regen.mana_regen_count < 0 {
+            self.regen.mana_regen_count = 0;
+        }
+        if self.mana > self.mana_max {
+            self.mana = self.mana_max;
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -14160,6 +14604,17 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // W4-f37: the hair tint feeds the hair layer's pixels
+        // (`player_layers.rs`'s `hair_color` tint) — a slider drag inside
+        // the hair window must invalidate the cached world range. Gated on
+        // a NON-default tint so the default-hair frames keep their
+        // pre-wiring key values bit-for-bit (the G6 rule: a new pixel input
+        // rides the key, but an unchanged input must not shift the cache).
+        if self.hair_color != [215, 90, 55] {
+            h ^= (self.hair_color[0] as u32) << 24;
+            h ^= (self.hair_color[1] as u32) << 12;
+            h ^= (self.hair_color[2] as u32) << 4;
+        }
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
@@ -14171,6 +14626,9 @@ impl Player {
         h
     }
 
+    // The net/f49/f49-bridge methods kept through the J/F/L unions are
+    // gathered in this impl (the L-side splice closed the prior impl early).
+    impl Player {
     /// The `62 SyncDodge` reader's switch on ourselves
     /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
     /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
@@ -14207,7 +14665,7 @@ impl Player {
     /// deleted first (`:57037-57043`), then the matching level clamps +1 to
     /// 0..3 (`nebulaMaxLevel`, `:922`) and the tier buff `type + level - 1`
     /// grants for 480 ticks (`:57036`).
-    pub fn nebula_levelup(&mut self, buff_type: i32) {
+    pub(crate) fn nebula_levelup(&mut self, buff_type: i32) {
         let time = 480;
         // `for i < maxBuffs: if buffType[i] in [type, type+3) DelBuff(i--)`.
         let mut i = 0;
@@ -15573,6 +16031,78 @@ mod tests {
         q.update(&w, PlayerInput::default());
         assert!(q.magic_cuffs);
         assert_eq!(q.mana_max, 20 + 40);
+    }
+
+    /// W4-d117 — `Player.cs:19241`: the moving-halving arm needs BOTH
+    /// `velocity.X != 0` AND `grappling[0] < 0`; a hooked player keeps the
+    /// ×1.25 lane (and the mana delay's double countdown, `:19426`).
+    #[test]
+    fn w4_d117_grappled_movement_keeps_the_still_lane() {
+        let w = World::new("t".into(), 64, 800);
+        let ramp = |hooked: bool| -> (i32, f32) {
+            let mut p = Player::spawn(&w);
+            p.vx = 2.0;
+            p.grappling_active = hooked;
+            p.regen.life_regen_time = 3000.0;
+            p.regen.mana_regen_delay = 4.0;
+            p.mana = 10;
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            (p.regen.life_regen, p.regen.mana_regen_delay)
+        };
+        // max 100 → scale 0.3625: tier 8 × 1.25 = 10 → banker's(3.625) = 4;
+        // unhooks halve to 4 → banker's(1.45) = 1. Delay: hooked −1 −1 = 2,
+        // unhooked moving −1 = 3.
+        assert_eq!(ramp(true), (4, 2.0));
+        assert_eq!(ramp(false), (1, 3.0));
+    }
+
+    /// W4-d117 — the nebula tier / arcane-crystal fields flow from Player
+    /// into the engine (`:19421`, `:19430-19433`), and ResetEffects zeroes
+    /// the tier but NOT the counter (`:18755` vs `:19583`).
+    #[test]
+    fn w4_d117_nebula_and_crystal_fields_flow_through_the_engine() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.nebula_level_mana = 3;
+        p.regen.mana_regen_delay = 100.0; // regen line off — pure nebula
+        for _ in 0..2 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        }
+        assert_eq!(p.mana, 11, "tier 3 grants at counter 6 (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // A full update's ResetEffects wipes the tier (`:18755`); the
+        // counter's wipe is the ENGINE's tier-0 arm (`:19583`), not the
+        // reset — both are 0 after the tick.
+        p.regen.nebula_mana_counter = 4;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // The crystal survives ResetEffects (a permanent, `:45399-45404`
+        // has no reset site) and shaves the delay: still → 4 −1 −1 −0.05.
+        p.used_arcane_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_arcane_crystal, "ResetEffects keeps the permanent");
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.regen.mana_regen_delay = 4.0;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!((p.regen.mana_regen_delay - 1.95).abs() < 1e-6);
+    }
+
+    /// W4-d117 — `Player.Update`'s post-regen tail (`Player.cs:25996-26003`)
+    /// runs UNCONDITIONALLY: a dead player's negative counter and over-max
+    /// bar are clamped too (the port's hp gate only guards the engines).
+    #[test]
+    fn w4_d117_the_update_tail_clamps_run_even_when_dead() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.hp = 0;
+        p.mana = 30; // > mana_max 20
+        p.regen.mana_regen_count = -50;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.mana, 20, "the over-max snap (:26000-26003)");
+        assert_eq!(p.regen.mana_regen_count, 0, "the negative wipe (:25996)");
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
@@ -17063,6 +17593,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -17097,6 +17629,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.mount.is_active(), "the mount dismounted");
     }
@@ -17121,6 +17655,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.mount.is_active(), "the mount stays mounted");
     }
@@ -17144,6 +17680,8 @@ mod tests {
                 false,
                 None,
                 &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
             );
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
@@ -17184,6 +17722,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -17214,6 +17754,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -17240,6 +17782,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.going_down_with_grapple, "the pull points down");
     }
@@ -17261,6 +17805,8 @@ mod tests {
             &[(crate::projectile::HOOK, below, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.going_down_with_grapple, "the down pull sets it");
         // Now an UP pull: the per-tick reset clears it, the up pull does not re-set.
@@ -17271,6 +17817,8 @@ mod tests {
             &[(crate::projectile::HOOK, above, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.going_down_with_grapple, "the up pull leaves it cleared");
     }
@@ -17295,6 +17843,8 @@ mod tests {
             grapple,
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.vy < 0.0, "UP held grants the jump impulse: vy={}", p.vy);
         assert!(p.release_grappling_hooks, "the jump-off detaches");
@@ -17335,6 +17885,8 @@ mod tests {
             &[(crate::projectile::HOOK, center, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(!p.sitting, "the grapple sits the player up");
         assert!(!p.sleeping, "the grapple wakes the player");
@@ -17373,6 +17925,8 @@ mod tests {
                 grapple,
                 false, false, false, None,
                 &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
             );
         }
         assert!(p.going_down_with_grapple, "the pull points down");
@@ -17444,6 +17998,43 @@ mod tests {
             "the descent dampened: vy={}",
             p.vy
         );
+    }
+
+    /// W4-f37 — the Discount Card writer (`Player.cs:14971-14974`): 854 arms
+    /// `discountEquipped` alone; the Greedy Ring 3035 (`:14990-14996`) arms it
+    /// alongside goldRing + the lucky coin. 855/3033/3034 never arm it.
+    /// `ResetEffects` clears it per tick (`:18759`) — unequipping drops the
+    /// flag on the next update. The consumer is the shop-latched
+    /// `discountAvailable` refresh (`:25636-25639`, `world_sim/player.rs`).
+    #[test]
+    fn the_discount_card_and_greedy_ring_arm_discount_equipped() {
+        for kind in [854u16, 3035] {
+            let p = player_with_accessory(kind);
+            assert!(p.discount_equipped, "kind {kind} arms the discount");
+        }
+        // 3035's full bundle (`:14992-14995`).
+        let p = player_with_accessory(3035);
+        assert!(p.gold_ring);
+        assert!(p.has_lucky_coin);
+        // 854 arms the discount ALONE (`:14971-14974`).
+        let p = player_with_accessory(854);
+        assert!(!p.gold_ring);
+        assert!(!p.has_lucky_coin);
+        // The rest of the coin family never arms it.
+        for kind in [855u16, 3033, 3034] {
+            let p = player_with_accessory(kind);
+            assert!(!p.discount_equipped, "kind {kind} has no discount row");
+        }
+        // The per-tick clear (`:18759`): the equip pass re-arms only while
+        // the accessory sits in a functional slot.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 854;
+        p.update(&w, PlayerInput::default());
+        assert!(p.discount_equipped);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.discount_equipped, "ResetEffects cleared the flag");
     }
 
     /// Places `kind` in the accessory slot 0 (= `armor[3]`), runs the tick's
@@ -17631,6 +18222,202 @@ mod tests {
         p.buffs.clear_buff(105);
         p.update(&w, PlayerInput::default());
         assert!(!p.life_magnet, "the expiry cleared it");
+    }
+
+    /// W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+    /// `Player.cs:14551-14553`) and the Hand Of Creation 5126 (`:15292`, the
+    /// `treasureMagnet` half of its six-flag row) arm `treasureMagnet` per
+    /// tick; `ResetEffects` (`:18493`) clears it. The grab-range row adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`) — the
+    /// `item.rs::get_item_grab_range` consumer was already live; this pins
+    /// the flag grant + the feed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_treasure_magnet_accessories_arm_treasure_magnet() {
+        let p = player_with_accessory(5010);
+        assert!(p.treasure_magnet, "the Treasure Magnet");
+        let p = player_with_accessory(5126);
+        assert!(p.treasure_magnet, "the Hand Of Creation's magnet half");
+        assert!(
+            (p.pick_speed_bonus - 0.25).abs() < 1e-4,
+            "its chiselSpeed row still folds"
+        );
+        let p = player_with_accessory(0);
+        assert!(!p.treasure_magnet, "ResetEffects cleared it (:18493)");
+        // The range consumer: +150 on a NON-pickup kind (the treasure magnet
+        // is not kind-gated, unlike the mana/life magnets).
+        let flags = crate::item::GrabFlags {
+            treasure_magnet: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::item::get_item_grab_range(1, flags),
+            42 + 150,
+            "the +150 rides every kind"
+        );
+    }
+
+    /// W4-f49 lane 12 — `NebulaLevelup` (`Player.cs:57030-57059`): the
+    /// pickup climbs the family tier ONE per grant, clamped at 3, deletes
+    /// the family's old buff ids first (`DelBuff(i--)` rescan) and grants
+    /// `base + tier - 1` for 480 ticks. The item rows map 3453→179,
+    /// 3454→173, 3455→176 (`Item.cs:31008-31016`). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_nebula_levelup_climbs_the_ladder_and_replaces_the_family_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // First mana pickup: tier 0 → 1, buff 176 for 480.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        let i = p.buffs.find_buff_index(176).expect("tier 1 = base id");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Second: the old 176 is DELETED, tier 2 grants 177.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "the old id aired");
+        let i = p.buffs.find_buff_index(177).expect("tier 2");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Third and fourth: cap 3 — the tier stays, the 178 timer refreshes
+        // to 480 (AddBuff's same-id arm keeps the larger time).
+        p.nebula_levelup(176);
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 3, "MathHelper.Clamp caps at 3");
+        assert!(p.buffs.find_buff_index(178).is_some());
+        assert!(p.buffs.find_buff_index(177).is_none());
+        // The families are independent: a Life pickup deletes only 173-175.
+        p.nebula_levelup(173);
+        assert_eq!(p.nebula_level_life, 1);
+        assert!(p.buffs.find_buff_index(173).is_some());
+        assert!(p.buffs.find_buff_index(178).is_some(), "the mana buff survives");
+        p.nebula_levelup(179);
+        assert_eq!(p.nebula_level_damage, 1);
+        assert!(p.buffs.find_buff_index(179).is_some());
+        // An unknown base id still runs the delete scan but grants nothing.
+        p.nebula_levelup(200);
+        assert_eq!(p.buffs.active_count(), 3, "no fourth buff from a stray id");
+    }
+
+    /// W4-f49 lane 12, R3 RE-TARGETED — `UpdateBuffs_NebulaBuffs`
+    /// (`Player.cs:12070-12079`, scan arms `:10444-10461`): the tier
+    /// derivation + the `buffTime == 2` step-down now live ONLY in f12's
+    /// g27 canonical writer (`buff_effects_orbs.rs::nebula_buffs` via
+    /// `apply_orb_arm`, driven by `update_buff_frame` — the f12 gap-3
+    /// convention: drive the wiring call, assert `orb_scan` + the bridged
+    /// field; f12's own `w4_f12_nebula_life_steps_down_and_adds_regen`
+    /// pins the arm core). THIS tree keeps the Player-field halves: the
+    /// pickup ladder (`nebula_levelup`), the `fold_orb` bridge ASSIGN
+    /// stub, and the chained reset. The no-wiring `Player::update`
+    /// wrapper no longer derives tiers (the inline scan arms are gone).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_nebula_scan_derives_the_tier_and_steps_down_at_time_two() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_levelup(176);
+        p.nebula_levelup(176); // tier 2, buff 177 @ 480
+        assert_eq!(p.nebula_level_mana, 2, "the pickup hint tier");
+        // The bridge ASSIGN (fold_orb's three lines): the scan-derived
+        // tier lands on the Player field the regen engine reads.
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2);
+        // The no-wiring wrapper: the head decrements the timer, but NO
+        // inline arm re-derives — the reset's zero survives (the wiring
+        // owns the scan; the same shape the f12 gap-3 witnesses record).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0, "the wiring owns the scan");
+        let i = p.buffs.find_buff_index(177).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 479, "one head decrement");
+        // The bridge re-arms the tier for the regen read (the merged
+        // tick: scan → bridge → update_survival).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.nebula_level_mana, 2, "the bridge keeps the field warm");
+        // The time-2 step-down + the Life/Damage twins are pinned on the
+        // f12 side (`apply_orb_arm`); the bridge carries whatever tier
+        // the scan hands it, verbatim ASSIGNs (no adds, no clamps).
+        p.fold_orb_nebula_bridge(1, 1, 1);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert_eq!(p.nebula_level_life, 1);
+        assert_eq!(p.nebula_level_damage, 1);
+        // The reset zero clears all three (the bridge's zero-seed twin).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
+    }
+
+    /// W4-f49 lane 12, R3 RE-TARGETED — the END-TO-END mana lane through
+    /// the WIRING seam: a 3455 pickup grants buff 176, the scan (f12's
+    /// `update_buff_frame`, not present in this tree) derives the tier,
+    /// `fold_orb`'s bridge ASSIGN lands it on `Player.nebula_level_mana`,
+    /// and the LIFTED `update_survival` (now after the wiring seam in
+    /// `world_sim/player.rs`, the C# `:25977`/`:25995` position) feeds
+    /// `ApplyNebulaBuffMana` (`:19421`) — SIX ticks at tier 1 yield ONE
+    /// mana point (`:19570-19574`). The rig drives the bridge per tick
+    /// exactly as the merged frame would. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_mana_pickup_feeds_the_regen_engine_through_the_scan() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.mana_max = 200;
+        p.nebula_levelup(176); // the 3455 pickup's grant
+        // Park the normal regen line far out so ONLY the nebula arm grants.
+        p.regen.mana_regen_delay = 1000.0;
+        for _ in 0..5 {
+            // The merged tick shape: movement (no inline scan) → the
+            // wiring's fold_orb bridge → the lifted regen read.
+            p.update_with_grapple(
+                &w,
+                PlayerInput::default(),
+                &[],
+                false,
+                false,
+                false,
+                None,
+                &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
+            );
+            p.fold_orb_nebula_bridge(1, 0, 0);
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        }
+        assert_eq!(p.nebula_level_mana, 1, "the bridge carried the tier");
+        assert_eq!(p.regen.nebula_mana_counter, 5);
+        assert_eq!(p.mana, 10, "no point before the sixth tick");
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[],
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
+        );
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.mana, 11, "the 6-counter grant (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+    }
+
+    /// W4-f49 lane 12 — `ResetEffects`' chained trio zero
+    /// (`Player.cs:18755`): one tick without a live nebula buff clears ALL
+    /// THREE tiers (the C# chains Damage = (Life = (Mana = 0))); the regen
+    /// counter is NOT reset here — the engine's tier-0 arm owns that
+    /// (`:19583`, d117's witness pins it). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_reset_effects_zeroes_all_three_nebula_tiers() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
     }
 
     /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —
@@ -21331,6 +22118,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         assert!(p.mount_fishron_special_counter > 0.0);
         // The full tick leaves the mount in its air frame; the `+13.5` arm
@@ -23771,6 +24560,98 @@ mod s1_player_composite_tests {
         }
         assert_eq!(p.breath, 0);
         assert_eq!(gasps, 1, "the gasp is the 1->0 edge, not the damage loop");
+    }
+
+    /// W4-d79 — the full-mana refill trigger queues ONCE at the fill
+    /// (`Player.cs:19550-19560`): the payload is the live
+    /// `position`/`width`/`height` at the regen point (`:25995`), the
+    /// idling full bar never re-queues (flag4), and the ManaV2 animation
+    /// gate (`:19542-19545`) suppresses the queue while the point lands.
+    #[test]
+    fn w4_d79_the_mana_refill_queues_once_at_the_fill() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = p.mana_max - 1;
+        p.regen.mana_regen_count = 119;
+        p.regen.mana_regen_delay = 0.0;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            p.take_mana_refill(),
+            Some((p.x, p.y, p.width as i32, p.height as i32)),
+            "the cue + burst queued at the live box"
+        );
+        // The idling full bar: chunks still cross 120, flag4 stays false.
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+            assert!(p.take_mana_refill().is_none(), "no re-fire at full");
+        }
+        // The animation gate: the point lands, the queue stays empty.
+        let mut q = Player::spawn(&w);
+        q.mana = q.mana_max - 1;
+        q.regen.mana_regen_count = 119;
+        q.regen.mana_regen_delay = 0.0;
+        q.vx = 0.0;
+        q.vy = 0.0;
+        q.mana_regen_item_in_use = true;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.mana, q.mana_max, "the grant precedes the gate");
+        assert!(q.take_mana_refill().is_none(), "flag4 = false mid-animation");
+    }
+
+    /// W4-d79 PITCH FINAL — the Nebula owner-table contract
+    /// (`docs/research/W4-d79-pitch-final.md` §F1/S1), RE-TARGETED at the
+    /// batch-L merge per the S1 receipt: the levelup sweep/climb
+    /// (`:57030-57059`) + the chained reset (`:18755`) stay the f49 Player
+    /// shapes; the mana counter pays one point per 6 through the d117/f49
+    /// ENGINE form (`regen.rs`, `RegenState.nebula_mana_counter`); the
+    /// scan/time-2-step assertions move to f12's `apply_orb_arm` witnesses
+    /// when that lane lands (its `fold_orb` bridge drives the tier here —
+    /// the `fold_orb_nebula_bridge` stub stands in, the f12 gap-3
+    /// convention). These pins are the contract, not the implementation.
+    #[test]
+    fn w4_d79_final_the_nebula_owner_table_holds_on_this_tree() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The levelup: the family sweep + the clamp-0..3 climb.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert!(p.buffs.find_buff_index(176).is_some(), "NebulaUpMana1 @ 480");
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "tier 1 swept");
+        assert!(p.buffs.find_buff_index(177).is_some(), "NebulaUpMana2");
+        // The bridge ASSIGN carries the scan's tier (f12's writer drives
+        // it in production; the stub is the merged-tree stand-in).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2, "the bridge carried the tier");
+        // The mana counter: +tier/tick, one point per 6 — the ENGINE form
+        // (the regen head runs ApplyNebulaBuffMana first, `:19421`). Park
+        // the normal regen line far out so ONLY the nebula arm grants.
+        p.mana = 0;
+        p.regen.nebula_mana_counter = 0;
+        p.regen.mana_regen_delay = 1000.0;
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        for _ in 0..6 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            p.fold_orb_nebula_bridge(1, 0, 0); // the per-tick scan re-assign
+        }
+        assert_eq!(p.mana, 1, "the 6-count paid once");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        p.fold_orb_nebula_bridge(0, 0, 0);
+        p.regen.nebula_mana_counter = 4;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.regen.nebula_mana_counter, 0, "tier 0 wipes (:19583)");
+        // The reset zeroes the trio (the chained :18755 assign).
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_life, 0, "no live buff -> the reset holds");
+        assert_eq!(p.nebula_level_damage, 0);
+        assert_eq!(p.nebula_level_mana, 0, "the reset holds until the bridge re-assigns");
     }
 
     /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):

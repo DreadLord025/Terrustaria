@@ -55,9 +55,25 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
-/// v18 appended the three town-pet license world flags (`NPC.boughtCat` /
-/// `boughtDog` / `boughtBunny`, `WorldFile.cs:1392-1394`) the 4829/4830/4910
-/// Pet License use-unlocks raise (W4-g87); a pre-v18 file loads them false.
+/// v18 appended the town-pet arrival flags: the three license bytes
+/// (`NPC.boughtCat`/`boughtDog`/`boughtBunny`, `WorldFile.cs:1392-1394`) the
+/// 4829/4830/4910 Pet License uses raise (the g87 v18 claimant, keep-one at
+/// the f43 splice), then ALL EIGHT town-slime unlock bytes
+/// (`NPC.unlockedSlimeBlue/Green/Old/Purple/Rainbow/Red/Yellow/CopperSpawn`,
+/// `WorldFile.cs:1398` + `:1409-1415`) the arrival gates read (W4-f43b,
+/// `Main.cs:65900-65943`). The rainbow/red pair were S1-P-i35's `.wld`-loaded
+/// fields with no native-save twin; f43b's live arrival arms read all eight,
+/// so the native tail persists them all (3 + 8 = 11 bytes); a pre-v18 file
+/// loads them false. The g88h-A3 union seats the pets at head offsets 57-59
+/// (`docs/research/103` §L3-DEFINITIVE D3) — this port's own tail order
+/// carries them at its own end-of-file seat until the Lead's union merge;
+/// the VALUES are identical. v18 also appends a per-NPC-record variation
+/// byte (`townNpcVariationIndex`, `SaveNPCs:1731`'s BitsByte payload) so the
+/// license pets' rolled variant survives the reload. (g87's 3-byte v18
+/// claim deduped into this 11-byte tail at the batch-L merge; its g87c
+/// retire re-pins the union seat to [57..60] of the SEALED 107-byte
+/// g88h-A3 head — research/263 §6.4 — landed ONCE at the g71c union merge,
+/// forward-only; this port keeps its own end-of-file tail until then.)
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -88,9 +104,10 @@ pub struct WorldSide {
 /// One town NPC — the C# `SaveNPCs` block-B record (`active`, `netID`,
 /// `givenName`, `position.X/Y`, `homeless`, `homeTileX/Y`, the variation
 /// `BitsByte`, `homelessDespawn`, `WorldFile.cs:1703-1750`). The port stores
-/// its own internal kind id (not the netID), its `Npc` carries no variation
-/// index beyond the slimes', and `homelessDespawn` is a runtime flag the C#
-/// saves for its load validation only — all three recorded in the doc.
+/// its own internal kind id (not the netID); W4-f43b: the variation index
+/// rides the v18 tail (the license pets' rolled variant persists — the
+/// exchange chain's whole point); `homelessDespawn` is a runtime flag the
+/// C# saves for its load validation only — recorded in the doc.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NpcRecord {
     /// The port's internal `NpcKind` id (`npc::NpcKind::to_u16`) — the
@@ -108,6 +125,11 @@ pub struct NpcRecord {
     /// `NPC.homeTileX/Y` while housed.
     pub home_x: i32,
     pub home_y: i32,
+    /// `NPC.townNpcVariationIndex` (`SaveNPCs:1731`'s BitsByte bit 0-2
+    /// payload) — W4-f43b: the v18 per-record tail byte; a pre-v18 record
+    /// loads 0 (the vanilla's own default for a world saved before the
+    /// pets existed).
+    pub variation_index: i32,
 }
 
 /// One banner's kill count — the C# `BannerSystem.Save` shape (`int32` per
@@ -356,7 +378,9 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // (`WorldFile.cs:1703-1750`): the kind, the given name, the pixel
     // position, the homeless flag and the home tile. The block-A shimmer
     // list and block-C `SavesAndLoads` passives ride the C#'s arrays the port
-    // does not model (documented in ANALYSIS).
+    // does not model (documented in ANALYSIS). W4-f43b: the v18 per-record
+    // tail byte carries `townNpcVariationIndex` (`SaveNPCs:1731`'s BitsByte
+    // payload) — the license pets' rolled variant survives the reload.
     w.write_all(&(side.npcs.len() as u32).to_le_bytes())?;
     for npc in &side.npcs {
         w.write_all(&npc.kind.to_le_bytes())?;
@@ -368,6 +392,9 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         w.write_all(&[u8::from(npc.homeless)])?;
         w.write_all(&npc.home_x.to_le_bytes())?;
         w.write_all(&npc.home_y.to_le_bytes())?;
+        // v18: the variation byte (the writer is always the current
+        // version; the reader gates on the file's).
+        w.write_all(&[npc.variation_index.clamp(0, 255) as u8])?;
     }
     // v11: the saved ore tiers — the seven `i32` tiers in the `SavedOreTiers`
     // field order (the C# rides them in the world-flags block,
@@ -431,18 +458,33 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
-    // v18: the town-pet license world flags (W4-g87) — the C#'s
-    // `NPC.boughtCat`/`boughtDog`/`boughtBunny` (`WorldFile.cs:1392-1394`),
-    // the 4829/4830/4910 Pet License use-unlocks. At the g71c union merge
-    // these 3 bytes seat [57..60] of the SEALED 107-byte v18 head (g88
-    // research/103 §L3-ARBITER A3: after crimson/moon/underworld, before
-    // empress [60] + the g90 books pair [61..63]; identity 44 B closes the
-    // head, W×H dense LAST — research/263 §6.4; this branch keeps its own
-    // 3-byte tail until then, forward-only).
+    // v18: the town-pet arrival flags (W4-g87's license trio + W4-f43b's
+    // slime widening) — the C#'s `NPC.boughtCat/Dog/Bunny`
+    // (`WorldFile.cs:1392-1394`) then ALL EIGHT slime unlocks in the C#
+    // write order (`:1398` blue, `:1409-1415` green/old/purple/rainbow/red/
+    // yellow/copper). The rainbow/red pair were S1-P-i35's `.wld`-loaded
+    // fields but had NO native-save twin (a pre-existing gap); f43b's live
+    // arrival arms read all eight, so the native tail persists them all —
+    // 3 + 8 = 11 bytes. At the g71c union merge the 3 license bytes seat
+    // [57..60] of the SEALED 107-byte v18 head (g88 research/103
+    // §L3-ARBITER FINAL A3 at d09d7e10a: after crimson/moon/underworld,
+    // before empress [60] + the g90 books pair [61..63]; identity 44 B
+    // closes the head, W×H dense LAST — research/263 §6.4); this branch
+    // keeps its own end-of-file tail until the union lands once,
+    // forward-only. The 8 slime bytes are f43b's own claim — the union
+    // table gains them at the merge.
     w.write_all(&[
         u8::from(world.bought_cat),
         u8::from(world.bought_dog),
         u8::from(world.bought_bunny),
+        u8::from(world.unlocked_slime_blue_spawn),
+        u8::from(world.unlocked_slime_green_spawn),
+        u8::from(world.unlocked_slime_old_spawn),
+        u8::from(world.unlocked_slime_purple_spawn),
+        u8::from(world.unlocked_slime_rainbow_spawn),
+        u8::from(world.unlocked_slime_red_spawn),
+        u8::from(world.unlocked_slime_yellow_spawn),
+        u8::from(world.unlocked_slime_copper_spawn),
     ])?;
     Ok(())
 }
@@ -740,7 +782,7 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     // v10: the town NPCs (the C#'s block-B records; the load-side
     // `ValidateLoadNPCs` skip of unknown ids the app re-checks).
     if version >= 10 {
-        side.npcs = read_npcs_v10(&mut r)?;
+        side.npcs = read_npcs_v10(&mut r, version)?;
     }
     // v11: the saved ore tiers; a pre-v11 file leaves them at the World's
     // defaults (the C#'s reset arm).
@@ -826,12 +868,21 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
-    // v18: the town-pet license world flags (W4-g87, see the writer — the
-    // union seats them [57..60], research/263 §6.4).
+    // v18: the town-pet arrival flags (W4-g87's trio + W4-f43b's slime
+    // widening, see the writer — the union seats the license bytes
+    // [57..60], research/263 §6.4).
     if version >= 18 {
         world.bought_cat = r.u8()? != 0;
         world.bought_dog = r.u8()? != 0;
         world.bought_bunny = r.u8()? != 0;
+        world.unlocked_slime_blue_spawn = r.u8()? != 0;
+        world.unlocked_slime_green_spawn = r.u8()? != 0;
+        world.unlocked_slime_old_spawn = r.u8()? != 0;
+        world.unlocked_slime_purple_spawn = r.u8()? != 0;
+        world.unlocked_slime_rainbow_spawn = r.u8()? != 0;
+        world.unlocked_slime_red_spawn = r.u8()? != 0;
+        world.unlocked_slime_yellow_spawn = r.u8()? != 0;
+        world.unlocked_slime_copper_spawn = r.u8()? != 0;
     }
     world.revision = 0;
     Ok((world, side))
@@ -862,8 +913,10 @@ fn read_bestiary_v9(r: &mut Reader<'_>) -> Result<Vec<BestiaryKill>> {
     Ok(out)
 }
 
-/// The v10 NPC reader — the exact inverse of the v10 write.
-fn read_npcs_v10(r: &mut Reader<'_>) -> Result<Vec<NpcRecord>> {
+/// The v10 NPC reader — the exact inverse of the v10 write; `version` gates
+/// the v18 per-record variation tail byte (W4-f43b — a pre-v18 record loads
+/// variation 0).
+fn read_npcs_v10(r: &mut Reader<'_>, version: u32) -> Result<Vec<NpcRecord>> {
     let count = r.u32()? as usize;
     let mut out = Vec::with_capacity(count.min(1024));
     for _ in 0..count {
@@ -875,6 +928,7 @@ fn read_npcs_v10(r: &mut Reader<'_>) -> Result<Vec<NpcRecord>> {
         let homeless = r.u8()? != 0;
         let home_x = r.i32()?;
         let home_y = r.i32()?;
+        let variation_index = if version >= 18 { r.u8()? as i32 } else { 0 };
         out.push(NpcRecord {
             kind,
             given_name,
@@ -883,6 +937,7 @@ fn read_npcs_v10(r: &mut Reader<'_>) -> Result<Vec<NpcRecord>> {
             homeless,
             home_x,
             home_y,
+            variation_index,
         });
     }
     Ok(out)
@@ -1087,10 +1142,11 @@ mod tests {
 
     #[test]
     fn dw_1_4_v3_loads_zero_cooldowns() {
-        // DW-1.4: a pristine v3 file (the current stream stripped of the
-        // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
-        // no bed spawn), the version field restored) loads with both
-        // cooldowns at 0.
+        // DW-1.4: a pristine v3 file (the version field patched to 3) loads
+        // with both cooldowns at 0 — the v4 dial read is gated off, so the
+        // dials (and every later section, incl. the v18 town-pet tail) sit
+        // unread. The trailing 3-byte trim is cosmetic (a genuine v3 file is
+        // shorter); the assertion rides the version gate, not the length.
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
@@ -1105,8 +1161,9 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v18 (the town-pet license
-        // flags, W4-g87) is now the current format, so the gate pins 18.
+        // current one (`save.rs` version gate). v18 (the town-pet arrival
+        // flags, W4-g87/W4-f43b) is now the current format, so the gate
+        // pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1189,8 +1246,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +11: the v18 town-pet arrival flags, W4-g87/W4-f43b.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 11));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1301,8 +1359,9 @@ mod tests {
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
-        // the v17 fishron flag (1) and the v18 pet-license flags (3, W4-g87).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 3;
+        // the v17 fishron flag (1) and the v18 town-pet flags (11,
+        // W4-g87/W4-f43b — the g87 3-byte claim deduped into f43b's tail).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 11;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1330,8 +1389,8 @@ mod tests {
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
     /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
-    /// v18 town-pet license flags (3 bytes, W4-g87).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 3;
+    /// v18 town-pet arrival flags (11 bytes, W4-g87/W4-f43b).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 11;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1517,39 +1576,67 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte + the v18 pet-license
-        // flags ride behind the v15 flag (9 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 town-pet
+        // flags ride behind the v15 flag (17 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1 - 3);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 11);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
     }
 
-    /// W4-g87 — the three town-pet license world flags (`NPC.boughtCat`/
-    /// `boughtDog`/`boughtBunny`, `WorldFile.cs:1392-1394`) ride the v18 tail.
-    /// All three survive the save/load; a pre-v18 file loads them false.
+    /// W4-g87/W4-f43b — the town-pet arrival flags ride the v18 tail: the
+    /// three license bytes (`NPC.boughtCat/Dog/Bunny`, `WorldFile.cs:1392-
+    /// 1394`) then ALL EIGHT town-slime unlocks (`:1398` + `:1409-1415`,
+    /// the rainbow/red pair included — f43b closes their native-save gap).
+    /// All eleven survive the save/load; a pre-v18 file loads them false.
+    /// (The g87 3-byte twin witness deduped into this one at batch-L — its
+    /// bought-trio assertions ride below.)
     #[test]
-    fn w4_g87_the_pet_license_flags_round_trip_in_v18() {
+    fn w4_f43_the_pet_arrival_flags_round_trip_in_v18() {
         let mut w = World::new("Test".into(), 64, 48);
         w.bought_cat = true;
         w.bought_dog = true;
         w.bought_bunny = true;
+        w.unlocked_slime_blue_spawn = true;
+        w.unlocked_slime_green_spawn = true;
+        w.unlocked_slime_old_spawn = true;
+        w.unlocked_slime_purple_spawn = true;
+        w.unlocked_slime_rainbow_spawn = true;
+        w.unlocked_slime_red_spawn = true;
+        w.unlocked_slime_yellow_spawn = true;
+        w.unlocked_slime_copper_spawn = true;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         let (back, _) = parse(&buf).unwrap();
         assert!(back.bought_cat, "boughtCat survives");
         assert!(back.bought_dog, "boughtDog survives");
         assert!(back.bought_bunny, "boughtBunny survives");
-        // A pre-v18 file (the 3-byte tail truncated, the version patched)
-        // loads all three false — the vanilla's own reset arm.
+        assert!(back.unlocked_slime_blue_spawn, "blue survives");
+        assert!(back.unlocked_slime_green_spawn, "green survives");
+        assert!(back.unlocked_slime_old_spawn, "old survives");
+        assert!(back.unlocked_slime_purple_spawn, "purple survives");
+        assert!(back.unlocked_slime_rainbow_spawn, "rainbow survives");
+        assert!(back.unlocked_slime_red_spawn, "red survives");
+        assert!(back.unlocked_slime_yellow_spawn, "yellow survives");
+        assert!(back.unlocked_slime_copper_spawn, "copper survives");
+        // A pre-v18 file (the 11-byte tail truncated, the version patched)
+        // loads all eleven false — the vanilla's own reset arm.
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 3);
+        v17.truncate(v17.len() - 11);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert!(!back.bought_cat, "a pre-v18 file resets boughtCat");
         assert!(!back.bought_dog, "a pre-v18 file resets boughtDog");
         assert!(!back.bought_bunny, "a pre-v18 file resets boughtBunny");
+        assert!(!back.unlocked_slime_blue_spawn, "pre-v18 resets blue");
+        assert!(!back.unlocked_slime_green_spawn, "pre-v18 resets green");
+        assert!(!back.unlocked_slime_old_spawn, "pre-v18 resets old");
+        assert!(!back.unlocked_slime_purple_spawn, "pre-v18 resets purple");
+        assert!(!back.unlocked_slime_rainbow_spawn, "pre-v18 resets rainbow");
+        assert!(!back.unlocked_slime_red_spawn, "pre-v18 resets red");
+        assert!(!back.unlocked_slime_yellow_spawn, "pre-v18 resets yellow");
+        assert!(!back.unlocked_slime_copper_spawn, "pre-v18 resets copper");
     }
 
     #[test]
@@ -1565,8 +1652,9 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +11: the v18 town-pet arrival flags, W4-g87/W4-f43b.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 11));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1702,7 +1790,8 @@ mod tests {
         }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        buf.truncate(buf.len() - 3); // inside the item record
+        // Inside the item record: ahead of the 11-byte v18 town-pet tail.
+        buf.truncate(buf.len() - 3 - 11);
         assert!(parse(&buf).is_err());
     }
 
@@ -1822,7 +1911,8 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the banner record
+        // Inside the banner record: ahead of the 11-byte v18 town-pet tail.
+        buf.truncate(buf.len() - 2 - 11);
         assert!(parse(&buf).is_err());
     }
 
@@ -1937,7 +2027,8 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        // Inside the record: ahead of the 11-byte v18 town-pet tail.
+        buf.truncate(buf.len() - 2 - 11);
         assert!(parse(&buf).is_err());
     }
 
@@ -1988,6 +2079,7 @@ mod tests {
                     homeless: false,
                     home_x: 6,
                     home_y: 7,
+                    variation_index: 0,
                 },
                 NpcRecord {
                     kind: 17, // the Merchant
@@ -1997,6 +2089,7 @@ mod tests {
                     homeless: true,
                     home_x: -1,
                     home_y: -1,
+                    variation_index: 0,
                 },
             ],
             ore_tiers: None,
@@ -2005,6 +2098,48 @@ mod tests {
         write_world(&mut buf, &w, &side).unwrap();
         let (back, back_side) = parse(&buf).unwrap();
         assert_eq!(back_side.npcs, side.npcs);
+    }
+
+    /// W4-f43b: the v18 per-record variation byte (`SaveNPCs:1731`'s
+    /// BitsByte payload) — a license pet's rolled variant survives the
+    /// reload; a pre-v18 record loads variation 0.
+    #[test]
+    fn w4_f43_the_npc_variation_index_round_trips_in_v18() {
+        let mut w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            npcs: vec![NpcRecord {
+                kind: 5,
+                given_name: "Mittens".into(),
+                x: 96.0,
+                y: 64.0,
+                homeless: false,
+                home_x: 1,
+                home_y: 1,
+                variation_index: 4,
+            }],
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        let (_, back) = parse(&buf).unwrap();
+        assert_eq!(back.npcs[0].variation_index, 4, "the variant survives");
+        // A pre-v18 file: the per-record byte stripped (one record — the
+        // LAST byte before the v11+ sections), the version patched.
+        let mut v17 = buf.clone();
+        // The record ends 1 byte ahead of its v18 tail; locate the record
+        // by its home tile (1,1) + strip the byte behind it.
+        let mut pattern = Vec::new();
+        pattern.extend_from_slice(&1i32.to_le_bytes());
+        pattern.extend_from_slice(&1i32.to_le_bytes());
+        let at = v17
+            .windows(pattern.len())
+            .rposition(|w| w == pattern.as_slice())
+            .expect("the home tile is in the payload");
+        v17.remove(at + pattern.len()); // the variation byte
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (_, back) = parse(&v17).unwrap();
+        assert_eq!(back.npcs[0].variation_index, 0, "a pre-v18 record loads 0");
+        assert_eq!(back.npcs[0].given_name, "Mittens");
     }
 
     #[test]
@@ -2028,6 +2163,7 @@ mod tests {
                 homeless: false,
                 home_x: 1,
                 home_y: 1,
+                variation_index: 0,
             }],
             ore_tiers: None,
         };
@@ -2059,12 +2195,14 @@ mod tests {
                 homeless: false,
                 home_x: 1,
                 home_y: 1,
+                variation_index: 0,
             }],
             ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        // Inside the record: ahead of the 11-byte v18 town-pet tail.
+        buf.truncate(buf.len() - 2 - 11);
         assert!(parse(&buf).is_err());
     }
 
@@ -2085,6 +2223,7 @@ mod tests {
                     homeless: true,
                     home_x: -1,
                     home_y: -1,
+                    variation_index: 0,
                 },
                 NpcRecord {
                     kind: 17,
@@ -2094,6 +2233,7 @@ mod tests {
                     homeless: false,
                     home_x: 2,
                     home_y: 3,
+                    variation_index: 0,
                 },
             ],
             ore_tiers: None,
@@ -2165,7 +2305,9 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 3); // inside the tiers
+        // Inside the tiers' trailing sections: ahead of the 11-byte v18
+        // town-pet tail.
+        buf.truncate(buf.len() - 3 - 11);
         assert!(parse(&buf).is_err());
     }
 
