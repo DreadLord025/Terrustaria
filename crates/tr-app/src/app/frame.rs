@@ -2369,6 +2369,25 @@ mod tests {
     /// `rngs.global()` stream.
     #[test]
     fn the_cage_tick_rides_the_animate_tiles_tail() {
+        let world = include_str!("frame/world.rs");
+        let body = world
+            .split("fn animate_tiles_phase")
+            .nth(1)
+            .expect("the animate-tiles phase")
+            .split("fn weather_cluster")
+            .next()
+            .expect("the phase ends before the weather cluster");
+        let tiles = body.find("animator.animate_tiles(wind, rng, false)").expect("the tile tick");
+        let cages = body
+            .find("cage_anim.animate(critter_cage, rng)")
+            .expect("the cage tick");
+        let tick = body.find("step.tick(dt, |_|").expect("the shared stepper");
+        assert!(tick < tiles && tiles < cages, "the cage call is the AnimateTiles tail");
+        // One stepper, one stream — no separate accumulator or rng.
+        assert_eq!(body.matches("step.tick").count(), 1);
+        assert!(body.contains("let rng = self.rngs.global();"));
+        assert!(body.contains("let step = &mut self.tile_anim_step;"));
+    }
     /// W4-f14 tick-order witness: `Main.AnimateTiles_CritterCages()` rides
     /// `AnimateTiles`'s TAIL (`Main.cs:19303`, after the tile-493 counter)
     /// — the cage tick runs AFTER `animate_tiles` inside the SAME
@@ -2385,7 +2404,6 @@ mod tests {
             .expect("the phase ends before the weather cluster");
         let tiles = body.find("animator.animate_tiles(wind, rng, false)").expect("the tile tick");
         let cages = body
-            .find("cage_anim.animate(critter_cage, rng)")
             .find("cages.animate_critter_cages(rng)")
             .expect("the cage tick");
         let tick = body.find("step.tick(dt, |_|").expect("the shared stepper");
@@ -2410,6 +2428,25 @@ mod tests {
             .split("tile_anim: {")
             .nth(1)
             .expect("the tile_anim key arm")
+            .split("net_key: {")
+            .next()
+            .expect("the net key follows");
+        assert!(
+            key_block.contains("tr_core::drawdata_furniture::is_cage_kind("),
+            "the gate probes ALL cage kinds (the union)"
+        );
+        assert!(key_block.contains("t.active()"), "inactive cells stay out");
+        assert!(key_block.contains("self.cage_anim.anim_key()"));
+        assert_eq!(key_block.matches("anim_key()").count(), 2, "tile + cage keys");
+        let gated = key_block
+            .split("if any_cage {")
+            .nth(1)
+            .expect("the view gate");
+        assert!(gated.contains("} else {"), "a cage-free view keeps the base key");
+        // The draw call feeds the animator + the proximity flag.
+        assert!(draw.contains("&self.cage_anim,"));
+        assert!(draw.contains("&mut self.critter_cage,"));
+    }
     /// W4-f14 key-gate witness: the G6 `cage_anim` input is the animator's
     /// `anim_key()` gated on an active cage kind in the view rect (the
     /// `tile_anim` key's convention) — cage-free views keep the pre-wiring
@@ -2426,12 +2463,6 @@ mod tests {
             .next()
             .expect("the net key follows");
         assert!(
-            key_block.contains("tr_core::drawdata_furniture::is_cage_kind("),
-            "the gate probes ALL cage kinds (the union)"
-        );
-        assert!(key_block.contains("t.active()"), "inactive cells stay out");
-        assert!(key_block.contains("self.cage_anim.anim_key()"));
-        assert_eq!(key_block.matches("anim_key()").count(), 2, "tile + cage keys");
             key_block.contains("tr_core::drawdata_furniture::is_cage_kind(t.kind)"),
             "the gate probes the cage kinds"
         );
@@ -2441,10 +2472,6 @@ mod tests {
             .split("if any_cage {")
             .nth(1)
             .expect("the view gate");
-        assert!(gated.contains("} else {"), "a cage-free view keeps the base key");
-        // The draw call feeds the animator + the proximity flag.
-        assert!(draw.contains("&self.cage_anim,"));
-        assert!(draw.contains("&mut self.critter_cage,"));
         assert!(gated.contains("} else {"), "a cage-free view keeps 0");
         assert_eq!(key_block.matches("anim_key()").count(), 1);
         // The draw call feeds the animator mutably (the flag rides it).
