@@ -392,9 +392,9 @@ impl CloudField {
             if num != j && self.slots[j].active {
                 let o = &self.slots[j];
                 let intersects = rect.0 < o.position.x as i32 + o.width
-                    && o.position.x as i32 < rect.0 + rect.2
+                    && (o.position.x as i32) < rect.0 + rect.2
                     && rect.1 < o.position.y as i32 + o.height
-                    && o.position.y as i32 < rect.1 + rect.3;
+                    && (o.position.y as i32) < rect.1 + rect.3;
                 if intersects {
                     self.slots[num].active = false;
                 }

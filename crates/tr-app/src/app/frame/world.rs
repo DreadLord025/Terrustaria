@@ -162,6 +162,7 @@ impl App {
                             downed_moonlord: false,
                             dd2_downed_t1: self.world.dd2_downed_t1,
                             dd2_downed_t2: self.world.dd2_downed_t2,
+                            dd2_downed_t3: self.world.dd2_downed_t3,
                             dd2_ongoing: self.world.dd2_event_ongoing,
                             lanterns_up: false,
                             player_life: self.player.as_ref().map_or(0, |p| p.hp),
@@ -378,7 +379,6 @@ impl App {
         windy_music: self.wind.happy_windy_day,
         // — the W4-f39 closeout inputs (`Main.cs:12200`/`:12654`/
         // `:12982-12989`) —
-        slime_rain: self.world.slime_rain,
         pumpkin_moon: self.world.pumpkin_moon,
         snow_moon: self.world.snow_moon,
         remix_world: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
@@ -455,6 +455,9 @@ impl App {
     fn gores_phase(&mut self) {
         self.phase("gores");
         {
+            // The spawn context is owned (`SpawnCtx`), read before the
+            // `rngs`/`dust`/`gore` mutable borrows below.
+            let ctx = self.spawn_ctx();
             let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
             let wind_for_visuals = self.wind.speed_current;
             // W4-d79 PITCH SEAL — the case-39 Drip seam: the pool draws
@@ -466,7 +469,6 @@ impl App {
             // (`Gore.cs:1119-1122`) spawns into `Main.dust` on the same
             // stage stream — the C# runs both inside
             // `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`).
-            let ctx = self.spawn_ctx();
             let dust = &mut self.dust;
             self.gore.update(
                 rng,

@@ -872,15 +872,18 @@ mod tests {
         let mut walking = Wind::new(11);
         let mut lantern = Wind::new(11);
         for w in [&mut walking, &mut lantern] {
-            w.counter = 1;
+            // Above 1 so the plain walk only decrements; at 1 it would fire
+            // the whole target walk AND reset the counter in the same tick
+            // (`Main.cs:58861-58872`, the compose witness below pins that).
+            w.counter = 5;
             w.speed_current = 0.0;
             w.speed_target = 0.3;
         }
         lantern.lanterns_up = true;
         walking.update_rain(0.0);
         lantern.update_rain(0.0);
-        assert_eq!(walking.counter, 0, "the plain walk decrements");
-        assert_eq!(lantern.counter, 1, "the lantern night returns first");
+        assert_eq!(walking.counter, 4, "the plain walk decrements");
+        assert_eq!(lantern.counter, 5, "the lantern night returns first");
         assert!(
             lantern.speed_current > 0.0,
             "the drift still eases towards the target"

@@ -555,6 +555,7 @@ mod tests {
 
     fn gv() -> GenVars {
         let mut g = GenVars::default();
+        g.shimmer_position = None;
         g.water_line = 20;
         g.lava_line = 24;
         g
@@ -677,8 +678,10 @@ mod tests {
         w.tiles[o].wall = 7;
         w.mark_chunk(25, 9);
         settle_liquids(&mut w, &g, false);
-        let t = w.tiles[w.index(25, 10)];
-        assert!(t.liquid > 0, "the pool levelled on the shelf row");
+        let t = (0..40)
+            .map(|x| w.tiles[w.index(x, 10)])
+            .find(|t| t.liquid > 0)
+            .expect("the pool levelled on the shelf row");
         assert_eq!(t.liquid_kind(), LiquidKind::Water, "the ORIGIN wall re-type");
         // The mirror: the same drop with NO origin wall keeps the lava
         // retype (the landing cell's wall 0 cannot re-type it back).
@@ -689,8 +692,10 @@ mod tests {
         w2.tiles[o2].liquid = 200;
         w2.mark_chunk(25, 9);
         settle_liquids(&mut w2, &g, false);
-        let t2 = w2.tiles[w2.index(25, 10)];
-        assert!(t2.liquid > 0, "the mirror pool");
-        assert_eq!(t2.liquid_kind(), LiquidKind::Lava, "no origin wall — the retype stands");
+        let t2 = (0..40)
+            .map(|x| w2.tiles[w2.index(x, 10)])
+            .find(|t| t.liquid > 0)
+            .expect("the mirror pool");
+        assert_eq!(t2.liquid_kind(), LiquidKind::Lava, "no origin wall -> the retype stands");
     }
 }

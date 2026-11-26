@@ -44,8 +44,6 @@ use crate::projectile::Projectile;
 use crate::app::App;
 use crate::projectile_wet::SplashKind;
 use tr_core::UnifiedRandom;
-use tr_core::particles::{Color, DustPool, SpawnCtx};
-use tr_core::world::World;
 
 /// The pool's [`DustRng`] over the pass's [`DropRng`] stream: `Next(max)` is
 /// `Next(0, max)` (`UnifiedRandom.cs:136-139`), one draw either way.
@@ -5306,8 +5304,10 @@ mod tests {
         let mut rng = UnifiedRandom::new(171);
         let mut mpool = DustPool::new();
         let mut mirror = UnifiedRandom::new(171);
-        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
-        style8_water_bolt_lava(&p, &w, &mut d);
+        {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style8_water_bolt_lava(&p, &w, &mut d);
+        }
         for _ in 0..4 {
             let idx = mpool.new_dust(
                 &mut mirror, &c, &w, p.pos, 16, 16, 31,
@@ -5319,6 +5319,7 @@ mod tests {
         }
         assert_eq!(active(&pool).len(), 4);
         // The 172 ladder (ai[1] == 0 → the gate short-circuits the Next(5)).
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
         style8_water_bolt_172(&p, &w, &mut d);
         for num66 in 0..5 {
             let idx = mpool.new_dust(

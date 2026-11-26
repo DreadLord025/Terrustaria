@@ -1186,6 +1186,8 @@ mod s1_e_6_tests {
         // A fancy-UI state (the bestiary) anchors to screenHeight - 64.
         let a = breath_meter_anchor(&p, camera, 1.0, screen, false, true, true);
         assert_eq!(a, Vec2::new(400.0, 600.0 - 64.0));
+    }
+
     #[test]
     fn w4_f12_final_icon_census_the_gates_are_the_csharp_sets() {
         // The W4-f12 final-phase icon census (`Main.DrawBuffIcon`

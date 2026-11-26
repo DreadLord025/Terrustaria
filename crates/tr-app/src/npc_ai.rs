@@ -726,6 +726,13 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.4,
         rotation: HoverRotation::Aim,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: false,
     };
     /// W4-d36 — the Moss Hornet (176, `NPC.cs:50369-50372`: num 4 / num2
     /// 0.017): flag5 TRUE — FIX vs the in-flight stash, which carried
@@ -741,6 +748,13 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::VelocityX,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: false,
     };
     /// W4-d36 — the Moth (205, `NPC.cs:50364-50367`: num 3.25 / num2
     /// 0.018): flag5 true (outside the `:50447` exclusion set), the ×0.7
@@ -754,6 +768,13 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::VelocityX,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: false,
     };
     /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
     /// `flag5` is true for it, it flies through the tiles (`SetDefaults`
@@ -769,6 +790,14 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: Some(HoverDust {
+            gate: 20,
+            dust_type: 18,
+            use_npc_scale: true,
+        }),
+        dawn_exempt: true,
     };
     /// W4-d42 - the Blood Squid (type 619; `NPC.cs:50323-50327`:
     /// num 6, num2 0.1). `flag5` is false for it (`:50447` lists
@@ -792,6 +821,10 @@ impl HoverParams {
         bob_drift: true,
         close_boost: true,
         hover_rise: true,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: true,
     };
     /// W4-d37 — the HornetFatty (type 231; `NPC.cs:50345-50348`: num 3,
     /// num2 0.017 — the type-231 override of the 42/231-235 family arm).
@@ -811,6 +844,10 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: true,
     };
     /// W4-d37 — the HornetHoney/Leafy/Spikey/Stingy (types 232-235;
     /// `NPC.cs:50341-50344`: the family base num 3.5, num2 0.021 — no
@@ -826,6 +863,10 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: None,
+        dawn_exempt: true,
     };
     /// W4-d37 — the Parrot (type 252; `NPC.cs:50328-50339`): num 6 /
     /// num2 0.1 when the target is hittable, else num 2 / num2 0.01. The
@@ -2105,6 +2146,7 @@ mod tests {
     /// ×0.5/×0.1 velocity posts. Type 18 hits no per-type tweak.
     #[test]
     fn w4_f4_the_hover_bounce_arm_mirrors_site_50702() {
+        let w = ground();
         let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut npc = Npc::new(NpcKind::EaterOfSouls, 100.0, 100.0, 1, 0.0);
         npc.vx = 1.5;
@@ -2156,6 +2198,7 @@ mod tests {
     /// (the 7-arg overload — NOT the bounce arm's 75/this.scale).
     #[test]
     fn w4_f4_the_hover_else_arm_mirrors_site_50710() {
+        let w = ground();
         let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut npc = Npc::new(NpcKind::ServantOfCthulhu, 100.0, 100.0, 1, 0.0);
         npc.vx = -2.0;
@@ -2206,6 +2249,7 @@ mod tests {
     /// Main.rand). The colour census: no hover kind writes NPC.color.
     #[test]
     fn w4_f4_the_excluded_hover_kinds_draw_nothing() {
+        let w = ground();
         let dctx = crate::npc::permissive_dust_ctx(&w);
         for kind in [NpcKind::Hornet, NpcKind::Probe, NpcKind::Bee, NpcKind::BeeSmall] {
             let npc = Npc::new(kind, 100.0, 100.0, 1, 0.0);
@@ -2221,6 +2265,8 @@ mod tests {
     }
 }
 
+
+}
 
 /// `AI_007_TownEntities`'s melee weapon presets (`NPC.cs:55004-55054`).
 ///
@@ -2273,5 +2319,4 @@ impl TownWeaponParams {
         width: 32,
         height: 32,
     };
-}
 }

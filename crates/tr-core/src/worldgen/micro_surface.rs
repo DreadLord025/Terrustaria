@@ -552,10 +552,11 @@ mod tests {
     }
 
     /// `surfaceIsMushrooms` runs the band (`WorldGen.cs:2087-2173`): the
-    /// surface grass 2 → 60 fires on the full-size default world (the 512
-    /// test world's compact surface carries snow, so the arm never sees
-    /// grass there — the difference pinned in the frozen/frozen-finish tests
-    /// instead).
+    /// surface pass writes 2 → 60 and CONVERTS pre-existing jungle grass
+    /// 60 → 70 (mushroom grass, the `:2168` Convert arm). The observable
+    /// is therefore the mushroom-grass (70) count, not the jungle-grass
+    /// (60) count — the 60→70 arm can lower 60 even while the surface
+    /// converts.
     #[test]
     fn the_mushroom_world_converts_the_surface_grass() {
         let mk = |micro: MicroSeedFlags| {
@@ -567,10 +568,10 @@ mod tests {
         let classic = mk(MicroSeedFlags::none());
         let shroom = mk(MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_MUSHROOMS));
         assert!(
-            count(&shroom, 60) > count(&classic, 60),
+            count(&shroom, 70) > count(&classic, 70),
             "the mushroom grass ({}) beat the classic ({})",
-            count(&shroom, 60),
-            count(&classic, 60)
+            count(&shroom, 70),
+            count(&classic, 70)
         );
     }
 

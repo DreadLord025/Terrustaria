@@ -103,6 +103,19 @@ pub struct SpawnFlags {
     /// divides the rate and multiplies the cap by it (`NPC.cs:762-770`).
     /// The fresh default 0.5 remaps to 1.0 (inert).
     pub journey_spawn_rate: f32,
+    /// W4-f39: `Main.halloween` / `Main.xMas` — the resolved season flags
+    /// (`World.halloween`/`xmas`), gating the night zombie ladder's holiday
+    /// arms (`NPC.cs:4727-4735`) and `GetBasicSlimeToSpawn`'s holiday slimes
+    /// (`NPC.cs:5644-5651`). The endless micro seeds feed them through the
+    /// force-forever flags; the Oct/Dec windows + the moon temporary season
+    /// open them too.
+    pub halloween: bool,
+    pub xmas: bool,
+    /// `Main.infectedSeed` (`WorldGen.cs`'s `worldIsInfected` micro seed →
+    /// `MicroSeedFlags::WORLD_IS_INFECTED`): clears the town gate's
+    /// corrupt/crimson `flag` (`NPC.cs:795-798`) — the explicit
+    /// `!ZoneCrimson` term (`:799`) still closes it in crimson. W4-c41.
+    pub infected_seed: bool,
 }
 
 impl Default for SpawnFlags {
@@ -114,6 +127,11 @@ impl Default for SpawnFlags {
             moon_event: false,
             zone_dungeon: false,
             downed_boss3: false,
+            dont_starve: false,
+            hard_dungeon: false,
+            sandstorm_happening: false,
+            downed_boss1: false,
+            zone_crimson: false,
             zone_sandstorm: false,
             zone_underground_desert: false,
             zone_jungle: false,
@@ -135,21 +153,11 @@ impl Default for SpawnFlags {
             // The power's fresh cache 0.5 (`_sliderDefaultValue`,
             // `CreativePowers.cs:1580`) remaps to x1 — inert.
             journey_spawn_rate: 1.0,
+            halloween: false,
+            xmas: false,
+            infected_seed: false,
         }
     }
-    /// W4-f39: `Main.halloween` / `Main.xMas` — the resolved season flags
-    /// (`World.halloween`/`xmas`), gating the night zombie ladder's holiday
-    /// arms (`NPC.cs:4727-4735`) and `GetBasicSlimeToSpawn`'s holiday slimes
-    /// (`NPC.cs:5644-5651`). The endless micro seeds feed them through the
-    /// force-forever flags; the Oct/Dec windows + the moon temporary season
-    /// open them too.
-    pub halloween: bool,
-    pub xmas: bool,
-    /// `Main.infectedSeed` (`WorldGen.cs`'s `worldIsInfected` micro seed →
-    /// `MicroSeedFlags::WORLD_IS_INFECTED`): clears the town gate's
-    /// corrupt/crimson `flag` (`NPC.cs:795-798`) — the explicit
-    /// `!ZoneCrimson` term (`:799`) still closes it in crimson. W4-c41.
-    pub infected_seed: bool,
 }
 
 /// W4-d127 chain item 4 — the style-24 birds' SPAWN gates, transcribed
@@ -249,10 +257,12 @@ pub fn roll_bad_luck_extreme(luck: f32, range: i32, rng: &mut UnifiedRandom) -> 
 /// NextFloat + Next(Next(range, range*2)) on hit; else Next(range).
 pub fn roll_luck(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
     if luck > 0.0 && rng.next_float() < luck {
-        return rng.next_max(rng.next_range(range / 2, range));
+        let pick = rng.next_range(range / 2, range);
+        return rng.next_max(pick);
     }
     if luck < 0.0 && rng.next_float() < 0.0 - luck {
-        return rng.next_max(rng.next_range(range, range * 2));
+        let pick = rng.next_range(range, range * 2);
+        return rng.next_max(pick);
     }
     rng.next_max(range)
 }
@@ -997,11 +1007,6 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     if rate.max_spawns > DEFAULT_MAX_SPAWNS * 3 {
         rate.max_spawns = DEFAULT_MAX_SPAWNS * 3;
     }
-    // The moon-event raid pacing (`NPC.cs:771-775`): gated on the PLAYER
-    // being above the surface line (`player.position.Y < worldSurface * 16`;
-    // `Main.remixWorld` has no port counterpart) — an underground player
-    // during a moon event keeps the un-paced rate (research 24, errata).
-    if f.moon_event && pos_y < ctx.world.world_surface * 16.0 {
     // `Main.getGoodWorld` (`:757-761`) is constants-off (no FTW worlds).
     // `Main.IsJourneyMode` (`:762-770`): the spawn-rate power divides the
     // rate and multiplies the cap by the remapped x0.1..10 factor — the
@@ -1011,13 +1016,16 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
         rate.spawn_rate = (rate.spawn_rate as f32 / value) as i32; // `:767`
         rate.max_spawns = (rate.max_spawns as f32 * value) as i32; // `:768`
     }
-    // The invasion overrides (`:792-801`) — the moon events force the raid
-    // pacing; the pre-Skeletron dungeon crawls at rate 10 (`:806-809`).
-    if f.moon_event {
+    // The moon-event raid pacing (`NPC.cs:771-775`): gated on the PLAYER
+    // being above the surface line (`player.position.Y < worldSurface * 16`;
+    // `Main.remixWorld` has no port counterpart) — an underground player
+    // during a moon event keeps the un-paced rate (research 24, errata).
+    if f.moon_event && pos_y < ctx.world.world_surface * 16.0 {
         rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
         rate.spawn_rate = 20;
     }
-    // The invaders override (NPC.cs:781-785): same pacing as moon events.
+    // The invaders override (`NPC.cs:781-785`), after the rate floor/cap and
+    // moon pacing but before the pre-Skeletron dungeon override (`:786-789`).
     if ctx.invaders {
         rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
         rate.spawn_rate = 20;
@@ -1666,147 +1674,6 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
         return spawn_npc_at(ctx, rng, num, j * 16, sky_mob, no_worms, spawn_friendly);
     }
     None
-}
-
-/// `NPC.SpawnOnPlayer(plr, npcType)`'s generic scan
-/// (`NPC.cs:80565-80633`, W4-d103 WG-POST RETIRE — the SmashAltar wraith
-/// activation): the 500×50 candidate scan, the 200×30 band for the
-/// ghosts 316/82 (`:80570-80574`), the `GetSpawnArea` rects, the
-/// per-candidate solid/house-wall veto, the down-column ground walk, the
-/// safe-area + `HasTileSpawnSpace` + `CheckNotSpawningOnScreen` gates,
-/// the last-attempt (`flag2`) bypasses. Returns the spawn tile
-/// `(num10, num11)` — the caller feeds `SpawnBoss(num10*16+8, num11*16,
-/// …)` (`:80631`).
-///
-/// The boss cases 245/370/398 (`:80483-80564`) are the callers' own arms
-/// (the door/lunar seams carry theirs); this is the generic tail only.
-/// Deviations (documented): the type-50 King-Slime arms (`:80589`'s
-/// `Main.tile[num16, num16]` quirk kept verbatim, `:80604-80614`'s
-/// CanHit headroom probe) are IN — the C# runs them for every type
-/// check; the skyblock midair arm (`:80581-80584`) parks (82 is not in
-/// `NPCID.Sets.SpawnOnPlayerCanSpawnInMidairOnSkyblock`, `NPCID.cs:
-/// 10114`, so `flag3` is structurally false for the ported callers);
-/// the `netMode == 1` head folds out (the single-player port).
-pub fn spawn_on_player_tile(
-    world: &World,
-    player_pos: (f32, f32),
-    player_center: (f32, f32),
-    npc_type: i32,
-    rng: &mut UnifiedRandom,
-) -> Option<(i32, i32)> {
-    let mut flag = false;
-    let mut num10 = 0;
-    let mut num11 = 0;
-    let mut num12 = 500;
-    let mut num13 = 50;
-    // `:80570-80574` — the ghosts' tighter band.
-    if npc_type == 316 || npc_type == 82 {
-        num12 = 200;
-        num13 = 30;
-    }
-    let num14 = num12 / 2;
-    let (spawn_area, safe_area) = spawn_area_rects(world, player_pos);
-    for m in 0..num12 {
-        let flag2 = m == num12 - 1;
-        // `:80581-80584` — the skyblock midair arm: 82/316 are not in the
-        // set, so flag3 stays false (the parked arm, the doc above).
-        let flag3 = false;
-        for _ in 0..num13 {
-            // `:80587-80588` — `Main.rand.Next(Left, Right)` pairs. The
-            // degenerate-band guard keeps the fixture worlds alive (the
-            // growth.rs band-guard precedent); a clamped-flat band picks
-            // its single column/row.
-            let num15 = if spawn_area.left < spawn_area.right {
-                rng.next_range(spawn_area.left, spawn_area.right)
-            } else {
-                spawn_area.left
-            };
-            let num16 = if spawn_area.top < spawn_area.bottom {
-                rng.next_range(spawn_area.top, spawn_area.bottom)
-            } else {
-                spawn_area.top
-            };
-            // `:80589-80592` — the candidate veto: solid ground, a house
-            // wall before the last attempt, the King-Slime wall quirk
-            // (`Main.tile[num16, num16]` — the C#'s own index reuse).
-            let t = world.tile(num15, num16);
-            let solid =
-                t.is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
-            let house_wall =
-                t.is_some_and(|t| tr_core::edit::wall_house(t.wall)) && m < num12 - 1;
-            let king_wall = npc_type == 50
-                && m < num14
-                && world.tile(num16, num16).is_some_and(|t| t.wall > 0);
-            if solid || house_wall || king_wall {
-                continue;
-            }
-            // `:80593-80603` — the down-column ground walk.
-            for num17 in num16..spawn_area.bottom {
-                let ground = world.tile(num15, num17).is_some_and(|t| {
-                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
-                });
-                if (flag3 || ground) && (flag2 || !safe_area.contains(num15, num16)) {
-                    num10 = num15;
-                    num11 = num17;
-                    flag = true;
-                    break;
-                }
-            }
-            // `:80604-80614` — the King-Slime headroom probe (the two
-            // CanHit lines, 20 tiles up + the player line-of-sight).
-            if flag && npc_type == 50 && m < num12 - 100 {
-                let num18 = 20;
-                let up = crate::projectile::can_hit(
-                    world,
-                    num10 as f32 * TILE_PX,
-                    (num11 - 1) as f32 * TILE_PX,
-                    TILE_PX,
-                    TILE_PX,
-                    num10 as f32 * TILE_PX,
-                    (num11 - 1 - num18) as f32 * TILE_PX,
-                    TILE_PX,
-                    TILE_PX,
-                );
-                let los = crate::projectile::can_hit(
-                    world,
-                    num10 as f32 * TILE_PX,
-                    (num11 - 1 - num18) as f32 * TILE_PX,
-                    TILE_PX,
-                    TILE_PX,
-                    player_center.0,
-                    player_center.1,
-                    0.0,
-                    0.0,
-                );
-                if !up || !los {
-                    num10 = 0;
-                    num11 = 0;
-                    flag = false;
-                    continue;
-                }
-            }
-            // `:80615-80618` — the free-space gate (the last attempt
-            // bypasses it).
-            if flag && !flag2 && !has_tile_spawn_space(world, num10, num11) {
-                flag = false;
-            }
-            if flag {
-                break;
-            }
-        }
-        // `:80624-80627` — accept a found tile when it is off-screen, or
-        // on the last attempt regardless.
-        if (!flag || flag2 || check_not_spawning_on_screen_at(player_center, num10, num11))
-            && flag
-        {
-            break;
-        }
-    }
-    if flag {
-        Some((num10, num11))
-    } else {
-        None
-    }
 }
 
 /// `Spawner.SpawnAnNPC`'s selection ladders (`NPC.cs:4348-4870`) for the
@@ -3559,6 +3426,8 @@ fn spawn_desert_ground(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Opt
 /// the flyer's own AI lifts it on the first tick).
 fn spawn_desert_flyer(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Option<Npc> {
     spawn_desert_ground(ctx, x, y, kind)
+}
+
 /// `NPCID.Shimmerfly` (`NPCID.cs:12031`) — the faeling the `36
 /// SyncPlayerZone` zone5[0] rising edge spawns (`NPC.Spawner.SpawnFaelings`,
 /// `NPC.cs:5957-5995`). NOT 570 (`DD2DrakinT2`, `NPCID.cs:11817` — the
@@ -7237,7 +7106,7 @@ mod tests {
         // leave spawnFriendly clear (the tail's `!spawnFriendly` gate).
         let mut hit = None;
         for seed in 0..500i32 {
-            let mut probe = UnifiedRandom::new(seed);
+            let mut probe = UnifiedRandom::new(seed as i32);
             let base = get_spawn_rate(&{
                 let mut z = c;
                 z.luck = 0.0;
@@ -7255,7 +7124,7 @@ mod tests {
             }
         }
         let (seed, base) = hit.expect("a seed with Next(5) == 0");
-        let mut rng = UnifiedRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         let r = get_spawn_rate(&c, &mut rng);
         assert_eq!(r.spawn_rate, (base.spawn_rate as f32 * 0.85) as i32);
         assert_eq!(r.max_spawns, (base.max_spawns as f32 * 1.15) as i32);
@@ -7298,21 +7167,38 @@ mod tests {
         // purple arm needs dist > 400, unreachable here).
         let mut probe_seed = None;
         for seed in 0..2000i32 {
-            let mut rng = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(npc) = spawn_basic_slime(&plain, &mut rng, 0, true) {
                 if npc.slime == SlimeVariant::Blue {
                     probe_seed = Some(seed);
                     break;
                 }
             }
-            (trace, rng)
-        };
-        let (a, rng_a) = run();
-        let (b, rng_b) = run();
-        assert_eq!(a, b, "the 500-tick run is frozen");
-        assert_eq!(rng_a, rng_b, "the two runs draw identically");
-        let probe = UnifiedRandom::new(26);
-        assert_eq!(rng_a, probe, "the Wolf's 500 ticks draw NOTHING");
+        }
+        let seed = probe_seed.expect("a Blue pick in the sweep");
+        let mut a = UnifiedRandom::new(seed as i32);
+        let mut b = UnifiedRandom::new(seed as i32);
+        let na = spawn_basic_slime(&plain, &mut a, 0, true).unwrap();
+        let nb = spawn_basic_slime(&lucky, &mut b, 0, true).unwrap();
+        assert_eq!(na.slime, SlimeVariant::Blue);
+        assert!(matches!(nb.slime, SlimeVariant::Blue | SlimeVariant::Pinky));
+        // The promotion draw SHAPES, pinned directly on the engine:
+        let mut t0 = UnifiedRandom::new(9);
+        let r0 = tr_core::loot::roll_luck(&mut t0, 0.0, 180);
+        let mut t0b = UnifiedRandom::new(9);
+        assert_eq!(r0, t0b.next_max(180));
+        assert_eq!(t0, t0b, "luck 0 == plain Next(180), one draw");
+        let mut t1 = UnifiedRandom::new(9);
+        let r1 = tr_core::loot::roll_luck(&mut t1, 1.0, 180);
+        let mut t1b = UnifiedRandom::new(9);
+        let _gate = t1b.next_float();
+        let inner = t1b.next_range(90, 180);
+        assert_eq!(r1, t1b.next_range(0, inner));
+        assert_eq!(t1, t1b, "luck 1 == the three-draw shrunk shape");
+        assert!(r1 < 180);
+        // One vs three promotion draws: the twin streams diverge.
+        assert_ne!(a, b, "the luck feeds change the promotion draw shape");
+    }
     // ---- W4-c38: the moon-roster re-verification witnesses ----
 
     /// The pumpkin wave-4 quirk (`NPC.cs:3510-3522`): the leading arm rolls
@@ -7486,30 +7372,11 @@ mod tests {
             [338u16, 339, 340].into_iter().collect(),
             "the Next(338, 341) band spreads across its three kinds"
         );
+    }
 
-        }        let seed = probe_seed.expect("a Blue pick in the sweep");
-        let mut a = UnifiedRandom::new(seed);
-        let mut b = UnifiedRandom::new(seed);
-        let na = spawn_basic_slime(&plain, &mut a, 0, true).unwrap();
-        let nb = spawn_basic_slime(&lucky, &mut b, 0, true).unwrap();
-        assert_eq!(na.slime, SlimeVariant::Blue);
-        assert!(matches!(nb.slime, SlimeVariant::Blue | SlimeVariant::Pinky));
-        // The promotion draw SHAPES, pinned directly on the engine:
-        let mut t0 = UnifiedRandom::new(9);
-        let r0 = tr_core::loot::roll_luck(&mut t0, 0.0, 180);
-        let mut t0b = UnifiedRandom::new(9);
-        assert_eq!(r0, t0b.next_max(180));
-        assert_eq!(t0, t0b, "luck 0 == plain Next(180), one draw");
-        let mut t1 = UnifiedRandom::new(9);
-        let r1 = tr_core::loot::roll_luck(&mut t1, 1.0, 180);
-        let mut t1b = UnifiedRandom::new(9);
-        let _gate = t1b.next_float();
-        let inner = t1b.next_range(90, 180);
-        assert_eq!(r1, t1b.next_range(0, inner));
-        assert_eq!(t1, t1b, "luck 1 == the three-draw shrunk shape");
-        assert!(r1 < 180);
-        // One vs three promotion draws: the twin streams diverge.
-        assert_ne!(a, b, "the luck feeds change the promotion draw shape");
+    /// The bound-goblin luck roll (`NPC.cs:2084`): at luck 0 the arm's roll
+    /// is the plain Next(20); at luck 1.0 it is the three-draw shrunk shape.
+    #[test]
     fn f32_bound_goblin_roll_rides_luck() {
         // `NPC.cs:2084`: downedGoblins && RollLuck(20) == 0 — at luck 0 the
         // arm's roll is the plain Next(20) (byte-identical to the pre-luck
@@ -7526,15 +7393,18 @@ mod tests {
         // The arm fires on some seed at luck 0 (the plain cadence).
         let mut fired = false;
         for seed in 0..3000i32 {
-            let mut rng = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(npc) = spawn_npc_at(&plain, &mut rng, 30, 100 * 16, false, false, false) {
                 if npc.kind == NpcKind::BoundGoblin {
                     fired = true;
                     // The twin at luck 1.0 consumes a different shape.
-                    let mut lucky_rng = UnifiedRandom::new(seed);
+                    let mut lucky_rng = UnifiedRandom::new(seed as i32);
                     let _ = spawn_npc_at(&lucky, &mut lucky_rng, 30, 100 * 16, false, false, false);
                     assert_ne!(rng, lucky_rng, "the luck feed changes the roll shape");
                     break;
+                }
+            }
+        }
         assert!(fired, "the plain cadence still spawns the bound goblin");
         // The roll shapes themselves (the engine pin):
         let mut a = UnifiedRandom::new(9);
@@ -7549,6 +7419,11 @@ mod tests {
         let inner = d.next_range(10, 20);
         assert_eq!(r1, d.next_range(0, inner));
         assert_eq!(c, d, "luck 1 == the shrunk three-draw shape");
+    }
+
+    /// The blood-moon bad-luck roll (`NPC.cs:4618/4623`): negative luck
+    /// replaces Next(300) with Next(Next(150, 300)).
+    #[test]
     fn f32_blood_moon_bad_luck_roll_shrinks_at_negative_luck() {
         // `NPC.cs:4618/4623`: RollOnlyBadLuck(300) — negative luck replaces
         // Next(300) with Next(Next(150, 300)); at luck 0 the stream is the
@@ -7570,10 +7445,8 @@ mod tests {
     }
 
 // balance-close (union shared delimiter)
-}}}}
-    }
 
-    // ---- W4-c40: the sandstorm desert override (written, NOT run) ----
+// ---- W4-c40: the sandstorm desert override (written, NOT run) ----
 
     /// A desert world: a 400x700 world with a deep sand mass (kind 53)
     /// from row 300 down — the sandstone check's 8-row × 9-column scan
@@ -7839,8 +7712,8 @@ mod tests {
         // 20000 seeds: the mimic path is 1/5 * 1/100 per seed (~40
         // expected hits) — the both-forms assertion is stream-safe.
         for seed in 0..20000u64 {
-            let mut rng = UnifiedRandom::new(seed);
-            let mut mirror = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut mirror = UnifiedRandom::new(seed as i32);
             match bird_spawn_owl_pick(&night_clear, &mut rng) {
                 Some(mimic) => {
                     // The mirror replays: Next(5) gate then Next(100).
@@ -7870,7 +7743,7 @@ mod tests {
         // 20000 seeds: the gold promotion is 2/3 * 1/400 per seed
         // (~33 expected hits).
         for seed in 0..20000u64 {
-            let mut rng = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(ty) = bird_spawn_day_pick(&morning, &mut rng) {
                 picks.insert(ty);
             }
@@ -7886,7 +7759,7 @@ mod tests {
         // 20000 seeds: each macaw is 1/7 * 2/3 * 1/5 per seed (~380
         // expected hits each) — the exactly-five assertion is safe.
         for seed in 0..20000u64 {
-            let mut rng = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(ty) = bird_spawn_jungle_pick(&jungle, &mut rng) {
                 jpick.insert(ty);
             }
@@ -7911,7 +7784,7 @@ mod tests {
         let late = BirdSpawnGates { time: 43200.0, ..jungle };
         let mut hit = false;
         for seed in 0..2000u64 {
-            if bird_spawn_jungle_pick(&late, &mut UnifiedRandom::new(seed)).is_some() {
+            if bird_spawn_jungle_pick(&late, &mut UnifiedRandom::new(seed as i32)).is_some() {
                 hit = true;
                 break;
             }
@@ -7919,8 +7792,8 @@ mod tests {
         assert!(hit, "time 43200.0 < the literal cutoff still spawns");
         let past = BirdSpawnGates { time: 43200.00064373016, ..jungle };
         for seed in 0..50u64 {
-            let mut rng = UnifiedRandom::new(seed);
-            let mut mirror = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut mirror = UnifiedRandom::new(seed as i32);
             assert_eq!(bird_spawn_jungle_pick(&past, &mut rng), None);
             // The Next(7) still draws (the gate precedes the time test).
             let _ = mirror.next_max(7);

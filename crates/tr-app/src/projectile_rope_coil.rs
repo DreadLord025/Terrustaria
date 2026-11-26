@@ -54,15 +54,6 @@
 //! port defers them to the pass tail's `UpdateItems` stream (the bobber
 //! overflow's recorded stream deviation).
 
-use glam::Vec2;
-use tr_core::TILE_PX;
-
-use crate::projectile::{ROPE_COIL, SILK_ROPE_COIL, VINE_ROPE_COIL, WEB_ROPE_COIL};
-use crate::projectile::Projectile;
-
-/// The `DrawProjDirect` chain-draw gate (`Main.cs:28499`/`:28549`/`:28610`).
-/// The death hook's ai1==0 Dig cue gates on it (wired); the g82b draw
-/// wiring gates `draw_with_hand` on it too (module doc).
 //! W4-g82 — the rope-coil lane: the four coil projectiles' aiStyle-35
 //! machine (`Projectile.AI()`'s `aiStyle == 35` block,
 //! `Projectile.cs:27189-27291`), their trailing-chain placement preview
@@ -160,6 +151,8 @@ pub(crate) const SILK_ROPE_COIL: u16 = 505;
 pub(crate) const WEB_ROPE_COIL: u16 = 506;
 
 /// The `DrawProjDirect` chain-draw gate (`Main.cs:28499`/`:28549`/`:28610`).
+/// The death hook's ai1==0 Dig cue gates on it (wired); the g82b draw
+/// wiring gates `draw_with_hand` on it too (module doc).
 #[inline]
 pub(crate) fn is_coil(kind: u16) -> bool {
     matches!(kind, ROPE_COIL | VINE_ROPE_COIL | SILK_ROPE_COIL | WEB_ROPE_COIL)
@@ -182,6 +175,11 @@ pub(crate) fn coil_death_drop(kind: u16, placed: f32) -> Option<(u16, i32)> {
         Some((coil_item, 1))
     } else if placed < 10.0 {
         Some((rope_item, (10.0 - placed) as i32))
+    } else {
+        None
+    }
+}
+
 /// The `SetDefaults` row shared by the four coils
 /// (`Projectile.cs:2570-2578` for 171/505/506, `:5496-5504` for 475):
 /// `(w, h, ai_style, penetrate, time_left, tile_collide)`. The stock
@@ -360,7 +358,7 @@ pub(crate) fn coil_step(p: &mut Projectile, world: &mut World, local_owner: u8) 
                 // :27265-27270 — cut tiles (and the guide dummy 165) are
                 // cleared; the re-read below places rope in their cell.
                 alternator = false;
-                if let Some(kill) = tr_core::edit::kill_tile(world, tx, ty, false) {
+                if let Some(kill) = tr_core::edit::kill_tile(world, tx, ty, false, &mut tr_core::UnifiedRandom::default()) {
                     kills.push(kill);
                 }
             }
@@ -529,63 +527,6 @@ pub(crate) fn draw_coil_chain(
     quads
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn proj(kind: u16) -> Projectile {
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            w: 14.0,
-            h: 14.0,
-            ..Default::default()
-        }
-    }
-
-    // Projectile.cs:77572-77615 — the refund ladder (g82's witness,
-    // re-homed at the union). WRITTEN NOT RUN (code-only).
-    #[test]
-    fn w4_d4_union_the_death_refund_ladder() {
-        assert_eq!(coil_death_drop(171, 0.0), Some((985, 1)));
-        assert_eq!(coil_death_drop(171, 3.0), Some((965, 7)));
-        assert_eq!(coil_death_drop(171, 9.0), Some((965, 1)));
-        assert_eq!(coil_death_drop(171, 10.0), None);
-        assert_eq!(coil_death_drop(475, 0.0), Some((3005, 1)));
-        assert_eq!(coil_death_drop(475, 4.0), Some((2996, 6)));
-        assert_eq!(coil_death_drop(505, 0.0), Some((3079, 1)));
-        assert_eq!(coil_death_drop(505, 2.0), Some((3077, 8)));
-        assert_eq!(coil_death_drop(506, 0.0), Some((3080, 1)));
-        assert_eq!(coil_death_drop(506, 5.0), Some((3078, 5)));
-        assert_eq!(coil_death_drop(172, 0.0), None);
-        assert!(is_coil(171) && is_coil(475) && is_coil(505) && is_coil(506));
-        assert!(!is_coil(214) && !is_coil(155));
-    }
-
-    // Main.cs:28501-28547 — the reverse draw order + the ramps.
-    #[test]
-    fn w4_d4_union_the_chain_walks_backward_in_reverse_draw_order() {
-/// `Kill()`'s coil refund (`Projectile.cs:77572-77615`): an unplaced coil
-/// (`ai[1] == 0`) drops ONE coil item back; a partially placed one
-/// (`ai[1] < 10`) drops `10 - ai[1]` ROPE items (the placed links stay in
-/// the world). At `ai[1] >= 10` nothing drops. Returns `(item, count)`.
-pub(crate) fn coil_death_drop(kind: u16, placed: f32) -> Option<(u16, i32)> {
-    let (coil_item, rope_item) = match kind {
-        ROPE_COIL => (985u16, 965u16),   // :77576/:77580
-        VINE_ROPE_COIL => (3005, 2996), // :77587/:77591
-        SILK_ROPE_COIL => (3079, 3077), // :77598/:77602
-        WEB_ROPE_COIL => (3080, 3078),  // :77609/:77613
-        _ => return None,
-    };
-    if placed == 0.0 {
-        Some((coil_item, 1))
-    } else if placed < 10.0 {
-        Some((rope_item, (10.0 - placed) as i32))
-    } else {
-        None
-    }
-}
 
 /// `Player.PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`),
 /// verbatim: when the held item places a rope AND the target is already a
@@ -687,6 +628,57 @@ mod tests {
         let t = w.tile_mut(x, y).unwrap();
         t.kind = kind;
         t.flags |= FLAG_ACTIVE;
+    }
+
+    // Projectile.cs:77572-77615 — the refund ladder (g82's witness,
+    // re-homed at the union). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d4_union_the_death_refund_ladder() {
+        assert_eq!(coil_death_drop(171, 0.0), Some((985, 1)));
+        assert_eq!(coil_death_drop(171, 3.0), Some((965, 7)));
+        assert_eq!(coil_death_drop(171, 9.0), Some((965, 1)));
+        assert_eq!(coil_death_drop(171, 10.0), None);
+        assert_eq!(coil_death_drop(475, 0.0), Some((3005, 1)));
+        assert_eq!(coil_death_drop(475, 4.0), Some((2996, 6)));
+        assert_eq!(coil_death_drop(505, 0.0), Some((3079, 1)));
+        assert_eq!(coil_death_drop(505, 2.0), Some((3077, 8)));
+        assert_eq!(coil_death_drop(506, 0.0), Some((3080, 1)));
+        assert_eq!(coil_death_drop(506, 5.0), Some((3078, 5)));
+        assert_eq!(coil_death_drop(172, 0.0), None);
+        assert!(is_coil(171) && is_coil(475) && is_coil(505) && is_coil(506));
+        assert!(!is_coil(214) && !is_coil(155));
+    }
+
+    // Main.cs:28501-28547 — the reverse draw order + the ramps.
+    #[test]
+    fn w4_d4_union_the_chain_walks_backward_in_reverse_draw_order() {
+        let mut p = proj(171);
+        p.pos = Vec2::new(100.0, 100.0);
+        p.vel = Vec2::new(0.0, 14.0);
+        p.ai[0] = 30.0;
+        let links = coil_chain_segments(&p);
+        assert_eq!(links.len(), 30, "(int)(30 * 30/17 clamped 1)");
+        // The FIRST drawn link is the FAR end (walk index 29): the coil
+        // centre minus 29 * 5.6 on Y (every step normalizes to 5.6 up).
+        let far = links[0];
+        assert!((far.pos[0] - 107.0).abs() < 1e-3, "centre x = 100+7");
+        assert!((far.pos[1] - (107.0 - 29.0 * 5.6)).abs() < 1e-3);
+        // The LAST drawn link is the coil centre itself (walk index 0).
+        let near = links[29];
+        assert!((near.pos[0] - 107.0).abs() < 1e-3);
+        assert!((near.pos[1] - 107.0).abs() < 1e-3);
+        // Every link rotates atan2(-5.6, 0) - 1.57 = -PI/2 - 1.57.
+        let want = (-5.6f32).atan2(0.0) - 1.57;
+        for l in &links {
+            assert!((l.rot - want).abs() < 1e-5);
+            assert_eq!(l.sheet, 0, "171 draws Chain16 only");
+        }
+        // The count ramp: ai0 = 0 → no links; ai0 = 8 → (int)(30 * 8/17)
+        // = (int)14.117 = 14.
+        p.ai[0] = 0.0;
+        assert_eq!(coil_chain_segments(&p).len(), 0);
+        p.ai[0] = 8.0;
+        assert_eq!(coil_chain_segments(&p).len(), 14);
     }
 
     // The SetDefaults rows + the rope-kind map (Projectile.cs:2570-2578,
@@ -927,6 +919,26 @@ mod tests {
     // DRAW index (0 at the far end), not the walk index.
     #[test]
     fn w4_d4_union_the_sheet_alternation_counts_the_draw_index() {
+        let mut p = proj(475);
+        p.pos = Vec2::new(100.0, 100.0);
+        p.vel = Vec2::new(0.0, 14.0);
+        p.ai[0] = 30.0;
+        let links = coil_chain_segments(&p);
+        assert_eq!(links[0].sheet, 0, "draw index 0 → Chain38");
+        assert_eq!(links[1].sheet, 1, "draw index 1 → Chain39");
+        assert_eq!(links[29].sheet, 1, "draw index 29 odd → Chain39");
+        assert_eq!(coil_chain_sheets(505), &["Chains_4", "Chains_5"]);
+        assert_eq!(coil_chain_sheets(506), &["Chains_6", "Chains_7"]);
+        // 506's num79 = 6 + i%2 (Main.cs:28660-28665) — the same parity.
+        let mut q = proj(506);
+        q.pos = Vec2::new(100.0, 100.0);
+        q.vel = Vec2::new(0.0, 14.0);
+        q.ai[0] = 30.0;
+        let lq = coil_chain_segments(&q);
+        assert_eq!((lq[0].sheet, lq[1].sheet), (0, 1));
+    }
+
+    #[test]
     fn w4_g82_the_sheet_alternation_counts_the_draw_index() {
         let mut p = proj(475);
         p.pos = Vec2::new(100.0, 100.0);
@@ -971,6 +983,8 @@ mod tests {
         // NaN, the C# array carries the same.
         assert!(links[0].pos[0].is_nan(), "the far end walked through 0/0");
         assert!(links[0].rot.is_nan(), "atan2(NaN, NaN) - 1.57 stays NaN");
+    }
+
     // Projectile.cs:77572-77615 — the refund ladder.
     #[test]
     fn w4_g82_the_death_refund_ladder() {

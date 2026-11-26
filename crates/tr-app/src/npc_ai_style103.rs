@@ -532,7 +532,7 @@ mod tests {
             (544, 64, 22, 400, 0.8),
             (545, 54, 26, 450, 0.7),
         ];
-        for (d, &(ty, dmg, def, life, kb)) in SAND_SHARKS.iter().zip(stats) {
+        for (d, (ty, dmg, def, life, kb)) in SAND_SHARKS.iter().zip(stats) {
             assert_eq!(d.ty, ty);
             assert_eq!((d.width, d.height), (100, 24));
             assert_eq!(d.ai_style, 103);

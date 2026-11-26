@@ -585,7 +585,7 @@ pub fn style88_step(npc: &mut Npc, env: &mut Style88Env<'_>) -> Style88Outcome {
     } else if npc.ai[0] == 4.0 {
         // `:38189-38258` — the egg-site scan.
         let (_, cy) = npc.center();
-        let flag96 = (cy / 16.0) as f64 < env.world.world_surface;
+        let flag96 = ((cy / 16.0) as f64) < env.world.world_surface;
         target_closest(npc, env.world, env.players, true, 88, env.ticker);
         npc.ai[0] = 0.0;
         npc.ai[1] = 0.0;
@@ -982,11 +982,11 @@ mod tests {
         let mut e = env(&w, &players, &mut rng);
         let out = style88_step(&mut n, &mut e);
         assert_eq!(out.egg_spawn, Some((8 * 16 + 8, 9 * 16)));
-        assert_eq!(rng.peek(), oracle.peek(), "the lay tick draws nothing");
+        assert_eq!(e.rng.peek(), oracle.peek(), "the lay tick draws nothing");
         n.ai[3] = 139.0;
         let _ = style88_step(&mut n, &mut e);
         let roll = oracle.next_max(3);
-        assert_eq!(rng.peek(), oracle.peek(), "the exit roll");
+        assert_eq!(e.rng.peek(), oracle.peek(), "the exit roll");
         if roll != 0 {
             assert_eq!(n.ai[0], 4.0, "the re-run");
         } else {

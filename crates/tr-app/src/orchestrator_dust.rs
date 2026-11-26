@@ -782,12 +782,12 @@ pub(crate) fn spawn_orchestra(
     kind: u8,
     s: &OrchestraSettings,
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
-    players: crate::orch_dispatch::D54Players<'_>,
+    players: &crate::orch_dispatch::D54Players<'_>,
 ) {
     use orchestra_kind::*;
     match kind {
@@ -808,7 +808,7 @@ pub(crate) fn spawn_orchestra(
         // The d54 half of the ONE composed router (research/131 §8.5):
         // its 24 arms own the first-40 kind bytes; every remaining enum
         // value is an unported Spawn_* body and drops there (no draws).
-        _ => crate::orch_dispatch::spawn_orchestra_d54(kind, s, rng, gen, disco, dust, ctx, world, players),
+        _ => crate::orch_dispatch::spawn_orchestra_d54(kind, s, rng, gen_rng, disco, dust, ctx, world, players),
     }
 }
 

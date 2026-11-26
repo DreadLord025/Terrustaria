@@ -1112,8 +1112,9 @@ mod tests {
         hive.inflate(20, 20);
         let mut fast = FastRandom::new(world.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
         let mut map = vec![false; (hive.w * hive.h).max(0) as usize];
+        let surface = world.world_surface;
         place_clusters_area(
-            &mut world, &desc, &clusters, hive, world.world_surface, &mut fast, &mut map,
+            &mut world, &desc, &clusters, hive, surface, &mut fast, &mut map,
         );
         // The carve fired (the shells exist) and the map carries marks.
         assert!(map.iter().any(|&m| m), "the carve marks Smooth cells");

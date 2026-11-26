@@ -1011,7 +1011,30 @@ mod tests {
     // pipeline steps and never frames (framing is the app-side post-pipeline
     // seam), and `variants` is not a hashed `Tile` field — the pin hashes an
     // un-framed world. (The S1-P-i33 deferred re-pin above still stands.)
-    const SEED42_512: u32 = 124297949;
+    // >>> MERGE-GATE RE-PIN (2026-11-25): same union-pipeline contract as
+    // DEFAULT_WORLD -- the 23 folded vanilla passes run on the 512-wide world
+    // too and move its tiles by design. Re-measured on the merged tree after
+    // the `pass_piles` sub-vanilla fix: `ZONE_MARGIN = 380` makes the 512-wide
+    // re-roll `x < 380 || x > width - 380` always true (an infinite spin); the
+    // new guard `inland = world.width > beach * 2` skips it on sub-vanilla
+    // widths without changing any normal-width output. The SAME sub-vanilla
+    // re-roll guard lands in the traps pass (`while world.width > beach * 2`).
+    // The test now completes in ~26 s and yields 2052593210 (deterministic:
+    // `a == b` holds). NOTE the earlier 3085106525 measurement predated the
+    // traps guard, which changes 512 traps placement and moved this pin.
+    // W4-c31 hive rewrite + terrain-surface publish (2026-11-26, merge
+    // repair): the pipeline now runs the faithful `hive.rs` Beehives pass
+    // (honey cubes / dents / 86 walls) instead of the retired shape-level
+    // dome, `TerrainFill` publishes `Main.worldSurface`/`rockLayer` at the
+    // terrain slot (the later passes no longer read `World::new`'s
+    // `height/4` placeholder), `mayan_trap` spends the unconditional colour
+    // draw (`WorldGen.cs:8518`), and `cave_walls` treats wall 0 as
+    // unwalled. Each is a fidelity fix that moves tile bytes BY DESIGN;
+    // re-measured on the repaired tree (the test's `a == b` half holds).
+    // ... plus the sub-vanilla `pass_moss`/`pass_spider_caves`/`pass_gem_caves`
+    // guards (the deep bands collapse once the real `rockLayer` is published;
+    // the C# `Next` throws there, so the passes skip whole).
+    const SEED42_512: u32 = 3565267290;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
     // surface-opening tunnels before `Shinies`, so the default world's
@@ -1657,7 +1680,22 @@ mod tests {
     // W4-d109 (code-only): the `.trwld` v18 variants persistence leaves this
     // pin UNCHANGED for the same reason as SEED42_512 above — `generate()`
     // never frames and `variants` is unhashed. The i33 deferred re-pin stands.
-    const DEFAULT_WORLD: u32 = 3647283075;
+    // >>> MERGE-GATE RE-PIN (2026-11-25): the union pipeline's 23 folded
+    // vanilla passes (Oasis, Waterfalls, Wall Variety, Life Crystals, Statues,
+    // Surface/Water Chests, Cave Walls, Wood Tree Walls, Quick Cleanup,
+    // Hellforge, Spreading Grass, Surface Ore and Stone, Place Fallen Log,
+    // Traps, Piles, Spawn Point, Grass Wall, Mount/Mountain Caves, Gems,
+    // Clean Up Dirt, Dirt Rock Wall Runner, Silt/Webs) now run on the default
+    // world and move its tile bytes by design. Re-measured on the merged tree
+    // (two `generate()` calls agree - the test's `a == b` half proves it). The
+    // classic special-seed gates are untouched; this is the deferred re-pin
+    // flagged at `world_hash.rs:354` ("DEFAULT_WORLD re-pin ... deferred to
+    // the merge gate").
+    // Merge repair (2026-11-26): the faithful `hive.rs` pass, the terrain
+    // `worldSurface` publish, the unconditional temple trap colour draw and
+    // the cave-wall wall-0 adaptation move the tile bytes by design (see the
+    // SEED42_512 note above). Re-measured on the repaired tree; `a == b`.
+    const DEFAULT_WORLD: u32 = 3398234540;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +
     // remix band table, `WorldGen.cs:13189-13602`; the SurfaceCaves noSurface

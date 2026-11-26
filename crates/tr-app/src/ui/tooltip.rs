@@ -193,7 +193,7 @@ fn line_height(lookups: &assets::Lookups) -> f32 {
 /// the C# folds in (`Main.MouseText_DrawItemTooltip_GetLinesInfo`,
 /// `Main.cs:20631+`): the weapon-damage multiplier, the crit bonuses,
 /// `minionKB`, the quiver, the knockback gloves and the mana cost.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct TooltipContext<'a> {
     /// The item's rolled prefix (`Item.prefix`) — the affix name
     /// (`Item.AffixName`, `Item.cs:1194-1201`).
@@ -209,6 +209,10 @@ pub struct TooltipContext<'a> {
     pub held_crit: i32,
     /// W4-f28 — the hovered instance's `ItemSlot.MouseHover` stamps +
     /// favourite flag (`ItemSlot.cs:3183-3198`, `Item.favorited`).
+    /// The W4-c24c `pub slot_context: i32` field folded into
+    /// `flags.context` (same value: the 17-context whitelist gate at
+    /// `Main.cs:21318`, -1 = no context, `Item.cs:117`); the Journey
+    /// sacrifice row reads it through `HoverFlags` — no second field.
     pub flags: HoverFlags,
     /// W4-f28 — the world/session gates (expert mode, the downed latches,
     /// the seed flags, npcShop, the master/disco colour animators).
@@ -698,9 +702,6 @@ pub fn item_tooltip_rows(
 /// for the worse arm, `color2` (120,190,120) for the better.
 const PREFIX_BAD: [f32; 4] = [190.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0];
 const PREFIX_GOOD: [f32; 4] = [120.0 / 255.0, 190.0 / 255.0, 120.0 / 255.0, 1.0];
-    lines.extend(bestiary_note_rows(ctx.bestiary_notes));
-    lines
-}
 
 /// `Main.cs:21334-21342` — the bestiary notes: `Item.BestiaryNotes` (the
 /// `UIBestiaryInfoItemLine` hover cache) splits on `'\n'` into white rows,
@@ -1298,7 +1299,7 @@ mod tests {
             research: Some(&t),
             ..Default::default()
         };
-        let rows = item_tooltip_lines(8, torch, journey);
+        let rows = item_tooltip_lines(8, torch, journey.clone());
         let last = rows.last().expect("the name plus the sacrifice row");
         assert_eq!(last.0, "Research 10 more to unlock duplication");
         let c = crate::ui::uistate::CREATIVE_MODE_COLOR;
@@ -1311,21 +1312,21 @@ mod tests {
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { difficulty: 0, ..journey },
+            TooltipContext { difficulty: 0, ..journey.clone() },
         );
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // A non-whitelisted context refuses (context 8 = armour, `:21318`).
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, ..Default::default() }, ..journey },
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, ..Default::default() }, ..journey.clone() },
         );
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // The duplication grid's partial cell (34) IS whitelisted.
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 34, ..Default::default() }, ..journey },
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 34, ..Default::default() }, ..journey.clone() },
         );
         assert!(rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // A fully researched kind prints nothing (`have < cap` gate, `:21321`).
@@ -1337,16 +1338,16 @@ mod tests {
             research: Some(&t),
             ..Default::default()
         };
-        let rows = item_tooltip_lines(8, torch, full);
+        let rows = item_tooltip_lines(8, torch, full.clone());
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // A capless kind prints nothing (`TryGetSacrificeNumbers` false).
-        let rows = item_tooltip_lines(6196, torch, full);
+        let rows = item_tooltip_lines(6196, torch, full.clone());
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // No tracker: no row.
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { research: None, ..full },
+            TooltipContext { research: None, ..full.clone() },
         );
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
     }
@@ -2146,7 +2147,7 @@ mod tests {
             .iter()
             .find(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShareHint"))
             .expect("the share hint");
-        assert_eq!(hint.1, super::color::tint([255, 231, 69, 190]));
+        assert_eq!(hint.1, crate::ui::color::tint([255, 231, 69, 190]));
         // The setting off drops the hint.
         let rows = item_tooltip_lines(
             123,
@@ -2212,7 +2213,7 @@ mod tests {
         );
         let set_row = rows
             .iter()
-            .find(|(_, c)| *c == super::color::tint([130, 130, 130, 190]))
+            .find(|(_, c)| *c == crate::ui::color::tint([130, 130, 130, 190]))
             .expect("the grey single-piece row");
         assert!(!set_row.0.is_empty());
         // Worn (context 8) + complete: LimeGreen (50,205,50).
@@ -2222,7 +2223,7 @@ mod tests {
             TooltipContext { player: Some(&player), flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, ..Default::default() },
         );
         assert!(
-            rows.iter().any(|(_, c)| *c == super::color::tint([50, 205, 50, 255])),
+            rows.iter().any(|(_, c)| *c == crate::ui::color::tint([50, 205, 50, 255])),
             "{rows:?}"
         );
         // Worn but incomplete: the grey (130,130,130,255) found/needed row.
@@ -2233,7 +2234,7 @@ mod tests {
             TooltipContext { player: Some(&player), flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, ..Default::default() },
         );
         assert!(
-            rows.iter().any(|(_, c)| *c == super::color::tint([130, 130, 130, 255])),
+            rows.iter().any(|(_, c)| *c == crate::ui::color::tint([130, 130, 130, 255])),
             "{rows:?}"
         );
     }

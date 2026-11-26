@@ -518,7 +518,6 @@ pub const NEBULA_SPHERE: u16 = 575;
 /// `ProjectileID.DesertDjinnCurse` (596) — the djinn's curse flame,
 /// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
 /// ignoreWater, timeLeft 180, tileCollide false). W4-d11.
-pub const DESERT_DJINN_CURSE: u16 = 596;
 /// `ProjectileID.MechanicWrench` (582) — the Mechanic's thrown wrench,
 /// aiStyle 109 (`Projectile.cs:6316-6324`: 20x20, friendly, penetrate
 /// -1, MaxUpdates 2 = extraUpdates 1). W4-d11.
@@ -533,7 +532,6 @@ pub const VORTEX_PORTAL: u16 = 579;
 /// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
 /// ignoreWater, timeLeft 180, tileCollide false). W4-g64 (the d11
 /// e0395afc row port — the bool-seam activation).
-pub const DESERT_DJINN_CURSE: u16 = 596;
 /// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
 /// ritual marker, aiStyle 108 (`Projectile.cs:6282-6293`: the shared
 /// 32x32 row with the 578/579, friendly + hostile, alpha 255,
@@ -918,7 +916,6 @@ pub const SILVER_BULLET: u16 = 981;
 /// unrowed kind (the e3 RETIRE census's 345-branch scan; the
 /// `ai001_silver_bullet_drip_981` emitter's fade-chain slot `:56746`
 /// between the 265/355 arms `:56728` and the 357 trail `:56753`).
-pub const SILVER_BULLET: u16 = 981;
 /// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
 /// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
 /// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
@@ -1323,7 +1320,6 @@ pub const ANTLION_CLAW: u16 = 1082;
 pub const STYLIST_SCISSORS: u16 = 1083;
 /// `ProjectileID.TorchGodHelper` (1084) — aiStyle 202 (`:10115-10124`,
 /// `AI_202_TorchGodHelper` `:39912-39952`).
-pub const TORCH_GOD_HELPER: u16 = 1084;
 /// `ProjectileID.StormLightning` (1091, the trap) / `LightningStrikeShot`
 /// (1117, the weapon) / `ArcSurge` (1122) — aiStyle 203 (`:10175-10185`,
 /// `:10427-10449`, `AI_203_StormLightning` `:39641-39855`).
@@ -1337,7 +1333,6 @@ pub const DIGTOISE: u16 = 1098;
 pub const TRUSTY_DIGTOISE: u16 = 1123;
 /// `ProjectileID.RemoteControlCar` (1105) — aiStyle 205 (`:10294-10302`,
 /// `AI_205_RemoteControlCar` `:38076-38461`).
-pub const REMOTE_CONTROL_CAR: u16 = 1105;
 /// `ProjectileID.GlacierFangShot` (1115) — aiStyle 208 (`:10401-10412`,
 /// `AI_208_GlacierFangShot` `:36903-37049`).
 pub const GLACIER_FANG_SHOT: u16 = 1115;
@@ -1486,7 +1481,6 @@ pub const FLAMELASH: u16 = 34;
 /// (`NPC.cs:24462`/`:24477`), the aiStyle-10 falling ball the Antlion's
 /// ai[0]==2 override steers (`Projectile.cs:1131-1140`: 10x10, hostile,
 /// penetrate −1, knockBack 6). W4-g8 lane 1 batch 1.
-pub const SAND_BALL_FALLING: u16 = 31;
 /// `ProjectileID.PinkLaser` (84) — the Gastropod's hostile laser
 /// (`NPC.cs:24818`), the aiStyle-1 bullet (`Projectile.cs:1646-1659`:
 /// 4x4, hostile, penetrate 3, extraUpdates 2, timeLeft 600). W4-g8 lane 1.
@@ -1568,7 +1562,6 @@ pub const RAIN_FRIENDLY: u16 = 239;
 /// friendly, melee, penetrate -1, light 0.2, id-static 10. The stock
 /// `tileCollide = true` (`:775`) stands — the orb dies on tile contact, the
 /// spore cloud 228's `false` does not carry over.
-pub const CHLOROPHYTE_ORB: u16 = 229;
 /// `ProjectileID.BloodCloudMoving` (243, `ProjectileID.cs:1040`) — the Blood
 /// Rain's flying cloud (aiStyle 45, `Projectile.cs:3255-3262`): 28x28,
 /// penetrate -1, netImportant — the 237 twin, verbatim.
@@ -1748,7 +1741,6 @@ pub const DIRT_BALL: u16 = 17;
 /// `ProjectileID.SandBallFalling` (31, `ProjectileID.cs:616`) — the sand
 /// tile's fall (`Projectile.cs:1131-1140`): 10x10, aiStyle 10, friendly +
 /// hostile, penetrate −1.
-pub const SAND_BALL_FALLING: u16 = 31;
 /// `ProjectileID.MudBall` (39, `ProjectileID.cs:632`) — the mud tile's
 /// fall (`Projectile.cs:1217-1226`), the 31's shape.
 pub const MUD_BALL_FALLING: u16 = 39;
@@ -1828,7 +1820,7 @@ pub const FALLING_BLOCK_KINDS: [u16; 19] = [
     COPPER_COINS_FALLING, SILVER_COINS_FALLING, GOLD_COINS_FALLING,
     PLATINUM_COINS_FALLING, MUD_BALL_PLAYER,
     42, 65, 68, 354,
-// W4-g64 (the d13 314fa6cd row port) — the aiStyle-124 pet rows. Only the
+];
 // kinds this lane's trail arms ride are rowed here (895/898 the flight
 // sparkles, 957 the column-scan bounce); the 650/882/888/896 rows stay
 // d13's (the machine's home-spot ladder covers all seven regardless).
@@ -1856,13 +1848,10 @@ pub const ICE_QUEEN_PET: u16 = 898;
 pub const GLOMMER_PET: u16 = 957;
 /// `ProjectileID.SuspiciousTentacle` (650) — the light pet
 /// (`ProjectileID.cs:1698`); the home-spot ladder's count read.
-pub const SUSPICIOUS_TENTACLE: u16 = 650;
 /// `ProjectileID.TwinsPet` (888) — the ladder's count read
 /// (`ProjectileID.cs:2496`).
-pub const TWINS_PET: u16 = 888;
 /// `ProjectileID.EyeOfCthulhuPet` (882) — the ladder's count read
 /// (`ProjectileID.cs:2478`).
-pub const EOC_PET: u16 = 882;
 /// The seven aiStyle-124 rows — `AI()`'s `else if (this.aiStyle == 124)`
 /// (`Projectile.cs:34970-35696`): the 650 light pet + the six flying pets
 /// (the d13 `STYLE124_PETS` set; only 895/898/957 are `proj_data`-rowed on
@@ -1945,7 +1934,6 @@ pub const VAMPIRE_HEAL: u16 = 305;
 pub const FLAMING_JACK: u16 = 321;
 /// `ProjectileID.FlamingScythe` (329, `ProjectileID.cs:1212`) — the
 /// Pumpking blade's spinning scythe (aiStyle 56, W4-d6).
-pub const FLAMING_SCYTHE: u16 = 329;
 /// `ProjectileID.WaterGun` (358, `ProjectileID.cs:1270`) — the Water Gun's
 /// stream blob (aiStyle 60, W4-d6).
 pub const WATER_GUN: u16 = 358;
@@ -2076,7 +2064,6 @@ pub const SCUTLIX_LASER_FRIENDLY: u16 = 434;
 /// the mount fires 606; the 434 row + aiStyle-74 arm stay for the census
 /// (the id is live in `Damage_CanDealDamage`/the Update tails) but the
 /// mount's beam is this kind.
-pub const SCUTLIX_LASER: u16 = 606;
 /// `ProjectileID.ScutlixLaserCrosshair` (441) — the Scutlix mount's aim
 /// crosshair (aiStyle 76, `Projectile.cs:5117-5125`: 1x1, hide, ignoreWater,
 /// tileCollide false).
@@ -2161,13 +2148,9 @@ pub const STAR_CANNON_STAR: u16 = 955;
 /// `ProjectileID.ManaCloakStar` (723) — the Mana Cloak's star; the magic-hit
 /// proc (`Projectile.cs:13831-13852`) spawns it with `ai2 = 1` (the
 /// fall-through + star-drop half, unported families — cited in the AI arm).
-pub const MANA_CLOAK_STAR: u16 = 723;
 /// `ProjectileID.BeeCloakStar` (724) — the Bee Cloak's star.
-pub const BEE_CLOAK_STAR: u16 = 724;
 /// `ProjectileID.StarVeilStar` (725) — the Star Veil's star (the W4-f48 item).
-pub const STAR_VEIL_STAR: u16 = 725;
 /// `ProjectileID.StarCloakStar` (726) — the plain Star Cloak's star.
-pub const STAR_CLOAK_STAR: u16 = 726;
 /// `ProjectileID.SnakeBandStarCloakTinkerStar` (1133) — the Serpent's Coil's
 /// star (the snakeCloak override).
 pub const SNAKE_CLOAK_STAR: u16 = 1133;
@@ -2187,12 +2170,10 @@ pub const CLOAK_STARS: [u16; 5] = [
 /// W4-e3 coverage phase — the row unblocks `ai_falling_star_family`'s 503
 /// gate + the `style5_spark_503` emitter (g64's unwired `trail_503` twin is
 /// the merge keep-one; docs/research/231-proj-dust-coverage.md, was 125).
-pub const STAR_WRATH: u16 = 503;
 /// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2628`) — the
 /// Meteor Whip's meteor (aiStyle 5, `alpha = 254`, `scale = 0.8`,
 /// `extraUpdates = 1`, `tileCollide = false`, local immunity −1;
 /// `Projectile.cs:9780-9792`). W4-e3 coverage phase.
-pub const METEOR_WHIP_METEOR: u16 = 1037;
 /// `ProjectileID.MeteorStormMeteor` (1049, `ProjectileID.cs:2652`) — the
 /// Meteor Staff's storm meteor (aiStyle 5, friendly AND hostile, `alpha =
 /// 254`, `scale = 0.8`, `timeLeft = 1200`, `penetrate = -1`, `tileCollide =
@@ -2200,7 +2181,6 @@ pub const METEOR_WHIP_METEOR: u16 = 1037;
 /// `spawn_hostile` friendly=false flip (the FLAMES_TRAP precedent); the
 /// `netMode == 2` localAI[0] counter (`:23832-23840`) is server-only, dropped.
 /// W4-e3 coverage phase.
-pub const METEOR_STORM_METEOR: u16 = 1049;
 /// W4-d17 — the rapier-stab family (aiStyle 161, `AI_161_RapierStabs`
 /// `Projectile.cs:47612-47665`, the dispatch `:36607-36610`):
 /// `DefaultToShortsword` (`:10773-10787`) — 18x18, `penetrate = -1`,
@@ -2243,8 +2223,6 @@ pub const CHUM_BUCKET: u16 = 820;
 /// `:2264`) — the 12x12 lantern (`:8197-8205`, timeLeft 1000). Both
 /// `netImportant`, `penetrate = -1`, the stock tileCollide true. The
 /// blocked-move bounces are the OUTER type chain (`:18336-18361`).
-pub const RELEASE_DOVES: u16 = 851;
-pub const RELEASE_LANTERN: u16 = 855;
 
 /// W4-d17 — `ProjectileID.FirstFractal` (857, `ProjectileID.cs:2268`) — the
 /// Zenith's component sword (aiStyle 168, `AI_168_FirstFractal`
@@ -2267,6 +2245,9 @@ pub const FIRST_FRACTAL: u16 = 857;
 pub const SCYTHE_WHIP_PROJ: u16 = 916;
 /// `ProjectileID.CoolWhipProj` (917) — the Cool Whip snowflake minion.
 pub const COOL_WHIP_PROJ: u16 = 917;
+/// `ProjectileID.WeatherPainShot` (969, `ProjectileID.cs:2492`) — the
+/// Weather Pain's twister, aiStyle 177 (`Projectile.cs:9169-9181`).
+pub const WEATHER_PAIN_SHOT: u16 = 969;
 /// `ProjectileID.FireWhipProj` (918) — the Firecracker proc explosion.
 pub const FIRE_WHIP_PROJ: u16 = 918;
 /// `ProjectileID.CobWhipProj` (1036, `ProjectileID.cs:2620`) — the Cob
@@ -2276,7 +2257,6 @@ pub const COB_WHIP_PROJ: u16 = 1036;
 /// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2622`) — the
 /// Starcrash (Meteor Whip) proc meteor
 /// (`WhipTagEffect_Starcrash.cs:14-25`, aiStyle 5's 1037 arm). UNCLAIMED — rowed.
-pub const METEOR_WHIP_METEOR: u16 = 1037;
 /// `ProjectileID.FlowerWhipPetal` (1038) — the Flower Whip petal fan.
 pub const FLOWER_WHIP_PETAL: u16 = 1038;
 /// `ProjectileID.ConstellationStar` (1039) — the Constellation star fan.
@@ -2326,7 +2306,6 @@ pub const ZOOLOGIST_STRIKE_RED: u16 = 929;
 pub const FINAL_FRACTAL: u16 = 933;
 /// `ProjectileID.TorchGod` (949, `ProjectileID.cs:2452`) — the Torch
 /// God's fireball, aiStyle 184 (`:8948-8955`).
-pub const TORCH_GOD: u16 = 949;
 /// `ProjectileID.PrincessWeapon` (950, `ProjectileID.cs:2454`) — the
 /// Resonance Scepter's blast, aiStyle 186 (`:8956-8968`).
 pub const PRINCESS_WEAPON: u16 = 950;
@@ -2421,7 +2400,6 @@ pub const STARDEW_JUMINO: u16 = 995;
 
 /// `ProjectileID.WireKite` (651, `Projectile.cs:6990-7000`) — the Wire
 /// Kite's placement ghost, aiStyle 125, drawLayer 5. S1-W4-g81 residuals.
-pub const WIRE_KITE: u16 = 651;
 /// `ProjectileID.SuperStar` (728, `ProjectileID.cs`'s row) — the Super
 /// Star Cannon's star, aiStyle 151 (`Projectile.cs:7659-7671`). W4-d16.
 pub const SUPER_STAR: u16 = 728;
@@ -2505,7 +2483,6 @@ pub const AXE_FAIRY_PET: u16 = 1050;
 /// The Void Bag 4131 / Closed Void Bag 5325's shoot (`Item.cs:35875-35888`);
 /// `IsInteractable` (`Projectile.cs:78828-78846`) and
 /// `TryGetContainerIndex` → chest −5 (`:78820-78824`). W4-g56.
-pub const VOID_LENS: u16 = 734;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -2992,7 +2969,7 @@ pub(crate) fn set_defaults_no_enchantment_visuals(kind: u16) -> bool {
         181 | 228 | 229 | 344 | 399 | 401 | 504 | 566 | 611 | 669 | 697 | 698 | 709
             | 732 | 933 | 954 | 979 | 1100 | 1108 | 1128 | 1129
     )
-/// The `SetDefaults` `this.glowMask` slice (W4-g35): the
+}
 /// `TextureAssets.GlowMask` sheet index the projectile draw pass overlays
 /// (`Main.cs:34855-34942` — the `proj.glowMask != -1` gate). The C# has
 /// exactly 10 assignment sites (`Projectile.cs:4055`, `:4988-5035`,
@@ -3905,18 +3882,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // laser (606): 5x5, aiStyle 1, friendly, alpha 255,
             // extraUpdates 2, timeLeft 600, ignoreWater; the stock
             // penetrate 1 (`:774`) / tileCollide (`:775`) stand.
-            SCUTLIX_LASER => (
-                5.0,
-                5.0,
-                1,
-                1,
-                600,
-                2,
-                true,
-                false,
-                false,
-                (false, -2, false, -1, 255, 1.0),
-            ),
+
             // M2-MOUNT-4 — `Projectile.cs:8817-8825` — the Santank mount's
             // gift-box rocket (930): 14x14, aiStyle 16, friendly,
             // penetrate -1, ranged; the stock tileCollide (`:775`) /
@@ -4603,9 +4569,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d11 — `Projectile.cs:6450-6460` (596, the
             // DesertDjinnCurse): 8x8, aiStyle 107, alpha 255, timeLeft
             // 180, tileCollide false; the stock penetrate 1 (`:774`).
-            DESERT_DJINN_CURSE => {
-                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
-            }
+            DJINN_CURSE => (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // W4-d11 — `Projectile.cs:6316-6324` (582, the
             // MechanicWrench): 20x20, aiStyle 109, penetrate -1,
             // MaxUpdates 2 (extraUpdates 1); the stock tileCollide.
@@ -4652,16 +4616,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // timeLeft 180, tileCollide false; the stock penetrate 1
             // (`:774`). The 575 NebulaSphere row stays d11's (its
             // ai_nebula_sphere machine covers both at the merge keep-one).
-            DESERT_DJINN_CURSE => {
-                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
-            // hostile (the data-row deviation census). W4-d11 RETIRE item 3:
+
             // the g64/d13 corrected shape adopted for all three kinds — the
             // old d11 `-1`/RESET_STATE (alpha 0) was stale; this tuple is
             // BYTE-EQUAL to g64 `3cdc6423` / d13 `b56db900` so the three-way
             // 813 keep-one merges clean (g64's dust-wired machine survives).
-            VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
-                (32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
-            }
+
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
             VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
@@ -5002,7 +4962,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The stock `tileCollide = true` (`:775`) stands — the shot
             // dies on tile contact (the blocked-move default, the
             // `move_bullet` stand-in). The e3/d75-flagged unrowed sibling.
-            SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
+
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
@@ -5033,7 +4993,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`:55953`) — the flight counter rests, no gravity: the
             // feather flies dead straight (`ai_style1_rider`'s resting
             // flight; the AI_STYLE_1_RIDERS gate carries the kind).
-            HARPY_FEATHER => (14.0, 14.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
             // `penetrate = 5`, `scale = 0.9f`.
             DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
@@ -5269,7 +5229,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `timeLeft = 420`, `light = 0.25f`
             // (`set_defaults_light` below). ai0/ai1 carry the blade's
             // rotation/spriteDirection (`NPC.cs:33230`'s trailing args).
-            FLAMING_SCYTHE => (80.0, 80.0, 56, -1, 420, 0, false, false, false, RESET_STATE),
+
             // W4-d6 — `:4487-4496` WaterGun (358): 18x18, aiStyle 60,
             // alpha 255, `penetrate = -1`, `extraUpdates = 2`, `ignoreWater`
             // (the overlay below); the stock tileCollide true — the 1x1
@@ -5449,7 +5409,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             TRUSTY_DIGTOISE => (34.0, 34.0, 204, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:10294-10302` (1105, the RC Car): 26x26,
             // aiStyle 205, friendly, tileCollide true, correctSlopeCollision.
-            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // `Projectile.cs:10401-10412` (1115, the Glacier Fang shot):
             // 10x10, aiStyle 208, friendly, magic, ignoreWater, drawLayer 4
             // (draw-only), the LOCAL pair (-1).
@@ -5778,7 +5738,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // extraUpdates 2, timeLeft 600; the IceElemental's FrostBlast
             // (128, `:2169-2179`): 14x14, aiStyle 28, penetrate −1, the
             // stock tileCollide + 3600 life.
-            PINK_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
+
             FROST_BLAST_HOSTILE => (14.0, 14.0, 28, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // W4-g8 lane 1 batch 2 — the wall-crawler's WebSpit (472,
             // `Projectile.cs:5463-5473`): 8x8, aiStyle 1, penetrate −1,
@@ -5797,7 +5757,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // passes KnockBack 0, `WorldGen.cs:86071`). The C# friendly +
             // hostile pair rides the arm's damage gates (the row shape
             // carries neither flag, ANALYSIS).
-            SAND_BALL_FALLING | MUD_BALL_FALLING | ASH_BALL_FALLING | EBONSAND_BALL_FALLING => {
+            MUD_BALL_FALLING | ASH_BALL_FALLING | EBONSAND_BALL_FALLING => {
                 (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
             // W4-d1 wave 3b — the remaining natural falls
@@ -6072,7 +6032,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ProjData field, the spawn-source convention, the 864 precedent),
             // decidesManualFallThrough. The stock timeLeft 3600 (NOT *5 — the
             // row sets no timeLeft) / tileCollide true.
-            COB_WHIP_SPIDER => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
+            COB_WHIP_PROJ => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
 
             // ===== W4-d3: the aiStyle-25 boulder family (census 26b) =====
             // `Projectile.cs:1833-1850` — the shared 31x31 trap block: 99
@@ -6288,8 +6248,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater`, `tileCollide = false`; `manualDirectionChange`
             // is a draw-side field with no pool consumer (the arm writes
             // `direction`/`spriteDirection` itself, `:35007`).
-            SUSPICIOUS_TENTACLE | EOC_PET | TWINS_PET | FAIRY_QUEEN_PET | PUMPKING_PET
-            | ICE_QUEEN_PET | GLOMMER_PET => {
+            SUSPICIOUS_TENTACLE | EOC_PET | TWINS_PET  | PUMPKING_PET
+              => {
                 (20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)
             }
             // W4-d13 — `Projectile.cs:6990-7000` (651, the Wire Kite): 10x10,
@@ -6532,12 +6492,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d20 — `Projectile.cs:9446-9457` (995, the jumino stardrop
             // animation): 240x104, aiStyle 192, penetrate -1, tileCollide
             // false, ignoreWater, timeLeft = 3600 * 5 = 18000.
-            JUMINO_STARDROP_ANIMATION => (240.0, 104.0, 192, -1, 18000, 0, false, false, false, RESET_STATE),
+            STARDEW_JUMINO => {
+                (240.0, 104.0, 192, -1, 18000, 0, false, false, false, RESET_STATE)
+            }
             // W4-d20 — `Projectile.cs:9659-9666` (1020, Jim's drone): 12x12,
             // aiStyle 195, penetrate -1, stock tileCollide true (the
             // blocked-move bounce :18057-18067). friendly rides the pool
             // default; the drone damages nothing (no melee/ranged/magic).
-            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // W4-d20 — `Projectile.cs:9821-9833` (1040, the Dead Cells flint):
             // 2x2, aiStyle 198, tileCollide false, ignoreWater, penetrate -1,
             // alpha 255, manualDirectionChange (the arm owns the facing).
@@ -6658,21 +6620,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `UseGroupStaticImmunity(511)` (the identity overlay below).
             // The stock `tileCollide = true` stands — the arm clears it
             // on the first tick (`:32567`).
-            511 => (32.0, 32.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
-            512 => (40.0, 38.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
-            513 => (30.0, 28.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 255, 1.1)),
+
+
+
             // `Projectile.cs:9558-9569` — the Gas Trap's gas (1007):
             // 50x50, aiStyle 92, hostile AND friendly (the port's
             // friendly default stands; the contact damage is refused by
             // `Damage_CanDealDamage` `:12448` — the gas buff is the
             // lane), penetrate -1, scale 1.1, trap; `hide` has no port
             // field (the draw seam).
-            1007 => (50.0, 50.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, true, (false, -2, false, -1, 0, 1.1)),
+
             // `Projectile.cs:10565-10579` — the Chlorophyte Claymore's
             // spore cloud (1128): 30x30, aiStyle 92, tileCollide false,
             // friendly, melee (the overlay), scale 1.1, penetrate -1,
             // idStatic-30; `noEnchantmentVisuals` has no port field.
-            1128 => (30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 30, 0, 1.1)),
+
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
             // `Projectile.cs:1141-1150` — the Ivy Whip (32): 18x18.
@@ -6745,7 +6707,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the arm touches neither): the hurt rides the AI's own
             // `SelfHurtPlayers`, never the pool's PVE/EVP lanes. The stock
             // timeLeft 3600 (`:787`) / extraUpdates 0 (`:771`) stand.
-            TORCH_GOD => (4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+
             // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
             // aiStyle 10, `penetrate = -1`; everything else keeps the reset
             // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
@@ -6808,7 +6770,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The `flag3 = false` skip-list membership (`:55954`) rides
             // `AI_STYLE_1_RIDERS` — the resting counter, straight flight
             // (W4-d36 E4 item 4, `npc_ai_style5.rs`).
-            STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
             // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
             // alpha 255, timeLeft 300 (the stock tileCollide true).
@@ -7013,10 +6975,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Main.remixWorld` read rides the arm, ANALYSIS). The stock
             // tileCollide true (`:775`) stands — the AI_005 arm arms it below
             // the `ai[1]` floor.
-            FALLING_STAR_NATURAL => (
-                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
-                (false, -2, false, -1, 50, 1.0),
-            ),
+
             // `Projectile.cs:5743-5756` — the Star Wrath star (503): 24×24,
             // aiStyle 5, penetrate 2, alpha 255, tileCollide false, melee,
             // extraUpdates 1, local immunity 15.
@@ -7119,27 +7078,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // retaliate drain sets it through `set_armor_penetration` (the
             // gun_launch precedent). No damage-class flag (the stock false
             // trio — the C# arm sets none).
-            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR | STAR_CLOAK_STAR
-            | SNAKE_CLOAK_STAR => (
-                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
-                (true, 10, false, -1, 50, 1.0),
-            ),
+
             // W4-e3 coverage phase — `Projectile.cs:5743-5756`: the Star
             // Wrath star (503): 24x24, aiStyle 5, friendly, `penetrate = 2`,
             // `alpha = 255`, `tileCollide = false`, melee, `extraUpdates = 1`,
             // local immunity 15. The stock timeLeft 3600 (`:787`).
-            STAR_WRATH => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 15, false, -1, 255, 1.0)),
+
             // `Projectile.cs:9780-9792`: the Meteor Whip meteor (1037): 24x24,
             // aiStyle 5, friendly, local immunity −1, `scale = 0.8`,
             // `extraUpdates = 1`, `alpha = 254`, `tileCollide = false`. The
             // stock penetrate 1 (`:774`) + timeLeft 3600 (`:787`).
-            METEOR_WHIP_METEOR => (24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 254, 0.8)),
+
             // `Projectile.cs:9938-9952`: the Meteor Staff storm meteor (1049):
             // 24x24, aiStyle 5, friendly AND hostile (the hostile half rides
             // `spawn_hostile`'s friendly=false flip — the FLAMES_TRAP
             // precedent), `scale = 0.8`, `timeLeft = 1200`, `extraUpdates = 1`,
             // `alpha = 254`, `penetrate = -1`, `tileCollide = false`, trap.
-            METEOR_STORM_METEOR => (24.0, 24.0, 5, -1, 1200, 1, false, false, true, (false, -2, false, -1, 254, 0.8)),
+
             // W4-d17 — `DefaultToShortsword` (`Projectile.cs:10773-10787`):
             // 18x18, aiStyle 161, `penetrate = -1`, `tileCollide = false`,
             // `extraUpdates = 1`, melee, `ownerHitCheck` (the damage gate is
@@ -7170,10 +7125,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d17 — `Projectile.cs:8173-8181` — the Release Doves (851):
             // 4x4, aiStyle 166, `penetrate = -1`, `timeLeft = 300`,
             // `netImportant`. The stock tileCollide true / extraUpdates 0.
-            RELEASE_DOVES => (4.0, 4.0, 166, -1, 300, 0, true, false, false, RESET_STATE),
+
             // `:8197-8205` — the Release Lantern (855): 12x12, aiStyle 166,
             // `penetrate = -1`, `timeLeft = 1000`, `netImportant`.
-            RELEASE_LANTERN => (12.0, 12.0, 166, -1, 1000, 0, true, false, false, RESET_STATE),
+
             // W4-d17 — `Projectile.cs:8220-8236` — the First Fractal (857):
             // 32x32, aiStyle 168, `alpha = 255`, melee, `tileCollide = false`,
             // `ignoreWater`, `extraUpdates = 1`, the LOCAL pair (10),
@@ -7187,13 +7142,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the spawn stamp), `decidesManualFallThrough` (the `flag7`
             // chase `:49130`/`:50538`/`:50601` — the aiStyle-67 machine is
             // the documented follow-up; the row + the proc spawn land here).
-            COB_WHIP_PROJ => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
+
             // `Projectile.cs:9780-9792` — the Starcrash proc meteor (1037):
             // 24x24, aiStyle 5, the LOCAL pair (−1), scale 0.8,
             // `extraUpdates = 1`, alpha 254, `tileCollide = false` (the AI's
             // `Bottom.Y >= ai[1]` latch re-arms it, `:23865-23868`). The
             // stock penetrate 1 / 3600 life.
-            METEOR_WHIP_METEOR => (24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 254, 0.8)),
+
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -7343,14 +7298,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:39985-40017`), alpha 255, penetrate -1, ignoreWater (the
             // overlay below); the stock tileCollide true (`:775`) and
             // timeLeft 3600 (`:787`) stand — the type arm writes neither.
-            BIRD_DROPPINGS => (
-                10.0,
-                10.0,
-                200,
-                -1,
-                TIME_LEFT_DEFAULT,
-                0,
-                true,
+
             // `Projectile.cs:6450-6460` — the Djinn's curse (596, W4-g5):
             // 8x8, aiStyle 107, hostile, alpha 255, ignoreWater (the
             // overlay below), timeLeft 180, tileCollide false; the stock
@@ -7358,32 +7306,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the shared 107 homing tail `:33653-33677` + the 596 dust
             // ring's Next(3) early-RETURN quirk `:33617-33630`); the
             // death explosion is `djinn_curse_kill` (`:72470-72502`).
-            DJINN_CURSE => (
-                8.0,
-                8.0,
-                107,
-                1,
-                180,
-                0,
-                false,
-                false,
-                false,
-                (false, -2, false, -1, 255, 1.0),
-            ),
+
             // W4-f42 — the Djinn's curse (`Projectile.cs:6450-6460`):
             // 8×8, aiStyle 107, hostile, `alpha = 255`, `ignoreWater`,
             // `timeLeft = 180`, `tileCollide = false`. The stock penetrate 1
             // (`:774`) stands — the curse is a single-hit area burst (the
             // `timeLeft < 4` resize + `Damage()` arm, `:33631-33651`).
-            DESERT_DJINN_CURSE => {
-                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
-            }
+
             // W4-f42 — the Antlion's sand ball (`Projectile.cs:1131-1140`):
             // 10×10, aiStyle 10, `penetrate = -1`, friendly + hostile (the
             // Antlion's call site sets friendly false). The stock 3600 life
             // (the call site overrides to 300, `NPC.cs:24464`); knockBack 6
             // is overridden by the call's `KnockBack: 0f`.
-            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue kinds
             // (`Projectile.cs:70855-70975`). The rows land so the death-hook
             // cue map can spawn them; the AI machines for the four unarmed
@@ -7394,11 +7329,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:10078-10086` — Bird Droppings (1080): 10x10, aiStyle 200,
             // alpha 255, penetrate -1, ignoreWater (the overlay below); the
             // stock friendly false / tileCollide true / 3600 life.
-            BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+
             // `:10115-10124` — the Torch God's helper (1084): 4x4, aiStyle
             // 202, extraUpdates 2, timeLeft 300, penetrate -1, tileCollide
             // false (the d21 row values, kept identical for the merge).
-            TORCH_GOD_HELPER => (4.0, 4.0, 202, -1, 300, 2, false, false, false, RESET_STATE),
+
             // `:10125-10132` — the Pretty Mirror (1085): 18x18, aiStyle 2
             // (the thrown family — its rotation ladder `:23245` is already
             // in `ai_style2`), friendly, penetrate 1.
@@ -7406,14 +7341,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:10294-10302` — the RC Car (1105): 26x26, aiStyle 205,
             // friendly, tileCollide true, correctSlopeCollision (the slope
             // pass is the d21 movement follow-up; the d21 row values kept).
-            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // S1-W4-g81 residuals — the Wire Kite (651,
             // `Projectile.cs:6990-7000`): 10x10, aiStyle 125, friendly,
             // ignoreWater, tileCollide false, penetrate -1, drawLayer 5
             // (the over-wire cache, `Main.cs:38177-38178` — the port draws
             // it in the wire-adjacent slot). The stock 3600 life; the
             // channel-release Kill owns the death (`:35716-35723`).
-            WIRE_KITE => (10.0, 10.0, 125, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+
             // `Projectile.cs:9446-9457` — the Stardew Jumino animation
             // (995): 240x104, aiStyle 192, friendly, penetrate -1,
             // tileCollide false, ignoreWater (the overlay), netImportant
@@ -7421,8 +7356,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `HaveDryadDoStardewAnimation` spawns it (`NPC.cs:19226`,
             // W4-g51 id-144); the AI_192 frame machine + the Stardew draw
             // (`Main.cs:28170-28173`) are the animation lane's.
-            STARDEW_JUMINO => {
-                (240.0, 104.0, 192, -1, 5 * TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+
             // W4-d15 — `Projectile.cs:7385-7401`: the Brand of the
             // Inferno's ground blast (698): 75x200, aiStyle 141, alpha 255,
             // tileCollide false, ignoreWater (the overlay), timeLeft 5,
@@ -7471,10 +7405,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 1 / tileCollide true / 3600 life, alpha 255, ignoreWater
             // (the overlay), extraUpdates 1, scale 0.6, melee (the
             // overlay).
-            MONK_STAFF_T3_ALT_SHOT => (
-                12.0, 12.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
-                (false, -2, false, -1, 255, 0.6),
-            ),
+
             // `Projectile.cs:7433-7446` (701/702/703) + `:7866-7878`
             // (764) + `:9953-9966` (1050): the DD2 pets — 20x20, aiStyle
             // 144, penetrate -1, netImportant (the overlay), timeLeft *=
@@ -7504,18 +7435,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:7617-7625`: the starfall spawner (720):
             // 16x16, aiStyle 148, tileCollide false, penetrate -1,
             // alpha 255, stock 3600 life.
-            FALLING_STAR_SPAWNER => (
-                16.0, 16.0, 148, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
-                (false, -2, false, -1, 255, 1.0),
-            ),
+
             // `Projectile.cs:924-938`: the natural FallingStar (12):
             // 18x18, aiStyle 5, penetrate -1, alpha 50, light 1f, trap,
             // stock tileCollide true / 3600 life. `hostile` on remix
             // (`:929-932`) rides the spawn seam (no data field).
-            NATURAL_FALLING_STAR => (
-                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
-                (false, -2, false, -1, 50, 1.0),
-            ),
+
             // W4-d16 — `Projectile.cs:7659-7671` (728, the Super Star
             // Cannon's star): 24x24, aiStyle 151, alpha 255, tileCollide
             // true (the stock), ranged + friendly (the overlays),
@@ -7610,16 +7535,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // extraUpdates 0 / alpha 0 / scale 1 stand (`:779`/`:785`);
             // the aiStyle-35 machine + the chain preview live in
             // `projectile_rope_coil.rs` (the kind constants there).
-            171 | 505 | 506 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
-            475 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
+
+
             // `Projectile.cs:9446-9457` — the Junimo: 240x104, aiStyle 192
             // (the AI_192 fall/opacity animation), friendly, penetrate -1,
             // tileCollide false, ignoreWater, `timeLeft *= 5` (3600 → 18000).
             // The AI_192 arm is unported (the dispatch no-ops until it lands);
             // the row carries the box/flight so the spawn is faithful.
-            995 => {
-                (240.0, 104.0, 192, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE)
-            }
+
             // W4-f30 — the gravestone family (aiStyle 17, the falling
             // tombstone): 24x24, knockBack 12, penetrate -1, the stock
             // tileCollide/timeLeft (`Projectile.cs:1258-1270` the plain 43,
@@ -7627,41 +7550,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // gravestones 527-531 — every row identical bar the type). The
             // FTW `friendly && hostile` pair is a spawn-time gate
             // (`DropTombstone`), not a SetDefaults row.
-            43 | 201..=205 | 527..=531 => {
-                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
-            }
+
             // W4-f42 — the Djinn's curse (`Projectile.cs:6450-6460`):
             // 8×8, aiStyle 107, hostile, `alpha = 255`, `ignoreWater`,
             // `timeLeft = 180`, `tileCollide = false`. The stock penetrate 1
             // (`:774`) stands — the curse is a single-hit area burst (the
             // `timeLeft < 4` resize + `Damage()` arm, `:33631-33651`).
-            DESERT_DJINN_CURSE => {
-                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
-            }
+
             // W4-f42 — the Antlion's sand ball (`Projectile.cs:1131-1140`):
             // 10×10, aiStyle 10, `penetrate = -1`, friendly + hostile (the
             // Antlion's call site sets friendly false). The stock 3600 life
             // (the call site overrides to 300, `NPC.cs:24464`); knockBack 6
             // is overridden by the call's `KnockBack: 0f`.
-            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+
             // W4-g56 — `Projectile.cs:7726-7735`: the Void Lens (734):
             // 30x24, aiStyle 154, tileCollide false, `timeLeft = 10800`,
             // `alpha = 255` (Opacity 0 — AI_154 fades it in at 0.03/tick,
             // `:52187-52194`). The stock penetrate 1 / friendly false stand
             // (the type arm writes neither); drawLayer 3 is a draw-order
             // flag with no port field (the projectile pass draws it).
-            VOID_LENS => (
-                30.0,
-                24.0,
-                154,
-                1,
-                10800,
-                0,
-                false,
-                false,
-                false,
-                (false, -2, false, -1, 255, 1.0),
-            ),
+
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -7769,16 +7677,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         } else {
             -1
         },
-        // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
-        // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
-        // id-static table keys both under one cooldown. W4-d10: the Toxic
-        // Cloud trio shares 511 the same way (`:5814`/`:5826`/`:5838`).
-        // Every other row keeps 0 = "use the kind" (the `:782` reset
-        // `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
-            BEE
-        } else if matches!(kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
-            TOXIC_CLOUD
         // id-static table keys both under one cooldown. Every other row keeps
         // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
         // W4-d11: the Spore Sac traps share 567 (`UseGroupStaticImmunity
@@ -7895,7 +7793,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-E-21h d75 part 6 — the phaseblade rows' `netImportant = true`
             // (`Projectile.cs:10014`/`:10030`/`:10055`, the 19-kind
             // `IsAPhaseblade` set).
-            || matches!(kind, 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102),
+            || matches!(kind, 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102)
             // W4-d4 — `Projectile.cs:2428`: the Beach Ball (155) sets
             // `netImportant = true`.
             || kind == BEACH_BALL
@@ -7915,10 +7813,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == METEOR_ORE
             // W4-d21 — the storm-lightning trap + the two digtoises set
             // `netImportant = true` (`Projectile.cs:10178`/`:10248`/`:10511`).
-            || matches!(kind, STORM_LIGHTNING | DIGTOISE | TRUSTY_DIGTOISE),
+            || matches!(kind, STORM_LIGHTNING | DIGTOISE | TRUSTY_DIGTOISE)
             // W4-g51 id-144 — `Projectile.cs:9448`: the Stardew Jumino
             // animation sets `netImportant = true`.
-            || kind == STARDEW_JUMINO,
+            || kind == STARDEW_JUMINO
             // W4-c39 — `Projectile.cs:8175`/`:8199`: the released dove (851)
             // and lantern (855) set `netImportant = true`.
             || matches!(kind, RELEASE_DOVES | RELEASE_LANTERN),
@@ -8155,11 +8053,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 146-149 blocks — and `DefaultToSpray` `:10701` for
             // 1015-1017). The 145 row's dropped alpha/ignoreWater is the
             // pre-existing M3-ITEM-6 deviation (its row comment), unchanged.
-            || matches!(kind, 146..=149 | 1015..=1017),
+            || matches!(kind, 146..=149 | 1015..=1017)
             // W4-g5 — `Projectile.cs:6457`: the Djinn's curse (596) sets
             // `ignoreWater = true` (the `wet = false` spawn write
             // `:10886-10889`).
-            || kind == DJINN_CURSE,
+            || kind == DJINN_CURSE
             // W4-d1 — the aiStyle-6 powder/fertilizer family's five arms
             // all set `ignoreWater = true` (`Projectile.cs:906`/`:922`/
             // `:5349`/`:9657`/`:9976`).
@@ -8174,13 +8072,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:10701` for 1015-1017). The 145 row's dropped
             // alpha/ignoreWater stays the pre-existing M3-ITEM-6 deviation
             // (its row comment), unchanged.
-            || matches!(kind, 146..=149 | 1015..=1017),
+            || matches!(kind, 146..=149 | 1015..=1017)
             // W4-d4 — `Projectile.cs:2735`: the Spear Trap's spear (186)
             // sets `ignoreWater = true` (the row landed with the 37 arm).
             || kind == TRAP_SPEAR
             // W4-d4 — `Projectile.cs:2748`: the flame jet (187) sets
             // `ignoreWater = true` (the row landed with the 38 arm).
-            || kind == FLAMETHROWER_TRAP,
+            || kind == FLAMETHROWER_TRAP
             // W4-d6 — `Projectile.cs:4147`: the FlamingJack (321) ignores water.
             || kind == FLAMING_JACK
             // W4-d6 residual 5 — `Projectile.cs:3962`: the VampireKnife.
@@ -8218,14 +8116,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d21 — the storm-lightning trio + the Glacier Fang shot +
             // the blade slam set `ignoreWater` (`Projectile.cs:10182`/
             // `:10431`/`:10441`/`:10408`/`:10587`).
-            || matches!(kind, STORM_LIGHTNING | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT | CHLOROPHYTE_CLAYMORE_BLADE_SLAM),
+            || matches!(kind, STORM_LIGHTNING | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT | CHLOROPHYTE_CLAYMORE_BLADE_SLAM)
             // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
             // Droppings (1080) sets `ignoreWater = true`.
-            || kind == BIRD_DROPPINGS,
+            || kind == BIRD_DROPPINGS
             // M2-MOUNT-4 — `Projectile.cs:6540`: the Scutlix laser (606)
             // sets `ignoreWater = true`.
-            || kind == SCUTLIX_LASER,
-            || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
+            || kind == SCUTLIX_LASER
+            || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM)
             // W4-d4 — `Projectile.cs:2735`: the Spear Trap's spear (186)
             // sets `ignoreWater = true` (the row landed with the 37 arm).
             || kind == TRAP_SPEAR
@@ -8235,11 +8133,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, 146..=149 | 1015..=1017)
             // S1-W4-g81 residuals — `Projectile.cs:6996`: the Wire Kite
             // (651) sets `ignoreWater = true`.
-            || kind == WIRE_KITE,
+            || kind == WIRE_KITE
             || matches!(kind, 146..=149 | 1015..=1017)
             // W4-g51 id-144 — `Projectile.cs:9455`: the Stardew Jumino
             // animation sets `ignoreWater = true`.
-            || kind == STARDEW_JUMINO,
+            || kind == STARDEW_JUMINO
             // W4-g64 (the d11 row port) — the 596 DesertDjinnCurse sets
             // `ignoreWater` (`Projectile.cs:6457`); the 575 sphere does
             // NOT (`:6219-6229` has no such line — d11's census).
@@ -8248,9 +8146,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle-108 ritual markers' shared block sets `ignoreWater`
             // (`Projectile.cs:6290`); the 578/579 rows predated the flag
             // list, the 813 joins them.
-            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS),
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // W4-d80 — the Sky Dragon's Fury shot (709, `:7516`).
-            || kind == SKY_DRAGONS_FURY_SHOT,
+            || kind == SKY_DRAGONS_FURY_SHOT
             // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
             // Droppings (1080) sets `ignoreWater = true`.
             || kind == BIRD_DROPPINGS,
@@ -8274,7 +8172,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | 951 | 1022 | 1093 | 1112 | 1118
                 // W4-d17 FOLLOW-UP — `Projectile.cs:9778`: the Cob Whip
                 // spark's `decidesManualFallThrough = true`.
-                | COB_WHIP_PROJ
+
         ),
         // The damage-class flags (`Projectile.cs:751-753` reset false) the
         // per-hit crit block reads (`:12890-12898`). The census is the
@@ -8355,7 +8253,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (`:3144`/`:7713`) — the W4-g2 reconciliation round closes
                     // the recorded gap (the spore cloud 228 and the Thunder
                     // Spear's bolt 732 join the melee census).
-                    | CHLOROPHYTE_ORB | CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT
+
                     // W4-f48 lane 20 — the Bouncing Shield (866, `:8320`).
                     | BOUNCING_SHIELD
                     // W4-e7 lane 23 — the Snapping Stone melee effect
@@ -8363,13 +8261,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (`:14343-14345`) overwrites the slot flags at spawn.
                     | SNAPPING_STONE_MELEE_EFFECT
                     // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
-                    | INFLUX_WAVER
+
                 // W4-d10 — the Chlorophyte Claymore's spore cloud (1128,
                 // `:10572`) and the Ichor Flask's splash (524, `:5948`).
                     | SPORE_CLOUD | ICHOR_SPLASH
                     // W4-e3 coverage phase — the Star Wrath star sets
                     // `melee = true` (`Projectile.cs:5752`).
-                    | STAR_WRATH
+
                     // W4-d12 DOC-SWEEP item 7 — the Volcano explosion's melee
                     // flag (`Projectile.cs:9267`). BATCH-D keep-one: d18's
                     // PROJ-171 retire dropped ITS copy (keep-d12c — the
@@ -8398,7 +8296,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | HORSEMANS_BLADE | DEAD_CELLS_FLINT_SLASH | CHLOROPHYTE_CLAYMORE_BLADE
                     // W4-d19 follow-up — the spore cloud's melee
                     // (`Projectile.cs:10572`).
-                    | 1128
+
                     // W4-d20 - `Projectile.cs:9841`: the flint spike (1041)
                     // sets melee (the 1043 slash already rides the d19
                     // seven-slash list above - BATCH-D keep-d19 drop-d20).
@@ -8408,9 +8306,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT
                     // W4-d21 — the thrown melee weapons (1082/1083,
                     // `:10102`/`:10112`) + the blade slam (1129, `:10593`).
-                    | ANTLION_CLAW | STYLIST_SCISSORS | CHLOROPHYTE_CLAYMORE_BLADE_SLAM
+
                     // W4-d80 — the Sky Dragon's Fury shot (709, `:7514`).
-                    | SKY_DRAGONS_FURY_SHOT
+
             ),
         ranged: matches!(
             kind,
@@ -8794,7 +8692,6 @@ pub const PETALSTORM_SHOT: u16 = 1116;
 pub const JUMINO_STARDROP_ANIMATION: u16 = 995;
 /// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
 /// (`Projectile.cs:9659-9666`). W4-d20.
-pub const JIMS_DRONE: u16 = 1020;
 /// `ProjectileID.DeadCellsFlint` (1040) — the Dead Cells flint channel
 /// weapon, aiStyle 198 (`Projectile.cs:9821-9833`). W4-d20.
 pub const DEAD_CELLS_FLINT: u16 = 1040;
@@ -9808,6 +9705,72 @@ mod tests {
         let summon = proj_data(SNAPPING_STONE_SUMMON_EFFECT).unwrap();
         assert!(!summon.melee && !summon.ranged && !summon.magic, "(:10624-10635) sets none");
     }
+    /// S1-E-21h d75 part 5 — the 502 Meowmere row (`Projectile.cs:5732-5742`):
+    /// the verbatim `SetDefaults` arm — 16x16, aiStyle 8, `penetrate = 5`,
+    /// melee, local immunity 10; everything else keeps the stock reset.
+    #[test]
+    fn s1_e_21h_d75_p5_the_meowmere_row_is_the_verbatim_arm() {
+        let d = proj_data(MEOWMERE).expect("the 502 row arms the owed gate");
+        assert_eq!((d.w, d.h), (16.0, 16.0));
+        assert_eq!(d.ai_style, 8);
+        assert_eq!(d.penetrate, 5);
+        assert!(d.melee, "`:5738`");
+        assert!(!d.ranged && !d.magic);
+        assert!(d.uses_local_immunity, "`:5740`");
+        assert_eq!(d.local_hit_cooldown, 10, "`:5741`");
+        assert!(!d.uses_id_static_immunity);
+        // The stock reset the arm never overrides.
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!(d.scale, 1.0);
+        assert_eq!(d.light, 0.0, "no `this.light` line — ProjLight stays off");
+        assert!(!d.arrow && !d.trap && !d.minion && !d.sentry);
+        assert!(!d.ignore_water && !d.net_important);
+        assert!(!d.applies_immunity_time_on_single_hits);
+        // The sheet packs (`spawnable_kinds` feeds the atlas walk).
+        assert!(spawnable_kinds().contains(&MEOWMERE));
+    }
+
+    /// S1-E-21h d75 part 6 — the 19 phaseblade/phaser rows
+    /// (`ProjectileID.cs:192`'s `IsAPhaseblade` set): the small group
+    /// (`Projectile.cs:10006-10021`, 38x38) and the large group
+    /// (`:10022-10037`, 46x46) + the 1074's own arm (`:10047-10058`,
+    /// 46x46) — all aiStyle 3, melee, `penetrate = -1`, local immunity
+    /// 10, `netImportant`; the stock reset stands. The 1073 trap
+    /// (`:10038-10046`) is NOT in the set and stays rowless.
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_rows_are_the_verbatim_groups() {
+        for kind in [1059u16, 1060, 1061, 1062, 1063, 1064, 1065, 1066, 1067,
+            1068, 1069, 1070, 1071, 1072, 1074, 1075, 1076, 1101, 1102]
+        {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            let small = matches!(kind, 1059..=1064 | 1071 | 1075 | 1101);
+            let box_size = if small { 38.0 } else { 46.0 };
+            assert_eq!((d.w, d.h), (box_size, box_size), "kind {kind}");
+            assert_eq!(d.ai_style, 3, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(d.melee, "kind {kind}: `:10013`/`:10029`/`:10054`");
+            assert!(!d.ranged && !d.magic, "kind {kind}");
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {kind}");
+            assert!(d.net_important, "kind {kind}: `:10014`/`:10030`/`:10055`");
+            // The stock reset the arms never override.
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+            assert_eq!(d.alpha, 0, "kind {kind}");
+            assert_eq!(d.scale, 1.0, "kind {kind}");
+            assert!(!d.arrow && !d.trap && !d.minion && !d.sentry, "kind {kind}");
+            assert!(!d.ignore_water, "kind {kind}");
+            assert!(spawnable_kinds().contains(&kind), "kind {kind} packs");
+        }
+        // The 1073 DartTrap shot is NOT a phaseblade (`:10038-10046`:
+        // 10x10 aiStyle 1 hostile trap — a different lane's row).
+        assert!(proj_data(1073).is_none(), "the 1073 stays out of the set");
+    }
+
     /// W4-g2 reconciliation — the four sibling rows the first census missed
     /// (`163-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
     /// 228/732 (`Projectile.cs:3144`/`:7713`) and the magic 239/294

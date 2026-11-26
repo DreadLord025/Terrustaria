@@ -134,7 +134,7 @@ pub(crate) fn try_interacting(app: &mut App, index: usize) -> u8 {
         // is hidden — the port's HUD gate keeps the draw off anyway.
         return 0;
     }
-    let proj = app.projectiles.slots()[index];
+    let proj = app.projectiles.slots()[index].clone();
     if !lens_in_interaction_range(p, &proj) {
         return 0; // `:37682-37685`
     }
@@ -312,7 +312,7 @@ pub(crate) fn tick_tracker(app: &mut App) -> u32 {
     };
     // `:31061-31063` — the hitbox's closest point to the player centre
     // re-seeds chestX/Y every tick.
-    let proj = app.projectiles.slots()[index];
+    let proj = &app.projectiles.slots()[index];
     let (cx, cy) = app.player.as_ref().unwrap().center();
     let px = cx.clamp(proj.pos.x, proj.pos.x + proj.w);
     let py = cy.clamp(proj.pos.y, proj.pos.y + proj.h);
@@ -549,16 +549,18 @@ mod tests {
     #[test]
     fn w4_g56_the_range_probe_clamps_to_the_hitbox() {
         let mut app = lens_app();
-        let p = app.player.as_ref().unwrap();
-        let (px, py) = p.center();
+        let (px, py) = app.player.as_ref().unwrap().center();
         // The box spans [px+90, px+120]: the closest point px+90 clamps
         // into the ±5 reach even though the centre px+105 sits further.
         let idx = spawn_lens(&mut app, px + 105.0, py);
-        let proj = app.projectiles.slots()[idx];
-        assert!(lens_in_interaction_range(p, &proj), "the clamped edge is in reach");
+        let proj = &app.projectiles.slots()[idx];
+        assert!(
+            lens_in_interaction_range(app.player.as_ref().unwrap(), proj),
+            "the clamped edge is in reach"
+        );
         // A dead lens never answers (:23155-23158).
         app.projectiles.kill(idx);
-        let proj = app.projectiles.slots()[idx];
-        assert!(!lens_in_interaction_range(app.player.as_ref().unwrap(), &proj));
+        let proj = &app.projectiles.slots()[idx];
+        assert!(!lens_in_interaction_range(app.player.as_ref().unwrap(), proj));
     }
 }

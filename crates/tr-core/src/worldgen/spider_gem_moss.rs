@@ -1565,6 +1565,12 @@ pub(crate) fn pass_spider_caves(
     if no_spider_caves_actually_no_spider_caves(world) {
         return 0;
     }
+    // Sub-vanilla valve: the deep bands (`(surface+rock)/2` and
+    // `rockLayer + 30` up to `maxTilesY - 230`) collapse on a short world —
+    // the C# `Next` throws there. Skip the whole pass before any draw.
+    if world.height - 230 <= rock_layer as i32 + 30 {
+        return 0;
+    }
     let mut placed = 0u32;
     let max_spider_count = 3500;
     let retries = world.width / 2;
@@ -1639,6 +1645,12 @@ pub(crate) fn pass_gem_caves(
     _world_surface: f64,
 ) -> u32 {
     let mut placed = 0u32;
+    // Sub-vanilla valve: `Next(rockLayer + 30, maxTilesY - 230)` throws on
+    // a collapsed band (the C# never generates one; the port's small-world
+    // tests do). Skip the whole pass before any draw, the house convention.
+    if world.height - 230 <= rock_layer as i32 + 30 {
+        return 0;
+    }
     let attempts = (world.width as f64 * 0.003) as i32;
     for _ in 0..attempts {
         let mut tries = 0i32;
@@ -1675,6 +1687,25 @@ pub(crate) fn pass_moss(
     lava_line: f64,
     hell_top: i32,
 ) -> u32 {
+    // Sub-vanilla valve: every band below uses `Next(lo, hi)` pairs that
+    // collapse on a short world (the C# throws; the port's 512-wide tests
+    // would). Skip the whole pass before any draw. On a vanilla-height
+    // world every term holds, so the classic stream is unchanged.
+    {
+        let mid = ((world.world_surface + rock_layer) / 2.0) as i32;
+        let deep_hi = world.height - 230;
+        let rock = rock_layer as i32;
+        let lava = lava_line as i32;
+        let water = water_line as i32;
+        if deep_hi <= rock + 30
+            || lava - 40 <= rock + 40
+            || water <= mid
+            || lava <= mid
+            || hell_top <= water
+        {
+            return 0;
+        }
+    }
     let (moss_type, neon) = rand_moss(rng);
     let neon_moss_type = NEON_MOSS[neon];
     let mut caves = 0u32;
@@ -2712,7 +2743,11 @@ mod tests {
         // The rock line sits at row 300 (flat_world: surface 60, half the
         // remaining height); anchor the blob well ABOVE it.
         let rock = w.rock_layer as i32;
-        carve_pocket(&mut w, 900, rock - 80, 220, 200);
+        // The pocket ENDS at the rock line: the blob's top-edge clamp pushes
+        // every painted row to `>= rock`, so a pocket that extended past the
+        // line would leave only air to paint (nothing qualifies). Stone below
+        // the line is where the clamp sends the blob.
+        carve_pocket(&mut w, 900, rock - 80, 220, 80);
         neon_moss_biome(&mut w, &mut Rng(0x4E0A), 1000, rock - 60, 520, NEON_MOSS[0]);
         let painted_above = (0..rock).any(|y| {
             (0..w.width).any(|x| {
@@ -2873,8 +2908,15 @@ mod tests {
         place_long_moss(&mut w, 101, 200, &mut rng);
         let t = w.tile(101, 200).unwrap();
         assert!(t.active() && t.kind == 184);
+        // `SquareTileFrame` re-frames the long moss from its neighbours
+        // (`TileFrame` case 184, `:85192-85199`): with the moss on the LEFT
+        // the frameY lands in the 108..=144 band (`108 + Next(3)*18`).
         assert_eq!(t.frame_x, 0);
-        assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+        assert!(
+            (108..=144).contains(&t.frame_y) && t.frame_y % 18 == 0,
+            "the left-side long-moss frame row ({})",
+            t.frame_y
+        );
     }
 
     /// The no-moss refusal: a free cell with only stone neighbours stays

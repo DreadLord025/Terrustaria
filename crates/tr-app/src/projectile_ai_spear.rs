@@ -560,7 +560,6 @@ pub(crate) fn ai_spore(p: &mut Projectile) {
 /// are dust-only too — skipped with their draws (the module's zero-
 /// observable-state convention; the kept-draw families are the ones whose
 /// rolls feed behaviour).
-pub(crate) fn ai_spear_subshot_44(p: &mut Projectile, world: &World) {
 /// `AI()`'s aiStyle-44 arm (`Projectile.cs:27893-27948`) for the spear's two
 /// riders: the ChlorophytePartisan's spore cloud (228, `:27896-27904`) and the
 /// ThunderSpear's bolt (732, `:27905-27921`). The shared frame machine
@@ -620,7 +619,7 @@ pub(crate) fn ai_spear_subshot_44(
                 if can_hit_line(
                     world, center.x, center.y, 1.0, 1.0, ahead.x, ahead.y, 1.0, 1.0,
                 ) {
-                    p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+                    p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
                 }
             }
             // `:27928-27933` — the age counter, then past 20 the gravity

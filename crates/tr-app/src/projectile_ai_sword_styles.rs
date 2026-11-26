@@ -263,7 +263,7 @@ pub(crate) fn ai_final_fractal(
     if (p.kind == 933 || p.kind == 1100) && p.local_ai[1] == 0.0 {
         p.local_ai[1] = 1.0;
         let c = center_of(p);
-        p.wants_sound = Some((2, 169, c.x, c.y, 0.0));
+        p.wants_sound = Some((2, 169, c.x, c.y, 0.0, 1.0));
     }
     // `:43122-43123` — the owner reads. The C# reads `player.velocity`
     // only to feed the skipped dust (`:43168`); the orbit itself reads
@@ -447,7 +447,7 @@ fn torch_god_self_hurt(
 /// merge executes the A-L drop table.
 pub(crate) fn ai_bad_torch_luck(
     p: &mut Projectile,
-    player: Option<&mut crate::player::Player>,
+    mut player: Option<&mut crate::player::Player>,
     local_owner: u8,
     rng: &mut dyn DropRng,
 ) {
@@ -461,7 +461,7 @@ pub(crate) fn ai_bad_torch_luck(
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
         let c = center_of(p);
-        p.wants_sound = Some((2, 8, c.x, c.y, 0.0));
+        p.wants_sound = Some((2, 8, c.x, c.y, 0.0, 1.0));
     }
     // `:42798-42805` — the flight-distance drain; at zero the fireball
     // starts colliding with tiles.
@@ -770,7 +770,7 @@ fn spawn_spore_cloud(
             vector6.x -= 48.0;
         }
         slam = Some((vector6.x, vector6.y, p.damage, 128.0, 96.0));
-        p.wants_sound = Some((2, 167, spawn_position.x, spawn_position.y, 0.0));
+        p.wants_sound = Some((2, 167, spawn_position.x, spawn_position.y, 0.0, 1.0));
     }
     (clouds, slam)
 }
@@ -1053,7 +1053,7 @@ pub(crate) fn ai_nights_edge(
         if p.kind == 984 {
             // The Item60 cue; the post-play ×0.65 volume scale is the
             // S1-E-21h deferred-scale deviation.
-            p.wants_sound = Some((2, 60, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 60, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         if p.kind == 1126 {
             p.local_ai[2] = if p.vel.y == 0.0 { 1.0 } else { 0.0 };
@@ -1446,7 +1446,7 @@ mod tests {
         // The one-shot cue latched (at the slot's OWN centre — the C#
         // reads base.Center at `:43120`, before the orbit repositions it).
         assert_eq!(p.local_ai[1], 1.0);
-        assert_eq!(p.wants_sound, Some((2, 169, 1616.0, 816.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 169, 1616.0, 816.0, 0.0, 1.0)));
         // The dust loop drew (localAI[0] < 60): at least the position
         // float + the Next(9) gate.
         assert!(rng.floats >= 1);
@@ -1474,7 +1474,7 @@ mod tests {
         let mut rng = census();
         ai_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
         assert_eq!(p.local_ai[0], 1.0, "the cue latch (`:42795`)");
-        assert_eq!(p.wants_sound, Some((2, 8, p.pos.x + 2.0, p.pos.y + 2.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 8, p.pos.x + 2.0, p.pos.y + 2.0, 0.0, 1.0)));
         assert_eq!(p.ai[1], 7.0, "12 − |v| = 12 − 5 (`:42800`)");
         assert!(!p.tile_collide, "still draining");
         assert_eq!(rng.ranges.len(), 4, "four Next(3) dust gates");
@@ -1617,7 +1617,7 @@ mod tests {
         assert_eq!(slam.2, 100, "the full damage (`:41967`)");
         assert_eq!(slam.3, 128.0, "ai1 = 128");
         assert_eq!(slam.4, 96.0, "ai2 = 96");
-        assert_eq!(p.wants_sound, Some((2, 167, spawn_position.x, spawn_position.y, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 167, spawn_position.x, spawn_position.y, 0.0, 1.0)));
     }
 
     /// The terra-chain compose-contract receipt (research/26g §7, the

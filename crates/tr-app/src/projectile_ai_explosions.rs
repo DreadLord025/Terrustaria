@@ -162,7 +162,7 @@ pub(crate) fn explosion_tick1_draws(p: &Projectile, rng: &mut dyn DropRng) {
         // the random spin by the velocity heading — the same two draws.
         for _ in 0..5 {
             let _ = rotated_by_random_draws(rng, std::f64::consts::PI);
-            let _ = rotate(Vec2::UNIT_X, vel_rot); // the heading spin (no draw)
+            let _ = rotate(Vec2::X, vel_rot); // the heading spin (no draw)
         }
         // `:34529-34535` — 10× dust-31 (scale 1.5): the UnitX form again.
         for _ in 0..10 {
@@ -264,7 +264,7 @@ pub(crate) fn solar_counter_kill_draws(p: &Projectile, rng: &mut dyn DropRng) {
     // RotatedByRandom pair each.
     for _ in 0..10 {
         let _ = rotated_by_random_draws(rng, std::f64::consts::PI);
-        let _ = rotate(Vec2::UNIT_X, vel_rot);
+        let _ = rotate(Vec2::X, vel_rot);
     }
     // `:72210-72216` — 10× dust-31 (scale 1.5): the UnitX form again.
     for _ in 0..10 {

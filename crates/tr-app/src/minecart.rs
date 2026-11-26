@@ -1381,7 +1381,6 @@ pub(crate) fn tick(
     // `Main.snowDust` (`Main.cs:621`): the head reset (`Dust.cs:428`) rides
     // `update_dust`; the type-76 arm's `++` (`:1747`) accumulates here and
     // lands on the pool after the pass (the snowfall budget reads it).
-    let mut snow_dust = 0;
     pool.update_dust(
         &tr_core::particles::UpdateCtx {
             max_dust_to_draw,
@@ -1435,109 +1434,6 @@ pub(crate) fn tick(
         d.no_gravity = true;
         d.scale = s.scale;
     }
-        |d: &mut tr_core::particles::Dust| {
-            if d.dust_type == 213 || d.dust_type == 260 {
-                // `:1819-1829`: the spark falls (260 is not 107/41/44/309).
-                if !d.no_gravity {
-                    d.velocity.y += 0.1;
-                }
-                // `:2071-2072`: the air drag.
-                d.velocity.x *= 0.99;
-                // `:739` + `:2080`: rotation is rebuilt from the dragged
-                // velocity (the 213|260 arm zeroes it first, so `=` not `+=`).
-                d.rotation = d.velocity.x * 0.5;
-                // `:2083-2124`: the fadeIn ramp — +0.1/tick while the spawn
-                // fadeIn stands (capped at it), then −0.2/tick (it burns out).
-                if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                    d.scale += 0.1;
-                    if d.scale > d.fade_in {
-                        d.fade_in = 0.0;
-                    }
-                } else {
-                    d.scale -= 0.2;
-                }
-            } else if d.dust_type == 211 {
-                // `:729-732`: the SparksFart solid-kill — `noLight` (the
-                // delegate sets it) over a solid tile deactivates. Runs before
-                // the gravity chain (the C# standalone arm precedes `:1819`).
-                if d.no_light
-                    && crate::player::Player::solid_collision(world, d.position.x, d.position.y, 4.0, 4.0)
-                {
-                    d.active = false;
-                }
-                // `:1819-1829`: the spark falls (211 is not 107/41/44/309).
-                if !d.no_gravity {
-                    d.velocity.y += 0.1;
-                }
-                // `:2071-2072`: the air drag.
-                d.velocity.x *= 0.99;
-                // `:2079-2081`: rotation ACCUMULATES (211 is not in the
-                // `:737` 213|260 zero-arm, so `+=` not `=`).
-                d.rotation += d.velocity.x * 0.5;
-                // `:2083-2128`: the GENERIC fadeIn ramp — 211 is in no special
-                // arm: +0.03/tick while fadeIn stands, else −0.01/tick. The
-                // SparksFart delegate sets no fadeIn, so it burns at −0.01.
-                if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                    d.scale += 0.03;
-                    if d.scale > d.fade_in {
-                        d.fade_in = 0.0;
-                    }
-                } else {
-                    d.scale -= 0.01;
-                }
-            } else if d.dust_type == 107 {
-                // `:1819-1824`: the 107 gravity arm — `velocity *= 0.9` (BOTH
-                // axes) instead of the +0.1 fall, gated on !noGravity.
-                if !d.no_gravity {
-                    d.velocity *= 0.9;
-                }
-                // `:2071-2072`: the air drag.
-                d.velocity.x *= 0.99;
-                // `:2079-2081`: rotation accumulates (107 not in the zero-arm).
-                d.rotation += d.velocity.x * 0.5;
-                // `:2083-2128`: the generic fadeIn ramp (+0.03 / −0.01). The
-                // TerraFart spark sets no fadeIn; the SpawnFartCloud dust sets
-                // fadeIn 0.2..0.3 (`DelegateMethods.cs:301`).
-                if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                    d.scale += 0.03;
-                    if d.scale > d.fade_in {
-                        d.fade_in = 0.0;
-                    }
-                } else {
-                    d.scale -= 0.01;
-                }
-            } else if d.dust_type == 268 {
-                crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
-            } else if d.dust_type == 76 {
-                // `Dust.cs:1745-1763` — the ambient snowfall's flake AI
-                // (W4-d130). The arm feeds `Main.snowDust` (`:1747`); the
-                // shared tails (the second chain's drag `:2073`, the rotation
-                // rebuild `:2081`, the fadeIn-else fade `:2127`) run after it.
-                // The FIRST ladder's gravity else-if (`:1819`) is excluded by
-                // the matched arm — the flake keeps its own fall velocity.
-                crate::snow::type_76_arm(d, player_vy, world, &mut snow_dust);
-                crate::snow::type_76_tails(d);
-            } else {
-                // g67 (transplanted, docs/research/83 §3): the rain collision
-                // splashes (`dustWater()`'s family) ride the shared loop's
-                // `Dust.cs:1834-1874` arm — it gates on the C#'s full member
-                // list (308/52/266 included) and no-ops every other type.
-                crate::rain::water_splash_arm(d, world);
-            }
-            // All arms return false: the 213/268/splash arms are standalone
-            // All arms return false: the 213/260/211/107/268 arms are standalone
-            // statements of the C#'s FIRST ladder (between the `:477` move and
-            // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
-            // they do NOT exclude the second chain's final
-            // `else if (type != 304 && noGravity)` tail (`:2335`) — a
-            // no-gravity 213 takes its arm AND the tail, exactly like the C#.
-            // The 76 arm is an else-if OF the first ladder (`:1745`), so it
-            // excludes the `:2071` drag — its own tails ran above.
-            // no-gravity spark takes its arm AND the tail, exactly like the C#.
-            false
-        },
-    );
-    pool.snow_dust = snow_dust;
 }
 
 /// `Main.DrawDust`'s draw over the pool's cart-spark slots (213/260/211/107).
@@ -1910,6 +1806,7 @@ pub(crate) fn minecart_landing_sound_fart(
         x,
         y,
     });
+}
 /// `Minecart._trackSwitchOptions` (`Minecart.cs:449-518`): for each of the 64
 /// nearby-track bitmasks, the ascending list of frame ids whose side-connection
 /// mask fits the neighbourhood. A frame's mask is `left` (0→1, 1→2, 2→4) |
@@ -2289,6 +2186,8 @@ pub(crate) fn flip_switch_track(world: &mut World, i: i32, j: i32) {
             frame_track_pound(world, i, j);
         }
         _ => {}
+    }
+}
 /// `DelegateMethods.Minecart.SpawnFartCloud` (`DelegateMethods.cs:258-306`) —
 /// the fart carts' (51/53) cloud visual, STAGED (research/198, renamed from 67): the live
 /// triggers are c14's fart sound delegates (`JumpingSoundFart` :308-312 /
@@ -2470,13 +2369,14 @@ mod tests {
         // The actuator-hidden tile still counts: C# reads `tile.active()`,
         // NOT `nactive()` (`:555`).
         place_track(&mut w, 10, 10, 20, -1);
-        w.tiles[w.index(10, 10)].flags |= FLAG_INACTIVE;
+        let ti = w.index(10, 10);
+        w.tiles[ti].flags |= FLAG_INACTIVE;
         assert!(is_pressure_plate(w.tile(10, 10)), "active() ignores actuation");
         // An inactive tile refuses; a non-314 kind refuses; null refuses.
-        w.tiles[w.index(10, 10)].flags &= !FLAG_ACTIVE;
+        w.tiles[ti].flags &= !FLAG_ACTIVE;
         assert!(!is_pressure_plate(w.tile(10, 10)));
-        w.tiles[w.index(10, 10)].flags |= FLAG_ACTIVE;
-        w.tiles[w.index(10, 10)].kind = 135;
+        w.tiles[ti].flags |= FLAG_ACTIVE;
+        w.tiles[ti].kind = 135;
         assert!(!is_pressure_plate(w.tile(10, 10)), "the 135 plate is not 314");
         assert!(!is_pressure_plate(None));
     }
@@ -4378,6 +4278,7 @@ mod tests {
                 Vec2::new(vx, 0.0),
                 max,
                 0.0,
+                SparkVariant::Sparks,
             );
             assert_eq!(sounds.len(), 1, "one rattle per gate-passing tick");
             cues.push(sounds[0].clone());
@@ -4599,6 +4500,7 @@ mod tests {
         assert_eq!(sounds[1].cue, "Item_56", "then the bumper (`:324`)");
         assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
         assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
+    }
     // -- W4-f6 final 4: the unclaimed track-side spark variants ---------------
     // `DelegateMethods.Minecart.SparksFart/SparksTerraFart/SparksMech/SparksMeow`
     // (the 51/53/11/33 cart rows' `MinecartDust` delegates, `Mount.cs:1099`/

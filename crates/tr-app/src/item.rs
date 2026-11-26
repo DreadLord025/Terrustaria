@@ -842,20 +842,6 @@ const MAX_FALL: f32 = 7.0;
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
-/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`):
-/// `CreateBoolSet(520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456,
-/// 3457, 3458, 3459, 3580, 3581, 4143)` — the floaters (souls, the
-/// nebula pickups, the mana star). `MoveInWorld`'s first arm
-/// (`WorldItem.cs:774-786`) damps BOTH axes ×0.95 with the 0.1 snap
-/// instead of the gravity fall.
-pub fn item_no_gravity(kind: u16) -> bool {
-    matches!(
-        kind,
-        520 | 521 | 575 | 549 | 548 | 547 | 3453 | 3454 | 3455 | 3456 | 3457 | 3458 | 3459
-            | 3580 | 3581 | 4143
-    )
-}
-
 /// `WorldItem.UpdateItem`'s gravity ladder (`WorldItem.cs:364-396`):
 /// `(gravity, maxFallSpeed, wetVelocity_scale)` — air 0.1/7/0.5,
 /// shimmerWet 0.065/4/0.375 FIRST, honeyWet 0.05/3/0.25, else wet
@@ -871,8 +857,9 @@ pub fn item_gravity_ladder(wet: bool, shimmer_wet: bool, honey_wet: bool) -> (f3
     } else {
         (GRAVITY, MAX_FALL, 0.5) // :364-365 + :379
     }
+}
 
-        }/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`): `CreateBoolSet(520, 521,
+/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`): `CreateBoolSet(520, 521,
 /// 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581,
 /// 4143)` — the souls/fragments/lunar fragments + the Mana pickup 4143 that
 /// float (`MoveInWorld`'s no-gravity head, `WorldItem.cs:774-786`): both axes
@@ -883,6 +870,7 @@ const ITEM_NO_GRAVITY: &[u16] = &[
     520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581, 4143,
 ];
 /// `ItemID.Sets.ItemNoGravity[type]` (`ItemID.cs:1320`).
+pub fn item_no_gravity(kind: u16) -> bool {
     ITEM_NO_GRAVITY.contains(&kind)
 }
 
@@ -1087,13 +1075,19 @@ pub struct Splash {
 /// stream (the g67 rain-splash contract). The kind picks the dust family:
 /// lava → 35 ×5, shimmer → 308 ×10 (the `Next(6)` colour switch), honey →
 /// 152 ×5, water → `dustWater()` ×10.
+#[derive(Clone, Debug)]
 pub(crate) struct ItemSplash {
     /// The drop's top-left at the edge (the dust box anchors on
     /// `position.X - 6`, `position.Y + height/2 - 8`; the water EXIT arm
     /// drops the `- 8`, `:1011`).
+    pub pos: Vec2,
     /// `true` = the exit edge (`:959-1035`), `false` = entry (`:881-958`).
+    pub exit: bool,
     /// The kind flags AT the edge (post-probe, pre-clear): lava wins, then
     /// shimmer, then honey, else water (`:886-940`/`:965-1019`).
+    pub lava: bool,
+    pub shimmer: bool,
+    pub honey: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1207,18 +1201,6 @@ pub struct ItemDrop {
     /// expiry's `> 300` (`:657`). The seconds stand-in [`Self::age`] stays
     /// for its own consumers.
     pub age_ticks: i32,
-    // 347 §2.1 splash keep-one: the g15 `splash_edge` THIRD form RETIRED at
-    // the e19 fold — e19's `pending_splash`/`ItemSplash`/`take_splash` (the
-    // research/144 SHIMMER SEAL keeper) carries the same entry/exit window.
-    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`): ticks the drop
-    /// refuses the MONSTER grab (`GetPickedUpByMonsters_Special`'s `:405`
-    /// gate); decremented per update (`:449-452`). The `ReserveForLocalPlayer`
-    /// / `GrabDelayForLocalPlayer` ownership arms set it to `DefaultGrabDelay`
-    /// (`Item.cs:49757-49760`). W4-g15 lane 5 — the port's monster grab (the
-    /// copper-slime pickup) reads it; the revenge coin-suck's own gate is the
-    /// `:405` row too. Distinct from [`Self::grab_delay_time`] (the PLAYER
-    /// grab clock).
-    pub enemy_grab_delay_time: i32,
     /// `WorldItem.instanced` (`WorldItem.cs:36`): a per-player loot split drop.
     /// The `SendData(21)` pre-switch refuses to sync it (`NetMessage.cs:92-95`)
     /// — it exists only for its reserved owner. No host spawn path sets it yet
@@ -1249,6 +1231,7 @@ impl ItemDrop {
             shimmered: false,
             shimmer_pending: false,
             shimmer_wet: false,
+            repulsed: false,
             wet: false,
             honey_wet: false,
             lava_wet: false,
@@ -1267,7 +1250,6 @@ impl ItemDrop {
             being_grabbed: false,
             on_conveyor: false,
             age_ticks: 0,
-            enemy_grab_delay_time: 0,
             instanced: false,
         }
     }
@@ -1371,25 +1353,13 @@ impl ItemDrop {
     /// liquid-surface-dropped lava cells — the shared player-side port
     /// (`player.rs::lava_collision`). Doc-sweep lane 36 retired the cell-grid
     /// stand-in (it ignored the surface drop).
+    /// `Collision.LavaCollision(position, width, height)` (`WorldItem.cs:865`,
+    /// `Collision.cs:1653-1684`): the FULL-box probe (no inset) against the
+    /// liquid-surface-dropped lava cells — the shared player-side port
+    /// (`player.rs::lava_collision`). Doc-sweep lane 36 retired the cell-grid
+    /// stand-in (it ignored the surface drop).
     pub fn lava_probe(&self, world: &World) -> bool {
         crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE)
-
-        }    /// `WorldItem.UpdateShimmer`'s shimmered-float rise scan
-    /// (`WorldItem.cs:493-504`): when NOT `shimmerWet`, the two rows at the
-    /// CENTRE (`(int)(Center.X/16)`, `(int)(Center.Y/16)` and `+1`) — any
-    /// shimmer liquid cell rises the drop. The old port reused the ramp's
-    /// single above-top-left tile (a different probe).
-    fn rise_over_shimmer(&self, world: &World) -> bool {
-        let tx = (self.center().x / tr_core::TILE_PX) as i32;
-        let ty = (self.center().y / tr_core::TILE_PX) as i32;
-        (ty..ty + 2).any(|y| {
-            world.tile(tx, y)
-                .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
-        })
-    /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
-    /// the drop's box overlaps any non-empty liquid cell. This is `base.wet`,
-    /// the gate on most `UpdateItem_VisualEffects` light arms. The faithful
-    /// probe (the `player::wet_collision` port, `Collision.cs:1572-1651`).
     }
 
     /// Whether the last [`Self::update`]'s `UpdateShimmer` armed the transform
@@ -1406,31 +1376,6 @@ impl ItemDrop {
     /// `gravity` is the `ref float` the C# zeroes for a shimmered drop
     /// (`:483`) — the movement half reads the overridden value.
     fn update_shimmer(&mut self, world: &World, dt: f32, gravity: &mut f32) {
-
-        }    /// 0.9 trigger check. The `:482` light arm feeds from the frame pass
-    /// (`entity_lights::shimmer_light`, W4-g20); the dust arm is a render-layer
-    /// note.
-    fn update_shimmer(&mut self, world: &World, dt: f32) {
-        if self.shimmered {
-            // `:457-508` — gravity is zero for the transformed item; the rise
-            // applies over shimmer liquid (or already shimmerWet), floor -4.
-            *gravity = 0.0; // :483
-            let over = self.shimmer_wet || self.over_shimmer(world);
-            if over && self.vel.y > -4.0 {
-                self.vel.y -= 0.05;
-            } else if !over {
-
-        }
-        }
-        }    /// 0.9 trigger check. Returns the gravity override (`Some(0)` for a
-    /// shimmered drop — `:483` `gravity = 0f`; `None` keeps the caller's
-    /// wet/air pair). The dust/light arms (`:459-482`) are render-layer notes.
-    fn update_shimmer(&mut self, world: &World) -> Option<f32> {
-        let mut gravity_override = None;
-            // `:457-516` — gravity is zero for the transformed item (`:483`).
-            gravity_override = Some(0.0);
-            // The rise: `shimmerWet` directly (`:484-490`), else the two-row
-            // centre scan (`:493-504`); floor -4, else the ×0.9 dry damp.
         if self.shimmered {
             // `:457-516` - gravity is zero for the transformed item (`:483`).
             *gravity = 0.0; // :483
@@ -1672,8 +1617,6 @@ impl ItemDrop {
                 // neighbour right.
                 if svx > -3.0 * span {
                     svx -= 0.1 * span;
-                if ovx < 3.0 {
-                    ovx += 0.1 * span;
                 }
                 if ovx < 3.0 {
                     ovx += 0.1 * span;
@@ -1682,14 +1625,6 @@ impl ItemDrop {
                 // `:825-835` — self is right: push self right, neighbour left.
                 if svx < 3.0 * span {
                     svx += 0.1 * span;
-                if ovx > -3.0 {
-                    ovx -= 0.1 * span;
-            } else if i < j {
-                // `:836-846` — coincident X: the lower slot pushes left, the
-                // higher right (both bounded at `±3 * span`).
-                if ovx < 3.0 * span {
-            items[i].vel.x = svx;
-            items[j].vel.x = ovx;
                 }
                 if ovx > -3.0 {
                     ovx -= 0.1 * span;
@@ -1737,9 +1672,6 @@ impl ItemDrop {
             // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): the wet
             // flags + wetCount clear, the flag resets, ApplyMovement runs
             // with the ladder's wetVelocity (wet is now false → raw).
-            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): ALL the wet
-            // flags + the cooldown clear (`:427-431`) and `ApplyMovement`
-            // integrates at FULL velocity (`wet` false → `:1082`).
             self.wet = false;
             self.wet_count = 0;
             self.lava_wet = false;
@@ -1756,44 +1688,6 @@ impl ItemDrop {
             // across ticks exactly like the C# Entity field.
             self.update_shimmer(world, dt, &mut gravity);
             self.move_in_world(world, gravity, max_fall, &mut wet_vel);
-            // `UpdateItem`'s gravity head (`:364-396`): the air pair, then the
-            // ELSE-IF chain shimmer-wet → honey-wet → water-wet, all read from
-            // the PREVIOUS tick's flags (`MoveInWorld` re-probes at `:865-878`,
-            // AFTER this head). `:379` — `wetVelocity = velocity * 0.5f`; the
-            // shimmer arm re-scales to `* 0.375f` (`:384`), honey to `* 0.25f`
-            // (`:390`); the water arm keeps the 0.5 default (`:392-396`).
-            let (mut gravity, mut max_fall) = (GRAVITY, MAX_FALL);
-            let mut wet_step = WET_STEP_AIR;
-            if self.shimmer_wet {
-                gravity = SHIMMER_GRAVITY;
-                max_fall = SHIMMER_MAX_FALL;
-                wet_step = WET_STEP_SHIMMER;
-            } else if self.honey_wet {
-                gravity = HONEY_GRAVITY;
-                max_fall = HONEY_MAX_FALL;
-                wet_step = WET_STEP_HONEY;
-            } else if self.wet {
-                gravity = WATER_GRAVITY;
-                max_fall = WATER_MAX_FALL;
-            }
-            // 347 §3.2(c) — the shimmered routing reconciled onto e19's
-            // two-cell probe: the g15 `pos += vel` float branch + the
-            // `over_shimmer` approximation retired; `update_shimmer`'s
-            // `rise_over_shimmer` (`:493-504`) is the C# window. The g15
-            // box-union wet probes + `wet_edges` retired too — e19's
-            // `move_in_world` carries the faithful `:865-878` re-probe
-            // (LavaCollision + WetCollision's honey/shimmer statics) and the
-            // `:879-1035` edge arms at their C# positions.
-            //
-            // `UpdateShimmer` (`:403`) runs BEFORE `MoveInWorld` (`:413`); a
-            // shimmered drop overrides gravity to 0 (`:483`).
-            if let Some(g) = self.update_shimmer(world) {
-                gravity = g;
-            // `MoveInWorld` (`:413`) runs for EVERY non-grabbed drop — the
-            // shimmered one too (gravity 0, but the friction/conveyor/collision
-            // tail still applies; the old port skipped it with a bare
-            // `pos += vel`).
-            self.move_in_world(world, gravity, max_fall, wet_step);
         }
         // `WorldItem.cs:441-444` — the grab delay ticks down every update,
         // grabbed or not.
@@ -1838,25 +1732,6 @@ impl ItemDrop {
             // `:849-862` — the gravity fall + cap, the X friction + snap,
             // then the repulsion brake's extra ×0.8.
             self.vel.y = (self.vel.y + gravity).min(max_fall);
-
-        }
-        }    /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
-    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
-    fn move_in_world(&mut self, world: &World) {
-        // `WorldItem.cs:774-786` — the `ItemID.Sets.ItemNoGravity` arm
-        // (`ItemID.cs:1320`): souls (520/521), the nebula pickups and the
-        // like float — BOTH axes decay ×0.95 with the ±0.1 rest snap, NO
-        // gravity and NO fall cap. The port models the two soul ids (the
-        // W4-f32 loot lane); the other set members land with their items.
-        if !self.shimmered && matches!(self.kind, 520 | 521) {
-            self.vel.x *= 0.95;
-            if self.vel.x < 0.1 && self.vel.x > -0.1 {
-            self.vel.y *= 0.95;
-            if self.vel.y < 0.1 && self.vel.y > -0.1 {
-            // `WorldItem.cs:363-364` — the air gravity and the fall cap.
-            self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
-            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
-            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
             self.vel.x *= FRICTION_X;
             if self.vel.x.abs() < FRICTION_EPSILON {
                 self.vel.x = 0.0;
@@ -1867,43 +1742,6 @@ impl ItemDrop {
         }
         self.repulsion_brake = false;
         // `:864` — the belt contacts bend the velocity before the collision.
-
-        }
-        }
-        }    /// `WorldItem.cs:437-440` — the `timeSinceItemSpawned` tick (the cap
-    /// included). The C# runs it AFTER `UpdateItem_VisualEffects` (`:436`),
-    /// so the `% 12` sparkle gate and the 4143 `> 300` expiry read the
-    /// PRE-increment value this tick; the items pass calls this after the
-    /// visual drains (W4-g15).
-    pub fn tick_age(&mut self) {
-        if self.age_ticks < 2147483547 {
-            self.age_ticks += 1;
-    }
-    // 347 §2.1 — the g15 `wet_edges` state machine RETIRED: e19's
-    // `move_in_world` carries the same entry/exit window inline at the C#
-    // `:879-1035` positions (with the local-lava entry read, the SHIMMER
-    // seal's verbatim fix) and queues `pending_splash`.
-    /// The non-grabbed movement half: `MoveInWorld`'s `ItemNoGravity` float
-    /// head (`WorldItem.cs:774-786`) or the gravity/friction head
-    /// (`:849-862`), then the conveyor + tile-collision pass. `gravity`/
-    /// `max_fall` are the caller's resolved pair (the shimmer-wet override or
-    /// the shimmered 0); `wet_step` is the head's `wetVelocity` factor
-    /// (`:379-390`). The repulsion scan itself (`:790-847`) is the
-    /// slice-level [`Self::repel_shimmered`] the items pass runs before this
-    /// update; its `flag` rides [`Self::repulsed`].
-    fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32, wet_step: f32) {
-            // `WorldItem.cs:774-786` — the float: BOTH axes ×0.95 with the
-            // 0.1 rest snap, no gravity add, no repulsion (the scan lives in
-            // the else arm and is shimmered-only anyway).
-            // `WorldItem.cs:849-853` — the gravity add and the fall cap.
-            // `WorldItem.cs:859-862` — the repulsion flag's damp, AFTER the
-            // friction/snap and BEFORE the conveyor pass.
-            if self.repulsed {
-                self.vel.x *= 0.8;
-        self.repulsed = false;
-        // `WorldItem.cs:864`: the belt contacts bend the velocity before the
-        // AABB pass. The C# stores the bool in `item.onConveyor`, which
-        // suppresses the draw-side velocity spin (`Main.cs:38613`).
         let mut bp = [self.pos.x, self.pos.y];
         let mut bv = [self.vel.x, self.vel.y];
         self.on_conveyor = crate::collision::apply_conveyor_belt_movement_to_velocity(
@@ -1962,110 +1800,6 @@ impl ItemDrop {
                     pos: self.pos,
                 });
             }
-
-        }        // `MoveInWorld`'s wet re-probe (`:865-878`), BEFORE the collision +
-        // `ApplyMovement` halves: `LavaCollision` (`:865`) then
-        // `WetCollision` (`:870`, which also sets the `Collision.honey`/
-        // `Collision.shimmer` statics the `:871-878` arms copy). The flags
-        // LATCH (`:868`/`:873`/`:877` are set-only); `wet` itself follows the
-        // entry/exit edges (`:956`/`:961`) and the `!wet` tail (`:1036-1041`)
-        // clears the three kind flags. The probe feeds BOTH the next tick's
-        // gravity head and THIS tick's `ApplyMovement` gate (`:1076` reads
-        // `base.wet` post-set).
-        let lava_now =
-            crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE);
-            self.lava_wet = true; // `:866-869`
-        let (wet_hit, honey_hit, shimmer_hit) = crate::npc_ai_slime::wet_collision(
-            world,
-            self.pos.x,
-            self.pos.y,
-            SIZE as i32,
-        );
-        if honey_hit {
-            self.honey_wet = true; // `:871-874`
-        if shimmer_hit {
-            self.shimmer_wet = true; // `:875-878`
-        // `:879-958`/`:959-1035` — the entry/exit edges. Each arms
-        // `wetCount = 20` when the cooldown is free and queues the splash
-        // burst (the dust family reads the kind flags AT the edge — the
-        // entry arm the freshly-set ones, the exit arm the OLD ones before
-        // the `!wet` tail clears them).
-        if wet_hit {
-            if !self.wet {
-                if self.wet_count == 0 {
-                    self.wet_count = 20; // `:885`
-                    self.pending_splash = Some(ItemSplash {
-                        pos: self.pos,
-                        exit: false,
-                        // `:886` reads the LOCAL `flag2` (this tick's
-                        // LavaCollision), NOT the sticky `base.lavaWet`.
-                        // Behaviourally equal at every entry edge (the
-                        // `!wet` tail cleared the sticky flag last tick),
-                        // but the local read is the verbatim one — the
-                        // f47 keep-one 144's only semantic objection,
-                        // resolved on the e19 half (SHIMMER seal).
-                        lava: lava_now,
-                        shimmer: self.shimmer_wet,
-                        honey: self.honey_wet,
-                    });
-                }
-                self.wet = true; // `:956`
-            self.wet = false; // `:961`
-                self.wet_count = 20; // `:964`
-                self.pending_splash = Some(ItemSplash {
-        // `:1036-1041` — while dry, the kind flags clear.
-        if !self.wet {
-            self.lava_wet = false;
-            self.honey_wet = false;
-            self.shimmer_wet = false;
-        // `:1042-1045` — the cooldown ticks at the wet block's tail.
-        if self.wet_count > 0 {
-            self.wet_count -= 1;
-        let wet_now = self.wet;
-        // `wetVelocity` (`:379-390`'s head value, `:1046-1066`'s refresh):
-        // the collision pass runs at FULL velocity; an axis it overrides
-        // keeps that residual in `wetVelocity` too (`:1052-1059`), the free
-        // axes integrate at the liquid fraction.
-        let mut wet_vel = self.vel * wet_step;
-        let pre = self.vel;
-        let nx = self.pos.x + self.vel.x;
-        if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
-            // `Collision.TileCollision` (`Collision.cs:2415-2426`) leaves only
-            // the residual that fit on the blocked axis (`result.X = …`), so a
-            // drop stops dead against a wall instead of bouncing back (the
-            // port's zero-residual stand-in, both wet and dry).
-            self.vel.x = 0.0;
-        let ny = self.pos.y + self.vel.y;
-        if crate::player::collides_rect(world, self.pos.x, ny, SIZE, SIZE) {
-            let flush = if self.vel.y > 0.0 {
-                let ty = ((ny + SIZE) / TILE_PX).floor() as i32;
-                ty as f32 * TILE_PX - SIZE
-            } else {
-                let ty = (ny / TILE_PX).floor() as i32;
-                (ty + 1) as f32 * TILE_PX
-            };
-            // `Collision.cs:2394`/`:2444`: `result.Y` collapses to the flush
-            // residual — no restitution, BOTH arms (the C# runs the same
-            // `TileCollision` at `:1051`/`:1064`). `ApplyMovement` steps the
-            // drop flush (`:1078` wet via the `:1056-1059` wetVelocity copy,
-            // `:1082` dry at full velocity). W4-e19 round 3: the old dry
-            // snap-and-zero stand-in is retired — a landing tick carries the
-            // residual as velocity; at flush rest the residual is 0, so the
-            // resting drop still reads vel 0 after each tick.
-            self.vel.y = flush - self.pos.y;
-        // `:1052-1059` — the axes the collision changed refresh `wetVelocity`
-        // to the new (full) value; the free axes keep the scaled head value.
-        if self.vel.x != pre.x {
-            wet_vel.x = self.vel.x;
-        if self.vel.y != pre.y {
-            wet_vel.y = self.vel.y;
-        // `ApplyMovement` (`:1074-1084`): a wet drop integrates `wetVelocity`,
-        // a dry one the full velocity. The blocked-Y arm's residual steps the
-        // drop flush either way (the wet copy above put it in `wet_vel`).
-        if wet_now {
-            self.pos += wet_vel;
-        } else {
-            self.pos += self.vel;
         }
         // `:1036-1045` — the dry clear + the wetCount decrement.
         if !self.wet {
@@ -2118,6 +1852,17 @@ impl ItemDrop {
         );
         self.pos = Vec2::new(sc.pos[0], sc.pos[1]);
         self.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+    }
+
+    /// `WorldItem.cs:437-440` — the `timeSinceItemSpawned` tick (the cap
+    /// included). The C# runs it AFTER `UpdateItem_VisualEffects` (`:436`),
+    /// so the `% 12` sparkle gate and the 4143 `> 300` expiry read the
+    /// PRE-increment value this tick; the items pass calls this after the
+    /// visual drains (W4-g15).
+    pub fn tick_age(&mut self) {
+        if self.age_ticks < 2147483547 {
+            self.age_ticks += 1;
+        }
     }
 
     /// The armed splash's dust + sound arms (`WorldItem.cs:886-954` entry /
@@ -2273,9 +2018,7 @@ impl ItemDrop {
         // draw put them (the C# anchors by the frame size,
         // `Main.cs:38610-38612`, an unported per-frame stand-in).
         const VIS: f32 = SIZE - 2.0;
-        if rot == 0.0 {
-
-        }        // `Main.cs:38621-38634` — the shimmer colour fade (the byte
+        // `Main.cs:38621-38634` — the shimmer colour fade (the byte
         // truncations ride `shimmer_fade_color`).
         let mut col = shimmer_fade_color(c, self.shimmered, self.shimmer_time);
         // `Main.cs:38722-38726` — the mana crystals (1522-1527) and the
@@ -2306,13 +2049,22 @@ impl ItemDrop {
                 [(SIZE - 2.0) * 0.5 * scale, (SIZE - 2.0) * 0.5 * scale],
             );
             quads += 1;
+        }
         if self.kind == 4143 {
             // `:38720` — the white 128-alpha copy at the anchor, BEFORE the
             // lit main draw.
+            r.push_sprite_origin_rot(
                 [anchor[0] - (SIZE - 2.0) * 0.5, anchor[1] - (SIZE - 2.0) * 0.5],
                 [SIZE - 2.0, SIZE - 2.0],
+                uv,
                 [1.0, 1.0, 1.0, 128.0 / 255.0],
+                rot,
                 [(SIZE - 2.0) * 0.5, (SIZE - 2.0) * 0.5],
+            );
+            quads += 1;
+        }
+        // The visual quad is the 14 px stand-in centred in the 16 px hitbox
+        // (`pos + 1`, `SIZE - 2`) — the box-size fix (W4-e19 round 3) is
         // (`pos + 1`, `SIZE - 2`) — the box-size fix (W4-e19 round 3) is
         // physics-only, the pixels stay where the pre-fix draw put them
         // (the C# anchors by the frame size, `Main.cs:38610-38612`, an
@@ -2330,12 +2082,10 @@ impl ItemDrop {
         } else {
             r.push_sprite_origin_rot(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
-                [VIS, VIS],
                 [VIS * scale, VIS * scale],
                 uv,
                 col,
                 rot,
-                [VIS * 0.5, VIS * 0.5],
                 [VIS * 0.5 * scale, VIS * 0.5 * scale],
             );
         }
@@ -2634,6 +2384,8 @@ mod tests {
         let k1 = render_key(&[sh.clone()], 0, 1.0);
         sh.shimmer_time = 0.4;
         assert_ne!(k1, render_key(&[sh], 0, 1.0));
+    }
+
     fn slot(kind: u16, count: u32) -> ItemSlot {
         ItemSlot { kind, name: "", count, prefix: 0 }
     }
@@ -2693,6 +2445,7 @@ mod tests {
         // No paint in the inventory: the arm returns false (`:45135`).
         inv[0] = EMPTY_SLOT;
         assert_eq!(paint_tool_preview(1071, &inv, &equip), None);
+    }
     /// W4-e24 — `Item.TryAddStack` (`Item.cs:49543-49570`): the air slot takes
     /// the kind up to its cap, a matching kind absorbs its remaining room, a
     /// mismatched kind or a full stack refuses; the `ref` amount decrements by
@@ -4144,8 +3897,6 @@ mod s1_p_i47_tests {
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
     }
 
-// balance-close (union shared delimiter)
-}}
     // ---- W4-e19 — the shimmer liquid-interaction physics census ----------
     // ---- W4-e19 KEEP family (379-ARBITER-v2: keeper-agnostic hunks) --------
 
@@ -4179,6 +3930,7 @@ mod s1_p_i47_tests {
         fast.shimmer_wet = true;
         fast.update(&w, 1.0 / 60.0);
         assert!((fast.vel.y - 4.0).abs() < 1e-6, "shimmer cap 4: {}", fast.vel.y);
+    }
     fn w4_e19_the_shimmered_drop_rises_over_the_two_row_centre_scan() {
         // `WorldItem.cs:493-504` — a shimmered drop NOT shimmerWet rises when
         // either of the two centre rows is shimmer. The probe is at
@@ -4187,25 +3939,31 @@ mod s1_p_i47_tests {
         // Centre in row 18 (the pool's top row): pos.y = 18*16 → centre
         // y = 18*16 + 8 → row 18. shimmerWet false (the box probe is forced
         // off by parking the drop so only the centre row hits).
+        let w = shimmer_pool();
         let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
         d.shimmered = true;
         d.shimmer_wet = false;
         d.vel = Vec2::new(0.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
         // The rise scan finds row 18 shimmer → vel.y -= 0.05 (the centre row
         // hits even though the 16-box wet probe already latched shimmerWet).
         assert!(d.vel.y < 0.0, "the shimmered drop rises: {}", d.vel.y);
+    }
     fn w4_e19_the_shimmered_drop_damps_dry_with_09() {
         // `WorldItem.cs:512-515` — a shimmered drop with NO shimmer under the
         // centre scan damps vel.y *= 0.9 (not the rise).
         let w = ground(); // dry world, no shimmer
         let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 2.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
         // vel.y 2.0 * 0.9 = 1.8, then gravity 0 (shimmered) → 1.8.
         assert!((d.vel.y - 1.8).abs() < 1e-5, "the dry damp: {}", d.vel.y);
+    }
     fn w4_e19_the_wet_probe_uses_the_liquid_surface_offset() {
         // `Collision.cs:1610-1612` — the surface drops by (256-liquid)/32*2.
         // A half-full shimmer cell (liquid 128) has its surface 8 px down; a
         // drop whose centre-shrunk box sits in the top 8 px is NOT wet. The
         // old naive full-box overlap reported wet there.
+        let mut w = ground();
         let j = w.index(10, 19);
         w.tiles[j] = Tile::default();
         w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
@@ -4242,6 +4000,7 @@ mod s1_p_i47_tests {
         assert!(flag1);
         assert!((items[1].vel.x - 0.4).abs() < 1e-5);
         assert!((items[0].vel.x - -0.4).abs() < 1e-5);
+    }
     /// The scan's gates: non-shimmered drops never repel (`:790`/`:795`), and
     /// a neighbour beyond the span on either axis is skipped (`:804`).
     fn w4_e19_the_repulsion_gates() {
@@ -4259,19 +4018,27 @@ mod s1_p_i47_tests {
         // Both shimmered but 20 px apart on Y (> the 16 span): skipped.
         items[1].shimmered = true;
         items[1].pos.y = 120.0;
+    }
     /// The `span / distance` cap at 10 (`:810-813`): coincident centres give
     /// +inf → 10, and the equal-X tie-break (`:836-846`) pushes the lower slot
     /// left / the higher right, both bounded at `±3 * 10`.
     fn w4_e19_the_repulsion_caps_the_span_at_10_and_breaks_ties_by_slot() {
+        let mut a = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
         let mut b = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        a.shimmered = true;
+        b.shimmered = true;
+        let mut items = vec![a, b];
+        let flag = ItemDrop::repel_shimmered(&mut items, 0);
         assert!(flag);
         // distance 0 → num2 capped 10 → the tie-break nudge 0.1*10 = 1.0.
         assert!((items[0].vel.x - -1.0).abs() < 1e-5, "lower slot left: {}", items[0].vel.x);
         assert!((items[1].vel.x - 1.0).abs() < 1e-5, "higher slot right: {}", items[1].vel.x);
         // From the higher slot the tie-break refuses (`whoAmI < i` false).
+        let flag1 = ItemDrop::repel_shimmered(&mut items, 1);
         assert!(flag1, "flag set even when the tie-break declines the push");
         assert!((items[0].vel.x - -1.0).abs() < 1e-5, "no second push");
         assert!((items[1].vel.x - 1.0).abs() < 1e-5);
+    }
     /// The ×0.8 damp tail (`:859-862`): `move_in_world` applies friction THEN
     /// the repulsion damp. A repulsed drop with vx 1.0: ×0.95 → 0.95, ×0.8 →
     /// 0.76. The flag clears after the tick.
@@ -4287,10 +4054,12 @@ mod s1_p_i47_tests {
         let mut plain = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
         plain.update(&w, 1.0 / 60.0);
         assert!((plain.vel.x - 0.95).abs() < 1e-5);
+    }
     /// W4-e19 — the `ItemNoGravity` float (`WorldItem.cs:774-786`): a Soul of
     /// Light (520, `ItemID.cs:1320`) damps BOTH axes ×0.95 with the 0.1 snap
     /// and takes NO gravity add — it never falls.
     fn w4_e19_the_no_gravity_kinds_float() {
+        let w = ground();
         assert!(item_no_gravity(520) && item_no_gravity(4143) && !item_no_gravity(2));
         let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
         soul.update(&w, 1.0 / 60.0);
@@ -4306,15 +4075,19 @@ mod s1_p_i47_tests {
         let mut dirt = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
         dirt.update(&w, 1.0 / 60.0);
         assert!((dirt.vel.y - 0.1).abs() < 1e-6);
+    }
     /// The float's `!shimmered` gate (`:774`): a shimmered no-gravity kind
     /// takes the ELSE arm — gravity (0 for shimmered) + the X-only friction.
     fn w4_e19_a_shimmered_no_gravity_kind_takes_the_gravity_arm() {
         let w = ground(); // dry: the shimmered drop damps Y ×0.9 (UpdateShimmer)
+        let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
         soul.shimmered = true;
+        soul.update(&w, 1.0 / 60.0);
         // UpdateShimmer's dry damp: Y 2.0×0.9 = 1.8, gravity 0, no Y friction
         // (the else arm frictions X only).
         assert!((soul.vel.y - 1.8).abs() < 1e-5, "the else arm: {}", soul.vel.y);
         assert!((soul.vel.x - 1.9).abs() < 1e-5);
+    }
     /// W4-e19 — the `wetVelocity` blend (`WorldItem.cs:379-396`/`:1046-1084`):
     /// a wet drop's collision pass runs at FULL velocity but `ApplyMovement`
     /// integrates the free axes at the liquid fraction — shimmer-wet 0.375
@@ -4333,12 +4106,15 @@ mod s1_p_i47_tests {
             d.pos.x - before.x
         );
         // Y: gravity 0.065, integrated ×0.375 = 0.024375.
+        assert!(
             (d.pos.y - (before.y + 0.065 * 0.375)).abs() < 1e-4,
             "the Y fraction: {}",
             d.pos.y - before.y
+        );
         // The velocity itself stays FULL (the collision ran at 1.9 / 0.065).
         assert!((d.vel.x - 1.9).abs() < 1e-5);
         assert!((d.vel.y - 0.065).abs() < 1e-6);
+    }
     /// The dry arm: full-velocity integration (`:1082`); at flush rest the
     /// collision residual is 0, so the resting drop stays still (round 3
     /// retired the snap-and-zero stand-in — both arms run the C# residual).
@@ -4347,7 +4123,10 @@ mod s1_p_i47_tests {
     /// velocity half is e19-unique and KEEPS.
     #[test]
     fn w4_e19_the_dry_drop_integrates_at_full_velocity() {
+        let w = ground();
         let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 0.0);
+        let before = d.pos;
+        d.update(&w, 1.0 / 60.0);
         assert!((d.pos.x - (before.x + 1.9)).abs() < 1e-5, "full X: {}", d.pos.x - before.x);
         assert!((d.pos.y - (before.y + 0.1)).abs() < 1e-5, "full Y: {}", d.pos.y - before.y);
         // A dry drop one px above the floor lands flush in ONE tick with the
@@ -4361,6 +4140,7 @@ mod s1_p_i47_tests {
         // the drop lies flush, vel 0 (no bounce, no drift).
         assert!((land.pos.y - 304.0).abs() < 1e-4, "flush rest: {}", land.pos.y);
         assert_eq!(land.vel.y, 0.0, "the rest residual is zero");
+    }
     /// The wet blocked-Y arm keeps the flush residual (`:1056-1059` →
     /// `wetVelocity.Y` full): a shimmer-wet drop landing on the pool floor
     /// steps flush in ONE tick and carries the residual velocity, not the
@@ -4368,12 +4148,13 @@ mod s1_p_i47_tests {
     fn w4_e19_the_wet_landing_keeps_the_flush_residual() {
         // Resting one px above the floor (floor top 20*16 = 320, box 16 →
         // flush pos.y = 304): pos.y 303, falling at 2 (capped 4 → stays 2).
+        let w = ground();
         let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 303.0, 0.0, 2.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
         // The blocked Y: residual 304 - 303 = 1.0, copied FULL into
         // wetVelocity.Y → the drop lands flush this tick.
         assert!((d.pos.y - 304.0).abs() < 1e-4, "flush landing: {}", d.pos.y);
         assert!((d.vel.y - 1.0).abs() < 1e-4, "the residual velocity: {}", d.vel.y);
-    /// W4-e19 — the honey/water gravity arms (`WorldItem.cs:386-396`): the
     }
 
     /// W4-e19 - the honey/water gravity arms (`WorldItem.cs:386-396`): the
@@ -4410,9 +4191,14 @@ mod s1_p_i47_tests {
     /// and clear via the `!wet` tail (`:1036-1041`): a drop in a honey pool
     /// carries honeyWet + wet; parked dry, both clear.
     fn w4_e19_the_wet_flags_latch_and_clear() {
-                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+        let mut w = ground();
+        let j = w.index(10, 18);
+        w.tiles[j] = Tile::default();
+        w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+        w.tiles[j].liquid = 255;
         // Inside the honey pool: the probe sets honeyWet + wet.
         let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 4.0, 0.0, 0.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
         assert!(d.wet && d.honey_wet, "the honey probe latched");
         assert!(!d.shimmer_wet && !d.lava_wet);
         // The NEXT tick's head reads the carried honey flag (0.05).
@@ -4426,16 +4212,21 @@ mod s1_p_i47_tests {
         dry.pos.y = 5.0 * TILE_PX;
         dry.update(&w, 1.0 / 60.0);
         assert!(!dry.wet && !dry.honey_wet, "the dry tail cleared the flags");
+    }
     /// The grabbed arm clears ALL the wet flags (`:427-431`).
     fn w4_e19_the_grabbed_arm_clears_every_wet_flag() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
         d.wet = true;
         d.honey_wet = true;
         d.lava_wet = true;
         d.being_grabbed = true;
+        d.update(&w, 1.0 / 60.0);
         assert!(!d.wet && !d.honey_wet && !d.lava_wet && !d.shimmer_wet);
         assert!(!d.being_grabbed);
         // The full-velocity ApplyMovement (`:1082`): pos += vel, no fraction.
         assert!((d.pos.x - (10.0 * TILE_PX + 1.0)).abs() < 1e-5);
+    }
     /// The SHIMMER-seal entry-gate witness: `:886` reads the LOCAL `flag2`
     /// (this tick's `LavaCollision`), NOT the sticky `base.lavaWet`. A drop
     /// whose sticky lava flag is FALSE (hand-set state — the C# never has
@@ -4462,6 +4253,8 @@ mod s1_p_i47_tests {
         let s = d.take_splash().expect("the entry splash armed");
         assert!(!s.exit && s.lava, "the gate read the LOCAL probe (:886)");
         assert_eq!(d.wet_count, 19, "20 armed, decremented same tick");
+    }
+    }
     /// Folded from the f47 keep-one 144 (`w4_f47ds_the_wet_probe_is_the_
     /// centre_inset_box`, SHIMMER seal): the inset probe is 10x8 at
     /// (pos+3, pos+4) (`Collision.cs:1576-1587` integer halves) — a probe
@@ -4483,6 +4276,7 @@ mod s1_p_i47_tests {
         // shimmer (the FIRST-cell-wins kind flag).
         let hit2 = crate::npc_ai_slime::wet_collision(&w, 165.0, 160.0, SIZE as i32, SIZE as i32);
         assert_eq!(hit2, (true, false, true));
+    }
     /// Folded from the f47 keep-one 144 (`w4_f47ds_the_wet_probe_respects_
     /// the_liquid_surface_drop`, SHIMMER seal): the surface drops by
     /// `(256-liquid)/32*2` (`Collision.cs:1610-1612`) — a quarter-full cell
@@ -4505,8 +4299,7 @@ mod s1_p_i47_tests {
         assert!(!crate::player::lava_collision(&w, 160.0, 156.0, SIZE, SIZE));
         assert!(crate::player::lava_collision(&w, 160.0, 157.0, SIZE, SIZE));
 
-// balance-close (union shared delimiter)
-}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}})
     }
 
+}
 }

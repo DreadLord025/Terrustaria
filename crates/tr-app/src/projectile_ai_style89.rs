@@ -89,7 +89,7 @@ pub(crate) fn ai_cultist_ritual(
     // `:32287-32291` — the first-tick sound latch (Item123, style 2).
     if p.local_ai[1] == 0.0 {
         p.local_ai[1] = 1.0;
-        p.wants_sound = Some((2, 123, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 123, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:32292-32319` — the alpha-0 burst (skipped bodies, consumed draws).
     if p.alpha == 0 {
@@ -281,7 +281,7 @@ mod tests {
         let npcs = vec![host()];
         let mut rng = Recorder { draws: Vec::new() };
         ai_cultist_ritual(&mut p, &npcs, false, &mut rng);
-        assert_eq!(p.wants_sound, Some((2, 123, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 123, p.pos.x, p.pos.y, 0.0, 1.0)));
         assert_eq!(p.local_ai[1], 1.0);
     }
 }

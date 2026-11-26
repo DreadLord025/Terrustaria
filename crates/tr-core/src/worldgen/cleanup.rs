@@ -1485,8 +1485,8 @@ mod tests {
         w.wires.set(100, 100, crate::wiring::WireColor::Red, true);
         w.wires.set(101, 100, crate::wiring::WireColor::Red, true);
         remove_broken_traps(&mut w, &opts());
-        assert!(!w.wires.wire(100, 100), "the broken wire was stripped");
-        assert!(!w.wires.wire(101, 100), "the whole network was stripped");
+        assert!(!w.wires.get(100, 100, crate::wiring::WireColor::Red), "the broken wire was stripped");
+        assert!(!w.wires.get(101, 100, crate::wiring::WireColor::Red), "the whole network was stripped");
         assert!(
             !w.tile(100, 100).is_some_and(|t| t.active() && t.kind == 137),
             "the trap died"
@@ -1506,7 +1506,7 @@ mod tests {
             w.wires.set(x, 100, crate::wiring::WireColor::Red, true);
         }
         remove_broken_traps(&mut w, &opts());
-        assert!(w.wires.wire(100, 100), "the working wire survived");
+        assert!(w.wires.get(100, 100, crate::wiring::WireColor::Red), "the working wire survived");
         assert!(
             w.tile(100, 100).is_some_and(|t| t.active() && t.kind == 137),
             "the working trap survived"
@@ -1528,7 +1528,7 @@ mod tests {
         remove_broken_traps(&mut a, &opts());
         remove_broken_traps(&mut b, &opts());
         assert_eq!(a.tiles, b.tiles, "a == b");
-        assert_eq!(a.wires.wire(100, 100), b.wires.wire(100, 100));
+        assert_eq!(a.wires.get(100, 100, crate::wiring::WireColor::Red), b.wires.get(100, 100, crate::wiring::WireColor::Red));
         // noTraps (without anniversary/notTheBees) skips the sweep.
         let mut nt = build();
         let nt_opts = GenOptions {
@@ -1536,7 +1536,7 @@ mod tests {
             ..opts()
         };
         remove_broken_traps(&mut nt, &nt_opts);
-        assert!(nt.wires.wire(100, 100), "noTraps skips the sweep");
+        assert!(nt.wires.get(100, 100, crate::wiring::WireColor::Red), "noTraps skips the sweep");
     }
 
     /// e20 research-148 §3b (FIXED, retire phase): the C# `Utils.Swap` does
@@ -1560,7 +1560,7 @@ mod tests {
         let mut visited = Vec::new();
         clear_broken_traps_capped(&mut w, (100, 100), &mut visited, 2000, 2);
         for (x, y) in plus {
-            assert!(!w.wires.wire(x, y), "the leftover cell ({x},{y}) was stripped");
+            assert!(!w.wires.get(x, y, crate::wiring::WireColor::Red), "the leftover cell ({x},{y}) was stripped");
             assert!(visited.contains(&(x, y)), "({x},{y}) was visited");
         }
     }
@@ -1577,8 +1577,8 @@ mod tests {
         }
         let mut visited = Vec::new();
         clear_broken_traps_capped(&mut w, (100, 100), &mut visited, 2, 2000);
-        assert!(!w.wires.wire(100, 100), "the start was stripped");
-        assert!(w.wires.wire(101, 100), "the queued neighbour kept its wire");
+        assert!(!w.wires.get(100, 100, crate::wiring::WireColor::Red), "the start was stripped");
+        assert!(w.wires.get(101, 100, crate::wiring::WireColor::Red), "the queued neighbour kept its wire");
         assert_eq!(visited, vec![(100, 100)]);
     }
 
@@ -1725,7 +1725,8 @@ mod tests {
             for x in 0..replay.width {
                 if let Some(t) = replay.tile(x, y).copied() {
                     if t.liquid > 0 {
-                        sys.liquid_check(&mut replay, x, y, liquid_code(t.liquid_kind()), true);
+                        let seed = replay.seed;
+                        sys.liquid_check(&mut replay, x, y, liquid_code(t.liquid_kind()), true, &mut crate::UnifiedRandom::new(seed as i32));
                     }
                 }
             }

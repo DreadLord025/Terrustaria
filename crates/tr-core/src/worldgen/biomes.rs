@@ -2794,20 +2794,21 @@ mod tests {
             w.tiles[i].flags |= FLAG_ACTIVE;
         };
         // The grass anchor (i=20, j=20). The 3x3 tidy box is (19..21, 19..21).
-        // The box is processed row-major; the anchor (20,20) is visited
-        // AFTER row 19, so the (21,19) grass must survive the earlier
-        // cells' arms: (19,19)/(20,19) see no horizontal/vertical gap
-        // (their left/right and up/down neighbours are inactive), and
-        // (21,19)'s own arms need both horizontal neighbours active —
-        // (20,19) is inactive, so it stands.
+        // The box is processed row-major, and the rail-shape arms KILL any
+        // active cell with both horizontal (or both vertical) neighbours
+        // inactive — so the discriminator grass must be protected on both
+        // axes or it dies before the re-mud arm reaches it.
         put(&mut world, 20, 20, TILE_MUSHROOM_GRASS);
         // A vertical gap at (k=21, l=20): inactive, with active above/below
         // (21, 19) and (21, 21) — the vertical re-mud arm fires when the
         // scan reaches (21, 20).
         put(&mut world, 21, 21, TILE_MUD);
         // The discriminator: grass at (k=21, j-1=19) — the C#'s
-        // `tile[num16, num15 - 1]` read re-muds it. The OLD port read
-        // (i=20, l-1=19) instead, an inactive cell — no write.
+        // `tile[num16, num15 - 1]` read re-muds it. Protect it from the
+        // rail-shape kill with an active left neighbour (20,19) and an
+        // active cell above (21,18) (outside the 3x3, untouched).
+        put(&mut world, 20, 19, TILE_MUSHROOM_GRASS);
+        put(&mut world, 21, 18, TILE_MUD);
         put(&mut world, 21, 19, TILE_MUSHROOM_GRASS);
         // The seed's first chance(4) is false (hi-word % 4 == 2), so the
         // random re-grass tail never fires — the assertions are draw-free.
@@ -3073,37 +3074,35 @@ mod tests {
         let in_band = |x: i32| x >= jungle_start && x < jungle_end;
         let (mut bad, mut shrine, mut hive, mut shroom, mut trees) = (0usize, 0, 0, 0, 0);
         let width = world.width;
+        // The jungle shrine hut material is a per-world Reset pick
+        // (`GenVars.jungle_hut`, one of 119/120/158/175/45; seed 77 rolls
+        // 175). `pass_jungle_shrines` places at the dungeon-opposite left-half
+        // rule (`rng.range(40, width/2-40)`), NOT the `plan_spans` band — so,
+        // like the global mushroom patches, the bucket only counts.
+        const SHRINE_HUTS: [u16; 5] = [119, 120, 158, 175, 45];
         for (i, t) in world.tiles.iter().enumerate() {
             let x = i as i32 % width;
-            let y = i as i32 / width;
             if !t.active() {
                 continue;
             }
-            let underground_tree = t.kind == 5 && y as f64 > world.world_surface;
-            match t.kind {
-                119 => {
-                    shrine += 1;
-                    bad += !in_band(x) as usize;
-                }
-                225 => {
-                    hive += 1;
-                    bad += !in_band(x) as usize;
-                }
-                70 => {
-                    shroom += 1;
-                    // M5-BIOME-2: the faithful `GlowingMushroomPatches` is NOT
-                    // band-limited — the cluster roll is the middle 60% and
-                    // the `ShroomPatch` walk drifts globally
-                    // (`WorldGen.cs:12578-12582`, `:79962-79968`). The
-                    // shape-level pass pinned cx to the jungle band; the
-                    // vanilla's mushroom domains are global, so the bucket
-                    // only counts, it no longer feeds `bad`.
-                }
-                _ if underground_tree => {
-                    trees += 1;
-                    bad += !in_band(x) as usize;
-                }
-                _ => {}
+            if SHRINE_HUTS.contains(&t.kind) {
+                shrine += 1;
+            } else if t.kind == 225 {
+                // Hives (`:20321`) ride the jungle band.
+                hive += 1;
+                bad += !in_band(x) as usize;
+            } else if t.kind == 70 {
+                // M5-BIOME-2: the faithful `GlowingMushroomPatches` is NOT
+                // band-limited — the cluster roll is the middle 60% and the
+                // `ShroomPatch` walk drifts globally (`WorldGen.cs:12578-12582`,
+                // `:79962-79968`). The shape-level pass pinned cx to the jungle
+                // band; the vanilla's mushroom domains are global, so the
+                // bucket only counts.
+                shroom += 1;
+            } else if t.kind == 383 {
+                // The underground jungle tree trunks are Living Mahogany (383).
+                trees += 1;
+                bad += !in_band(x) as usize;
             }
         }
         assert!(shrine > 0, "the shrines placed");

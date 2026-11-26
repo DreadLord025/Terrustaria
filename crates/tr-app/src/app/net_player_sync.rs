@@ -801,7 +801,7 @@ mod tests {
     fn the_clone_defaults_are_the_csharp_player_ctor() {
         // `Main.clientPlayer = new Player()` (`Main.cs:67158`) — a zero-hp
         // dead player MUST compare different on the first tick.
-        let c = ClientClone::default();
+        let mut c = ClientClone::default();
         assert_eq!((c.hp, c.max_hp, c.mana, c.max_mana), (100, 100, 0, 20));
         assert_eq!(c.controls.direction, 1);
         assert_eq!(c.chest, -1);

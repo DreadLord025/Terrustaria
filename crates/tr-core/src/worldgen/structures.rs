@@ -2676,7 +2676,8 @@ pub(crate) fn pass_traps(
                     let mut x = rng.range(200, world.width - 200);
                     let mut y = rng.range(world_surface as i32, world.height - 210);
                     // oceanDepths re-roll (`:18710-18714`).
-                    while (y as f64) <= ocean_level
+                    while world.width > beach * 2
+                        && (y as f64) <= ocean_level
                         && (x < beach || x > world.width - beach)
                     {
                         x = rng.range(200, world.width - 200);
@@ -2979,6 +2980,9 @@ pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rn
     // `(worldSurface + rockLayer)/2 + 40`, the C2/evil.rs convention).
     let ocean_level = (world_surface + layers.rock_layer) / 2.0 + 40.0;
     let beach = super::ocean::ZONE_MARGIN;
+    // Sub-vanilla widths (< 2*ZONE_MARGIN) have no inland x; the C#
+    // re-roll assumes a normal 4200+ world and would spin forever.
+    let inland = world.width > beach * 2;
     // `GetPileGenerationAttempts` (`:23647-23655`).
     let attempts = if skyblock { world.width / 2 / 10 } else { world.width / 2 };
     // The float ladder count (`:18810`): the C# float product + the
@@ -3004,7 +3008,7 @@ pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rn
                 tries -= 1;
                 let mut x = rng.range(25, world.width - 25);
                 let mut y = rng.range(world_surface as i32, world.height - 300);
-                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                while inland && (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
                     x = rng.range(25, world.width - 25);
                     y = rng.range(world_surface as i32, world.height - 300);
                 }
@@ -3149,7 +3153,7 @@ pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rn
                 let mut kind = 186u16;
                 let mut x = rng.range(25, world.width - 25);
                 let mut y = rng.range(10, world_surface as i32);
-                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                while inland && (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
                     x = rng.range(25, world.width - 25);
                     y = rng.range(10, world_surface as i32);
                 }
@@ -3274,7 +3278,7 @@ pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rn
                     x = rng.range(25, world.width - 25);
                     y = rng.range(world_surface as i32, world.height - 20);
                 }
-                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                while inland && (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
                     x = rng.range(25, world.width - 25);
                     y = rng.range(world_surface as i32, world.height - 20);
                 }
@@ -3389,7 +3393,7 @@ pub(crate) fn pass_piles(world: &mut World, layers: &Layers, rng: &mut super::Rn
                 tries -= 1;
                 let mut x = rng.range(25, world.width - 25);
                 let mut y = rng.range(15, world_surface as i32);
-                while (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
+                while inland && (y as f64) <= ocean_level && (x < beach || x > world.width - beach) {
                     x = rng.range(25, world.width - 25);
                     y = rng.range(15, world_surface as i32);
                 }
@@ -3900,10 +3904,12 @@ mod tests {
     }
 
     /// A sand world: air above row 100, solid sand below, the surface line
-    /// at 100 — the pyramid's sand-column gate and hull have ground to bite.
+    /// BELOW the first sand row (110) — the C# descent loop stops on the
+    /// first active tile and the `j >= worldSurface` gate must not fire, so
+    /// the surface line has to sit under the sand top.
     fn sand_world(w: i32, h: i32) -> World {
         let mut world = World::new("pyr".into(), w, h);
-        world.world_surface = 100.0;
+        world.world_surface = 110.0;
         world.rock_layer = 300.0;
         for x in 0..w {
             for y in 100..h {
@@ -4010,13 +4016,14 @@ mod tests {
         assert!(count(TILE_SMALL_PILES) > 0, "the small piles");
         assert!(count(TILE_BANNER) > 0, "the banners");
         assert!(count(TILE_POT) > 0, "the pot row");
-        // The chest's style is 1 (the gold frame base column 18).
+        // The chest's style is 1 (the gold frame base: the 2-wide chest
+        // sheet is 36 px per style, so the base column is 36*1 = 36).
         let chest = world
             .tiles
             .iter()
             .find(|t| t.active() && t.kind == TILE_CHEST && t.frame_y == 0)
             .unwrap();
-        assert_eq!(chest.frame_x % 36, 18, "the style-1 frame column");
+        assert_eq!(chest.frame_x, 36, "the style-1 frame column");
     }
     /// W4-c33 witness PORTED onto d103's signature (research/120 section 5): a
     /// water-filled basin over a sand floor takes style-17 chests (frame
@@ -4043,16 +4050,16 @@ mod tests {
         };
         let run = || {
             let mut world = basin();
-            let mut gv = super::pipeline::GenVars::default();
+            let mut gv = crate::worldgen::pipeline::GenVars::default();
             gv.num_ocean_cave_treasure = 2;
             gv.ocean_cave_treasure = [(300, 120), (900, 120)];
             let mut rng = super::super::Rng(0x0CEA);
-            super::water_chests::pass_water_chests(
+            crate::worldgen::water_chests::pass_water_chests(
                 &mut world,
                 &mut gv,
                 100.0,
                 300.0,
-                super::buried_chest::ChestSeedFlags::default(),
+                crate::worldgen::buried_chest::ChestSeedFlags::default(),
                 false,
                 &mut rng,
                 None,
@@ -4072,7 +4079,13 @@ mod tests {
             .collect();
         assert!(!chests.is_empty(), "the basin takes water chests");
         for c in chests {
-            assert_eq!(c.frame_x, 306, "the style-17 frame column");
+            // The 2x2 chest has TWO top-row cells: the left at the style
+            // base (18*17 = 306) and its right sibling at +18 (324).
+            assert!(
+                c.frame_x == 306 || c.frame_x == 324,
+                "the style-17 frame columns ({})",
+                c.frame_x
+            );
         }
     }
 }
@@ -5079,7 +5092,7 @@ pub(crate) fn pass_piles_surface_bands(
     /// roll), clamped to the 5-border; the Larva pass then places them.
     #[test]
     fn the_hive_pass_publishes_the_larva_ledger() {
-        let spans = super::super::biomes::BiomeSpans {
+        let spans = crate::worldgen::biomes::BiomeSpans {
             jungle_start: 60,
             jungle_end: 340,
             dungeon_x: 40,

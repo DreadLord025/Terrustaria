@@ -3585,7 +3585,12 @@ mod tests {
                 world.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
+        // The Oasis carve body is code-only in the default GenVars
+        // (`oasis_height` stays 0 until the deferred re-pin awakens it);
+        // this witness exercises the carve directly, so set the vanilla
+        // `GenVars.oasisHeight` = 20 (`GenVars.cs:473`).
         let mut gv = GenVars::default();
+        gv.oasis_height = 20;
         let ok = place_oasis(&mut world, &mut gv, 500, 90, 150.0, &mut Rng(0x5EED));
         assert!(ok, "the basin lands on flat sand");
         assert_eq!(gv.num_oasis, 1, "the ledger appended");
@@ -3609,6 +3614,7 @@ mod tests {
             }
         }
         let mut gv2 = GenVars::default();
+        gv2.oasis_height = 20;
         let rejected = place_oasis(&mut stone, &mut gv2, 500, 90, 150.0, &mut Rng(0x5EED));
         assert!(!rejected, "the stone floor is rejected");
         assert_eq!(gv2.num_oasis, 0);

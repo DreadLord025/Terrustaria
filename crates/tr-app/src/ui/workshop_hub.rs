@@ -291,7 +291,7 @@ pub(crate) fn draw(
         let sw = sheet.width as f32;
         let sh = sheet.height as f32;
         let tint = color::tint(uistate::CREATION_SEPARATOR_COLOR);
-        let piece = |dx: f32, dw: f32, sx: f32, sw2: f32| {
+        let mut piece = |dx: f32, dw: f32, sx: f32, sw2: f32| {
             if dw <= 0.0 {
                 return;
             }

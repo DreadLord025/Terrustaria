@@ -1014,7 +1014,7 @@ mod tests {
         }
         // The hanging 52 strip in the SAME remix-below-surface world sways.
         let hw = vine_world();
-        let hsegs = vine_strip_segments(&hw, &wind, 0.0, 10, 20);
+        let hsegs = vine_strip_segments(&hw, &wind, 0.0, 10, 20, false);
         assert!(hsegs[2].rot != 0.0, "hanging remix below surface sways");
     }
 
@@ -1117,4 +1117,5 @@ mod tests {
         let origin_y = (seg.half - seg.dd.top) as f32 + h;
         assert_eq!(origin_y, 16.0, "16 px tall, top 0, no half-brick");
         assert_eq!(seg.dd.width as f32 * 0.5, 8.0);
+    }
 }

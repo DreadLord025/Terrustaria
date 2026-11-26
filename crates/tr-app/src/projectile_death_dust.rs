@@ -539,7 +539,7 @@ impl DeathSnapshot {
             ai2: p.ai[2],
             wet: p.wet,
             damage: p.damage,
-            old_pos_ring: p.old_pos,
+            old_pos_ring: p.old_pos[..10].try_into().unwrap(),
         }
     }
 }
@@ -5144,7 +5144,7 @@ mod tests {
             if let Some(k) = vel_mul {
                 let mut witness = DustPool::new();
                 let mut wrng = UnifiedRandom::new(7);
-                plain_burst(&snap(kind), &mut witness, &mut wrng, &ctx(), &w, count, dust_type, 0.0, 0.0, 0, Color::default(), if kind == 109 { 0.6 } else { 1.0 }, None, false);
+                plain_burst(&snap(kind), &mut witness, &mut wrng, &ctx(), &w, count as i32, dust_type, 0.0, 0.0, 0, Color::default(), if kind == 109 { 0.6 } else { 1.0 }, None, false);
                 for (a, b) in active.iter().zip(witness.slots().iter().filter(|d| d.active)) {
                     assert_eq!(a.velocity, b.velocity * k, "kind {kind} velocity write");
                 }

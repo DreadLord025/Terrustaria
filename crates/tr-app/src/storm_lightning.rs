@@ -310,7 +310,7 @@ fn try_spawn_bolt_at(
     }
     let vector = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 + num2 as f32);
     // `:72012-72015`: the geometry gate.
-    if !LightningGenerator::storm_lightning().can_hit_target(world, num as u32, vector) {
+    if !LightningGenerator::storm_lightning().can_hit_target(num as u32, vector, None, world) {
         return false;
     }
     // `:72016`: NewProjectile(..., 1091, 500, 0f, Main.myPlayer, -1f, 0f, num).

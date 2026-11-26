@@ -1,4 +1,4 @@
-//! Projectile simulation: the fixed 60 Hz pass over the 1000-slot pool
+﻿//! Projectile simulation: the fixed 60 Hz pass over the 1000-slot pool
 //! (`Projectile.Update`, see `projectile.rs` for the source map).
 
 use glam::Vec2;
@@ -409,7 +409,6 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // and the server-owned hostile shots (owner 255) only on the host /
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
-    let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
     // W4-e3 — the dust seam: the frame's spawn ctx is captured HERE, before
     // the `rng` mutable borrow (the helper borrows `app` immutably — the
     // `world_sim/npcs.rs:4191` convention); the live pool is threaded into
@@ -458,7 +457,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_lantern_owner(lantern_owner);
-    app.projectiles.set_screen_width(sw as i32);
+    app.projectiles.set_screen_width(sw);
 
     // W4-d15 — the DD2 slice's owner snapshot (`AI_142_MonkStaffT2And3`'s
     // `Main.player[owner]` reads, `Projectile.cs:69819-69844`). The anchor
@@ -771,32 +770,6 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // app.dust` field borrows (the `world_sim/npcs.rs` `dust_spawn_ctx`
     // convention).
     let dust_spawn_ctx = app.spawn_ctx();
-    // S1-W4-g81 residuals — the Wire Kite's per-tick context
-    // (`Projectile.cs:35699-35745`): the owner snapshot + `Main.MouseWorld`
-    // (`screenPosition + MouseScreen`, the same math the yoyo aim reads) +
-    // the right-press conjunction (`Main.mouseRight &&
-    // Main.mouseRightRelease`, `:35710`). The C# re-latches the release
-    // flag at the END of every interface draw (`Main.cs:62458-62465`), so
-    // within one update the conjunction is the press-after-release edge —
-    // `place_prev_down` holds the previous tick's button (the projectile
-    // pass runs before `update_editing` refreshes it, the `drop_right_edge`
-    // ordering precedent).
-    let kite_ctx = app.player.as_ref().map(|p| {
-        (
-            crate::projectile_ai_kite::KiteOwner {
-                refuse: p.no_items || p.cced() || p.dead,
-                channel: p.channel,
-                direction: p.facing,
-                vel_x: p.vx,
-            },
-            Vec2::new(
-                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
-                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
-            ),
-            app.place_down && !app.place_prev_down,
-        )
-    });
-    app.projectiles.set_kite_context(kite_ctx);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update_dust(
             &mut app.world,
@@ -806,14 +779,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.player.as_mut(),
             inputs,
             flail_inputs,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
             local_owner,
             hostile_local,
             &mut app.dust,
             &dust_spawn_ctx,
             // W4-g83: the tile-kill arms' framing dispatch rides the SAME
             // UpdateProjectiles stream (the active genRand, contract §2).
-            rng,
         );
     });
     // W4-d3 — the gore pool writeback: the boulder Kill arms spawned into it.
@@ -1006,17 +978,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 && seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
                 && !seeds.contains(tr_core::seeds::SeedFlags::REMIX)
                 && !seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES);
-            let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
             let drops = crate::world_sim::editing::dd2_shake_tile_drops(
-                &app.world, shake.x, shake.y, axe_power, extra_wood, rng,
+                &app.world, shake.x, shake.y, axe_power, extra_wood, app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
             );
             for (id, count) in drops {
-                let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
                 crate::world_sim::items::spawn_item_drop(
-                    &mut app.items, rng, id, count, shake.x, shake.y,
+                    &mut app.items, app.rngs.stream(crate::app::RngKey::UpdateProjectiles), id, count, shake.x, shake.y,
                 );
             }
         }
+    }
     // W4-g11 union-exec (research/116 gap 1) — the Queen-Slime hook's
     // `Player.Teleport(vector, 10)` (`Projectile.cs:52775` →
     // `Player.cs:22753`): the 935 latch queued the style-10 effect pair
@@ -1078,7 +1049,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             false,
             size,
             1.0,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
     }
     if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
@@ -1090,7 +1061,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             req,
             app.local_id as u8,
             expert,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
         // W4-c28: the brain's Confused AddBuff (`Player.cs:38425-38426`)
         // queued its net intent — the pass-tail drain below carries it
@@ -1111,7 +1082,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.local_id as u8,
             &mut app.npcs,
             dolls,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
             luck,
             &mut app.dust,
             &blast_ctx,
@@ -1123,14 +1094,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Player.cs:38527-38553` / `:38255-38280`): the accepted hostile shot
     // queued them; the port drains at the pass tail on the `UpdateProjectiles`
     // stream (the S1-E-21c batch convention).
+    // `SpawnCtx` is an `App` method; hoist it above the player borrow.
+    let hurt_ctx = app.spawn_ctx();
     if let Some(p) = app.player.as_mut() {
-        let ctx = app.spawn_ctx();
         crate::hurt_modifiers::drain_hurt_dust(
             p,
             &mut app.dust,
-            &ctx,
+            &hurt_ctx,
             &app.world,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
     }
     if let Some(p) = app.player.as_mut() {
@@ -1191,7 +1163,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             false,
             size,
             1.0,
-            rng,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
     }
     // W4-d116 — the Destroyer-probe roll intents (`NPC.cs:81488` →
@@ -1203,7 +1175,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // the NPC pass, after this one); the guard keeps a stale index from
         // ever panicking.
         let Some(n) = app.npcs.get_mut(idx) else { continue };
-        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(n, rng, false) {
+        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(n, app.rngs.stream(crate::app::RngKey::UpdateProjectiles), false) {
             n.wants_probe = Some(anchor);
         }
     }
@@ -1216,8 +1188,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // requests carry the HitEffect cues (the bubble's int-4 style-3, the
     // spheres' Item10) ahead of each hit/voice cue — the shared
     // dispatcher keeps the C#'s per-strike order and case maths.
-    for req in app.projectiles.drain_npc_hit_sounds() {
-        crate::world_sim::npcs::play_npc_sound_request(&mut app.audio, req, rng);
+    for (cue, sx, sy) in app.projectiles.drain_npc_hit_sounds() {
+        app.audio.play_npc_hit_sound(cue, sx, sy, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
     }
     // W4-f32 — the projectile-side Lucky Coin proc's drops
     // (`Projectile.cs:13685-13697`): the six rolls (the Next(5) gate, the
@@ -1266,7 +1238,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // rides the id-2/3/4 façades (the Corrupt Whip ×0.6 / Lights Bane
         // `0.15*ai[0]`); the id-0 Dig sites all queue volume 1.
         if id == 0 {
-            app.audio.play_place_sound((0, 0), x, y, rng);
+            app.audio.play_place_sound((0, 0), x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 13 {
             // S1-E-21h d75 part 2 + d77 — the Shatter plays: case 13 draws
             // NOTHING (`LegacySoundPlayer.cs:783-792`), attenuation gate
@@ -1282,7 +1254,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // (`Projectile.cs:74517`, `PlaySound(6, pos)`): the wall-break
             // façade's int arm (`LegacySoundPlayer.cs:706-716`, one
             // `Next(-30, 31)` pitch), attenuation gate first.
-            app.audio.play_wall_break_sound((id, 1), x, y, rng);
+            app.audio.play_wall_break_sound((id, 1), x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 15 {
             // The yoyo-shot's rare roar (`:36821`, `PlaySound(15, …, 0,
             // 0.35f, jitter)`): case 15 draws nothing (the slot guard is the
@@ -1307,7 +1279,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // The C# sites truncate (`PlaySound(29, (int)X, (int)Y, …)`
             // `:31504`/`:72989`) — the drain-side truncation is the
             // faithful gate probe (the d75 part-6 receipt).
-            app.audio.play_fighter_moan(29, style, x.trunc(), y.trunc(), rng);
+            app.audio.play_fighter_moan(29, style, x.trunc(), y.trunc(), app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 3 && style == 29 {
             // S1-E-21h d75 part 4 — the 1054 SpiderBoulder's death cue
             // (`Projectile.cs:74865`, `PlaySound(SoundID.NPCHit29, x, y)`).
@@ -1317,7 +1289,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // `Next(-10, 11)` pitch rides this stream, gate first. Other
             // id-3 styles fall through (the façade's None — a future
             // style's route is its own lane's follow-up).
-            app.audio.play_npc_hit_sound("NPC_Hit_29", x, y, rng);
+            app.audio.play_npc_hit_sound("NPC_Hit_29", x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 4 && style == -6 {
             // S1-E-21h d75 part 4 + d77 compose — the 1055 Ghoulder's death
             // cue (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
@@ -1328,7 +1300,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // the d75 part-6 receipt): the payload alone cannot tell the
             // style call from d77's kill-tail int `(4, 6)` — the sentinel
             // keeps BOTH overload paths live.
-            app.audio.play_npc_death_style(6, x, y, rng);
+            app.audio.play_npc_death_style(6, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 4 {
             // S1-E-21h d77 — the kill-tail death cries: the Sharknado bolt
             // (`Projectile.cs:73763`, `PlaySound(4, Center, 19)`), the
@@ -1336,14 +1308,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // (`:72571`, style 7): the int-overload case-4 façade (one
             // `Next(-10, 11)` pitch after the gate, the 10 playing guard,
             // NO GetRandomPitch).
-            app.audio.play_npc_death_int(style, x, y, rng);
+            app.audio.play_npc_death_int(style, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 37 {
             // S1-E-21h d75 part 4 — the 502 Meowmere star's bounce chime
             // (`Projectile.cs:18209`, `PlaySound(37, x, y, 5 + ai[0])`):
             // case 37's Next(57,59) slot pick + the Next(-40,41) pitch
             // ride this stream (the int overload — no GetRandomPitch),
             // the Style×0.05 volume scales inside the façade.
-            app.audio.play_star_chime(style, x, y, rng);
+            app.audio.play_star_chime(style, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 2 && style == -34 {
             // S1-E-21h d75 part 4 — the 1106 Foxparks flame's per-life cue
             // (`Projectile.cs:41369`, `PlaySound(SoundID.FoxparksFlame,
@@ -1352,15 +1324,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // +34 tuple stays Item34's (d76's Nebula Blaze latch, volume
             // 1.0). The by-name façade keeps the volume (the
             // play_chillet_sound precedent).
-            app.audio.play_foxparks_flame(x, y, rng);
+            app.audio.play_foxparks_flame(x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else if id == 18 {
             // W4-d1 retire — the falling-block forced placement's coin-pile
             // tail (`WorldGen.cs:60273-60278`: the legacy Coins 18, the int
             // overload — no draws, no pitch, `LegacySoundPlayer.cs:865-869`;
             // the `place_tile_sound` table's 330-333 arm).
-            app.audio.play_place_sound((18, 1), x, y, rng);
+            app.audio.play_place_sound((18, 1), x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, rng);
+            app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
             // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
             // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
             // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
@@ -1369,7 +1341,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // `play_use_sound_scaled`'s post-gate multiply
             // (`LegacySoundPlayer.cs:1411`).
             app.audio
-                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
+                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         }
     }
     // W4-e7 lane 23 — the Snapping Stone strike family's queued cues
@@ -1380,7 +1352,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // queue→drain convention. The case-2 draws defer to this tail (the
     // recorded ANALYSIS deviation); the particle dust draws ran inline.
     for sound in app.projectiles.drain_striking_sounds() {
-        crate::snapping_stone::play_striking_sound(&mut app.audio, sound, rng);
+        crate::snapping_stone::play_striking_sound(&mut app.audio, sound, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
+    }
     // W4-c15 — the explosion wall-walk's `KillWall_PlaySounds` plays
     // (`Projectile.ExplodeTiles`' 3×3 `WorldGen.KillWall`, `Projectile.cs:
     // 78745`): the four-arm table's draws ride the SAME `UpdateProjectiles`
@@ -1389,7 +1362,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // `Kill` after it (the C# draws mid-walk; the pass-tail batch convention,
     // ANALYSIS "The world-sounds wave" addendum).
     for (cue, x, y) in app.projectiles.drain_wall_break_sounds() {
-        app.audio.play_wall_break_sound(cue, x, y, rng);
+        app.audio.play_wall_break_sound(cue, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
     }
     // W4-d80 — the bomb-fuse tracked-sound intents (research/64 sites
     // 20/21): the ensure-play / stop the C# runs inline
@@ -1431,6 +1404,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             false,
             crate::app::RngKey::UpdateProjectiles,
         );
+    }
     // W4-f30 — the aiStyle-17 gravestone's landing (`Projectile.cs:25348-
     // 25364`): the placement + the epitaph sign + the Dig sound + the Kill.
     // The AI arm queued the intent (it cannot borrow the world mutably); the
@@ -1449,7 +1423,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
             // `SoundEngine.PlaySound(0, x*16, y*16)` (`:25357`) — the Dig cue,
             // the id-0 place façade (the wave-B precedent above).
-            app.audio.play_place_sound((0, 0), (tx * 16) as f32, (ty * 16) as f32, rng);
+            app.audio.play_place_sound((0, 0), (tx * 16) as f32, (ty * 16) as f32, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
             app.projectiles.kill_gravestone(slot);
             app.world_key = None;
         }
@@ -1496,6 +1470,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // The C#'s `this.ai[1] = NPC.NewNPC(...)` — the host-validity arm
         // (`Projectile.cs:32362-32381`) reads the index next tick.
         app.projectiles.set_ai1(slot, idx as f32);
+    }
     // W4-d11 DOC-SWEEP — the 584's catch `HealEffect`
     // (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
     // the HealLife combat text at the host's hitbox. The C# call sits
@@ -1617,7 +1592,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
     // drains at the pass tail, the S1-E-21c convention).
     for (style, x, y) in app.projectiles.drain_splashes() {
-        app.audio.play_splash_sound(style, x, y, rng);
+        app.audio.play_splash_sound(style, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
     }
     // W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
     // (`Projectile.cs:18605-18608`, the type-155 movement arm): the C#
@@ -1661,10 +1636,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if app.items.len() > 300 {
             app.items.remove(0);
         }
+    }
     // W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
     // 20801`): `HandleSpecialEvent(19)` → GO_LAVA_FISHING's "Do".
     if app.projectiles.drain_lava_fishing_achievement() {
         let _ = app.achievements.complete_condition("GO_LAVA_FISHING", "Do");
+    }
     // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`)
     // + W4-d53 batch 4's wet-machine edge plays (`:16871`/`:16885`/`:16898`/
     // `:16912` entry, `:16953`/`:16967`/`:16980`/`:16994` exit — shimmer
@@ -1677,7 +1654,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // order — the recorded queue→drain deviation family (ANALYSIS batch 4;
     // the per-tick draw COUNT is identical, the interleaving is not).
     for (style, x, y) in app.projectiles.drain_splashes() {
-        app.audio.play_splash_sound(style, x, y, rng);
+        app.audio.play_splash_sound(style, x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
     }
     // W4-d53 — the tick's `Dust.NewDust` bursts (`Projectile.cs:16700-16703`
     // enchantment visuals, `:17036-17077` the arrow trail, `:17117-17125` the
@@ -1737,6 +1714,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Item.NewItem`'s velocity/prefix draws ride the `UpdateItems`
     // stream — the `drain_catches` convention).
     for (item, x, y) in app.projectiles.drain_block_drops() {
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            1,
+            glam::Vec2::new(x, y),
+        );
+    }
     // W4-d16 — the paper airplane's `Kill()` recovery drop
     // (`Projectile.cs:76083-76095` → `Item.RequestNewItem`): the world sim
     // spawns the item at the plane's centre on the `UpdateItems` stream
@@ -1748,8 +1733,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.rngs.stream(crate::app::RngKey::UpdateItems),
             item,
             1,
-            glam::Vec2::new(x, y),
+            glam::Vec2::new(cx, cy),
         );
+    }
     // W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
     // rope-coil refund ladder, `:77620-77623` the beach ball's return): the
     // pool's death hook queued `(item, stack, base.Center, zero_velocity)`;
@@ -1785,9 +1771,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         let half = crate::item::SIZE * 0.5;
         let drop = crate::item::ItemDrop::new(
             item,
-            1,
-            glam::Vec2::new(x, y),
+            stack as u32,
+            0,
+            cx - half,
+            cy - half,
+            vx,
+            vy,
+            0.0,
         );
+        app.items.push(drop);
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
     }
     // W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
     // (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
@@ -1800,7 +1795,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .map(|i| i as u16)
             .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0))
         {
-            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+            crate::world_sim::items::spawn_item_drop(&mut app.items, app.rngs.stream(crate::app::RngKey::UpdateProjectiles), id, 1, drop.x, drop.y);
         }
     }
     // W4-d6 residual — the Spectre-heal orb spawns (`Projectile.ghostHeal`,
@@ -1885,8 +1880,6 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             &ctx,
             &app.world,
         );
-            glam::Vec2::new(cx, cy),
-        );
     }
     // W4-d20 — the aiStyle-192 jumino's completion gift (`AI_192_JuminoAnimation`
     // `Projectile.cs:41632-41637`): `Item.NewItem(EntitySource_Gift, Center +
@@ -1901,9 +1894,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if owner != app.local_id as u8 {
             continue;
         }
-        let _ = rng.next_float();
-        let _ = rng.next_float();
-        let _ = rng.next_float();
+        let _ = app.rngs.stream(crate::app::RngKey::UpdateProjectiles).next_float();
+        let _ = app.rngs.stream(crate::app::RngKey::UpdateProjectiles).next_float();
+        let _ = app.rngs.stream(crate::app::RngKey::UpdateProjectiles).next_float();
         app.items.push(crate::item::ItemDrop::new(
             item,
             1,
@@ -1973,7 +1966,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 }
                 // The §8.2 echoes: SP discards (the netMode-0 return).
                 for (n, x, y, d) in app.wiring.take_door_echoes() {
-                    app.send_door_toggle(n, x, y, d);
+                    app.send_door_toggle(n as u8, x, y, d);
                 }
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
@@ -2032,7 +2025,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 }
                 // The §8.2 echoes: SP discards (the netMode-0 return).
                 for (n, x, y, d) in app.wiring.take_door_echoes() {
-                    app.send_door_toggle(n, x, y, d);
+                    app.send_door_toggle(n as u8, x, y, d);
                 }
             }
             crate::projectile_ai_golf::GolfEffect::PlayerWrites {
@@ -2153,6 +2146,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             w,
             h,
             obj_type,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
         if let Some((item, tx, ty)) = outcome.dropped {
             crate::world_sim::items::spawn_item_drop_fields(
@@ -2173,6 +2167,88 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             );
         }
     }
+    // S1-W4-g81 residuals — the Wire Kite's owner writes
+    // (`Projectile.cs:35825-35832`), drained after the walk (the golf
+    // `PlayerWrites` shape): ChangeDir(Sign(velocity.X)), heldProj,
+    // SetDummyItemTime(2), itemRotation = 0, and the right-click kill's
+    // Main.blockMouse.
+    for (slot, tick) in app.projectiles.drain_kite_ticks() {
+        if let Some(p) = app.player.as_mut() {
+            if let Some(dir) = tick.facing {
+                p.facing = dir;
+            }
+            if tick.held_proj {
+                p.held_proj = slot as i32;
+            }
+            if tick.zero_item_rotation {
+                p.item_rotation = 0.0;
+            }
+        }
+        if let Some(frames) = tick.dummy_item_time {
+            // `SetDummyItemTime(2)` — the swing/item timers re-arm to 2
+            // ticks so the held kite never starts a new use (the spear
+            // hold's write-back precedent).
+            app.swing = frames as f32 / 60.0;
+            app.item_time = frames as f32 / 60.0;
+        }
+        if tick.block_mouse {
+            app.block_mouse = true;
+        }
+    }
+    // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067` →
+    // `Wiring.MassWireOperation`): the DIRECT DRAIN (f11 research/133
+    // §8.4b, executed at the batch-H c42×g81 compose per research/382 §4).
+    // RAW ToolMode (`Wiring.cs:3241` — the kite does NOT strip the Actuator
+    // bit; that mask is the 3625 arm's, `Player.cs:46908`), no cooldown
+    // gate (the Kill hook has none), `RngKey::UpdateProjectiles` (the
+    // Kill's stage, `Main.cs:17775`). The owner gate already ran at the
+    // queue site (`kill_mass_wire_op`'s `p.owner != 0` refusal — the SP
+    // `owner == local_id` fold, g81's 2-tuple shape). ONE drain shape:
+    // at the d13 union this seam dedupes to d13's 5-tuple pool shape
+    // (research/382 §3 — d13's pool seam is the keep-one; the apply call
+    // here is the same c42 fn either way).
+    for (ps, pe) in app.projectiles.drain_mass_wire_ops() {
+        crate::world_sim::wiring::mass_wire_operation(
+            app,
+            ps,
+            pe,
+            app.wire_tool_mode,
+            crate::app::RngKey::UpdateProjectiles,
+        );
+    // W4-e4 — the orchestra request drain (`ParticleOrchestrator.
+    // RequestParticleSpawn` → `SpawnParticlesDirect`,
+    // `ParticleOrchestrator.cs:52-59`/`:162`): the damage/death/tag arms
+    // queued `(kind byte, settings)` this tick; the emitter bodies run
+    // here on the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the
+    // S1-E-21c queue→drain convention (the pool cannot borrow the App's
+    // dust pool mid-walk). The settings' argument draws were consumed
+    // inline at the queue sites; only the emitter internals roll here.
+    // The spawn ctx is the pass-moment one (the cull/pressure gates read
+    // the live camera + quality cap, `App::spawn_ctx`).
+    let orchestra = app.projectiles.drain_orchestra();
+    if !orchestra.is_empty() {
+        let ctx = app.spawn_ctx();
+        let disco = app.disco;
+        let players = [app.player.as_ref()];
+        // `&mut frame_rng` and `&world` overlap; snapshot like the
+        // editing.rs `genRand` sites, then write the advanced state back.
+        let mut gen_rng = app.world.frame_rng.clone();
+        for (kind, settings) in orchestra {
+            crate::orchestrator_dust::spawn_orchestra(
+                kind,
+                &settings,
+                app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                &mut gen_rng,
+                disco,
+                &mut app.dust,
+                &ctx,
+                &app.world,
+                &players[..],
+            );
+        }
+        app.world.frame_rng = gen_rng;
+    }
+}
 }
 
 /// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
@@ -2356,83 +2432,6 @@ mod w4_d4_death_drop_tests {
                 key.name()
             );
         }
-    // S1-W4-g81 residuals — the Wire Kite's owner writes
-    // (`Projectile.cs:35825-35832`), drained after the walk (the golf
-    // `PlayerWrites` shape): ChangeDir(Sign(velocity.X)), heldProj,
-    // SetDummyItemTime(2), itemRotation = 0, and the right-click kill's
-    // Main.blockMouse.
-    for (slot, tick) in app.projectiles.drain_kite_ticks() {
-        if let Some(p) = app.player.as_mut() {
-            if let Some(dir) = tick.facing {
-                p.facing = dir;
-            }
-            if tick.held_proj {
-                p.held_proj = slot as i32;
-            }
-            if tick.zero_item_rotation {
-                p.item_rotation = 0.0;
-            }
-        }
-        if let Some(frames) = tick.dummy_item_time {
-            // `SetDummyItemTime(2)` — the swing/item timers re-arm to 2
-            // ticks so the held kite never starts a new use (the spear
-            // hold's write-back precedent).
-            app.swing = frames as f32 / 60.0;
-            app.item_time = frames as f32 / 60.0;
-        }
-        if tick.block_mouse {
-            app.block_mouse = true;
-        }
-    }
-    // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067` →
-    // `Wiring.MassWireOperation`): the DIRECT DRAIN (f11 research/133
-    // §8.4b, executed at the batch-H c42×g81 compose per research/382 §4).
-    // RAW ToolMode (`Wiring.cs:3241` — the kite does NOT strip the Actuator
-    // bit; that mask is the 3625 arm's, `Player.cs:46908`), no cooldown
-    // gate (the Kill hook has none), `RngKey::UpdateProjectiles` (the
-    // Kill's stage, `Main.cs:17775`). The owner gate already ran at the
-    // queue site (`kill_mass_wire_op`'s `p.owner != 0` refusal — the SP
-    // `owner == local_id` fold, g81's 2-tuple shape). ONE drain shape:
-    // at the d13 union this seam dedupes to d13's 5-tuple pool shape
-    // (research/382 §3 — d13's pool seam is the keep-one; the apply call
-    // here is the same c42 fn either way).
-    for (ps, pe) in app.projectiles.drain_mass_wire_ops() {
-        crate::world_sim::wiring::mass_wire_operation(
-            app,
-            ps,
-            pe,
-            app.wire_tool_mode,
-            crate::app::RngKey::UpdateProjectiles,
-        );
-    // W4-e4 — the orchestra request drain (`ParticleOrchestrator.
-    // RequestParticleSpawn` → `SpawnParticlesDirect`,
-    // `ParticleOrchestrator.cs:52-59`/`:162`): the damage/death/tag arms
-    // queued `(kind byte, settings)` this tick; the emitter bodies run
-    // here on the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the
-    // S1-E-21c queue→drain convention (the pool cannot borrow the App's
-    // dust pool mid-walk). The settings' argument draws were consumed
-    // inline at the queue sites; only the emitter internals roll here.
-    // The spawn ctx is the pass-moment one (the cull/pressure gates read
-    // the live camera + quality cap, `App::spawn_ctx`).
-    let orchestra = app.projectiles.drain_orchestra();
-    if !orchestra.is_empty() {
-        let ctx = app.spawn_ctx();
-        let disco = app.disco;
-        let players = [app.player.as_ref()];
-        let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
-        for (kind, settings) in orchestra {
-            crate::orchestrator_dust::spawn_orchestra(
-                kind,
-                &settings,
-                rng,
-                &mut app.world.frame_rng,
-                disco,
-                &mut app.dust,
-                &ctx,
-                &app.world,
-                &players,
-            );
-        }
     }
 }
 
@@ -2576,6 +2575,17 @@ mod s1_e_21h_sound_stream_tests {
             .projectiles
             .spawn_with_data_ai_owned(
                 EYE_OF_CTHULHU_DASH,
+                0,
+                32.0,
+                32.0,
+                0.0,
+                0.0,
+                10,
+                4.0,
+                0.0,
+                0.0,
+            )
+            .expect("a free slot");
     /// S1-E-21h f1 — the `Kill()` death cue's stream contract: a shot that
     /// dies this pass queues its death cue, and the case-2 pitch draw rides
     /// the `UpdateProjectiles` stream ONLY when audible. The Jester's Arrow
@@ -2600,22 +2610,6 @@ mod s1_e_21h_sound_stream_tests {
                 0.0,
             )
             .expect("a free slot");
-        app.projectiles.slots_mut()[slot].w = 8.0;
-        app.projectiles.slots_mut()[slot].h = 8.0;
-        update_projectiles(&mut app, 1.0 / 60.0);
-        let mut witness = UnifiedRandom::new(0);
-        if witness.next_range(0, 100) == 0 {
-            let _ = witness.next_range(0, 6);
-            let _ = witness.next_float();
-            // The roar drain draws nothing.
-        } else {
-            let _ = witness.next_range(-6, 7);
-        }
-        assert_eq!(
-            *app.rngs.stream(RngKey::UpdateProjectiles),
-            witness,
-            "the first sub-step's roll + the intent's drain draw"
-            );
             // Force the lifetime kill on tick 1 (the death hook fires).
             let slot = app
                 .projectiles
@@ -2624,6 +2618,8 @@ mod s1_e_21h_sound_stream_tests {
                 .position(|p| p.active && p.kind == JESTERS_ARROW)
                 .expect("the arrow lives");
             app.projectiles.slots_mut()[slot].time_left = 1;
+            app.projectiles.slots_mut()[slot].w = 8.0;
+            app.projectiles.slots_mut()[slot].h = 8.0;
             app
         }
         // Muted: the death cue queues but the drain's gate refuses before
@@ -2685,8 +2681,10 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0, 1.0));
         // The death fired once: the second tick draws nothing further.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let witness = app.rngs.stream(RngKey::UpdateProjectiles).clone();
         update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(
             *app.rngs.stream(RngKey::UpdateProjectiles),
@@ -2753,7 +2751,7 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0, 1.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         for key in RngKey::ALL {
             assert_eq!(
@@ -2773,7 +2771,7 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((2, -34, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((2, -34, 32.0, 32.0, 0.0, 1.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         let mut witness = UnifiedRandom::new(0);
         let _ = witness.next_range(-6, 7);
@@ -2805,7 +2803,7 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((3, 29, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((3, 29, 32.0, 32.0, 0.0, 1.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         let mut witness = UnifiedRandom::new(0);
         let _ = witness.next_range(-10, 11);
@@ -2825,7 +2823,7 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((4, 6, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((4, 6, 32.0, 32.0, 0.0, 1.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         let mut witness = UnifiedRandom::new(0);
         let _ = witness.next_range(-10, 11);
@@ -2846,7 +2844,7 @@ mod s1_e_21h_sound_stream_tests {
             .position(|p| p.active)
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
-        app.projectiles.slots_mut()[slot].wants_sound = Some((37, 6, 32.0, 32.0, 0.0));
+        app.projectiles.slots_mut()[slot].wants_sound = Some((37, 6, 32.0, 32.0, 0.0, 1.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         let mut witness = UnifiedRandom::new(0);
         let _ = witness.next_range(57, 59);
@@ -2857,6 +2855,7 @@ mod s1_e_21h_sound_stream_tests {
             "case 37: slot pick then pitch, two draws"
         );
     }
+}
 }
 
 #[cfg(test)]
@@ -3428,7 +3427,6 @@ mod s1_p_i09_yoyo_snapshot_tests {
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
-})
 
 /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn drain
 /// (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through
@@ -3446,7 +3444,7 @@ mod w4_d9_ritual_spawn_drain_tests {
     /// fixture world, with a live cultist host at NPC index 0. The
     /// 300-tick spawn request is seeded directly (the AI arm's own
     /// witness pins the 300-tick gate; this pins the DRAIN).
-    fn ritual_app() -> App {
+    pub(super) fn ritual_app() -> App {
         let mut app = flow_app(None, vec![], vec![]);
         let mut host = crate::npc::Npc::new(crate::npc::NpcKind::AncientCultist, 10.0, 10.0, 1, 0.0);
         host.hp = host.max_hp;
@@ -3455,6 +3453,10 @@ mod w4_d9_ritual_spawn_drain_tests {
             .spawn_hostile_ai(CULTIST_RITUAL, Vec2::new(40.0, 40.0), Vec2::ZERO, 0, 0.0, 0.0, 0.0)
             .expect("the 490 row spawns");
         app.projectiles.slots_mut()[slot].wants_ritual_npc_spawn = Some((454, 60.0, 80.0));
+        app
+    }
+
+}
 
 /// W4-f49 MANA FINAL item 3 — the Last Prism flower-lane FINAL witness
 /// coverage: the end-to-end pass-tail (the one link the pool-side and
@@ -3468,14 +3470,15 @@ mod w4_d9_ritual_spawn_drain_tests {
 #[cfg(test)]
 mod w4_f49_prism_flower_pass_tests {
     use super::*;
+    use super::w4_d9_ritual_spawn_drain_tests::ritual_app;
     use crate::app::flow::front_flow_tests::flow_app;
-    use crate::projectile::LAST_PRISM;
+    use crate::projectile::{CULTIST_RITUAL, LAST_PRISM};
 
     /// A mid-channel player on the Last Prism row (item 3541, mana 12),
     /// the holder parked so the FIRST pass tick is an interval tick
     /// (ai[0] 29 → 30, `30 % 30 == 0`), a Lesser Mana Potion in slot 0,
     /// the flower armed, the SILENT listener (the drink is draw-free).
-    fn prism_flower_app(mana: i32, flower: bool) -> App {
+    pub(super) fn prism_flower_app(mana: i32, flower: bool) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         let mut p = crate::player::Player::spawn(&app.world);
         p.x = 54.0;
@@ -3541,18 +3544,27 @@ mod w4_f49_prism_flower_pass_tests {
             .expect("the 521 resolved through kind_from_net_id");
         assert_eq!((squid.x, squid.y), (30.0, 20.0));
         assert_eq!(squid.hp, 2000, "the squidhead's lifeMax");
+    }
+}
 
-        }
-        }/// W4-f32 — the projectile-side Lucky Coin proc's pass-tail drain
+/// W4-f32 — the projectile-side Lucky Coin proc's pass-tail drain
 /// (`Projectile.cs:13685-13697` → `drain_lucky_coin_drops`). WRITTEN NOT RUN
 /// (code-only mode). The six rolls ride the `UpdateProjectiles` stream
 /// inline mid-walk; the drain spawns the `ItemDrop` (stack 1, prefix 0, the
 /// explicit velocity) and draws NOTHING — the `UpdateItems` stream stays
 /// pristine (the explicit velocity skips `Item.NewItem`'s spread draws,
 /// `Item.cs:49738-49740`).
+#[cfg(test)]
 mod f32_lucky_coin_drain_tests {
+    use super::*;
+    use super::w4_f49_prism_flower_pass_tests::prism_flower_app;
+    use crate::app::flow::front_flow_tests::flow_app;
     use crate::app::RngKey;
+    use crate::projectile::LAST_PRISM;
+
+    #[test]
     fn f32_the_lucky_coin_drain_spawns_the_drop_draw_free() {
+        let mut app = flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
         // A pre-rolled proc intent (the pool's mid-walk rolls are pinned by
         // `f32_lucky_coin_proj_tests`): silver 72 at (60, 40), vx 4, vy -2.
@@ -3576,6 +3588,9 @@ mod f32_lucky_coin_drain_tests {
         );
         // The queue emptied (a second tick spawns nothing new).
         assert_eq!(app.items.len(), 1, "the drain consumed the intent");
+    }
+
+    #[test]
     fn w4_f49_the_prism_flower_drink_drains_end_to_end_through_the_pass() {
         // Short bar (5 < 12) + flower: the pool pay drains to 0 and arms
         // the slow cast; the intent rides the slot; the pass-tail drink
@@ -3620,6 +3635,8 @@ mod f32_lucky_coin_drain_tests {
         assert_eq!(p.mana, 0, "the plain V2 empty arm");
         assert!(p.slow_magic_use);
         assert_eq!(app.inventory[0].count, 2, "no flower, no drink");
+    }
+}
 
 /// W4-d15 seam witnesses — the DD2 write drain (`take_dd2_writes`, the
 /// `AI_142` arm's `player.heldProj = whoAmI` `Projectile.cs:69822` +

@@ -34,7 +34,7 @@
 
 use crate::npc::{Npc, NpcKind};
 use crate::player::{Player, HEIGHT, WIDTH};
-use crate::projectile::ProjectilePool;
+use crate::projectile::{PROJ_COUNT, ProjectilePool};
 use tr_core::loot::DropRng;
 
 /// The `BuffHandle_SpawnPetIfNeededAndSetTime` rows

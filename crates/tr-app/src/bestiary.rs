@@ -1,5 +1,3 @@
-{
-// balance-open (union shared delimiter)
 // MERGE canary (d43 retire): fn w4_d43_the_owl_mimic_folds_its_credit_and_takes_no_grid_slot (the Owl/OwlMimic fold is in entry_for_npc).
 //! The bestiary entry catalog — the port's NPC family as the
 //! `BestiaryDatabase`'s rows (`BestiaryDatabaseNPCsPopulator.cs` builds one
@@ -2717,17 +2715,106 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef { credit_id: "HellArmoredBonesMace", net_id: 279, kind: NpcKind::HellArmoredBonesMace, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     BestiaryEntryDef { credit_id: "HellArmoredBonesSword", net_id: 280, kind: NpcKind::HellArmoredBonesSword, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "BlackDragonfly",
+        net_id: 595,
         kind: NpcKind::BlackDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueDragonfly",
+        net_id: 596,
         kind: NpcKind::BlueDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GreenDragonfly",
+        net_id: 597,
         kind: NpcKind::GreenDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "OrangeDragonfly",
+        net_id: 598,
         kind: NpcKind::OrangeDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDragonfly",
+        net_id: 599,
         kind: NpcKind::RedDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    // The Yellow 600 is Hide=true too (`NPCID.cs:538-543`) — its credit
+    // folds onto 599; the Gold 601 keeps its OWN visible card
+    // ("Gold Dragonfly", `NPCs.json:639` — no Hide row, no
+    // `ContentSamples` fold, the GoldLadyBug precedent).
+    BestiaryEntryDef {
+        credit_id: "YellowDragonfly",
+        net_id: 600,
         kind: NpcKind::YellowDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldDragonfly",
+        net_id: 601,
         kind: NpcKind::GoldDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Dragonfly",
+    },
+    // The fairy critters + the windy balloon (W4-d33 wiring): all four
+    // are VISIBLE cards — the `NPCID.cs:5148-5169` fairy draw modifiers
+    // only shift Position/Direction (no Hide), the balloon's
+    // `:5232-5239` row sets a CustomTexturePath + Scale 0.8 (no Hide);
+    // no `ContentSamples` credit fold. The names ride
+    // `Lang.GetNPCName` (en-US NPCs.json: "Pink Fairy" / "Green Fairy"
+    // / "Blue Fairy" / "Windy Balloon"). d42 batch-2/3's rows,
+    // constants-copy (keep-one d37c-E3).
+    BestiaryEntryDef {
+        credit_id: "FairyCritterPink",
+        net_id: 583,
         kind: NpcKind::FairyCritterPink,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterGreen",
+        net_id: 584,
         kind: NpcKind::FairyCritterGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterBlue",
+        net_id: 585,
         kind: NpcKind::FairyCritterBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WindyBalloon",
+        net_id: 594,
         kind: NpcKind::WindyBalloon,
+        variant: None,
+        quick_unlock: false,
+        name: "Windy Balloon",
+    },
     BestiaryEntryDef {
         credit_id: "CultistTablet",
         net_id: 437,
@@ -3013,6 +3100,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Crimson Mimic",
     },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "Lavafly",
+        net_id: 654,
+        kind: NpcKind::Lavafly,
+        variant: None,
+        quick_unlock: false,
         name: "Lavafly",
     },
     // The snail wall-crawler family + its shimmer target (W4-c9): the
@@ -3037,9 +3130,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Jungle Mimic",
     },
     BestiaryEntryDef {
-        credit_id: "MagmaSnail",
-        net_id: 655,
-        kind: NpcKind::MagmaSnail,
         credit_id: "Mothron",
         net_id: 477,
         kind: NpcKind::Mothron,
@@ -3097,15 +3187,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Granite Golem",
     },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
-    BestiaryEntryDef {
-        credit_id: "GraniteFlyer",
-        net_id: 483,
-        kind: NpcKind::GraniteFlyer,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Mouse",
-        name: "Shimmerfly",
-    },
     // W4-c8 — the crawling-critter family's own entries (the populator
     // registers them all; `NPCID.Search.GetName` credits, the en-US
     // NPCs.json display names). The digger 375 is Hide=true
@@ -3118,6 +3199,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
     // Seagull2 "Seagull", Grebe2 "Grebe"
     // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "GraniteFlyer",
+        net_id: 483,
+        kind: NpcKind::GraniteFlyer,
+        variant: None,
+        quick_unlock: false,
         name: "Granite Elemental",
     },
     // W4-c10 merge: the gold entries RESTORED (the c8/c9 merges dropped
@@ -3132,9 +3219,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Gold Bird",
     },
     BestiaryEntryDef {
-        credit_id: "Duck2",
-        net_id: 363,
-        kind: NpcKind::Duck2,
         credit_id: "GoldBunny",
         net_id: 443,
         kind: NpcKind::GoldBunny,
@@ -3143,9 +3227,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Gold Bunny",
     },
     BestiaryEntryDef {
-        credit_id: "DuckWhite",
-        net_id: 364,
-        kind: NpcKind::DuckWhite,
         credit_id: "GoldFrog",
         net_id: 445,
         kind: NpcKind::GoldFrog,
@@ -3183,7 +3264,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Grubby,
         variant: None,
         quick_unlock: false,
-        name: "Worm",
         name: "Grubby",
     },
     BestiaryEntryDef {
@@ -3607,8 +3687,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Corruptor,
         variant: None,
         quick_unlock: false,
-        name: "Etherian Lightning Bug",
-        name: "Maggot",
+        name: "Corruptor",
     },
     // The gold critters (W4-c9): the populator registers each
     // (`BestiaryDatabaseNPCsPopulator.cs`'s
@@ -3622,7 +3701,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Gold Bird",
-        name: "Corruptor",
     },
     BestiaryEntryDef {
         credit_id: "DiggerHead",
@@ -3810,14 +3888,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Maggot",
     },
-];
-
-/// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
-/// (`CommonEnemyUICollectionInfoProvider.cs:39-46`): the entry's current
-/// unlock tier from the kill tracker. The CRITTER entries never read
-/// this — [`unlock_state_world`] dispatches them to the sight providers
-/// (the W4-c8 sweep census).
-    // [merge-P] duplicate fn unlock_state removed (same-scope duplicate; longest implementation kept)
     // The man-eater family (W4-d23, aiStyle 13): the six wired kinds' own
     // entries — the populator registers all six by id (the normal-enemy
     // kill ladder, no quick-unlock).
@@ -4251,14 +4321,6 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
     let full = tr_core::bestiary::kills_needed_for(entry.net_id);
     get_unlock_state_by_kill_count(
         kills.get_kill_count(entry.credit_id),
-/// The entry's current unlock tier — its `UIInfoProvider`'s
-/// `GetEntryUICollectionInfo` (`BestiaryEntryUnlockState`). The provider
-/// is `bestiary_data::gate(entry.net_id)` (the populator's override walk,
-/// `BestiaryDatabaseNPCsPopulator.cs:649-730`); the three trackers are the
-/// world's `BestiaryUnlocksTracker` (`Main.BestiaryTracker`).
-pub fn unlock_state(entry: &BestiaryEntryDef, tracker: &WorldBestiary) -> UnlockState {
-    eval_gate(
-        crate::bestiary_data::gate(entry.net_id),
         entry.quick_unlock,
         full,
     )
@@ -4430,8 +4492,6 @@ pub fn unlock_state_world(entry: &BestiaryEntryDef, bestiary: &WorldBestiary) ->
 /// sight-aware dispatch (the critter entries unlock on proximity, not
 /// kills).
 pub fn completion_percent(kills: &KillTracker) -> f32 {
-/// (`Chest.cs:3265`).
-pub fn completion_percent(tracker: &WorldBestiary) -> f32 {
     // `BestiaryUnlockProgressReport.CompletionPercent`
     // (`BestiaryUnlockProgressReport.cs:9-19`): 1 for an empty roster,
     // else the known share (`UIBestiaryTest.GetUnlockProgress`, `:497-513`,
@@ -5015,6 +5075,27 @@ pub fn completion_percent_gate(tracker: &WorldBestiary) -> f32 {
         .filter(|e| unlock_state_gate(e, tracker).known())
         .count();
     seen as f32 / ENTRIES.len() as f32
+}
+
+/// `Chest.BestiaryGirl_IsFairyTorchAvailable` (`Chest.cs:3544-3559`): the
+/// Zoologist's Fairy Glowstick 4776 head row needs ALL THREE Fairy Critter
+/// entries discovered — `DidDiscoverBestiaryEntry(585)` then `(584)` then
+/// `(583)` (`:3561-3564`: `UnlockState > NotKnownAtAll_0`). The fairy
+/// critters are `CountsAsACritter` (`NPC.cs:6887-6897` — lifeMax 5, damage
+/// 0, `NPC.cs:16583-16607`), so the automated populator registers them
+/// with the CRITTER provider (`BestiaryDatabaseNPCsPopulator.cs:851-860`)
+/// whose unlock reads the SIGHTS tracker, not kills
+/// (`CritterUICollectionInfoProvider.cs:15-21`:
+/// `Sights.GetWasNearbyBefore(creditId)` → tier 4, else 0). The port has
+/// no fairy-critter NPC kinds yet, so the three credit ids
+/// (`NPCID.cs:11843-11847` = the `NPCID.Search` names) read the sights set
+/// directly; the gate stays closed until the critter-sighting wiring
+/// lands (the recorded deviation — the vanilla AI_112 nearby check,
+/// `NPC.cs:48642-48646`, is unported).
+pub(crate) fn fairy_torch_available(bestiary: &tr_core::bestiary::WorldBestiary) -> bool {
+    ["FairyCritterBlue", "FairyCritterGreen", "FairyCritterPink"]
+        .iter()
+        .all(|id| bestiary.was_seen_near_player(id))
 }
 
 #[cfg(test)]
@@ -6199,4 +6280,5 @@ mod w4_c7_seal_tests {
         b.set_was_seen_directly("FairyCritterPink");
         assert!(fairy_torch_available(&b), "all three sighted");
     }
+}
 }

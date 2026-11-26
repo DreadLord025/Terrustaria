@@ -2253,8 +2253,14 @@ mod tests {
     /// is all-zero after the pre-render and every nonzero cell is the
     /// gross block's own write (the swipe passes fold to empty ranges).
     fn gross_engine() -> (World, LegacyLighting, [f32; 2], [f32; 2]) {
-        let (mut w, pos, size) = export_world();
+        // The export fixture's 200x150 world would put the camera rows inside
+        // the UNDERWORLD band (`:646`, `y > height - 200` — with 150 rows
+        // that is every y), and `apply_hell_light` would seed the whole
+        // working set before the gross block runs. A real world is far taller
+        // than 200 rows; the fixture grows to keep the camera outside hell.
+        let mut w = World::new("gross".into(), 200, 400);
         w.world_surface = 0.0;
+        let (pos, size) = ([1440.0, 840.0], [320.0, 240.0]);
         let mut engine = LegacyLighting::new(LightMode::White);
         engine.process_area(
             &w,

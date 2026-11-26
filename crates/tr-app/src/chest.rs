@@ -1602,6 +1602,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // `flag15` (`:33174`/`:33182`): whether the inventory scan unlocked
         // the chest — the void-bag fallback's gate (`:33200`).
         let mut unlocked_by_inventory = false;
+        let mut inventory_unlock_dust = false;
         for (slot, is_trash) in app
             .inventory
             .iter_mut()
@@ -1644,7 +1645,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             app.audio
                 .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
             // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
-            unlock_dust(app, ox, oy);
+            inventory_unlock_dust = true;
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -1659,6 +1660,11 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
             }
         }
+        if inventory_unlock_dust {
+            // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420),
+            // deferred past the inventory borrow.
+            unlock_dust(app, ox, oy);
+        }
         // `:33200-33221` — the void-bag fallback: no inventory key unlocked
         // the chest (`!flag15`) and the player carries the Void Bag 4131
         // (`useVoidBag`, `Player.cs:23171-23181` — the C# scans
@@ -1668,6 +1674,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // (`:33208`), the emptied slot turns to air, no trash mirror.
         if !unlocked_by_inventory && use_void_bag(app) {
             let downed_plant = app.world.downed_plant_boss;
+            let mut void_unlock_dust = false;
             let Some(p) = app.player.as_mut() else {
                 return true;
             };
@@ -1693,13 +1700,17 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 app.audio
                     .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
                 // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
-                unlock_dust(app, ox, oy);
+                void_unlock_dust = true;
                 if consumes {
                     slot.count -= 1; // `:33210-33214`
                     if slot.count == 0 {
                         *slot = EMPTY_SLOT;
                     }
                 }
+            }
+            if void_unlock_dust {
+                // Deferred past the bank borrow.
+                unlock_dust(app, ox, oy);
             }
         }
         if let Some(id) = unlocked_progression {
@@ -1787,7 +1798,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             }
             // The §8.2 echoes: SP discards (the netMode-0 return).
             for (n, x, y, d) in app.wiring.take_door_echoes() {
-                app.send_door_toggle(n, x, y, d);
+                app.send_door_toggle(n as u8, x, y, d);
             }
             app.send_hit_switch(x, y); // `:33256`
             app.world_key = None;
@@ -1888,9 +1899,6 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
 /// branch's return, `:24752`/:25290) — the `update_player` hook inherits
 /// that gating.
 pub(crate) fn tick_open(app: &mut App) {
-    let Some(p) = app.player.as_ref() else {
-        return;
-    };
     // W4-g56 — `HandleBeingInChestRange`'s void-lens arm
     // (`Player.cs:31051-31073`): the tracked lens's death/range close runs
     // AHEAD of the tile-range close below (the C# `flag` return at
@@ -1904,18 +1912,20 @@ pub(crate) fn tick_open(app: &mut App) {
         .player
         .as_ref()
         .is_some_and(|p| p.chest == -5 && p.void_lens_chest != crate::void_lens::LensTracker::default());
-    if p.chest != -1 && !tracked_open {
-        let (chest_x, chest_y) = (p.chest_x, p.chest_y);
-        // Both probes read the world only; the close below mutates the
-        // player after the borrow ends.
-        let in_range = in_interaction_range_to_multi_tile_hitbox(&app.world, p, chest_x, chest_y);
-        let origin_active = app.world.tile(chest_x, chest_y).is_some_and(|t| t.active());
-        // `:31078-31085` — the range close plays sound 11; `:31086-31090` —
-        // a dead tile force-closes too (the `Main.cs:41820-41823`
-        // stale-chest equivalent rides this check).
-        if !in_range || !origin_active {
-            let id = force_close(app);
-            play_menu_sound(app, id); // `:31080`/:31088 — `PlaySound(11)`
+    if let Some(p) = app.player.as_ref() {
+        if p.chest != -1 && !tracked_open {
+            let (chest_x, chest_y) = (p.chest_x, p.chest_y);
+            // Both probes read the world only; the close below mutates the
+            // player after the borrow ends.
+            let in_range = in_interaction_range_to_multi_tile_hitbox(&app.world, p, chest_x, chest_y);
+            let origin_active = app.world.tile(chest_x, chest_y).is_some_and(|t| t.active());
+            // `:31078-31085` — the range close plays sound 11; `:31086-31090` —
+            // a dead tile force-closes too (the `Main.cs:41820-41823`
+            // stale-chest equivalent rides this check).
+            if !in_range || !origin_active {
+                let id = force_close(app);
+                play_menu_sound(app, id); // `:31080`/:31088 — `PlaySound(11)`
+            }
         }
     }
     // W4-c28 SWAP: the close-transition `33` send is owned by the client

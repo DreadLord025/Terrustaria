@@ -908,7 +908,8 @@ mod tests {
         let i = w2.index(41, 41);
         w2.tiles[i] = crate::tile::Tile::default();
         // Clear the wall the first run wrote so the second run re-tests.
-        w2.tiles[w2.index(40, 40)].wall = 0;
+        let __bi = w2.index(40, 40);
+        w2.tiles[__bi].wall = 0;
         wood_tree_walls(&mut w2, 60.0);
         assert_eq!(w2.tile(40, 40).unwrap().wall, 0, "a missing corner refuses");
     }
@@ -924,7 +925,8 @@ mod tests {
         w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
         // The four corners carry wall 244 but no tiles.
         for (x, y) in [(39, 39), (41, 39), (39, 41), (41, 41)] {
-            w.tiles[w.index(x, y)].wall = WALL_LIVING_WOOD;
+            let __bi = w.index(x, y);
+            w.tiles[__bi].wall = WALL_LIVING_WOOD;
         }
         wood_tree_walls(&mut w, 60.0);
         assert_eq!(w.tile(40, 40).unwrap().wall, WALL_LIVING_WOOD);

@@ -840,6 +840,7 @@ impl TownEnvFlags {
             homeless,
             breath: 200, // `NPC.breath` unported — the stock full breath
             shimmering: false,
+            time_for_visual_effects: 0.0,
         }
     }
 }
@@ -941,10 +942,6 @@ pub struct TownOutputs {
     /// draws nothing and `TransformVisuals` is silent for the
     /// waterfowl pairs (the `npc_transform_visuals.rs` census).
     pub waterfowl_takeoff: Option<i32>,
-//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
-//!   is a cited skip (returns, draws shimmer dust — the dust task's);
-//! * the Old Man 37 / Clothier 54 / Santa 142 (`:53158-53161` +
-//!   the type arms), the Mechanic's owned-proj
     /// W4-f47 — the state-25 emergence visuals (`NPC.cs:53228-53248`),
     /// drained by the wiring onto the dust pool / entity lights (the
     /// module's RNG-free convention: the draws already rode `rng`).
@@ -5463,6 +5460,8 @@ mod tests {
         town_shimmer_state25(&mut n2, &e, &mut rng, &mut out2);
         assert_eq!(n2.variation_index, 0);
         assert!(!out2.shimmer_town_progression);
+    }
+
     // ---- W4-g90: the App town-tick feeder (WRITTEN NOT RUN, code-only) ----
 
     /// The feeder's flag set carries BOTH combat books off the live
@@ -5588,8 +5587,10 @@ mod tests {
             homeless: false,
             breath: 200,
             shimmering: false,
+            time_for_visual_effects: 0.0,
         };
-        let feeder = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
+        let feeder_flags = TownEnvFlags::from_world(&w, false);
+        let feeder = feeder_flags.env(&w, &[], &[], false);
         // The scalar census: every field EXCEPT combat_book_two agrees.
         assert_eq!(feeder.day_time, b3.day_time);
         assert_eq!(feeder.raining, b3.raining);
@@ -5644,8 +5645,10 @@ mod tests {
         w.combat_book_was_used = true;
         w.combat_book_volume_two_was_used = true;
         w.downed_eoc = true;
-        let feeder = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
-        let mut b3 = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
+        let feeder_flags = TownEnvFlags::from_world(&w, false);
+        let b3_flags = TownEnvFlags::from_world(&w, false);
+        let feeder = feeder_flags.env(&w, &[], &[], false);
+        let mut b3 = b3_flags.env(&w, &[], &[], false);
         b3.combat_book_two = false; // the b3 phase-1 fold
         let mut n_feed = guide(0.0, 0.0, None);
         let mut n_b3 = guide(0.0, 0.0, None);

@@ -53,12 +53,16 @@ fn solid_cave_walls(world: &World, x: i32, y: i32) -> bool {
     }
 }
 
-/// The baseline-wall adaptation (`spider_gem_moss.rs::has_real_wall`).
+/// The baseline-wall adaptation (`spider_gem_moss.rs::has_real_wall`): a
+/// real wall is a non-zero wall that is not one of the baseline terrain
+/// walls the port pre-lays (stone 1, dirt 2, sandstone 187, hardened 216).
+/// Wall 0 is NO wall — it must read as unwalled, exactly like the C#
+/// `tile.wall != 0` / `== 0` tests.
 fn has_real_wall(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
-    !BASELINE_WALLS.contains(&t.wall)
+    t.wall != 0 && !BASELINE_WALLS.contains(&t.wall)
 }
 
 /// `WorldGen.countTiles`/`nextCount` (`WorldGen.cs:9546-9635`) with the
@@ -151,10 +155,21 @@ fn spread_wall(world: &mut World, x: i32, y: i32, wall: u16) {
     }
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     let mut next: Vec<(i32, i32)> = vec![(x, y)];
+    // W4-d103: cap the visit budget - a pathological open region must
+    // not grow without bound (normal pockets are <1500 cells).
+    let mut visited = 0usize;
+    let visit_cap = 1_000_000usize;
     while !next.is_empty() {
         let mut list = std::mem::take(&mut next);
-        while !list.is_empty() {
-            let item = list.remove(0);
+        let mut list_idx = 0;
+        while list_idx < list.len() {
+            if visited >= visit_cap {
+                next.clear();
+                break;
+            }
+            visited += 1;
+            let item = list[list_idx];
+            list_idx += 1;
             let (px, py) = item;
             if px < 1 || py < 1 || px >= world.width - 1 || py >= world.height - 1 {
                 continue;
@@ -198,8 +213,10 @@ fn spread_wall2(world: &mut World, x: i32, y: i32, wall: u16) {
     let mut next: Vec<(i32, i32)> = vec![(x, y)];
     while !next.is_empty() {
         let mut list = std::mem::take(&mut next);
-        while !list.is_empty() {
-            let item = list.remove(0);
+        let mut list_idx = 0;
+        while list_idx < list.len() {
+            let item = list[list_idx];
+            list_idx += 1;
             let (px, py) = item;
             if px < 1 || py < 1 || px >= world.width - 1 || py >= world.height - 1 {
                 continue;
@@ -423,23 +440,35 @@ mod tests {
 
     #[test]
     fn spread_wall_paints_the_pocket_and_the_active_rim() {
+        // A REAL wall (not one of the port's baseline terrain walls) on the
+        // active rim cell protects it — the C# `tile.wall != 0` arm.
         let mut world = pocket_world();
+        let rim = world.index(9, 65);
+        world.tiles[rim].wall = 62;
         spread_wall(&mut world, 15, 65, 59);
         // The open cells take the wall.
         assert_eq!(world.tile(15, 65).unwrap().wall, 59);
-        // The active rim carries the baseline wall — it keeps it (the C#
-        // `tile.wall != 0` arm takes the wall only when active AND unwalled).
-        assert_eq!(world.tile(9, 65).unwrap().wall, 1, "the baseline rim keeps its wall");
-        // An active cell with NO wall takes the spread wall.
-        let u = world.index(30, 65);
-        world.tiles[u].wall = 0;
-        spread_wall(&mut world, 15, 65, 61);
-        assert_eq!(world.tiles[u].wall, 61, "the unwalled active cell takes it");
-        // A walled solid cell keeps its wall.
-        let i = world.index(31, 65);
-        world.tiles[i].wall = 1; // the baseline stone wall
-        spread_wall(&mut world, 15, 65, 61);
-        assert_eq!(world.tiles[i].wall, 1, "the baseline wall survives");
+        assert_eq!(world.tile(9, 65).unwrap().wall, 62, "the real wall keeps its wall");
+        // The port's baseline stone wall (1) stands in for the C# zero wall,
+        // so an active rim carrying only the baseline takes the spread wall
+        // (the documented adaptation, module header).
+        let mut world2 = pocket_world();
+        spread_wall(&mut world2, 15, 65, 59);
+        assert_eq!(world2.tile(9, 65).unwrap().wall, 59, "the baseline rim takes it");
+        // A fresh world for the wall-0 arm: a spread leaves every open cell
+        // paved with a REAL wall, so a second spread on the same world could
+        // not reach the rim (the wave stops at the first walled cell).
+        let mut world3 = pocket_world();
+        let u = world3.index(22, 65);
+        world3.tiles[u].wall = 0;
+        spread_wall(&mut world3, 15, 65, 61);
+        assert_eq!(world3.tiles[u].wall, 61, "the unwalled active cell takes it");
+        // A walled solid rim cell keeps its wall.
+        let mut world4 = pocket_world();
+        let i = world4.index(22, 65);
+        world4.tiles[i].wall = 62;
+        spread_wall(&mut world4, 15, 65, 61);
+        assert_eq!(world4.tiles[i].wall, 62, "the real wall survives");
     }
 
     #[test]

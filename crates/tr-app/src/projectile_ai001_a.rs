@@ -122,7 +122,13 @@ enum Rot {
 /// order, then the shared counter/gravity/rotation/clamp tail, then the
 /// movement stand-in. `owner` is the owner player's center (the pool's
 /// `Main.player[owner]` channel) — only the skull's homing reads it.
-pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+pub(crate) fn ai001_slice_a(
+    p: &mut Projectile,
+    world: &World,
+    owner: Option<(f32, f32)>,
+    npcs: &[Npc],
+    immune: &[i32],
+) {
     // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
     // precedent): the witnesses below run the flight on a scratch pool;
     // the live sim threads the real pool through [`ai001_slice_a_dust`].
@@ -139,7 +145,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         max_dust_to_draw: 6000,
     };
     let mut rng = tr_core::UnifiedRandom::new(0);
-    ai001_slice_a_dust(p, world, owner, &mut rng, &mut dust, &ctx);
+    ai001_slice_a_dust(p, world, owner, &mut rng, &mut dust, &ctx, npcs, immune);
 }
 
 /// W4-g63 — the full slice-A step with the caller's `UpdateProjectiles`
@@ -147,6 +153,9 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
 /// (`:56079-56087`) + per-tick trail (`:56678-56685`) and the 325 Flaming
 /// Wood's `alpha == 0` window (`:55172-55190`) are RE-ARMED at their C#
 /// statement positions. Every other kind's stream stays untouched.
+/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+/// in `finish` — the slice-A kinds are not arrows (the producer's `arrow`
+/// gate never charms them), so the tail is the two-bit no-op for them.
 pub(crate) fn ai001_slice_a_dust(
     p: &mut Projectile,
     world: &World,
@@ -154,10 +163,6 @@ pub(crate) fn ai001_slice_a_dust(
     rng: &mut dyn DropRng,
     dust: &mut tr_core::particles::DustPool,
     dust_ctx: &tr_core::particles::SpawnCtx,
-)/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
-/// in `finish` — the slice-A kinds are not arrows (the producer's `arrow`
-/// gate never charms them), so the tail is the two-bit no-op for them.
-pub(crate) fn ai001_slice_a(
     npcs: &[Npc],
     immune: &[i32],
 ) {
@@ -236,7 +241,7 @@ pub(crate) fn ai001_slice_a(
             }
             finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
-        SKULL => skull(p, world, owner),
+        SKULL => skull(p, world, owner, rng, dust, dust_ctx, npcs, immune),
         // W4-c3 — `Projectile.cs:56631-56656` — the Shadowflames bolt's
         // `localAI[0]` counter: at 6 the Item8 cast cue fires (the 40-dust
         // burst is the documented cosmetic skip), then the counter
@@ -248,13 +253,11 @@ pub(crate) fn ai001_slice_a(
             if p.local_ai[0] == 6.0 {
                 // `:56635` — `SoundEngine.PlaySound(SoundID.Item8,
                 // base.position)` (the S1-E-21h cue seam).
-                p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             p.local_ai[0] += 1.0;
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
-        SKULL => skull(p, world, owner, rng, dust, dust_ctx),
-        SKULL => skull(p, world, owner, npcs, immune),
         FLAMING_WOOD => {
             // `:55164-55196` — `alpha -= 100` clamp 0; the light plot
             // (`:55171`) stays skipped.
@@ -362,9 +365,9 @@ fn skull(
     rng: &mut dyn DropRng,
     dust: &mut tr_core::particles::DustPool,
     dust_ctx: &tr_core::particles::SpawnCtx,
+    npcs: &[Npc],
+    immune: &[i32],
 ) {
-
-        }fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>, npcs: &[Npc], immune: &[i32]) {
     // `:56058-56060` — `Player.FindClosest(Center, 1, 1)` then `ai[1]++`.
     // The port has one player: the owner center IS the closest player
     // (the pool's `Main.player[owner]` stand-in). No owner resolved →
@@ -587,7 +590,6 @@ mod tests {
             &mut rng,
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 
@@ -931,11 +933,11 @@ mod tests {
         for tick in 0..10 {
             p.wants_sound = None;
             let (px, py) = (p.pos.x, p.pos.y);
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
             if p.wants_sound.is_some() {
                 cues += 1;
                 assert_eq!(tick, 6, "the cue fires on the 7th tick (localAI[0] == 6)");
-                assert_eq!(p.wants_sound, Some((2, 8, px, py, 0.0)));
+                assert_eq!(p.wants_sound, Some((2, 8, px, py, 0.0, 1.0)));
             }
         }
         assert_eq!(cues, 1, "one Item8 cue per life (:56633-56635)");
@@ -991,7 +993,7 @@ mod tests {
         let w = world();
         let mut p = proj(SKULL, 10.0, 0.0);
         let (x0, y0) = (p.pos.x, p.pos.y);
-        ai001_slice_a(&mut p, &w, None);
+        ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.local_ai[0], 1.0, "the one-shot (`:56077`)");
         assert_eq!(
             p.wants_sound,
@@ -999,7 +1001,7 @@ mod tests {
             "Item8 at the play-time position"
         );
         p.wants_sound = None;
-        ai001_slice_a(&mut p, &w, None);
+        ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.wants_sound, None, "one cue per life");
     }
 }

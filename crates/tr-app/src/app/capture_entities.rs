@@ -30,8 +30,10 @@ pub(crate) struct CaptureEntities<'a> {
     pub items: &'a [crate::item::ItemDrop],
     pub projectiles: &'a crate::projectile::ProjectilePool,
     pub rain: &'a crate::rain::Rain,
-    pub gore: &'a tr_core::gore::GorePool,
-    pub dust: &'a mut tr_core::particles::DustPool,
+    // The gore pool lives on `CaptureWorld` (the W4-g68 `&mut` tile-pass
+    // channel); this view reads it through `cw.gore`.
+    // The dust pool lives on `CaptureWorld` (the tile pass's `&mut` orb
+    // channel); this view reads it through `cw.dust`.
     pub scene_state: &'a tr_core::scene::SceneState,
 }
 
@@ -86,6 +88,10 @@ pub(crate) fn draw_capture_mid_entities(
         crate::render::entities::draw_npcs(
             r, cw.npc_assets, ents.npcs, cw.light, cw.style, cw.anim_time,
             camera, 1.0, screen, true,
+            // No empress/party/glow context exists for the chunk render.
+            None,
+            None,
+            0.0,
         );
     });
 }
@@ -108,7 +114,7 @@ pub(crate) fn draw_capture_waterfalls(
 ) {
     let (x0, y0, x1, y1) = capture_view_rect(cw.world, camera, screen);
     cw.waterfall.find_waterfalls(cw.world, [x0, y0, x1, y1], true);
-    let lights = cw.waterfall.draw(
+    let (lights, _ambient_scan, _ambient_scan2) = cw.waterfall.draw(
         cw.world, cw.light, cw.style, cw.anim_time, liquid_alpha,
         // `Main.mouseTextColor` — the sparkle tint pulse; the capture keeps
         // the steady 255 (the port's frame path feeds the live value).
@@ -116,7 +122,12 @@ pub(crate) fn draw_capture_waterfalls(
         // The capture's sparkle seed is 0 (the chunk render pins no frame
         // count); the stream stays deterministic per chunk.
         0,
-        [x0, y0, x1, y1],
+        tr_core::waterfall::ScreenInfo {
+            position: [x0 as f32, y0 as f32],
+            width: (x1 - x0) as f32,
+            height: (y1 - y0) as f32,
+        },
+        false,
     );
     let quads = cw.waterfall.take_quads();
     renderer.begin_world_batch();
@@ -166,9 +177,15 @@ pub(crate) fn draw_capture_entity_tail(
         crate::render::entities::draw_npcs(
             r, cw.npc_assets, ents.npcs, cw.light, cw.style, cw.anim_time,
             camera, 1.0, screen, false,
+            // No empress/party/glow context exists for the chunk render.
+            None,
+            None,
+            0.0,
         );
         for it in ents.items {
-            it.draw(r, cw.lookups, cw.light, cw.style, cw.anim_time);
+            it.draw(
+                r, cw.lookups, cw.light, cw.style, cw.anim_time, cw.mouse_text_color,
+            );
         }
     });
     // The screen-space half: `DrawProjectiles` (`:57001`, the port's
@@ -190,15 +207,21 @@ pub(crate) fn draw_capture_entity_tail(
         p.draw_with_hand(
             renderer, cw.lookups, cw.light, camera, 1.0, screen, hand,
             cw.anim_time % 3600.0,
+            0.0,
+            (cw.anim_time as f64 * 60.0) % 216000.0,
         );
     }
-    ents.rain.draw(renderer, cw.lookups, cw.light, camera, 1.0, screen);
+    // The capture keeps the shimmer ramp at 0 (no aether pass in a chunk).
+    ents.rain
+        .draw(renderer, cw.lookups, cw.light, camera, 1.0, screen, 0.0);
     crate::render::gore::draw(
-        ents.gore, renderer, cw.lookups, cw.light, cw.style, cw.anim_time,
+        &*cw.gore, renderer, cw.lookups, cw.light, cw.style, cw.anim_time,
         camera, 1.0, screen,
     );
-    crate::sand::draw(ents.dust, renderer, cw.lookups, cw.light, camera, 1.0, screen);
-    crate::minecart::draw(ents.dust, renderer, cw.lookups, camera, 1.0, screen);
+    crate::sand::draw(&mut *cw.dust, renderer, cw.lookups, cw.light, camera, 1.0, screen);
+    crate::minecart::draw(
+        &mut *cw.dust, renderer, cw.lookups, cw.light, camera, 1.0, screen,
+    );
     render_screen_ranges(gpu, renderer, camera, fb, cw.anim_time);
     renderer.restore_back(parked_back);
 }

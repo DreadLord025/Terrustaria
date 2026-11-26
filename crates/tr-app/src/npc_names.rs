@@ -257,9 +257,9 @@ mod tests {
         with_english(|| {
             let mut guide = Npc::new(crate::npc::NpcKind::Guide, 0.0, 0.0, 1, 0.0);
             let mut main_rand = UnifiedRandom::new(7);
-            let mut gen = UnifiedRandom::new(7);
+            let mut rng = UnifiedRandom::new(7);
             let mut mirror = UnifiedRandom::new(7);
-            let variation = give_town_unique_data(&mut guide, &mut main_rand, &mut gen);
+            let variation = give_town_unique_data(&mut guide, &mut main_rand, &mut rng);
             assert_eq!(variation, 0, "the legacy profile rolls 0");
             // Two draws: the first is discarded (`:80844` then `:80848`).
             let count = crate::lang::category_size("GuideNames");
@@ -272,7 +272,7 @@ mod tests {
             // A non-town NPC is untouched (`isLikeATownNPC` false).
             let mut eye = Npc::new(crate::npc::NpcKind::DemonEye, 0.0, 0.0, 1, 0.0);
             let before = eye.given_name.clone();
-            give_town_unique_data(&mut eye, &mut main_rand, &mut gen);
+            give_town_unique_data(&mut eye, &mut main_rand, &mut rng);
             assert_eq!(eye.given_name, before);
         });
     }

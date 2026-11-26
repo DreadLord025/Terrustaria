@@ -55,8 +55,6 @@
 
 use glam::Vec2;
 
-use glam::Vec2;
-
 /// `Mount.MountData` frame-set triple (`Mount.cs:207-249`): start/count/delay
 /// (+ `idleFrameLoop` :237). A `count` of 0 means the set is unused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2919,6 +2917,8 @@ impl MountState {
                     {
                         self.frame = row.dashing.start + row.dashing.count - 1;
                     }
+                }
+            }
             _ => {
                 // `:4476-4505` — the dashing loop (W4-f6: the case-10/47
                 // extras re-route the running state to 5). The Scutlix (9)
@@ -3585,28 +3585,32 @@ impl MountState {
     // (`UseAbility` `Mount.cs:3254-3338` cases 9/46 + the aim/scan support;
     // research/371 §1). The fire itself lives on `Player`
     // (`update_mount_ability` — it needs the NPC list, the pool and the RNG).
-    /// `Mount._frameExtra` — the Scutlix aim band (6-10) the eye table reads;
-    /// `UpdateFrame`'s extra-frame animation also writes it (the ability aim
-    /// overwrites while aiming).
-    pub(crate) fn frame_extra(&self) -> i32 {
-        self.frame_extra
+
     /// `Mount._abilityCharging` — the scan's else-arm sets it (the charge
     /// fills via [`MountState::ability_recovery`]).
     pub(crate) fn ability_charging(&self) -> bool {
         self.ability_charging
+    }
+
     /// The scan's charge write (`Mount.cs:4939` sets true, `:4944` false) —
     /// the driver's else-arms.
     pub(crate) fn set_ability_charging(&mut self, value: bool) {
         self.ability_charging = value;
+    }
+
     /// `Mount._abilityCooldown` — the fire cadence gate (9: `== 0`;
     /// 46: `% 10 == 0`) and the gift window (`<= 10`).
     pub(crate) fn ability_cooldown(&self) -> i32 {
         self.ability_cooldown
+    }
+
     /// `Mount.AbilityCharge` (`Mount.cs:628`) — `charge / chargeMax` as f32;
     /// the AimAbility eye-glow reads it (the light lane's, dropped here).
     pub(crate) fn ability_charge_ratio(&self) -> f32 {
         self.data()
             .map_or(0.0, |d| self.ability_charge as f32 / d.ability_charge_max as f32)
+    }
+
     /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`): an aim INSIDE the
     /// mount's texture half-box pushes out to the box edge (the smaller
     /// axis ratio wins); anything outside passes through. The half-extents:
@@ -3623,6 +3627,7 @@ impl MountState {
             46 => (
                 SANTANK_TEXTURE_SIZE.x as i32 as f32,
                 SANTANK_TEXTURE_SIZE.y as i32 as f32,
+            ),
             _ => return position,
         };
         let mut pos = position - center;
@@ -3639,7 +3644,10 @@ impl MountState {
             } else {
                 pos *= num3;
             }
+        }
         pos + center
+    }
+
     /// `Mount.AimAbility` (`Mount.cs:5335-5465`) cases 9/46: face the clamped
     /// aim, fold the angle into the Scutlix `_frameExtra` band (6/7/8/9/10
     /// at the ±22.5/±67.5/±112.5 degree thresholds), and set `_flipDraw`
@@ -3672,6 +3680,7 @@ impl MountState {
                     new_facing = -1;
                     deg = 180.0 - deg;
                 } else if deg < -90.0 {
+                    new_facing = -1;
                     deg = -180.0 - deg;
                 } else {
                     new_facing = 1;
@@ -3698,13 +3707,18 @@ impl MountState {
                     } else if (deg as f64) > -112.5 {
                         self.frame_extra = 6;
                     }
+                }
                 // Case 46 keeps `_frameExtra` (`:5422-5464` — no band write).
                 let changed = if self.frame_extra == old_frame_extra {
                     new_facing != old_facing
+                } else {
                     true
                 };
                 (changed, new_facing)
+            }
             _ => (false, facing),
+        }
+    }
     /// `Mount.StopAbilityCharge` (`Mount.cs:2922-2931`): types 9/46 clear
     /// the charging flag and re-arm the row's cooldown + duration (the fire
     /// cadence restarts).
@@ -3718,23 +3732,11 @@ impl MountState {
         }
     }
 
-    /// `Mount.AbilityCharging` (`Mount.cs:624`) / `Mount.AbilityCharge`
-    /// (`:620`) — the crosshair's remote-owner gate (`Projectile.cs:30660`)
-    /// and the aim's eye-glow read (`Mount.cs:5394`).
-    pub(crate) fn ability_charging(&self) -> bool {
-        self.ability_charging
-    }
 
     pub(crate) fn ability_charge(&self) -> i32 {
         self.ability_charge
     }
 
-    /// `Mount._frameExtra` — the Scutlix head's aim frame (6/7/8/9/10, the
-    /// `AimAbility` buckets `Mount.cs:5367-5393`); the eye-position index
-    /// `(frameExtra - 6) * 2` reads it (`:3269`/`:5400`).
-    pub(crate) fn frame_extra(&self) -> i32 {
-        self.frame_extra
-    }
 
     /// The Scutlix eye offsets — `Mount.scutlixEyePositions`
     /// (`Mount.cs:1398-1421`): the ten raw pairs MINUS the 45×54 texture
@@ -3762,31 +3764,6 @@ impl MountState {
         out
     }
 
-    /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`) — the Scutlix (9) /
-    /// Drill (8) half: a cursor INSIDE the mount's texture box (±45×±54
-    /// for the Scutlix, `scutlixTextureSize` `:1409`; ±80×±80 for the
-    /// Drill, `drillTextureSize` `:1333`) projects onto the box edge
-    /// along the smaller scale; outside, the point stands. The Santank
-    /// (46) row is its own ability's (M2-MOUNT-4). `center` is the
-    /// player's Centre; the return is the clamped world point.
-    pub(crate) fn clamp_to_dead_zone(&self, center: Vec2, position: Vec2) -> Vec2 {
-        let (half_w, half_h) = match self.kind {
-            9 => (45.0f32, 54.0f32), // `:5303-5304` (Y, X) = (54, 45)
-            8 => (80.0, 80.0),       // `:5311-5312`
-            _ => return position,    // `:5314-5315`
-        };
-        let mut rel = position - center;
-        if rel.x > -half_w && rel.x < half_w && rel.y > -half_h && rel.y < half_h {
-            // `:5321-5330` — the two edge scales; the SMALLER wins (the
-            // C# `num3 > num4 → *= num4` else `*= num3`). The abs-zero
-            // divide is the C#'s own infinity (a centred cursor projects
-            // to the box edge on the other axis).
-            let sx = half_w / rel.x.abs();
-            let sy = half_h / rel.y.abs();
-            rel *= if sx > sy { sy } else { sx };
-        }
-        rel + center
-    }
 
     /// `Mount.AimAbility`'s Scutlix (9) half (`Mount.cs:5340-5421`) — the
     /// head's aim: the dead-zone-clamped cursor angle picks the facing
@@ -4041,8 +4018,9 @@ impl MountState {
     /// beam/cooldown/crosshair census and the draw's diode rotation read it.
     pub(crate) fn drill_data(&self) -> &DrillMountData {
         &self.drill
+    }
 
-        }    /// `Mount.ResetHeadPosition` (`Mount.cs:5283-5294`): while aiming, clear
+    /// `Mount.ResetHeadPosition` (`Mount.cs:5283-5294`): while aiming, clear
     /// the aim; `_frameExtra` zeroes UNLESS type 46 (the Santank keeps its
     /// band); `_flipDraw` clears.
     pub(crate) fn reset_head_position(&mut self) {
@@ -4050,12 +4028,19 @@ impl MountState {
             self.aiming = false;
             if self.kind != 46 {
                 self.frame_extra = 0;
+            }
             self.flip_draw = false;
+        }
+    }
+
     /// Test-only: the aim state the witnesses pin.
     #[cfg(test)]
     pub(crate) fn test_ability_state(&self) -> (bool, bool, i32, i32) {
         (self.aiming, self.flip_draw, self.frame_extra, self.ability_cooldown)
+    }
+
     /// Test-only: the charging/cooldown writes the scan witnesses stage.
+    #[cfg(test)]
     pub(crate) fn test_set_ability(&mut self, charging: bool, cooldown: i32) {
         self.ability_charging = charging;
         self.ability_cooldown = cooldown;
@@ -4434,10 +4419,14 @@ mod tests {
         assert!(!u.aim_ability_drill(c, mouse), "the default arm (`:5496`)");
         assert!(u.use_ability_drill(player_pos, mouse, true, true).is_none());
 
-        }    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+    }
+
+    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+
     /// `Mount.scutlixEyePositions` (`Mount.cs:1398-1421`): every row is the
     /// raw pair MINUS (45, 54); the pair index `(frameExtra - 6) * 2` walks
     /// the five aim bands.
+    #[test]
     fn m4_the_scutlix_eye_table_is_the_raw_pairs_minus_the_texture_size() {
         use super::{SCUTLIX_EYE_POSITIONS, SCUTLIX_TEXTURE_SIZE};
         let raw = [
@@ -4462,12 +4451,16 @@ mod tests {
         // The band-8 pair (frameExtra 8 → index 4/5).
         assert_eq!(SCUTLIX_EYE_POSITIONS[4], glam::Vec2::new(35.0, -44.0));
         assert_eq!(SCUTLIX_EYE_POSITIONS[5], glam::Vec2::new(39.0, -36.0));
+    }
+
     /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`): an aim inside the
     /// half-box pushes to the edge by the SMALLER axis ratio; an outside aim
     /// passes through; a non-ability mount is the identity.
+    #[test]
     fn m4_the_dead_zone_clamp_pushes_inside_aims_to_the_box_edge() {
         use super::MountState;
         let center = glam::Vec2::new(100.0, 100.0);
+        let mut m = MountState::default();
         // No mount: the identity (`:5314-5315`).
         let p = center + glam::Vec2::new(3.0, 3.0);
         assert_eq!(m.clamp_to_dead_zone(center, p), p);
@@ -4493,11 +4486,17 @@ mod tests {
         // (0, 2) — the C#'s float divide-by-zero, reproduced.
         let out = m.clamp_to_dead_zone(center, center + glam::Vec2::new(0.0, 1.0));
         assert_eq!(out - center, glam::Vec2::new(0.0, 2.0));
+    }
+
     /// `Mount.AimAbility` case 9 (`Mount.cs:5340-5421`): the five degree
     /// bands fold into frameExtra 6-10, the >90/<-90 arms flip the facing,
     /// and the flipDraw follows the facing-vs-velocity opposition.
+    #[test]
     fn m4_the_scutlix_aim_bands_fold_the_angle_into_frame_extra() {
+        use super::MountState;
         let center = glam::Vec2::ZERO;
+        let mut m = MountState::default();
+        m.set_mount(9, false);
         // Straight right (0°) → band 8, facing 1, no flip (vx 0).
         let (changed, facing) =
             m.aim_ability(center, glam::Vec2::new(200.0, 0.0), 1, 0.0);
@@ -4521,10 +4520,17 @@ mod tests {
         // Straight up (-90°) → band 6 (`-112.5 < -90 <= -67.5`).
         let (_, facing) = m.aim_ability(center, glam::Vec2::new(0.0, -100.0), 1, 0.0);
         assert_eq!((m.frame_extra(), facing), (6, 1));
+    }
+
     /// `Mount.AimAbility` case 46 (`Mount.cs:5422-5464`): the Santank folds
     /// the facing + flipDraw but KEEPS frameExtra; `ResetHeadPosition`
     /// (`:5283-5294`) keeps the Santank's band and zeroes the Scutlix's.
+    #[test]
     fn m4_the_santank_aim_keeps_the_band_and_the_reset_spares_it() {
+        use super::MountState;
+        let center = glam::Vec2::ZERO;
+        let mut m = MountState::default();
+        m.set_mount(46, false);
         m.frame_extra = 3; // a pre-existing band (the animator's)
         let (_, facing) = m.aim_ability(center, glam::Vec2::new(-200.0, 0.0), 1, 0.0);
         assert_eq!(facing, -1);
@@ -4534,20 +4540,34 @@ mod tests {
         assert_eq!(m.frame_extra(), 3, "the reset spares the Santank band");
         assert!(!m.test_ability_state().0, "aiming cleared");
         // The Scutlix reset zeroes the band.
+        m.set_mount(9, false);
         m.aim_ability(center, glam::Vec2::new(100.0, 100.0), 1, 0.0);
         assert_eq!(m.frame_extra(), 9);
+        m.reset_head_position();
         assert_eq!(m.frame_extra(), 0, "the Scutlix band zeroes");
+    }
+
     /// `Mount.StopAbilityCharge` (`Mount.cs:2922-2931`): the 9/46 fire
     /// re-arms the row cooldown (20/40) + duration and clears charging;
     /// other types no-op.
+    #[test]
     fn m4_stop_ability_charge_rearms_the_row_cooldown() {
+        use super::MountState;
+        let mut m = MountState::default();
+        m.set_mount(9, false);
         m.test_set_ability(true, 0);
+        m.stop_ability_charge();
+        assert!(!m.ability_charging());
         assert_eq!(m.ability_cooldown(), 20, "the Scutlix row's 20");
+        m.set_mount(46, false);
         m.test_set_ability(true, 5);
+        m.stop_ability_charge();
+        assert!(!m.ability_charging());
         assert_eq!(m.ability_cooldown(), 40, "the Santank row's 40");
         // The Unicorn: no arm (`:2925` gates 9/46 only).
         m.set_mount(10, false);
         m.test_set_ability(true, 7);
+        m.stop_ability_charge();
         assert!(m.ability_charging(), "the Unicorn keeps charging");
         assert_eq!(m.ability_cooldown(), 7);
     }
@@ -5428,8 +5448,6 @@ mod tests {
         }
     }
 
-// balance-close (union shared delimiter)
-}}}}}}}}}}}}}}}}}}})
 }
 
 #[cfg(test)]

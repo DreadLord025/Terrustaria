@@ -114,8 +114,8 @@ pub(crate) fn pick_underground_background_style(i: &BgStylePickInput) -> i32 {
         } else {
             20
         };
-    } else if (i.screen_pos[1] / 16.0) as f64 > i.rock_layer + 60.0
-        && (i.screen_pos[1] / 16.0) as f64 < i.magma_layer - 60.0
+    } else if ((i.screen_pos[1] / 16.0) as f64) > i.rock_layer + 60.0
+        && ((i.screen_pos[1] / 16.0) as f64) < i.magma_layer - 60.0
     {
         // Main.cs:54060: `(double)(Main.screenPosition.Y / 16f)` — the divide
         // runs in f32 FIRST, then widens to f64 for both compares.

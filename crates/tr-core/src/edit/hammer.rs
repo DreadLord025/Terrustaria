@@ -1115,14 +1115,9 @@ mod tests {
         // §3b.4 — the app owns `frame_track_hammer`); the core hands it off
         // WITHOUT touching the frames.
         let mut w = lone(470);
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Consumed);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Consumed);
         let mut w = lone(314);
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::TrackHammer);
-        // 470 / 314 — the Consumed seams (`:46004-46007`, `:46056-46062`).
-        for kind in [470u16, 314] {
-            let mut w = lone(kind);
-            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Consumed);
-        }
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::TrackHammer);
         // A tileHammer kind refuses the pound (`:45981-45985`).
         let mut w = lone(26);
         assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Refused);

@@ -325,6 +325,24 @@ pub fn apply_orb_arm(
     OrbArmResult::NextSlot(next)
 }
 
+/// The W4-c16 entry name (`pub fn apply_orb_effect_arm`) kept as a THIN
+/// ADAPTER, not a second implementation: W4-f12 adopted the g27/d73
+/// `apply_orb_arm` core byte-exact over the c16 copy (the keep-one decision in
+/// docs/research/W4-g27-orb-keep-one.md). The c16 accumulator's three NON-orb
+/// ids 192 (Sugar Rush), 321 (Brain of Confusion) and 396 (Mana Heat) stayed
+/// with `buff_effects_boosters.rs` — this adapter therefore routes the 18
+/// orb ids to the canonical arm and reports `NotHandled` for everything else,
+/// exactly like [`apply_orb_arm`]. RNG census unchanged: zero draws.
+pub fn apply_orb_effect_arm(
+    e: &mut OrbEffects,
+    s: &mut OrbScanState,
+    slots: &mut BuffSlots,
+    ctx: &OrbContext,
+    j: usize,
+) -> OrbArmResult {
+    apply_orb_arm(e, s, slots, ctx, j)
+}
+
 /// The per-slot request view of one arm тАФ the c16/d74 accumulator shape,
 /// derived from the SAME arm core (no second implementation): run the arm
 /// on a one-slot scratch bar and diff the before/after. For mergers that

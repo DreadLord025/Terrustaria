@@ -172,7 +172,7 @@ impl App {
                 // convention: a ghost-free frame keeps the pre-wiring
                 // key bit-for-bit).
                 if p.shadow_dodge_count > 0.0 {
-                    k ^= (*frame_count as u32).wrapping_mul(0x2545_F491);
+                    k ^= (self.frame_count as u32).wrapping_mul(0x2545_F491);
                 }
                 k
             });
@@ -439,12 +439,6 @@ impl App {
                     // smoothly on the draw pass, but the light map and world range can
                     // be reused for a second.
                     let quantised = (natural_time / 60.0).floor() * 60.0;
-                    let sky_tint = color_of_the_skies(
-                        quantised,
-                        is_day,
-                        world.moon_phase,
-                        world.blood_moon,
-                    );
                     let clock_time = natural_time;
                     // `SetBackColor`: rain multiplies the sky (and therefore
                     // the surface sunlight) by `1 - cloudAlpha * 0.9 * atmo`
@@ -456,7 +450,6 @@ impl App {
                     // reads last frame's Main.atmo at SetBackColor; the
                     // refined self.atmo below re-derives the same value at
                     // the surface).
-                    let rain_alpha = rain.raw_alpha();
                     // `Main.UpdateAtmosphereTransparencyToSkyColor`'s input
                     // (`Main.cs:61983`): `screenPosition.Y + screenHeight / 2`
                     // — the view top edge plus half the backbuffer. The port's
@@ -474,24 +467,6 @@ impl App {
                         world.world_surface,
                         world.width,
                     );
-                    let mut sky_tint = crate::render::sky::rain_dim_sky(
-                        sky_tint,
-                        rain_alpha,
-                        atmo,
-                        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
-                    );
-                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                    // into the sky colour before it becomes the tile light.
-                    crate::render::sky::modify_horizon_light(
-                        &mut sky_tint,
-                        world.moon_phase,
-                        is_day,
-                        quantised,
-                        atmo,
-                        rain_alpha,
-                    );
-                    let sky_light = tile_color(sky_tint);
                     // W4-g70 lane 8: the whole `SetBackColor` chain
                     // (`Main.cs:63452-63924`) in byte space — the blood-moon
                     // night, the eclipse tint, the biome/graveyard dims, the
@@ -571,21 +546,10 @@ impl App {
                         self.mouse_text_color_dir = 1;
                     }
                     // `Main.DoUpdate_AnimateCursorColors`' masterColor pulse
-                    // (`Main.cs:18225-18235`): 0..1 by 0.05 per frame, the
-                    // master-mode text colour. W4-e7 lane 23 — the oscillator
-                    // lands (the demon_torch precedent); its readers (rarity
-                    // -13) stay unported (research/102). RNG-free.
-                    (self.master_color, self.master_color_dir) =
-                        bounce_oscillator(self.master_color, self.master_color_dir, 0.05);
-                    // `Main.DoUpdate_AnimateCursorColors`' master-colour half
-                    // (`Main.cs:18225-18235`): ±0.05 per frame, the direction
-                    // flips at the [0, 1] bounds — the −13 master-rarity
-                    // tooltip name pulse (W4-f28).
-                    (self.master_color, self.master_color_dir) =
-                        ui::tooltip_lines2::advance_master_color(
-                            self.master_color,
-                            self.master_color_dir,
-                        );
+                    // (`Main.cs:18225-18235`) runs ONCE per frame in the C# —
+                    // the single ±0.05 step lands below beside the
+                    // demon-torch ramp (the W4-e7/W4-f28 duplicate steppers
+                    // were folded into it).
                     // `Main.DrawInterface_24_InterfaceLogic2`
                     // (`Main.cs:45697-45708`): the invAlpha pulse runs once
                     // per draw-interface pass — the crafting selection
@@ -2143,13 +2107,11 @@ impl App {
                         // the graveyard/shimmer statics + the RAW cloudAlpha
                         // for the `:63051` star gate.
                         scene_state.graveyard_visual_intensity,
-                        scene_state.shimmer_alpha,
                         rain.raw_alpha(),
                         &*forest_hills,
                         std::array::from_fn(|n| bg_flash.get_flash_power(n)),
                         back.sun,
                         back.moon,
-                        rain_alpha,
                         world.eclipse,
                         self.mushroom_light_influence,
                         // `Main.player[Main.myPlayer].head` — the effective
@@ -2170,7 +2132,6 @@ impl App {
                         // metrics + the underground style latch.
                         &self.scene_metrics,
                         ug_back,
-                        scene_state.shimmer_alpha,
                         // W4-c40: the SandstormSky tint — only the ACTIVE
                         // sky draws (`SkyManager` walks `_activeSkies`).
                         self.sandstorm_sky
@@ -2340,15 +2301,6 @@ impl App {
                             // sight value (echo monolith / goggles), not the
                             // bare env pin.
                             show_invisible,
-                            // S1-G-1f: the wired tile animator's rows/counters
-                            // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
-                            &self.tile_anim,
-                            // W4-g34 union: the critter-cage animator's tables
-                            // + the `Main.critterCage` proximity flag the pass
-                            // raises (`TileDrawing.cs:474`/`:5672`).
-                            &self.cage_anim,
-                            &mut self.critter_cage,
-                            crate::env::show_invisible(),
                             // W4-g80: `Main.cloudAlpha` for the 83 herb-maturity
                             // sheet swap's waterleaf gate
                             // (`WorldGen.IsAlchemyPlantHarvestable`,
@@ -2359,6 +2311,9 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g34 union: the `Main.critterCage` proximity
+                            // flag the pass raises (`TileDrawing.cs:474`/`:5672`).
+                            &mut self.critter_cage,
                             // W4-d58: `Main.chest[]` — the chest rewrite's
                             // lid-frame input (`TileDrawing.cs:4311`).
                             &self.world_chests,
@@ -2379,19 +2334,14 @@ impl App {
                             // W4-g12: the live `Main.martianLight` bounce
                             // (`_martianGlow`, `TileDrawing.cs:498-499`).
                             self.martian_light,
-                            // W4-g12: `DrawGoreBehind`'s pool (the
-                            // behind-tiles drip rows, `Main.cs:21842`).
-                            gore,
                             // W4-g85: the orb-family emit slice
                             // (`DrawTiles_EmitParticles`' :7335/:7413 arms).
-                            // The pool is `Main.dust`; the NewDust internals
-                            // ride the `orb_rand` snapshot (Main.rand, S1-E-1).
-                            dust,
+                            // The pool is the same `dust` above; the NewDust
+                            // internals ride the `orb_rand` snapshot
+                            // (Main.rand, S1-E-1). `game_paused` is the WoF
+                            // mouth clock's pause gate (`Main.cs:38427`).
                             &mut orb_rand,
                             &orb_ctx,
-                            game_paused_for_specials,
-                            // W4-d127: the WoF mouth clock's pause gate
-                            // (`Main.cs:38427`).
                             game_paused_for_specials,
                             // W4-d70: the Moon Lord parts' `GetMoonLordColoring`
                             // input (`Main.cs:26325`).
@@ -2536,6 +2486,14 @@ impl App {
                     // untouched). The lists come from the
                     // `SmartInteractLookup` feed (`world_sim/
                     // smart_interact.rs`, the `Player.cs:25447` seam).
+                    // The `GetTileDrawData` world corrections' weather inputs
+                    // (the fused pass's `WeatherCtx` shape: `Main.raining` +
+                    // the raw cloudAlpha; remix has no port state here).
+                    let outline_wx = tr_core::growth::WeatherCtx {
+                        raining: params.raining,
+                        cloud_alpha: rain.visual_alpha(),
+                        remix_world: false,
+                    };
                     crate::render::tile_outlines::draw_tile_outlines(
                         renderer,
                         world,
@@ -2545,13 +2503,14 @@ impl App {
                         screen,
                         &self.smart_interact,
                         &self.tile_anim,
-                        &self.wind,
+                        wind,
                         &self.wiring,
                         crate::world_events::party_is_up(&self.world_events),
                         crate::env::show_invisible(),
                         player.as_ref().map(|p| p.center().0),
                         anim_time % 3600.0,
                         self.tile_anim.weather_vane_bobframe,
+                        &outline_wx,
                     );
                     // W4-g68 wiring: `TileDrawing.EmitLiquidDrops`
                     // (`TileDrawing.cs:7594-7674`, the `Draw` switch arm
@@ -2683,7 +2642,6 @@ impl App {
                     // The type-213 wheel sparks — `Main.DrawDust`'s generic
                     // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
                     // world-content range as the rain/sand dust.
-                    crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
                     // g67 (transplanted): the rain collision splashes —
                     // `Main.DrawDust`'s generic path over the `dustWater()`
                     // family slots (`Rain.cs:122`'s spawns), same
@@ -2695,9 +2653,6 @@ impl App {
                     // self-lit 213|260 gray + the light-tinted 211/107 generic
                     // path, the same world-content range as the rain/sand dust.
                     crate::minecart::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
-                    crate::render::foliage::draw_leaves(
-                        renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
-                    );
                     // The type-76 snowflakes — `Main.DrawDust`'s generic path
                     // (`Main.cs:38968-39018`), the same world-content range
                     // (W4-d130).
@@ -2831,8 +2786,6 @@ impl App {
                             anim_time % 3600.0,
                             wind.speed_current,
                             (anim_time as f64 * 60.0) % 216000.0,
-                            // W4-g35: the 993 rainbow bobber's glow tint.
-                            self.disco,
                         );
                     }
 
@@ -3116,7 +3069,7 @@ impl App {
                             );
                             let num46 = ((m.minimap_scale * 0.25 * 2.0 + 1.0) / 3.0).min(1.0);
                             let digtoise =
-                                crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
+                                crate::map_layers::digtoise_marker(player.as_ref(), projectiles);
                             let near_pylon = player.as_ref().is_some_and(|p| {
                                 let (cx, cy) = p.center();
                                 tr_core::pylons::is_player_near_a_pylon(
@@ -3130,7 +3083,7 @@ impl App {
                                 &crate::map_layers::MapIconInputs {
                                     world,
                                     player: player.as_ref(),
-                                    item_drops: &self.items,
+                                    item_drops: items,
                                     digtoise,
                                     pings: crate::map_layers::map_pings(m),
                                     pylons: &map_layer_pylons,
@@ -3195,7 +3148,7 @@ impl App {
                                 self.mouse_pos,
                             );
                             let golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
-                                let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                let live = projectiles.slots().get(stored.who_am_i).map(|q| {
                                     let (cx, cy) = q.center();
                                     tr_core::golf_state::GolfBall {
                                         who_am_i: stored.who_am_i,
@@ -3269,7 +3222,6 @@ impl App {
                                     // `b/255` (`Main.cs:55709` → the live
                                     // minimap alpha, D17 — research/140 §8.3).
                                     alpha: m.minimap_alpha,
-                                    alpha: 1.0,
                                     mouse: self.mouse_pos,
                                     global_time: anim_time % 3600.0,
                                 },
@@ -3315,7 +3267,6 @@ impl App {
                                     );
                                     // `b/255` (`Main.cs:55729`, D17).
                                     draw_player_map_icon(renderer, player_assets, p, pin, mm_hs, border, m.minimap_alpha);
-                                    draw_player_map_icon(renderer, player_assets, p, pin, mm_hs, border);
                                 }
                                 if p.show_last_death {
                                     if let Some(d) = p.last_death_position {
@@ -3338,7 +3289,6 @@ impl App {
                                                 // inline copy's extra -4/-4
                                                 // hover shift (W4-f29 F5).
                                                 true,
-                                                renderer, lookups, dp, mm_hs, 1.0, self.mouse_pos,
                                             )
                                         {
                                             death_hovered = true;
@@ -3380,7 +3330,6 @@ impl App {
                                     );
                                     // `b/255` (`Main.cs:55729`, D17).
                                     draw_player_map_icon(renderer, player_assets, &pp, pin, mm_hs, border, m.minimap_alpha);
-                                    draw_player_map_icon(renderer, player_assets, &pp, pin, mm_hs, border);
                                     // `:55730-55740`: the peer hover rect.
                                     let hr = crate::map_player_icons::head_hover_rect(pin, mm_hs);
                                     if crate::map_player_icons::hover_inclusive(hr, self.mouse_pos) {
@@ -3476,7 +3425,7 @@ impl App {
                             let num37 = ((num5 * 0.2 * 2.0 + 1.0) / 3.0).min(1.0)
                                 * settings.applied_ui_scale(screen.x, screen.y);
                             let digtoise =
-                                crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
+                                crate::map_layers::digtoise_marker(player.as_ref(), projectiles);
                             let near_pylon = player.as_ref().is_some_and(|p| {
                                 let (cx, cy) = p.center();
                                 tr_core::pylons::is_player_near_a_pylon(
@@ -3498,7 +3447,7 @@ impl App {
                                 &crate::map_layers::MapIconInputs {
                                     world,
                                     player: player.as_ref(),
-                                    item_drops: &self.items,
+                                    item_drops: items,
                                     digtoise,
                                     pings: crate::map_layers::map_pings(m),
                                     pylons: &map_layer_pylons,
@@ -3536,7 +3485,7 @@ impl App {
                                 self.mouse_pos,
                             );
                             let ov_golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
-                                let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                let live = projectiles.slots().get(stored.who_am_i).map(|q| {
                                     let (cx, cy) = q.center();
                                     tr_core::golf_state::GolfBall {
                                         who_am_i: stored.who_am_i,
@@ -3722,21 +3671,32 @@ impl App {
                         // sign text edits in the NPCChatPanel dialog (the
                         // keyboard's own textbox is parked off-screen,
                         // `UIVirtualKeyboard.cs:176`). W4-f22.
-                        if self.sign_editing() {
-                            let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
+                        if matches!(front, crate::app::flow::FrontScreen::Keyboard(s) if s.tail == crate::app::flow::KeyboardTail::SignEdit) {
+                            let sign_open = player.as_ref().is_some_and(|p| p.sign >= 0);
                             ui::npc_chat::draw_panel(
                                 renderer,
                                 lookups,
                                 screen,
                                 &self.npc_chat_text,
+                                // A sign edit has no Happiness / Dryad-Joja
+                                // rows: the union's single `draw_panel` takes
+                                // every lane's gates, both off here.
+                                false,
                                 ui::UiPulse {
                                     text: self.mouse_text_color as f32 / 255.0,
                                     cursor_scale: 1.0,
+                                    // The item-slot glow clocks (W4-g35).
+                                    misc_counter: player
+                                        .as_ref()
+                                        .map_or(0, |p| p.misc_counter),
+                                    disco: self.disco,
+                                    global_time: anim_time % 3600.0,
                                 },
                                 self.mouse_pos,
                                 sign_open,
                                 true,
                                 &mut self.sign_text_blinker,
+                                false,
                             );
                         }
                         // The port's not-ported notice for the front screens
@@ -3975,6 +3935,11 @@ impl App {
                                     pulse: ui::UiPulse {
                                         text: self.mouse_text_color as f32 / 255.0,
                                         cursor_scale: self.cursor.scale(),
+                                        // The item-slot glow clocks (W4-g35);
+                                        // the live player rides the `p` borrow.
+                                        misc_counter: p.misc_counter,
+                                        disco: self.disco,
+                                        global_time: anim_time % 3600.0,
                                     },
                                 },
                             );
@@ -4218,9 +4183,9 @@ impl App {
                                     self.mouse_reforge,
                                 )
                             }),
-                            // W4-d122: the savings draws' coin machine
-                            // (`CoinSlot.Savings[4]` + the Custom dict).
-                            &mut self.coin_slot,
+                            // W4-d122: the savings coin machine rides
+                            // `chest_panel.coin_slot` (the ONE
+                            // `App.coin_slot`; a second `&mut` would alias).
                             // `ItemSlot._customCurrencyForSavings` — the
                             // medal-savings latch (`ItemSlot.cs:308`).
                             &mut self.custom_currency_for_savings,
@@ -4248,7 +4213,7 @@ impl App {
                             unlocked_super_cart,
                             enabled_super_cart,
                             // The quick-stack/sort buttons (`Main.cs:41833-41897`).
-                            self.settings.stack_to_chests_mode,
+                            settings.stack_to_chests_mode,
                             &mut self.all_chest_stack_hover,
                             &mut self.inventory_sort_hover,
                             // The hotbar-lock + builder-accessory icons
@@ -4295,8 +4260,8 @@ impl App {
                             // `GUIChatDraw`'s sign gate + the panel's own
                             // blinker (`Main.cs:46713`, `NPCChatPanel.cs:
                             // 254-261`).
-                            self.player.as_ref().is_some_and(|p| p.sign >= 0),
-                            self.sign_editing(),
+                            player.as_ref().is_some_and(|p| p.sign >= 0),
+                            matches!(front.as_ref(), Some(crate::app::flow::FrontScreen::Keyboard(s)) if s.tail == crate::app::flow::KeyboardTail::SignEdit),
                             chest_editing,
                             &mut self.sign_text_blinker,
                             // `Main.signBubble`/`signX`/`signY` — the
@@ -4317,7 +4282,7 @@ impl App {
                             // The Journey powers menu (W4-c24) —
                             // `CreativeUI.Draw`'s gate (`CreativeUI.cs:98-102`):
                             // the difficulty-3 player, unblocked.
-                            (self.active_player_difficulty() == 3
+                            (self.session_draft.as_ref().map_or(0, |d| d.difficulty) == 3
                                 && !ui::journey::blocked(
                                     self.talk_npc.is_some(),
                                     panel_chest >= 0,
@@ -4329,9 +4294,9 @@ impl App {
                                         &self.research,
                                         &self.creative_powers,
                                         (
-                                            self.wind.speed_target,
-                                            self.rain.cloud_alpha(),
-                                            self.rain.max_raining(),
+                                            wind.speed_target,
+                                            rain.cloud_alpha(),
+                                            rain.max_raining(),
                                         ),
                                     )
                                 }),
@@ -4380,23 +4345,19 @@ impl App {
                             // `ReportHappiness.Condition`
                             // (`NPCInteractions.cs:291-298`).
                             !crate::happiness::can_show_homeless_text(
-                                self.talk_npc.and_then(|i| self.npcs.get(i)),
+                                self.talk_npc.and_then(|i| npcs.get(i)),
                             ) && !self.shopping_settings.happiness_report.is_empty(),
-                            // `CoinSlot.Savings` — the shop savings pile's
-                            // coin cells (`ItemSlot.DrawSavings`,
-                            // `Main.cs:41791`, W4-g58 D5).
-                            &mut self.coin_slot,
                             // The chat portrait (W4-g58 retire): the hop
                             // clock's pre-increment value (`Main.cs:40335`
                             // reads THEN increments — the tick below), the
                             // `DialoguePortraitPreference` setting and the
                             // Zoologist lycanthrope predicate.
                             self.npc_chat_portrait_frame_counter,
-                            self.settings.portrait_preference,
+                            settings.portrait_preference,
                             crate::happiness::should_bestiary_girl_be_lycantrope(
-                                self.world.blood_moon,
-                                self.world.day_time,
-                                self.world.moon_phase,
+                                world.blood_moon,
+                                world.day_time,
+                                world.moon_phase,
                             ),
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`, the C#'s
@@ -4405,19 +4366,16 @@ impl App {
                         // the destructure holds `renderer`, a whole-`self`
                         // method call would conflict (the `:46522-46540` body
                         // verbatim).
-                            // W4-g12: the savings pile's coin machine.
-                            &mut self.coin_slot,
                             // W4-f30 — the Dryad's Purify button gate.
                             crate::dryad_stardew::can_dryad_play_stardew_animation(
-                                self.inventory.get(self.selected).map_or(0, |s| s.kind),
-                                self.talk_npc.and_then(|i| self.npcs.get(i)),
+                                inventory.get(*selected).map_or(0, |s| s.kind),
+                                self.talk_npc.and_then(|i| npcs.get(i)),
                             ),
                             // `Main.item[]` — the world-hover item walk.
-                            &self.items,
+                            items,
                             // `Main.hideUI` — the F11 layer-8 stop.
                             self.hide_ui,
                             self.cursor_item_icon_enabled,
-                            (self.item_icon_cache_kind, self.item_icon_cache_time),
                             // W4-g86 research/244 phase 1 — the layer-40 ID
                             // override state (`Player.cs:1852-1858`).
                             (
@@ -4456,6 +4414,12 @@ impl App {
                                         )
                                         .is_some())
                             },
+                            // W4-g50: the emote-bubble anchors (local slot id,
+                            // peer snapshots, projectile pool) — the three
+                            // bindings the union restored to `draw_hud`.
+                            self.local_id,
+                            remote_players,
+                            projectiles,
                         );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`): the
@@ -4593,7 +4557,7 @@ impl App {
                     // treatment — the state draws over whatever the frame
                     // rendered (`IngameFancyUI.OpenUIState`).
                     if self.debug_commands_open {
-                        let is_client = self.is_client();
+                        let is_client = matches!(self.net, crate::app::NetRole::Client(_));
                         ui::debug_commands::draw_screen(
                             renderer,
                             lookups,
@@ -4636,6 +4600,12 @@ impl App {
                             ui::UiPulse {
                                 text: self.mouse_text_color as f32 / 255.0,
                                 cursor_scale: self.cursor.scale(),
+                                // The item-slot glow clocks (W4-g35).
+                                misc_counter: player
+                                    .as_ref()
+                                    .map_or(0, |p| p.misc_counter),
+                                disco: self.disco,
+                                global_time: anim_time % 3600.0,
                             },
                         );
                     }
@@ -4714,10 +4684,9 @@ impl App {
                             // Clamp(GameZoomTarget)` product computed above).
                             m.clamp_overlay_axes(screen.x, world.width, world_zoom);
                             m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
-                            m.prepare(renderer, gpu, world, screen, view_center);
                         }
                     }
-                    if let Some(map) = map.as_ref() {
+                    if let Some(map) = map.as_mut() {
                         if !crate::env::no_hud()
                             && menu.is_none()
                             && front.is_none()
@@ -4760,7 +4729,7 @@ impl App {
                                     map.draw_full(renderer, lookups, world, screen);
                                 let digtoise = crate::map_layers::digtoise_marker(
                                     player.as_ref(),
-                                    &self.projectiles,
+                                    projectiles,
                                 );
                                 let near_pylon = player.as_ref().is_some_and(|p| {
                                     let (cx, cy) = p.center();
@@ -4785,7 +4754,7 @@ impl App {
                                 // (the `:55920-55921` unconditional writes
                                 // overwrite it); the head scale is
                                 // `Main.UIScale`.
-                                let num77 = self.settings.applied_ui_scale(screen.x, screen.y);
+                                let num77 = settings.applied_ui_scale(screen.x, screen.y);
                                 // `Main.cs:55922-55923`: the revenge markers
                                 // + the misc icons, BEFORE the NPC heads.
                                 // The fullscreen pair is `Vector2.Zero` /
@@ -4803,7 +4772,7 @@ impl App {
                                     self.mouse_pos,
                                 );
                                 let golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
-                                    let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                    let live = projectiles.slots().get(stored.who_am_i).map(|q| {
                                         let (cx, cy) = q.center();
                                         tr_core::golf_state::GolfBall {
                                             who_am_i: stored.who_am_i,
@@ -4859,7 +4828,7 @@ impl App {
                                     &crate::map_layers::MapIconInputs {
                                         world,
                                         player: player.as_ref(),
-                                        item_drops: &self.items,
+                                        item_drops: items,
                                         digtoise,
                                         pings: crate::map_layers::map_pings(map),
                                         pylons: &map_layer_pylons,
@@ -4883,7 +4852,7 @@ impl App {
                                 // `TeleportPylonsMapLayer.cs:81`: a pylon
                                 // marker hover claims `Main.cancelWormHole`.
                                 if pylon_hovered {
-                                    self.map.as_mut().unwrap().cancel_wormhole = true;
+                                    map.cancel_wormhole = true;
                                 }
                                 // `Main.cs:55931-55976`: the 255-player head
                                 // loop — the local head plus the remote
@@ -4912,7 +4881,6 @@ impl App {
                                         draw_player_map_icon(
                                             // Fullscreen `b = 255` (`Main.cs:55291`).
                                             renderer, player_assets, p, icon_pos, num77, border, 1.0,
-                                            renderer, player_assets, p, icon_pos, num77, border,
                                         );
                                         // `:55945-55959`: the local head's
                                         // hover writes the name too (the
@@ -4942,7 +4910,6 @@ impl App {
                                         false, 0, false, false, local_team, net_mode,
                                     );
                                     draw_player_map_icon(renderer, player_assets, &pp, pin, num77, border, 1.0);
-                                    draw_player_map_icon(renderer, player_assets, &pp, pin, num77, border);
                                     let hr = crate::map_player_icons::head_hover_rect(pin, num77);
                                     if crate::map_player_icons::hover_inclusive(hr, self.mouse_pos) {
                                         pin_hover = Some(rp.name.clone());
@@ -5028,8 +4995,10 @@ impl App {
                                         player_assets,
                                         p,
                                         icon_pos,
-                                        self.settings.applied_ui_scale(screen.x, screen.y),
+                                        settings.applied_ui_scale(screen.x, screen.y),
                                         border,
+                                        // Fullscreen `b = 255` (`Main.cs:55291`).
+                                        1.0,
                                     );
                                 }
                                 // `:55988-55995`: no death hover → the
@@ -5295,6 +5264,20 @@ impl App {
                                 self.equip.armor.get(1).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
                                 self.equip.armor.get(2).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
                             ];
+                            // The gated path's orb-family stream: the fused
+                            // pass clones `world.frame_rng` and writes it back
+                            // after the tile draw (the d54 break-seam
+                            // convention); the layer path does the same around
+                            // its `draw_tiles` callbacks.
+                            let mut layer_orb_rand = world.frame_rng.clone();
+                            let layer_orb_ctx = crate::app::spawn_ctx_from(
+                                menu.is_some() || front.is_some(),
+                                game_paused_for_specials,
+                                *camera,
+                                screen,
+                                *zoom,
+                                self.gfx_quality.max_dust_to_draw,
+                            );
                             let mut lf = crate::app::layer_targets::LayerFrame {
                                 world,
                                 lookups,
@@ -5319,6 +5302,25 @@ impl App {
                                 wiring: &self.wiring,
                                 party_is_up: crate::world_events::party_is_up(&self.world_events),
                                 show_invisible_blocks: crate::env::show_invisible(),
+                                // `LiquidRenderer` frames, `Main.cloudAlpha`,
+                                // `Main.critterCage`, `Main.chest[]` and the
+                                // cage animator (`draw_tiles`' g68/f14/d58
+                                // tail).
+                                liquid_frames: (liquid_anim_frame, liquid_waterfall_frame),
+                                rain_cloud_alpha: rain.visual_alpha(),
+                                critter_cage: &mut self.critter_cage,
+                                chests: &self.world_chests,
+                                cage_anim: &mut self.cages,
+                                // `LiquidRenderer._random` + `Main.dust` + the
+                                // `NewDust` cull ctx + `Main.martianLight`.
+                                liquid_rand: &mut self.liquid_rand,
+                                dust,
+                                spawn_ctx: &draw_spawn_ctx,
+                                martian_light: self.martian_light,
+                                orb_main_rand: &mut layer_orb_rand,
+                                orb_ctx: &layer_orb_ctx,
+                                game_paused: game_paused_for_specials,
+                                latest_filter_strength: filter_driver.latest_filter_strength,
                                 tile_anim: &self.tile_anim,
                                 camera: draw_cam,
                                 zoom: world_zoom,
@@ -5334,7 +5336,14 @@ impl App {
                                 items,
                                 remote: &remote_vec,
                                 edit_target: *edit_target,
-                                leaf_spawns: &mut leaf_spawns,
+                                // W4-g68: the leaf spawns land in the gore pool
+                                // directly; `Main.rand` is the bare global
+                                // stream (the tile-draw emission runs outside
+                                // every SwapRandom block in the C#).
+                                gore,
+                                main_rand: self.rngs.global(),
+                                emit_effects: !game_paused_for_specials
+                                    && !crate::env::no_wind(),
                                 // W4-g72 closeout delta 64d §2: the frame's
                                 // scene metrics + the App's cavern-style
                                 // latch for the 14-arg draw_background.
@@ -5387,6 +5396,10 @@ impl App {
                             crate::app::layer_targets::composite_water(
                                 gpu, renderer, family, &lf, compositor, &view, now_secs,
                             );
+                            // Write the orb-family stream back (the fused
+                            // path's `world.frame_rng = orb_rand`), after the
+                            // last `lf` borrow.
+                            world.frame_rng = layer_orb_rand;
                             // The map batches + the interface over the
                             // composited world (the fx range holds the
                             // rain/gore/projectile passes pushed above).

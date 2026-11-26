@@ -432,7 +432,8 @@ pub(crate) fn draw_item_icon_32(
     center: (f32, f32),
 ) {
     let scale = crate::registry::get(item.kind).map(|d| d.scale).unwrap_or(1.0);
-    draw_item_icon(r, lookups, item, center, scale, [1.0; 4]);
+    // `UIItemIcon`'s draw passes `32f` as the size limit and no fade.
+    draw_item_icon(r, lookups, item, center, scale, [1.0; 4], 32.0, 1.0);
 }
 
 /// `ItemSlot.cs:2891`'s gate (W4-g35): the glow overlay draws for every
@@ -683,14 +684,18 @@ pub(crate) fn draw_slot_glow(
     scale: f32,
     tint: [f32; 4],
     pulse: super::UiPulse,
+    favorite: bool,
+    glow: Option<(i32, f32)>,
     coin_slot: Option<&mut CoinSlotState>,
     vanilla_slot: i32,
     mouse_air: bool,
     mouse_is_dye: bool,
-    favorite: bool,
-    glow: Option<(i32, f32)>,
 ) {
-
+    draw_slot_flagged(
+        r, lookups, item, x, y, context, index, selected, scale, tint, favorite,
+        pulse, glow, coin_slot, vanilla_slot, mouse_air, mouse_is_dye,
+    );
+}
 
 /// The neutral `CoinDrawState` for contexts outside the machine's arrays
 /// (`CoinSlot.UpdateDrawState`'s tail, `CoinSlot.cs:306-311`) — used when a
@@ -780,7 +785,6 @@ fn draw_slot_flagged(
     // `flag3 = !flag2` — with no gamepad highlight it draws no background at
     // all, like the mouse-item contexts.
     let no_background = matches!(context, 14 | 21 | 30 | 37);
-    let no_background = matches!(context, 14 | 21 | 37);
 
     // `ItemSlot.cs:2349`: `CoinSlot.UpdateDrawState(slot, context, item, out
     // drawState)` runs on EVERY slot draw, BEFORE the background. Contexts
@@ -807,14 +811,6 @@ fn draw_slot_flagged(
     // `ItemSlot.cs:2490-2498`: glyphs are only drawn on an empty slot.
     if item.count == 0 {
         draw_equip_glyph(r, lookups, context, index, center, scale);
-    } else {
-        // `ItemSlot.cs:2513-2515`: the item icon (coins/ammo too), tinted by
-        // `item.GetAlpha(lightColor)` (`ItemSlot.cs:2876,2970`).
-        draw_item_icon(r, lookups, item, center, scale, light_color, 32.0);
-        // `ItemSlot.cs:2703-2712`: the stack count, context != 37, tinted by
-        // `color` (= `lightColor`; `drawState.stackTextScale` is 1 outside the
-        // coin-jump animation, `CoinSlot.cs:316-322`).
-        if item.count > 1 {
     }
 
     // `ItemSlot.cs:2500`: `flag4 = (item.type > 0 && item.stack > 0) ||
@@ -838,9 +834,11 @@ fn draw_slot_flagged(
             );
         } else if item.kind == 3817 {
             let medal_center = (center.0, center.1 - draw_state.coin_y_offset * scale);
-            draw_item_icon(r, lookups, item, medal_center, scale, light_color, item_fade);
+            draw_item_icon(
+                r, lookups, item, medal_center, scale, light_color, 32.0, item_fade,
+            );
         } else {
-            draw_item_icon(r, lookups, item, center, scale, light_color, item_fade);
+            draw_item_icon(r, lookups, item, center, scale, light_color, 32.0, item_fade);
         }
         // `ItemSlot.cs:2891-2929` (W4-g35): the glowMask overlay, drawn
         // right after the icon (the tinted-item second pass is unported).
@@ -959,7 +957,7 @@ pub(crate) fn draw_shared_item(
     let cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
     let center = (x + cell * 0.5 * scale, y + cell * 0.5 * scale);
     // `itemFade *= 0.6f` (`:2483`) then `DrawItemIcon(..., itemFade)` (`:2515`).
-    draw_item_icon(r, lookups, shared, center, scale, [1.0, 1.0, 1.0, 0.6]);
+    draw_item_icon(r, lookups, shared, center, scale, [1.0; 4], 32.0, 0.6);
     // `:2740-2746` — the ghost's badge rides `num17` (the fade captured
     // BEFORE the 0.6 multiply, `:2481`), so it stays at 0.7 alpha.
     draw_share_badge(
@@ -1336,6 +1334,8 @@ mod tests {
         assert_eq!(icon_size_limit_scale(24.0, 24.0, 32.0), 1.0);
         // The 9999 cursor limit never clamps a real icon.
         assert_eq!(icon_size_limit_scale(40.0, 40.0, 9999.0), 1.0);
+    }
+
     // W4-g35 — the item-slot glow overlay (`ItemSlot.cs:2891-2929`).
 
     #[test]
@@ -1379,7 +1379,7 @@ mod tests {
 
     #[test]
     fn w4_g35_the_glow_tints_match_the_itemslot_switch() {
-        let pulse = super::UiPulse {
+        let pulse = crate::ui::UiPulse {
             misc_counter: 0,
             disco: [10, 20, 30],
             global_time: 0.0,
@@ -1395,7 +1395,7 @@ mod tests {
         // White→(180,85,30) midpoint, A = item.alpha (stock 0).
         assert_eq!(item_glow_tint(5669, 0, pulse), [217, 170, 142, 0]);
         // miscCounter 50 → percent 0.5 → WrappedLerp folds to 1 → the end.
-        let p50 = super::UiPulse { misc_counter: 50, ..pulse };
+        let p50 = crate::ui::UiPulse { misc_counter: 50, ..pulse };
         assert_eq!(item_glow_tint(5669, 0, p50), [180, 85, 30, 0]);
         // The default arm keeps White (`:2894`).
         assert_eq!(item_glow_tint(2757, 0, pulse), [255, 255, 255, 255]);

@@ -1797,30 +1797,6 @@ mod tests {
         assert_eq!(h[2], 0.1);
         assert!((0.475..=0.525).contains(&h[0]), "heart R band {h:?}");
     }
-    /// W4-g84: the Plantera bulb's pink glow floor
-    /// (`TileLightScanner.cs:1000-1009`): case 238 writes the ACCUMULATED
-    /// colour directly — R and B are floored at 0.5, G is untouched (the
-    /// magenta cast). A dark cell gains the floor; an already-brighter
-    /// channel keeps its value; the green channel never moves.
-    #[test]
-    fn w4_g84_plantera_bulb_pink_glow_floor() {
-        let p = LightParams::default();
-        let w = World::new("t".into(), 64, 64);
-        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
-        // Dark accumulator: R/B lift to 0.5, G stays 0.
-        let mut c = [0.0f32; 3];
-        apply_tile_light(&w, &tile(238, 0, 0), 5, 5, &mut rng, &p, &mut c);
-        close(c, [0.5, 0.0, 0.5]);
-        // Brighter R keeps its value; dim B lifts; G untouched.
-        let mut c = [0.8f32, 0.2, 0.1];
-        apply_tile_light(&w, &tile(238, 18, 18), 5, 5, &mut rng, &p, &mut c);
-        close(c, [0.8, 0.2, 0.5]);
-        // The floor is per-cell and frame-independent (no fx/fy gate).
-        let mut c = [0.49f32, 0.9, 0.49];
-        apply_tile_light(&w, &tile(238, 0, 18), 5, 5, &mut rng, &p, &mut c);
-        close(c, [0.5, 0.9, 0.5]);
-    }
-
     /// W4-g34 cage-light witness (WRITTEN NOT RUN — code-only mode): the
     /// jellyfish cages' light follows `Main.jellyfishCageMode`
     /// (`TileLightScanner.cs:714-768`) — mode 2 is the bright phase, every

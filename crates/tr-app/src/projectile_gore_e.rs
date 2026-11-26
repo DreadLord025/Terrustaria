@@ -76,7 +76,7 @@ pub fn ai026_860_idle_gores(
     let count = 3 + rng.next_max(3);
     let pos = Vec2::new(p.pos.x, center(p).y - 10.0);
     for _ in 0..count {
-        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, 1218, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, 1218, 1.0);
         let g = gore.slot_mut(idx);
         let vx = rng.next_range(1, 10) as f32 * 0.3 * -p.sprite_direction as f32;
         let vy = -(2.0 + rng.next_max(4) as f32 * 0.3);
@@ -126,7 +126,7 @@ pub fn betsy_breath_gore(
     let jy = 40.0 * rng.next_double() as f32 - 20.0;
     let pos = center(p) + rotvec * 300.0 - Vec2::new(jx, jy);
     let ty = 61 + rng.next_max(3);
-    let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, ty, 0.5);
+    let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 0.5);
     let g = gore.slot_mut(idx);
     g.velocity *= 0.3;
     g.velocity += rotvec * 4.0;
@@ -152,7 +152,7 @@ pub fn book_storm_gore(
     let pos = p.pos + next_vector2_square(rng, 0.0, 1.0) * Vec2::new(p.w, p.h);
     let vy = (0.0 - rng.next_float()) * 16.0;
     let ty = [1007, 1008, 1008][rng.next_max(3) as usize];
-    let idx = gore.new_gore_direct(rng, world, pos, Vec2::new(p.vel.x * 1.5, vy), ty, 1.0);
+    let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::new(p.vel.x * 1.5, vy), ty, 1.0);
     let g = gore.slot_mut(idx);
     g.time_left = time_left;
     g.alpha = alpha;
@@ -178,7 +178,7 @@ pub fn rocket_corner_gores(
         while m <= 1.0 {
             if rng.next_max(5) == 0 {
                 let ty = rng.next_range(61, 64);
-                let idx = gore.new_gore_direct(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+                let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
                 let g = gore.slot_mut(idx);
                 g.velocity *= 0.2;
                 g.scale *= 0.65;
@@ -204,7 +204,7 @@ pub fn mirror_gores(
 ) {
     let c = center(p);
     for ty in 1394..=1397 {
-        gore.new_gore(rng, world, c, -old_velocity, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, c, -old_velocity, ty, 1.0);
     }
 }
 

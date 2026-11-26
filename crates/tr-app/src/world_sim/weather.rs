@@ -30,29 +30,6 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // reads them live inside MakeRain/NewRain/Update — constant per frame).
     let inputs = crate::rain::RainInputs {
         camera: app.camera,
-    let shimmer_alpha = app.scene_state.shimmer_alpha;
-    let atmo = crate::render::sky::atmosphere_factor(
-        app.camera.y,
-        app.world.world_surface,
-        app.world.width,
-    );
-    let snow_tile_count = app.scene_metrics.snow_tile_count;
-    let zone_rain = app.scene_metrics.zone_rain;
-    // W4-g11: the snow spawn no longer rides Rain — `Main.snowing()`
-    // (`main_dust.rs`) reads `App.gfx_quality.quality` at its own
-    // `Main.cs:17238` slot (`scene_scan::update_scene`), so the retired
-    // `rain.gfx_quality` copy is gone.
-    // `Rain.NewRain` reads the STORED `Main.waterStyle` (`Rain.cs:205`) —
-    // latch the frame's `CalculateWaterStyle` value (the fountain head arm
-    // `Main.cs:57390-57393` included), the same seam convention.
-    app.rain.water_style = crate::biome::calculate_water_style_with_fountain(
-        &app.world,
-        app.camera,
-        app.scene_metrics.active_fountain_color,
-    ) as u32;
-    app.rain.update(
-        &app.world,
-        app.camera,
         screen,
         zoom: app.zoom,
         day_rate,
@@ -221,6 +198,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // `Main.cs:65043`'s `Main.netMode != 1` gate — the whole homeless block
     // is server/single-player only (computed before the field destructure).
     let not_client = !app.is_client();
+    // The screen size is an `App` method; hoisting it keeps the tick
+    // closure from capturing `*app` (the destructured fields stay split).
+    let (scr_w, scr_h) = app.screen_size();
     let App {
         world_tick_step,
         world,
@@ -252,7 +232,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // iteration; the port snapshots it once per tick (the flag only
         // flips at the boundaries/UpdateTime, never mid-loop).
         let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
-        wind.lantern_night = lanterns_up;
+        // The C# `Main.cs:58856-58859` freezes the wind walk itself on
+        // the lantern-night flag (the flag is not a `Wind` field in the port,
+        // so the gate rides the per-iteration call below).
         // (2) `Main.cs:17228-17231` + `:58830-58950`: the wind walk, once per
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
         let day_rate = world.day_rate();
@@ -270,7 +252,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             game_menu,
         );
         for _ in 0..day_rate {
-            wind.update_rain(max_raining);
+            if !lanterns_up {
+                wind.update_rain(max_raining);
+            }
             // (2b) `UpdateWeather`'s cloud-count tail (`Main.cs:58952-59036`)
             // rides the same per-iteration walk, right after the wind part.
             app.cloud_field.update_num_clouds(
@@ -368,7 +352,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         let next_night_lanterns = app.world_events.next_night_is_lantern_night;
         rain.update_time(
             day_rate,
-            &mut app.world,
+            world,
             any_player_120,
             wind.remix_world,
             // `GetPlayerWithHighestLuck().luck` for the coin-rain roll
@@ -422,11 +406,6 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             .map(crate::world_events::can_npc_party)
             .collect();
         let party_edge = crate::world_events::update_time_party(
-        crate::world_events::update_time_party(&mut app.world_events);
-        // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
-        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
-        let lantern_can_persist = !world.day_time;
-        let lantern_edge = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             &partyable,
             &mut app.chat,
@@ -439,17 +418,18 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         let lantern_gates = crate::world_events::LanternGates::from_world(world, &app.npcs);
         let lantern_can_persist =
             !world.day_time && crate::world_events::lanterns_can_start(&lantern_gates);
-        let lantern_edge = crate::world_events::update_time_lanterns(
-            lantern_can_persist,
-        );
+            let lantern_edge = crate::world_events::update_time_lanterns(
+                &mut app.world_events,
+                lantern_can_persist,
+            );
         // W4-c39 — the `SkyManager.Activate/Deactivate` edges
         // (`LanternNight.cs:133-150`, `BirthdayParty.cs:185-197`): the
         // lanterns-up / party-up flip regenerates (or starts leaving) the
         // matching sky. The per-tick sky update rides the frame's
         // `event_skies_phase` (the `SkyManager.Update` slot).
         let sky_ctx = crate::event_skies::SkyCtx {
-            screen_position_y: app.camera.y - app.screen_size().1 * 0.5 / app.zoom,
-            screen_height: app.screen_size().1,
+            screen_position_y: app.camera.y - scr_h * 0.5 / app.zoom,
+            screen_height: scr_h,
             max_tiles_x: world.width,
             max_tiles_y: world.height,
             world_surface: world.world_surface,
@@ -467,13 +447,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             } else {
                 app.event_skies.deactivate_party();
             }
+        }
         // W4-f40: `LanternNight.UpdateTime`'s sky edges (`LanternNight.cs:
         // 133-150`): the up-edge activates the `LanternSky`, the down-edge
         // deactivates it (the leaving latch). The C# calls
         // `SkyManager.Activate/Deactivate("Lantern")`; the port drives the
         // sky's own activate/deactivate. The activate reads the live view
         // band (`Main.screenPosition.Y`/`screenHeight`, `LanternSky.cs:93`).
-        let (_sw, sh) = app.screen_size();
+        let (_sw, sh) = (scr_w, scr_h);
         match lantern_edge {
             Some(true) => app.lantern_sky.activate(
                 world.width,
@@ -648,7 +629,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // (6) The Deerclops arm (`Main.cs:65121-65134`): the tick that steps
     // past 16200 while raining; the roll + the player gates ride
     // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.
-    let crossed = night_pre && world.time >= 16200.0 && night_raining;
+    let crossed = night_pre && app.world.time >= 16200.0 && night_raining;
     // W4-g52 audit — the maxRaining-change `SendData(7)` (`Main.cs:64954-64957`,
     // `netMode == 2`): one header re-push per changed tick batch (after the
     // destructured `world` borrow's last read above).
@@ -1122,13 +1103,13 @@ mod tests {
     // W4-d129 census witnesses (written-not-run, code-only lane): the
     // any_player_120_life writer boundary, its per-frame RNG-free write and
     // the 0.35 walk cap it feeds.
-    #[path = "weather_w4_d129.rs"]
+    #[path = "../../weather_w4_d129.rs"]
     mod weather_w4_d129;
     // W4-f39 census witnesses (written-not-run, code-only lane): the
     // UpdateTime slime-clock slots - the :64846 surface gate, the
     // clock-before-rain order, the branch-entry ladder sampling, the
     // lantern arms and the StartSlimeRain gate edges.
-    #[path = "weather_w4_f39.rs"]
+    #[path = "../../weather_w4_f39.rs"]
     mod weather_w4_f39;
 
     use super::*;
@@ -1476,7 +1457,9 @@ mod tests {
         app.wind.counter = 60;
         app.world_events.manual_lanterns = true;
         update_world_tick(&mut app, STEP);
-        assert!(app.wind.lantern_night, "the tick latches the wind gate");
+        // W4-d130 retired the `Wind.lantern_night` field; the gate rides
+        // `wind.update_rain` (the frozen counter + blocked start below are
+        // the observable outcomes).
         assert_eq!(app.wind.wind_counter(), 60, "the walk is frozen");
         assert!(!app.rain.is_raining(), "the start arms are blocked");
         // The contrast arm: the same seed with the lanterns down starts

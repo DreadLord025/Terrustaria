@@ -1328,37 +1328,6 @@ fn skeleton_merchant(ctx: &mut ChatContext) -> String {
     crate::lang::dialog(356 + num19)
 }
 
-/// `Lang.GetSlimeType` (`Lang.cs:375-406`): the town-slime kind → the
-/// chatter category's colour word — the 8-word switch the `Lang.SlimeChat`
-/// filter composes (`Slime{colour}Chatter.Chatter`, `Lang.cs:408-411`).
-/// 670 Blue (also the switch's default), 678 Green, 679 Old, 680 Purple,
-/// 681 Rainbow, 682 Red, 683 Yellow, 684 Copper. W4-g10 lane 3 FINAL: the
-/// per-KIND mapping over the landed town-slime kinds (the Lead's
-/// colour-per-kind deliverable).
-///
-/// Keep-one (d120): `task/W4-d120-town-chatter` ports the same switch
-/// type-keyed (`slime_chat_colour(ty: u16)`, its `npc_chat.rs`) AND the
-/// `GetChat` arms that consume it (`NPC.cs:94816-94819`, the
-/// `is_town_slime`-guarded `Slime{colour}Chatter.Chatter` pick) plus the
-/// `dialog_count`/`select_dialog` localization machinery. d120's arms are
-/// keyed on the VANILLA type (`npc.kind.cs_id()`), so they go LIVE the
-/// moment these kinds merge — zero d120 edits (its retire note, research/143
-/// item 2). At the merge this kind-keyed fn and d120's type-keyed fn dedup
-/// (identical words; `kind.cs_id()` bridges them); d120 owns the dispatch.
-pub(crate) fn slime_chat_colour(kind: NpcKind) -> &'static str {
-    match kind {
-        NpcKind::TownSlimeGreen => "Green",
-        NpcKind::TownSlimeOld => "Old",
-        NpcKind::TownSlimePurple => "Purple",
-        NpcKind::TownSlimeRainbow => "Rainbow",
-        NpcKind::TownSlimeRed => "Red",
-        NpcKind::TownSlimeYellow => "Yellow",
-        NpcKind::TownSlimeCopper => "Copper",
-        // 670 (TownSlimeBlue) and the switch's default arm.
-        _ => "Blue",
-    }
-}
-
 // ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
 
 /// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
@@ -1821,12 +1790,6 @@ mod tests {
     /// unchanged (the inventory fill is draw-free).
     #[test]
     fn the_party_girl_gifts_the_cake_then_draws_the_text() {
-    /// W4-g86 — `Main.cs:43017`/`:43048`: the smart-interact NPC pick
-    /// (`SmartInteractShowingGenuine && SmartInteractNPC == i`) lets the
-    /// talk arm reach an NPC OUTSIDE the mouse's world region — the NPC
-    /// provider's win stands in for the mouse-over test.
-    #[test]
-    fn w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region() {
         init_lang();
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
@@ -1852,6 +1815,34 @@ mod tests {
         assert_eq!(app.npc_chat_text, text, "`Main.cs:43082`");
         // The same NPC re-clicked falls through (`Main.cs:43077`).
         assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+    }
+
+    /// W4-g86 — `Main.cs:43017`/`:43048`: the smart-interact NPC pick
+    /// (`SmartInteractShowingGenuine && SmartInteractNPC == i`) lets the
+    /// talk arm reach an NPC OUTSIDE the mouse's world region — the NPC
+    /// provider's win stands in for the mouse-over test.
+    #[test]
+    fn w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut guide = npc(NpcKind::Guide);
+        // FAR outside the ±5-tile chat world region (the player's box).
+        guide.x = p.x + 40.0 * 16.0;
+        guide.y = p.y;
+        app.npcs.push(guide);
+        // No smart pick: the region test refuses the far NPC.
+        app.place_down = true;
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+        assert_eq!(app.talk_npc, None);
+        // The NPC provider's win (W4-g86): the pick reaches the far NPC.
+        app.smart_interact.showing_genuine = true;
+        app.smart_interact.npc = 0;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
+        assert!(text.is_some(), "the smart-interact pick opens the talk");
+        assert_eq!(app.talk_npc, Some(0));
     }
 
     /// `Player.cs:7193-7199` — `GetOrDropItem`: a full inventory overflows
@@ -1951,22 +1942,6 @@ mod tests {
             .map(|n| n.next_dialogue)
             .unwrap_or(false);
         assert!(latched, "the re-poll latched again");
-        let mut guide = npc(NpcKind::Guide);
-        // FAR outside the ±5-tile chat world region (the player's box).
-        guide.x = p.x + 40.0 * 16.0;
-        guide.y = p.y;
-        app.npcs.push(guide);
-        // No smart pick: the region test refuses the far NPC.
-        app.place_down = true;
-        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
-        assert_eq!(app.talk_npc, None);
-        // The NPC provider's win (W4-g86): the pick reaches the far NPC.
-        app.smart_interact.showing_genuine = true;
-        app.smart_interact.npc = 0;
-        app.place_down = true;
-        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
-        assert!(text.is_some(), "the smart-interact pick opens the talk");
-        assert_eq!(app.talk_npc, Some(0));
     }
 
     /// `NPCChatPanel.cs:65-68` — the panel's box: x = `screenWidth / 2 - 250`,
@@ -2077,11 +2052,11 @@ mod tests {
     /// records every requested max into `log`.
     fn census<'a>(
         values: &'static [i32],
-        log: &'a mut Vec<i32>,
+        log: &'a std::cell::RefCell<Vec<i32>>,
     ) -> impl FnMut(i32) -> i32 + 'a {
         let mut i = 0usize;
         move |n| {
-            log.push(n);
+            log.borrow_mut().push(n);
             let v = values[i.min(values.len() - 1)];
             i += 1;
             v
@@ -2092,10 +2067,10 @@ mod tests {
     /// the live dialog-filter count (the `{Bartender}`/`{WorldName}` rows
     /// only count while their substitutions resolve), so the expected maxes
     /// are computed, not hardcoded.
-    fn census_vec(values: Vec<i32>, log: &mut Vec<i32>) -> impl FnMut(i32) -> i32 + '_ {
+    fn census_vec(values: Vec<i32>, log: &std::cell::RefCell<Vec<i32>>) -> impl FnMut(i32) -> i32 + '_ {
         let mut i = 0usize;
         move |n| {
-            log.push(n);
+            log.borrow_mut().push(n);
             let v = values[i.min(values.len() - 1)];
             i += 1;
             v
@@ -2112,8 +2087,8 @@ mod tests {
         init_lang();
         let guide = npc(NpcKind::Guide);
         let npcs = [guide];
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         let chat = get_chat(&npcs[0], &mut ctx);
@@ -2121,15 +2096,15 @@ mod tests {
             chat,
             "Never been to a party before? You might want to check around with the others. People sometimes bring out special party favors."
         );
-        assert_eq!(log, vec![3, 1], "the 1/3 roll, then Next(count=1)");
+        assert_eq!(*log.borrow(), vec![3, 1], "the 1/3 roll, then Next(count=1)");
         // An EMPTY category still pays its Next(0) (`UnifiedRandom.cs:140`
         // draws Sample() even at max 0) and declines the event.
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.zone_graveyard = true;
         assert!(special_event_text(&mut ctx, "NoSuchCategory", 22).is_none());
-        assert_eq!(log, vec![3, 0], "the roll passes, Next(0) still fires");
+        assert_eq!(*log.borrow(), vec![3, 0], "the roll passes, Next(0) still fires");
     }
 
     /// `NPC.cs:94867` — the party's `HasNoPartyText` gate (`NPCID.cs:10461`:
@@ -2142,14 +2117,14 @@ mod tests {
         init_lang();
         let tax = npc(NpcKind::TaxCollector);
         let npcs = [tax];
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         let chat = get_chat(&npcs[0], &mut ctx);
         assert_eq!(chat, crate::lang::dialog(364), "the Next(364, 371) band");
         assert_eq!(
-            log,
+            *log.borrow(),
             vec![3, 6, 6, 6, 6, 7],
             "party roll (no category draw), four unconditional Next(6), Next(7)"
         );
@@ -2163,8 +2138,8 @@ mod tests {
         init_lang();
         let guide = npc(NpcKind::Guide);
         let npcs = [guide];
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.raining = true;
         assert_eq!(
@@ -2172,9 +2147,9 @@ mod tests {
             "Don't be alarmed, it is just water. I hear certain species of fish can fly when it rains!",
             "reverse index 0 = Rain2"
         );
-        assert_eq!(log, vec![3, 2]);
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0], &mut log);
+        assert_eq!(*log.borrow(), vec![3, 2]);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.raining = true;
         ctx.storming = true;
@@ -2183,7 +2158,7 @@ mod tests {
             "Lightning is no joke, very powerful fiends come out in this weather.",
             "the storm skips the rain arm — Storm2"
         );
-        assert_eq!(log, vec![3, 2], "one roll only: the rain gate is off");
+        assert_eq!(*log.borrow(), vec![3, 2], "one roll only: the rain gate is off");
     }
 
     /// `NPC.cs:94410-94456` — the REAL Party Girl (208) ladder: `Next(7)`
@@ -2195,8 +2170,8 @@ mod tests {
         init_lang();
         let pg = npc(NpcKind::PartyGirl);
         let npcs = [pg];
-        let mut log = Vec::new();
-        let mut rng = census(&[3], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[3], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.player_male = false; // isolate the up-front draw (the male gate rolls Next(5))
         assert_eq!(
@@ -2204,10 +2179,10 @@ mod tests {
             "Put up a disco ball and then I'll show you how to party.",
             "num11 = 3 → dialog 269"
         );
-        assert_eq!(log, vec![7], "no gates passed: only the up-front draw");
+        assert_eq!(*log.borrow(), vec![7], "no gates passed: only the up-front draw");
         // The party event still answers — but AFTER the Next(7) was paid.
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         assert_eq!(
@@ -2215,7 +2190,7 @@ mod tests {
             "At last, my time has come!",
             "reverse index 0 over Party_1/Party_2 = Party_2"
         );
-        assert_eq!(log, vec![7, 3, 2], "Next(7) precedes the event census");
+        assert_eq!(*log.borrow(), vec![7, 3, 2], "Next(7) precedes the event census");
     }
 
     /// `NPC.cs:94796-94799` — the lycantrope check is PURE and short-circuits
@@ -2226,8 +2201,8 @@ mod tests {
         init_lang();
         let zoo = npc(NpcKind::Zoologist);
         let npcs = [zoo];
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.blood_moon = true;
         ctx.day_time = false;
@@ -2237,7 +2212,7 @@ mod tests {
             "Rawgh! Roo! Danger. Me. Wraaaath!",
             "reverse index 0 = the LAST lycantrope row"
         );
-        assert_eq!(log, vec![2], "no 1/3 rolls: the event text never ran");
+        assert_eq!(*log.borrow(), vec![2], "no 1/3 rolls: the event text never ran");
     }
 
     /// `NPC.cs:93976-93984` — the Nurse's mixed arm: `Next(4 + FindAll.len)`
@@ -2251,23 +2226,23 @@ mod tests {
         // The row carries `{Bartender}` — it only counts while that
         // substitution resolves, so the census computes the count live.
         let count = crate::lang::dialog_count("NurseChatter.") as i32;
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![1, 1, 4], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![1, 1, 4], &log);
         let mut ctx = context(&npcs, &mut rng);
         let chat = get_chat(&npcs[0], &mut ctx);
         if count > 0 {
             assert_eq!(chat, crate::lang::dialog_row("NurseChatter.", 0));
         }
-        assert_eq!(log, vec![5, 3, 4 + count], "Next(5) deaths, Next(3), Next(4+len)");
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![1, 1, 0], &mut log);
+        assert_eq!(*log.borrow(), vec![5, 3, 4 + count], "Next(5) deaths, Next(3), Next(4+len)");
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![1, 1, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             "Turn your head and cough.",
             "index 0 → dialog 48"
         );
-        assert_eq!(log, vec![5, 3, 4 + count]);
+        assert_eq!(*log.borrow(), vec![5, 3, 4 + count]);
     }
 
     /// `NPC.cs:94682-94748` — the Stylist's moon-phase band: phases 0-2
@@ -2281,8 +2256,8 @@ mod tests {
         let npcs = [stylist];
         // The chatter row carries `{Bartender}` — count it live.
         let count = crate::lang::dialog_count("StylistChatter.") as i32;
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![1, 1, 5], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![1, 1, 5], &log);
         let mut ctx = context(&npcs, &mut rng);
         let chat = get_chat(&npcs[0], &mut ctx);
         if count > 0 {
@@ -2290,9 +2265,9 @@ mod tests {
         } else {
             assert_eq!(chat, "Sit down for a second and I'll have you steppin' razor.");
         }
-        assert_eq!(log, vec![3, 3, 5 + count], "morning + male rolls, then Next(5+len)");
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![1, 1, 0], &mut log);
+        assert_eq!(*log.borrow(), vec![3, 3, 5 + count], "morning + male rolls, then Next(5+len)");
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![1, 1, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.moon_phase = 3;
         assert_eq!(
@@ -2300,7 +2275,7 @@ mod tests {
             "Either you have style, or you get styled.",
             "phase 3: four fixed lines, index 0 → dialog 295"
         );
-        assert_eq!(log, vec![3, 3, 4 + count], "the fixed band shrinks to 4");
+        assert_eq!(*log.borrow(), vec![3, 3, 4 + count], "the fixed band shrinks to 4");
     }
 
     /// `NPC.cs:94784-94787` → `Lang.BartenderChat` (`Lang.cs:331-338`): the
@@ -2310,24 +2285,24 @@ mod tests {
         init_lang();
         let bar = npc(NpcKind::DD2Bartender);
         let npcs = [bar];
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.dd2_downed_t3 = true;
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             "You really kept the full force of the Old One's Army at bay? Maybe you should visit Etheria some time."
         );
-        assert_eq!(log, vec![5]);
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        assert_eq!(*log.borrow(), vec![5]);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             "We should really do something about the Old One's Army. Ask me about the Eternia Crystal if you want to learn more.",
             "no tiers downed → BeforeDD2Tier1"
         );
-        assert_eq!(log, vec![5]);
+        assert_eq!(*log.borrow(), vec![5]);
     }
 
     /// `NPC.cs:94760` — the Angler's blood-moon fishing filter carries NO
@@ -2338,8 +2313,8 @@ mod tests {
         init_lang();
         let angler = npc(NpcKind::Angler);
         let npcs = [angler];
-        let mut log = Vec::new();
-        let mut rng = census(&[1, 0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[1, 0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.blood_moon = true;
         assert_eq!(
@@ -2347,7 +2322,7 @@ mod tests {
             "You should try fishing when the water is all bloody! It's to die for!",
             "reverse index 0 = BloodMoonFishing2"
         );
-        assert_eq!(log, vec![5, 3, 2], "quest roll, 1/3 roll, Next(count=2)");
+        assert_eq!(*log.borrow(), vec![5, 3, 2], "quest roll, 1/3 roll, Next(count=2)");
     }
 
     /// `NPC.cs:94843-94858` — the wizard's luck gate: the 1/3 roll, the
@@ -2361,8 +2336,8 @@ mod tests {
         let npcs = [wizard];
         let count = crate::lang::dialog_count("WizardSpecialText.LuckIsCursed") as i32;
         assert!(count >= 1, "LuckIsCursed1 carries no variables");
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.player_luck = -1.0; // NormalizedLuck -1 → LuckIsCursed
         assert_eq!(
@@ -2370,7 +2345,7 @@ mod tests {
             crate::lang::select_dialog("WizardSpecialText.LuckIsCursed", 0),
             "reverse index 0 = the LAST matching cursed row"
         );
-        assert_eq!(log, vec![3, count]);
+        assert_eq!(*log.borrow(), vec![3, count]);
     }
 
     /// `Player.NormalizedLuck` (`Player.cs:4107-4122`): the ±cap ratio
@@ -2392,7 +2367,7 @@ mod tests {
     /// `Next(1, 4)` draw fires AFTER the gift. The draw rides the bare
     /// `Main.rand` stream — the flow app's world-seed-0 global.
     #[test]
-    fn the_party_girl_gifts_the_cake_then_draws_the_text() {
+    fn the_party_girl_gifts_the_cake_then_draws_the_text_union_b() {
         init_lang();
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
@@ -2423,7 +2398,7 @@ mod tests {
     /// to `Item.RequestNewItem` at the player centre (the bobber-catch
     /// shape); the gift still clears the latch and answers the text.
     #[test]
-    fn a_full_inventory_overflows_the_cake_to_a_world_drop() {
+    fn a_full_inventory_overflows_the_cake_to_a_world_drop_union_b() {
         init_lang();
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
@@ -2479,33 +2454,33 @@ mod tests {
         init_lang();
         let guide = npc(NpcKind::Guide); // any live shell — the arm is type-keyed
         let npcs = [guide];
-        let mut log = Vec::new();
-        let mut rng = census(&[2], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[2], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.day_time = false; // night: the stat band
         assert_eq!(old_man(&mut ctx), crate::lang::dialog(87), "weak band 85+2");
-        assert_eq!(log, vec![4], "one Next(4), no event roll");
+        assert_eq!(*log.borrow(), vec![4], "one Next(4), no event roll");
         // The strong band: life >= 300 AND defense >= 10.
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.day_time = false;
         ctx.player_base_life_max = 300;
         ctx.player_defense = 10;
         assert_eq!(old_man(&mut ctx), crate::lang::dialog(89), "strong band 89+0");
         // The plain day: the trio.
-        let mut log = Vec::new();
-        let mut rng = census(&[1], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[1], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(old_man(&mut ctx), crate::lang::dialog(83), "day 82+1");
-        assert_eq!(log, vec![3]);
+        assert_eq!(*log.borrow(), vec![3]);
         // Remix answers the night band even by day (`:94019`).
-        let mut log = Vec::new();
-        let mut rng = census(&[3], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[3], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.remix_world = true;
         assert_eq!(old_man(&mut ctx), crate::lang::dialog(88));
-        assert_eq!(log, vec![4]);
+        assert_eq!(*log.borrow(), vec![4]);
     }
 
     /// `NPC.cs:94279-94301` — Santa: `Next(3)` UP FRONT (before the event
@@ -2515,15 +2490,15 @@ mod tests {
         init_lang();
         let santa = npc(NpcKind::SantaClaus);
         let npcs = [santa];
-        let mut log = Vec::new();
-        let mut rng = census(&[1], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[1], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             "Care to bake me some cookies?",
             "index 1 answers dialog 225"
         );
-        assert_eq!(log, vec![3], "the up-front draw only");
+        assert_eq!(*log.borrow(), vec![3], "the up-front draw only");
     }
 
     /// `NPC.cs:94302-94341` — the Truffle: `Next(6)` UP FRONT, the event
@@ -2534,24 +2509,24 @@ mod tests {
         init_lang();
         let truffle = npc(NpcKind::Truffle);
         let npcs = [truffle];
-        let mut log = Vec::new();
-        let mut rng = census(&[4], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[4], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(240), "arm 4");
-        assert_eq!(log, vec![6], "no neighbours — no gate draws");
+        assert_eq!(*log.borrow(), vec![6], "no neighbours — no gate draws");
         // With a Dryad next door: the gate's Next(6) fires; a 0 answers 232.
         let dryad = npc(NpcKind::Dryad);
         let npcs = [npc(NpcKind::Truffle), dryad];
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(232));
-        assert_eq!(log, vec![6, 6], "the up-front draw + the Dryad gate");
+        assert_eq!(*log.borrow(), vec![6, 6], "the up-front draw + the Dryad gate");
         // A passed event roll short-circuits the gates but NOT the up-front
         // draw (`:94304` precedes `HasSpecialEventText`).
         let npcs = [npc(NpcKind::Truffle)];
-        let mut log = Vec::new();
-        let mut rng = census(&[5, 0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[5, 0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         let text = get_chat(&npcs[0], &mut ctx);
@@ -2560,8 +2535,10 @@ mod tests {
             crate::lang::select_dialog("TruffleSpecialText.Party", 0),
             "the event text wins over the fixed arm 5"
         );
-        assert_eq!(log[0], 6, "the up-front draw precedes the event roll");
-        assert_eq!(log[1], 3, "the 1/3 event roll");
+        drop(ctx);
+        drop(rng);
+        assert_eq!(log.borrow()[0], 6, "the up-front draw precedes the event roll");
+        assert_eq!(log.borrow()[1], 3, "the 1/3 event roll");
     }
 
     // ---- W4-d120: the claimed kinds' arms (batch 2: 178/209/229) -------
@@ -2574,25 +2551,25 @@ mod tests {
         init_lang();
         let steam = npc(NpcKind::Steampunker);
         let npcs = [steam];
-        let mut log = Vec::new();
-        let mut rng = census(&[3], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[3], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(248), "arm 3");
-        assert_eq!(log, vec![5], "no gates — no extra draws");
+        assert_eq!(*log.borrow(), vec![5], "no gates — no extra draws");
         // The blood-moon gate: a passed Next(3) answers 245.
-        let mut log = Vec::new();
-        let mut rng = census(&[0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.blood_moon = true;
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(245));
-        assert_eq!(log, vec![5, 3], "the up-front draw + the blood gate");
+        assert_eq!(*log.borrow(), vec![5, 3], "the up-front draw + the blood gate");
         // With a Cyborg next door (no blood moon): the gate's Next(6).
         let npcs = [npc(NpcKind::Steampunker), npc(NpcKind::Cyborg)];
-        let mut log = Vec::new();
-        let mut rng = census(&[1, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[1, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(246));
-        assert_eq!(log, vec![5, 6], "the up-front draw + the Cyborg gate");
+        assert_eq!(*log.borrow(), vec![5, 6], "the up-front draw + the Cyborg gate");
     }
 
     /// `NPC.cs:94457-94501` — the Cyborg: NO up-front draw, the
@@ -2604,28 +2581,28 @@ mod tests {
         let cyborg = npc(NpcKind::Cyborg);
         let npcs = [cyborg];
         let count = crate::lang::dialog_count("CyborgChatter.") as i32;
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![5], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![5], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             crate::lang::dialog_row("CyborgChatter.", 0),
             "index 5 answers the FIRST FindAll row (forward)"
         );
-        assert_eq!(log, vec![5 + count], "one mixed draw, no gates");
+        assert_eq!(*log.borrow(), vec![5 + count], "one mixed draw, no gates");
         // A low index answers the fixed band (280/281/282/285/286).
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![3], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![3], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(285), "arm 3");
-        assert_eq!(log, vec![5 + count]);
+        assert_eq!(*log.borrow(), vec![5 + count]);
         // The Steampunker neighbour gate fires BEFORE the mixed draw.
         let npcs = [npc(NpcKind::Cyborg), npc(NpcKind::Steampunker)];
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(283));
-        assert_eq!(log, vec![6], "the gate wins — no mixed draw");
+        assert_eq!(*log.borrow(), vec![6], "the gate wins — no mixed draw");
     }
 
     /// `NPC.cs:94569-94609` — the Pirate: the mixed draw fires BEFORE the
@@ -2638,8 +2615,8 @@ mod tests {
         let guide = npc(NpcKind::Guide); // any live shell
         let npcs = [guide];
         let count = crate::lang::dialog_count("PirateChatter.") as i32;
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![6], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![6], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true; // the event would win if it rolled first
         assert_eq!(
@@ -2647,30 +2624,32 @@ mod tests {
             crate::lang::dialog_row("PirateChatter.", 0),
             "index 6 answers the FIRST FindAll row — the event never rolls"
         );
-        assert_eq!(log, vec![6 + count], "the mixed draw only");
+        assert_eq!(*log.borrow(), vec![6 + count], "the mixed draw only");
         // A low index with a passed event roll: the event text wins.
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![0, 0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![0, 0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         assert_eq!(
             pirate(&mut ctx),
             crate::lang::select_dialog("PirateSpecialText.Party", 0)
         );
-        assert_eq!(log[..2], [6 + count, 3], "mixed draw, then the 1/3 roll");
+        drop(ctx);
+        drop(rng);
+        assert_eq!(log.borrow()[..2], [6 + count, 3], "mixed draw, then the 1/3 roll");
         // A low index, no event, female player: the Next(5) gate.
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![2, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![2, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.player_male = false;
         assert_eq!(pirate(&mut ctx), crate::lang::dialog(276));
-        assert_eq!(log, vec![6 + count, 5]);
+        assert_eq!(*log.borrow(), vec![6 + count, 5]);
         // Male: no gate draw, the fixed band skips 276.
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![3], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![3], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(pirate(&mut ctx), crate::lang::dialog(277), "arm 3");
-        assert_eq!(log, vec![6 + count]);
+        assert_eq!(*log.borrow(), vec![6 + count]);
     }
 
     // ---- W4-d120: the claimed kinds' arms (batch 3: 453/579) -----------
@@ -2688,29 +2667,29 @@ mod tests {
         let npcs = [guide];
         let count = crate::lang::category_size("SkeletonMerchantChatter") as i32;
         assert!(count >= 1, "the shipped category carries its row");
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![8, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![8, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             skeleton_merchant(&mut ctx),
             crate::lang::random_from_category("SkeletonMerchantChatter", 0),
             "index 8 answers the FIRST category row (forward)"
         );
-        assert_eq!(log, vec![8 + count, count], "the mixed draw + the pick draw");
+        assert_eq!(*log.borrow(), vec![8 + count, count], "the mixed draw + the pick draw");
         // A low index answers the fixed band 356..363.
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![7], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![7], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(skeleton_merchant(&mut ctx), crate::lang::dialog(363));
-        assert_eq!(log, vec![8 + count], "one draw only");
+        assert_eq!(*log.borrow(), vec![8 + count], "one draw only");
         // The party roll fires but the HasNoPartyText gate declines the
         // category draw — the mixed arm runs instead.
-        let mut log = Vec::new();
-        let mut rng = census_vec(vec![0, 0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census_vec(vec![0, 0], &log);
         let mut ctx = context(&npcs, &mut rng);
         ctx.party_is_up = true;
         assert_eq!(skeleton_merchant(&mut ctx), crate::lang::dialog(356));
-        assert_eq!(log, vec![3, 8 + count], "the party roll, then the mixed draw");
+        assert_eq!(*log.borrow(), vec![3, 8 + count], "the party roll, then the mixed draw");
     }
 
     /// `NPC.cs:94780-94783` — the unconscious Bartender answers the fixed
@@ -2720,14 +2699,16 @@ mod tests {
         init_lang();
         let bound = npc(NpcKind::BartenderUnconscious);
         let npcs = [bound];
-        let mut log = Vec::new();
-        let mut rng = census(&[0], &mut log);
+        let log = std::cell::RefCell::new(Vec::new());
+        let mut rng = census(&[0], &log);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(
             get_chat(&npcs[0], &mut ctx),
             crate::lang::text("BartenderSpecialText.FirstMeeting")
         );
-        assert!(log.is_empty(), "the arm draws nothing");
+        drop(ctx);
+        drop(rng);
+        assert!(log.borrow().is_empty(), "the arm draws nothing");
     }
 
     // ---- W4-d120 final census: the LAST GetChat arms (pets/slime) ------
@@ -2745,28 +2726,28 @@ mod tests {
             let prefix = format!("{pet}Chatter.Chatter");
             let count = crate::lang::dialog_count(&prefix) as i32;
             assert!(count >= 1, "{pet} chatter rows ship");
-            let mut log = Vec::new();
-            let mut rng = census_vec(vec![0], &mut log);
+            let log = std::cell::RefCell::new(Vec::new());
+            let mut rng = census_vec(vec![0], &log);
             let mut ctx = context(&npcs, &mut rng);
             assert_eq!(
                 pet_chat(&mut ctx, pet),
                 crate::lang::select_dialog(&prefix, 0),
                 "{pet}: reverse index 0 = the LAST row"
             );
-            assert_eq!(log, vec![count], "{pet}: one Next(count), no events");
+            assert_eq!(*log.borrow(), vec![count], "{pet}: one Next(count), no events");
             // A passed event roll short-circuits the chatter draw.
-            let mut log = Vec::new();
-            let mut rng = census_vec(vec![0, 0], &mut log);
+            let log = std::cell::RefCell::new(Vec::new());
+            let mut rng = census_vec(vec![0, 0], &log);
             let mut ctx = context(&npcs, &mut rng);
             ctx.party_is_up = true;
             let text = pet_chat(&mut ctx, pet);
             let event_prefix = format!("{pet}SpecialText.Party");
             if crate::lang::dialog_count(&event_prefix) > 0 {
                 assert_eq!(text, crate::lang::select_dialog(&event_prefix, 0));
-                assert_eq!(log, vec![3, crate::lang::dialog_count(&event_prefix) as i32]);
+                assert_eq!(*log.borrow(), vec![3, crate::lang::dialog_count(&event_prefix) as i32]);
             } else {
                 // An empty event category still pays Next(0), then declines.
-                assert_eq!(log, vec![3, 0, count]);
+                assert_eq!(*log.borrow(), vec![3, 0, count]);
             }
             let _ = ty; // the dispatch keys ride get_chat's `ty` match
         }
@@ -2819,7 +2800,7 @@ mod tests {
         ];
         for (kind, ty, colour) in table {
             // The colour word the kind answers.
-            assert_eq!(slime_chat_colour(kind), colour, "{kind:?} colour");
+            assert_eq!(slime_chat_colour(kind.cs_id()), colour, "{kind:?} colour");
             // The kind's vanilla type is the switch case (d120's arm keys
             // on `cs_id`, so the type-keyed and kind-keyed maps agree).
             assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
@@ -2843,8 +2824,8 @@ mod tests {
         }
         // The default arm: a non-town-slime kind answers Blue (the switch's
         // `result = "Blue"` initializer, Lang.cs:377).
-        assert_eq!(slime_chat_colour(NpcKind::Slime), "Blue", "the wild slime default");
-        assert_eq!(slime_chat_colour(NpcKind::Guide), "Blue", "the switch default");
+        assert_eq!(slime_chat_colour(NpcKind::Slime.cs_id()), "Blue", "the wild slime default");
+        assert_eq!(slime_chat_colour(NpcKind::Guide.cs_id()), "Blue", "the switch default");
         // The eight first lines are pairwise distinct (each colour owns its
         // lines — the witness that the mapping is not a constant).
         let mut firsts: Vec<String> = table

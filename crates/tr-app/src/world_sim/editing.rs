@@ -1,6 +1,4 @@
-{
-// balance-open (union shared delimiter)
-//! Tile and wall editing (plan stage A4): the per-frame mining/placing loop,
+﻿//! Tile and wall editing (plan stage A4): the per-frame mining/placing loop,
 //! the break/place helpers behind it and the replicated-edit applier the net
 //! layer feeds.
 
@@ -31,7 +29,6 @@ pub(crate) use buckets::use_buckets;
 mod auto_actuator;
 mod auto_paint;
 mod block_swap;
-mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
@@ -601,6 +598,31 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
     if held_kind == 4715 {
         play_guitar_chord(app, Vec2::new(cx, cy), mouse_world, Vec2::new(sw, sh));
     }
+    // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
+    // `Player.ItemCheck_OwnerOnlyCode` use-start proc latches
+    // (`Player.cs:43468-43479`): the Tentacle Spike (5094), the Blood
+    // Butcherer (795) and the Fiery Greatsword / Volcano (121) arm their
+    // on-hit spawn flag on `ItemAnimationJustStarted` — the swing's first
+    // tick, which this seam is (every swing/shot/consume start calls it).
+    // The flag is consumed by the first landed melee hit
+    // (`resolve_melee_strike`'s `ApplyNPCOnHitEffects` tail). The 155
+    // Muramasa / 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode`
+    // arms — their procs are the player-lane follow-ups, not this lane.
+    if held_kind == 5094 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_tentacle_spikes = true;
+        }
+    }
+    if held_kind == 795 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_blood_butcherer = true;
+        }
+    }
+    if held_kind == 121 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_volcano_explosion = true;
+        }
+    }
 }
 
 /// W4-f32 — `Player.PlayGuitarChord`'s play seam (`Player.cs:46671-46703`):
@@ -629,31 +651,7 @@ fn play_guitar_chord(app: &mut App, centre: Vec2, mouse_world: Vec2, screen: Vec
             pitch,
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
-    // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
-    // `Player.ItemCheck_OwnerOnlyCode` use-start proc latches
-    // (`Player.cs:43468-43479`): the Tentacle Spike (5094), the Blood
-    // Butcherer (795) and the Fiery Greatsword / Volcano (121) arm their
-    // on-hit spawn flag on `ItemAnimationJustStarted` — the swing's first
-    // tick, which this seam is (every swing/shot/consume start calls it).
-    // The flag is consumed by the first landed melee hit
-    // (`resolve_melee_strike`'s `ApplyNPCOnHitEffects` tail). The 155
-    // Muramasa / 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode`
-    // arms — their procs are the player-lane follow-ups, not this lane.
-    if held_kind == 5094 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_tentacle_spikes = true;
-        }
-    }
-    if held_kind == 795 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_blood_butcherer = true;
-        }
-    }
-    if held_kind == 121 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_volcano_explosion = true;
-        }
-    }
+}
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
@@ -1087,7 +1085,7 @@ pub(crate) fn drain_digtoise_digs(app: &mut App) {
             let mut damage = tr_core::tool::pickaxe_damage(
                 tx,
                 ty,
-                pick,
+                i32::from(pick),
                 tile.kind,
                 i32::from(tile.frame_x),
                 i32::from(tile.frame_y),
@@ -1662,7 +1660,44 @@ fn hammer_tile_hit(
                 let (pos, center) = ((p.x, p.y), p.center());
                 let spot = {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    crate::spawner::spawn_on_player_tile(&app.world, pos, center, 82, rng)
+                    // `SpawnOnPlayer(player, 82)` (`NPC.cs:80527+`): the spawner
+                    // reads the world + the player position only (the minimal
+                    // ctx; the `bulb_summon_plantera` shape).
+                    let ctx = crate::spawner::SpawnContext {
+                        world: &app.world,
+                        player_center: center,
+                        player_pos: pos,
+                        nearby_active_npcs: 0.0,
+                        town_npcs: 0,
+                        day_time: app.world.day_time,
+                        player_life_max: p.max_hp,
+                        luck: p.luck(),
+                        underworld_for_bats: false,
+                        flags: crate::spawner::SpawnFlags::default(),
+                        bound_goblin_ok: false,
+                        bound_wizard_ok: false,
+                        bound_mech_ok: false,
+                        below_deep_dungeon: false,
+                        invaders: false,
+                        downed_golem: false,
+                        downed_martians: false,
+                        invasion_type: 0,
+                        invasion_summoner_alive: false,
+                        invasion_captain_alive: false,
+                        invasion_walker_alive: false,
+                        invasion_saucer_alive: false,
+                        invasion_progress_30: false,
+                        invasion_progress_frac: 0.0,
+                        any_danger: false,
+                        probe_exists: false,
+                        wyvern_exists: false,
+                        sky_behind_player: false,
+                        moon_boss_cap_count: 0.0,
+                        moon_npc_counts: &[],
+                        downed_boss1: app.world.downed_eoc,
+                        sandstorm_happening: app.sandstorm.happening,
+                    };
+                    crate::spawner::spawn_on_player_tile(&ctx, rng)
                 };
                 if let Some((sx, sy)) = spot {
                     // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the
@@ -1865,7 +1900,12 @@ fn try_pounding_tile_tick(
                     ty as f32 * TILE_PX,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
-                let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+                let _ = edit::square_tile_frame_default(
+                    &mut app.world,
+                    tx,
+                    ty,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
                 // `TileFrameImportant` case 314 (`WorldGen.cs:85290-85294`):
                 // the wake refits EVERY 3×3 track with `FrameTrack(pound:
                 // false)` (the SquareTileFrame walk, not just the hit cell);
@@ -2124,7 +2164,7 @@ pub(super) fn held_use_time_ticks(held: ItemSlot) -> i32 {
 /// on every 5337-5342 row, `Item.cs:42337-42395`) pays one per use; the
 /// TurnToAir fold matches the food arm above. `already_used` is the
 /// caller-read `!<flag>` half; `latch` writes the flag.
-fn use_shimmer_permanent_item(
+pub(crate) fn use_shimmer_permanent_item(
     app: &mut App,
     held: ItemSlot,
     kind: u16,
@@ -2202,6 +2242,14 @@ fn use_ambrosia(app: &mut App, held: ItemSlot) -> bool {
     use_shimmer_permanent_item(app, held, 5342, already, |p| p.used_ambrosia = true)
 }
 
+/// W4-g89 — the 5340 Galaxy Pearl arm (`Player.cs:45405-45410`): the
+/// permanent luck grant (`UpdatePermanentBoosters`, the `used_galaxy_pearl`
+/// latch). The same shared machine as the sibling arms above.
+fn use_galaxy_pearl(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_galaxy_pearl);
+    use_shimmer_permanent_item(app, held, 5340, already, |p| p.used_galaxy_pearl = true)
+}
+
 /// W4-g89e — `ItemCheck_UseCombatBook` (`Player.cs:45322-45350`, called
 /// from `ItemCheck_OwnerOnlyCode` `:43604`): the two WORLD-global books.
 /// 4382 Combat Book (`:45324-45336`, `NPC.combatBookWasUsed` — the flag
@@ -2217,7 +2265,7 @@ fn use_ambrosia(app: &mut App, held: ItemSlot) -> bool {
 /// the town-NPC stat ladder (`NPC.cs:53018-53031` — +250 lifeMax, ×0.8
 /// cooldown, +0.25 damage, +8 defense per book), ported in
 /// `npc_ai_town::town_stat_bonuses` (`env.combat_book`/`combat_book_two`).
-fn use_combat_book(app: &mut App, held: ItemSlot) -> bool {
+pub(crate) fn use_combat_book(app: &mut App, held: ItemSlot) -> bool {
     let kind = held.kind;
     let (already, vol_two) = match kind {
         4382 => (app.world.combat_book_was_used, false),
@@ -2847,9 +2895,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let is_summon = matches!(
             held.kind,
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556
-                | 557 | 5120 | 2767 | 4271
-            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
-                | 4271 | 2767 | 29 | 109 | 1291 | 5043
+                | 557 | 5120 | 2767 | 4271 | 29 | 109 | 1291 | 5043
             // W4-f49 — the Arcane Crystal 5339 (`ItemCheck_UseShimmerPermanentItems`
             // `Player.cs:45399-45404`): the same `ItemTimeIsZero && itemAnimation > 0`
             // mid-swing gate as the boss spawners (`:43607` calls it inside
@@ -2916,6 +2962,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // fires progression 4 (no shipped row listens — the faithful no-op
         // wire), raises the flag, bumps an empty moon phase to 5 and pays
         // the stack. The `Main.NewText` row rides the chat broadcast.
+        }
         if held.kind == 4271 && held.count > 0 && use_blood_moon_starter(app) {
             return;
         }
@@ -3438,7 +3485,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     crate::player::hair_dye_shader_index(held.kind)
                 };
                 if let Some(p) = app.player.as_mut() {
-                    p.hair_dye = shader;
+                    p.hair_dye = shader as u8;
                 }
                 app.inventory[app.selected].count =
                     app.inventory[app.selected].count.saturating_sub(1);
@@ -3505,29 +3552,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 5326 && use_artisan_loaf(app) {
             return;
         }
-        // W4-g90 lane 7 — the combat books (`Player.ItemCheck_UseCombatBook`,
-        // `Player.cs:45322-45350`, called at `:43604`) and the Peddler's
-        // Satchel (`ItemCheck_UsePeddlersSatchel`, `:45368-45383`, `:43605`).
-        // The once-ever gates are WORLD flags (`NPC.combatBookWasUsed` etc.,
-        // `NPC.cs:6339-6343`) — one book per world, not per player. Same
-        // press-tick fold as the loaf above.
-        if matches!(held.kind, 4382 | 5336) && use_combat_book(app) {
-            return;
-        }
+        // W4-g90 lane 7 — the Peddler's Satchel (`ItemCheck_UsePeddlersSatchel`,
+        // `:45368-45383`, called at `:43605`). The combat books already ran in
+        // the ladder above (keep-one: the same `:43604` slot).
         if held.kind == 5343 && use_peddlers_satchel(app) {
             return;
         }
-        // W4-g90 lane 7 — the shimmer permanent items
-        // (`Player.ItemCheck_UseShimmerPermanentItems`, `Player.cs:45385-
-        // 45423`, called at `:43607`): 5337 Aegis Crystal, 5339 Arcane
-        // Crystal, 5340 Galaxy Pearl, 5341 Gummy Worm, 5342 Ambrosia. The
-        // 5338 Aegis Fruit arm is W4-g89's lane (its `use_aegis_fruit` lives
-        // on that branch) — this dispatch covers the OTHER five arms.
-        if matches!(held.kind, 5337 | 5339 | 5340 | 5341 | 5342)
-            && use_shimmer_permanent_item(app)
-        {
+        // The 5340 Galaxy Pearl (`Player.cs:45405-45410`, `usedGalaxyPearl`) —
+        // the one shimmer permanent the ladder above does not own.
+        if use_galaxy_pearl(app, held) {
             return;
         }
+    }
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -3646,6 +3682,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
+    }
     // W4-d16 — the kite use-path (`ItemID.Sets.IsAKite`, the module doc in
     // `kites.rs`): the LMB launch fires ONCE per press edge (the generic
     // `ItemCheck_Shoot` tail — the kite kinds carry no per-item arm), the
@@ -4060,7 +4097,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `fire_non_ammo_shot` would aim it at shootSpeed 10 —
                 // the kite is a channel hold, not a throw.
                 if held.kind == 3611 {
-                    let (cx, cy) = p.center();
+                    let (cx, cy) = app.player.as_ref().unwrap().center();
                     let owner = app.local_id as u8;
                     app.projectiles.spawn_with_data_ai_owned(
                         proj, owner, cx - 5.0, cy - 5.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0,
@@ -4109,7 +4146,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if crate::projectile::PET_ITEM_BUFF_GRANTS.contains(&held.kind)
                     && def.buff_type > 0
                 {
-                    p.buffs.add_buff(def.buff_type, 3600);
+                    app.player.as_mut().unwrap().buffs.add_buff(def.buff_type, 3600);
                 }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
@@ -4130,20 +4167,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     && (crate::projectile::PROJ_PET.contains(&proj)
                         || crate::projectile::LIGHT_PET_PROJ.contains(&proj))
                 {
-                    // W4-c36 — `Player.cs:51826-51829`: the free-up's 9-slot
-                    // test (`num + num2 >= 9f`) fires HandleSpecialEvent(6)
-                    // → YOU_AND_WHAT_ARMY's "Spawn" (`AchievementsHelper.cs:
-                    // 310-312`).
-                    if app.projectiles.free_up_pets_and_minions(
-                        p,
-                        proj,
-                        held.kind,
-                        app.local_id as u8,
-                    ) {
-                        let _ = app
-                            .achievements
-                            .complete_condition("YOU_AND_WHAT_ARMY", "Spawn");
-                    }
                     let p = app.player.as_mut().unwrap();
                     app.projectiles
                         .free_up_pets_and_minions(p, proj, held.kind, app.local_id as u8);
@@ -4199,6 +4222,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // returned here for the non-ammo case, which made every melee weapon
         // unreachable.
     }
+}
 /// S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse` →
 /// `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399` → `ItemCheck_Shoot`
 /// `:47056+`). Returns `true` when the use is consumed (a reel OR a cast), so
@@ -4502,6 +4526,9 @@ fn fire_non_ammo_shot(
     // carries NO roll. `ApplyStatsFromSource`'s prefix arpen + the Revolver
     // charge bonus ride every spawn (`:11128-11132`).
     let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    // The Sparkle Guitar's progression 37 is deferred past the `loot_rng`
+    // borrow (the notify needs `&mut App`).
+    let mut progression37 = false;
     let arpen = held_fx.map_or(0, |s| s.armor_penetration);
     let revolver_bonus = if held.kind == 2269 {
         p.revolver_crit_chance_bonus
@@ -4652,6 +4679,17 @@ fn fire_non_ammo_shot(
     // W4-f40 RETIRE: the `ChangeDir` flip is the C# shared prologue
     // (`:47214-47223`, `flag` true for every kind but the Void Vault 3611)
     // — it runs for the release pair too, ahead of their separate arms.
+    // The 1127 aim read is hoisted above the facing write so the `p` borrow ends
+    // before `app.player.as_mut()` (NLL: the write would otherwise conflict).
+    // The whip's class multiplier is read here so `p`'s borrow ends before the
+    // facing write (the 1127 hoist above has the same shape).
+    let weapon_dmg_mult = p.weapon_damage_multiplier(class);
+    let melee_speed_held = p.melee_speed(held.kind);
+    // These reads must land before the facing write (the `p` shared
+    // borrow ends here); the C# reads them post-flip but they do not
+    // depend on `facing` (the one that does re-borrows below).
+    let (mcx, mcy) = p.mounted_center();
+    let chloro_counter = p.chlorophyte_blade_counter;
     if boomerang_use || release_use {
         if let Some(pl) = app.player.as_mut() {
             pl.facing = boomerang_facing;
@@ -4706,7 +4744,7 @@ fn fire_non_ammo_shot(
         let (mut num8, mut num9) = (std::f32::consts::FRAC_PI_4, 0.7f32);
         if proj == 1127 {
             num9 = 0.5;
-            num8 = 0.65 * remap_clamped(p.melee_speed(held.kind), 1.0, 1.0 / 3.0, 1.0, 0.25);
+            num8 = 0.65 * remap_clamped(melee_speed_held, 1.0, 1.0 / 3.0, 1.0, 0.25);
         }
         let angle = num8 * (loot_rng.next_float() - 0.5);
         let len_cut = (loot_rng.next_double() as f32 * 2.0 - 1.0) * num9;
@@ -4768,7 +4806,7 @@ fn fire_non_ammo_shot(
         // (`:47277-47307`, the port's `shot`), its own ai1 envelope and
         // the same scale. `GetWeaponDamage`'s epsilon rides the int
         // (`:53421-53428`, the `whip_weapon_damage` helper).
-        let dmg = whip_weapon_damage(fx_dmg, p.weapon_damage_multiplier(class));
+        let dmg = whip_weapon_damage(fx_dmg, weapon_dmg_mult);
         // `GetAdjustedItemScale` (`Player.cs:42566-42574`): the PREFIXED
         // `item.scale`; the melee ×1.1 glove arm is unported
         // (`accessory_combat.rs` documents `meleeScaleGlove` without an
@@ -4786,7 +4824,7 @@ fn fire_non_ammo_shot(
         // are melee, none is the 3821 NoMeleeSpeedBonus exemption). The
         // use-start caller arms the identical swing right after this shot.
         let use_anim = held_fx.map_or(def.use_animation as i32, |s| s.use_animation);
-        let anim_max = ticks_of(scaled_anim_secs(use_anim, p.melee_speed(held.kind))) as f32;
+        let anim_max = ticks_of(scaled_anim_secs(use_anim, melee_speed_held)) as f32;
         // `base.direction` — the C# `ChangeDir` aim-dot flip
         // (`:47213-47224`: `Dot(UnitX, aim) > 0` → 1 else −1) is the
         // already-computed `boomerang_facing` (the i08 snapshot); the
@@ -4842,7 +4880,6 @@ fn fire_non_ammo_shot(
         // top-left, so each kind's half-box subtracts. The point is
         // `this.MountedCenter` itself — NOT the generic tail's
         // `pointPosition + dir*10` (the M4-PROJ-3 deviation).
-        let (mcx, mcy) = p.mounted_center();
         let spawn_sword = |pool: &mut crate::projectile::ProjectilePool,
                            kind: u16,
                            vel: Vec2,
@@ -4899,8 +4936,7 @@ fn fire_non_ammo_shot(
         // port), `ai1 = itemAnimationMax`, `ai2 = GetAdjustedItemScale`
         // (`:42566-42574` - the plain prefixed scale, the meleeScaleGlove
         // skip is recorded). The C# `return`s each arm.
-        let (mcx, mcy) = p.mounted_center();
-        let facing = p.facing as f32;
+        let facing = app.player.as_ref().map_or(0.0, |p| p.facing as f32);
         // `ai1 = this.itemAnimationMax`: the port's press-tick shot fires
         // BEFORE the use-start swing re-arm (the Zenith ordinal precedent),
         // so the max reads the PREFIXED useAnimation - the value
@@ -4934,7 +4970,7 @@ fn fire_non_ammo_shot(
             // empowered use adds `itemAnimation * 3` to the counter -
             // the shot fires at `itemAnimation == itemAnimationMax`
             // (the use-start tick), so the add reads the prefixed max.
-            let empowered = p.chlorophyte_blade_counter <= 0;
+            let empowered = chloro_counter <= 0;
             let (dmg, kb, vy) = if empowered {
                 ((raw * 1.5) as i32, fx_kb * 1.25, 0.0)
             } else {
@@ -5112,10 +5148,10 @@ fn fire_non_ammo_shot(
             // `:48476-48481` — the Spider Staff cycles
             // 390/391/392 via `nextCycledSpiderMinionType` (never
             // reset, `Player.cs:1280`), then increments mod 3.
-            let cycle = p.next_cycled_spider_minion_type;
+            let p_mut = app.player.as_mut().unwrap();
+            let cycle = p_mut.next_cycled_spider_minion_type;
             let kind = (proj as i32 + cycle) as u16;
             let _ = spawn_minion(&mut app.projectiles, kind, 0.0, 0.0);
-            let p_mut = app.player.as_mut().unwrap();
             p_mut.next_cycled_spider_minion_type += 1;
             p_mut.next_cycled_spider_minion_type %= 3;
         } else if held.kind == 2584 {
@@ -5197,8 +5233,8 @@ fn fire_non_ammo_shot(
         // spawn, `originalDamage = sItem.damage`, then `UpdateMaxTurrets`.
         // No `Main.rand` draw in this arm.
         sentry::pay_dd2_crystals(&mut app.inventory, &mut app.equip, held.kind);
-        let (cx, cy) = p.center();
-        let facing = p.facing;
+        let (cx, cy) = app.player.as_ref().map_or((0.0, 0.0), |p| p.center());
+        let facing = app.player.as_ref().map_or(0, |p| p.facing);
         let (wx, wy, push) = sentry::find_sentry_resting_spot(
             &app.world,
             proj,
@@ -5211,11 +5247,13 @@ fn fire_non_ammo_shot(
         let mut local0 = 0.0f32;
         match held.kind {
             3824 | 3825 | 3826 => {
-                ai1 = sentry::ballistra_shot_delay(p.set_squire_t3, p.ballista_panic) as f32;
+                ai1 = sentry::ballistra_shot_delay(app.player.as_ref().is_some_and(|p| p.set_squire_t3),
+                    app.player.as_ref().is_some_and(|p| p.ballista_panic)) as f32;
             }
             3832 | 3833 | 3834 => {
                 local0 =
-                    sentry::explosive_trap_cooldown(p.set_huntress_t2, p.set_huntress_t3) as f32;
+                    sentry::explosive_trap_cooldown(app.player.as_ref().is_some_and(|p| p.set_huntress_t2),
+                        app.player.as_ref().is_some_and(|p| p.set_huntress_t3)) as f32;
             }
             3818 => {
                 ai0 = 1.0;
@@ -5350,7 +5388,7 @@ fn fire_non_ammo_shot(
         // (`GetEffectiveArmor(1)` - the port's `equipped[1]`,
         // the robe slot 1282/1285/4256/1284/1283/1286/1287).
         let mut features = GemStaffFeatures::from_ai(0.0);
-        let robe = p.equipped[1];
+        let robe = app.player.as_ref().map_or(0, |p| p.equipped[1]);
         features.set_bit(GemStaffFeatures::HOMING, proj == 121 || robe == 1282);
         features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, proj == 124 || robe == 1285);
         features.set_bit(GemStaffFeatures::CAN_BOUNCE, proj == 597 || robe == 4256);
@@ -5408,7 +5446,7 @@ fn fire_non_ammo_shot(
             kb += 1.0;
         }
         let bits = features.ai_state();
-        let spin = p.facing == -1;
+        let spin = app.player.as_ref().is_some_and(|p| p.facing == -1);
         if features.all_gems2() {
             // `:49307-49349`: seven bolts, the per-index kind
             // (the loop's initial `NextFromList` pick is
@@ -5612,7 +5650,7 @@ fn fire_non_ammo_shot(
         // `:47405-47409` - the target offset: MouseWorld -
         // Center + NextVector2Circular(40,40), remapped to the
         // 20-60 speed divisor.
-        let (pcx, pcy) = p.center();
+        let (pcx, pcy) = app.player.as_ref().map_or((0.0, 0.0), |p| p.center());
         let mut off = world_pos - Vec2::new(pcx, pcy);
         off += next_vector2_circular(loot_rng, 40.0, 40.0);
         let divisor = remap_clamped(off.length(), 540.0, 960.0, 20.0, 60.0);
@@ -5638,7 +5676,7 @@ fn fire_non_ammo_shot(
         // a chaseable target (or the cursor), the arc's control
         // point in ai0/ai1, the launch velocity an upward edge
         // vector scaled by twice the control distance.
-        let (pcx, pcy) = p.center();
+        let (pcx, pcy) = app.player.as_ref().map_or((0.0, 0.0), |p| p.center());
         let center = Vec2::new(pcx, pcy);
         let targets = sparkle_guitar_targets(center, &app.npcs);
         let mut target = world_pos;
@@ -5681,7 +5719,7 @@ fn fire_non_ammo_shot(
         // rides the successful note spawn. The Axe 1305 (`:46574`) and the
         // Carbon/Ivy guitars 4057/4372 (`:46588`) have no ported chord-use
         // arm — their 37 sites stay cited-unwired (the census).
-        let _ = app.notify_progression_net(37);
+        progression37 = true;
     } else if held.kind == 1308 {
         // S1-P-i22 — `Player.cs:48115-48134` - the Poison Staff's volley:
         // 3 fangs, 4 on a Next(3)==0 roll; each spreads by
@@ -5714,6 +5752,11 @@ fn fire_non_ammo_shot(
             }
         }
     } else if held.kind == 65 {
+            // The outer `p` borrow ended at the facing write; re-borrow
+            // for this read-only arm.
+            let Some(p) = app.player.as_ref() else {
+                return false;
+            };
         // S1-P-i22 — `Player.cs:47251-47266` (the projToShoot==9 block) +
         // `:49095-49108` (the type-65 arm) - the Starfury star:
         // the spawn point rides the cursor X with a random
@@ -5761,6 +5804,11 @@ fn fire_non_ammo_shot(
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
         }
     } else if held.kind == 3836 {
+            // The outer `p` borrow ended at the facing write; re-borrow
+            // for this read-only arm.
+            let Some(p) = app.player.as_ref() else {
+                return false;
+            };
         // W4-d15 — `Player.cs:48731-48735`: the Monk Staff T2's swing
         // ghost 699 spawns with `ai0 = Main.rand.NextFloat() * speed *
         // 0.75f * direction` — the aiStyle-142 swing arc's radius
@@ -5778,6 +5826,11 @@ fn fire_non_ammo_shot(
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
         }
     } else if held.kind == 3858 {
+            // The outer `p` borrow ended at the facing write; re-borrow
+            // for this read-only arm.
+            let Some(p) = app.player.as_ref() else {
+                return false;
+            };
         // W4-d15 — `Player.cs:48736-48747`: the Monk Staff T3. The alt
         // arm (`altFunctionUse == 2`, the right-click latch) spawns the
         // 708 swing ghost: velocity ×1.5, `ai0 = (0.3f + 0.7f *
@@ -5821,6 +5874,11 @@ fn fire_non_ammo_shot(
             }
         }
     } else if held.kind == 1121 {
+            // The outer `p` borrow ended at the facing write; re-borrow
+            // for this read-only arm.
+            let Some(p) = app.player.as_ref() else {
+                return false;
+            };
         // `Player.cs:48309-48332` — the Bee Gun's multi-bee
         // spawn. The count: `Next(1, 4)` base, +1 per
         // `Next(6) == 0` (two rolls), +1 more only while
@@ -5929,6 +5987,11 @@ fn fire_non_ammo_shot(
             }
         }
     } else if held.kind == 1931 {
+            // The outer `p` borrow ended at the facing write; re-borrow
+            // for this read-only arm.
+            let Some(p) = app.player.as_ref() else {
+                return false;
+            };
         // S1-P-i21 — `Player.cs:47663-47692` — the Blizzard Staff's two
         // icicles from the sky. Per icicle: a point 600 px above
         // the mounted centre, offset toward the cursor by
@@ -6022,6 +6085,14 @@ fn fire_non_ammo_shot(
         for _ in 0..(3 - num) {
             let vx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.05;
             let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.05;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if held.kind == 2623 {
         // W4-d8 DOC-SWEEP (2) — `Player.cs:48393-48401` — the Bubble Gun's
         // three-bubble volley: each bubble at the shared launch point with
@@ -6037,6 +6108,12 @@ fn fire_non_ammo_shot(
             let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.1;
             let slot = app.projectiles.spawn_with_data_ai(
                 proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if held.kind == 5461 {
         // W4-d12 DOC-SWEEP item 5 — `Player.ItemCheck_Shoot`'s Dead Cells
         // Killing Deck arm (`Player.cs:49190-49261`): the four-mode card-draw
@@ -6125,7 +6202,7 @@ fn fire_non_ammo_shot(
                 let luck = app.player.as_ref().map_or(0.0, |pl| pl.luck_state.luck);
                 let recalled = app.projectiles.recall_killing_deck_cards(owner);
                 for slot in recalled {
-                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    let rng = &mut *loot_rng;
                     app.projectiles.killing_deck_recall_damage(
                         slot,
                         &app.world,
@@ -6189,6 +6266,9 @@ fn fire_non_ammo_shot(
             }
         }
     } else if tr_core::whip::is_whip(proj) {
+        let Some(p) = app.player.as_ref() else {
+            return false;
+        };
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
         // their own projectile with a per-throw spin seed.
@@ -6217,6 +6297,9 @@ fn fire_non_ammo_shot(
             false,
         );
     } else if held.kind == 3014 {
+        let Some(p) = app.player.as_ref() else {
+            return false;
+        };
         // W4-d9 wiring — `Player.ItemCheck_Shoot`'s ClingerStaff arm
         // (`Player.cs:48591-48642`): the cursed-flame wall. The point
         // walks from the spawn along the aim while the line of sight to
@@ -6233,9 +6316,14 @@ fn fire_non_ammo_shot(
             &app.world,
         );
         // `:48597-48606` — the CanHitLine walk toward the clamped cursor.
-        while crate::projectile::can_hit_line(
-            &app.world, p.x, p.y, p.width, p.height, point.x, point.y, 1.0, 1.0,
-        ) {
+        let mut walk = 0;
+        while walk < 400
+            && shot.length_squared() > 0.0
+            && crate::projectile::can_hit_line(
+                &app.world, p.x, p.y, p.width, p.height, point.x, point.y, 1.0, 1.0,
+            )
+        {
+            walk += 1;
             point.x += shot.x;
             point.y += shot.y;
             if (point - target).length() < 20.0 + shot.x.abs() + shot.y.abs() {
@@ -6289,7 +6377,7 @@ fn fire_non_ammo_shot(
         }
         let ai3 = num154 - num155;
         // `:48636` — the X snaps to the tile grid (truncating).
-        point.x = (point.x / 16.0) as i32 as f32 * 16;
+        point.x = (point.x / 16.0) as i32 as f32 * 16.0;
         // `:48637-48640` — the spawn: zero velocity, the class-scaled
         // damage, ai0 = the wall top, ai1 = the height. NewProjectile
         // centres the box (`Projectile.cs:10876-10877`); the port's seam
@@ -6384,6 +6472,9 @@ fn fire_non_ammo_shot(
             Some(loot_rng.next_range(0, 20000) as f32)
         } else {
             None
+        };
+        let Some(p) = app.player.as_ref() else {
+            return false;
         };
         // `Player.cs:49413-49425` — the dual-flail sibling launch (S1-P-i07,
         // transplanted from main at the resync): throwing the Blue Moon 26 /
@@ -6573,6 +6664,9 @@ fn fire_non_ammo_shot(
             app.item_time = app.swing;
         }
     }
+    if progression37 {
+        let _ = app.notify_progression_net(37);
+    }
     true
 }
 
@@ -6613,6 +6707,102 @@ fn try_petting(
     // `:37927-37930` — `gamePaused || gameMenu`: the caller's step gate
     // (the editing pass never runs paused/in-menu) folds it.
     let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let q = &app.projectiles.slots()[slot];
+    // `:37932` — `IsProjectileInteractableAndInInteractionRange`
+    // (`Player.cs:23153-23169`): active + interactable + the closest-point
+    // tile inside the Simple reach region (`TileReachCheckSettings.cs:45-54`
+    // — the chest route's region, `chest.rs:1382-1387`).
+    if !q.active || !is_interactable(q.kind) {
+        return false;
+    }
+    // `TryPetting` is only called from the pet DrawProj arms (the foxsparks
+    // `:33203`, the digtoise `:33700`, the cattiva/claypot `:34264`). The
+    // other `IsInteractable` rows — the Money Trough 525, the Void Lens 734,
+    // Chester 960 — ride their own interaction machines
+    // (`TryInteractingWithMoneyTrough`/`TryInteractingWithVoidLens`, unported),
+    // so the pet seam refuses them.
+    if !matches!(q.kind, 1093 | 1094 | 1098 | 1112 | 1113 | 1118 | 1123) {
+        return false;
+    }
+    let (pcx, pcy) = p.center();
+    let closest = closest_point_in_rect(Vec2::new(pcx, pcy), q.pos, q.w, q.h);
+    let tx = (closest.x / TILE_PX) as i32;
+    let ty = (closest.y / TILE_PX) as i32;
+    let (reach_x, reach_y) = p.tile_interaction_reach();
+    if !tile_in_reach_rect(p, tx, ty, reach_x, reach_y, 0) {
+        return false;
+    }
+    // `:37936-37942` — the mouse-world point inside the hitbox; the
+    // foxsparks (1094/1113) inflate 6 each way first. XNA `Contains` is
+    // half-open on Right/Bottom; `ToPoint` truncates.
+    let inflate = if q.kind == 1094 || q.kind == 1113 { 6.0 } else { 0.0 };
+    let (hx0, hy0) = (q.pos.x - inflate, q.pos.y - inflate);
+    let (hx1, hy1) = (q.pos.x + q.w + inflate, q.pos.y + q.h + inflate);
+    let mx = mouse_world.x as i32;
+    let my = mouse_world.y as i32;
+    let hover = mx >= hx0 as i32 && mx < hx1 as i32 && my >= hy0 as i32 && my < hy1 as i32;
+    // `:37943-37952` — the hover gate (the smart-interact arm is folded).
+    if !hover {
+        return false;
+    }
+    // `:37953-37959` — the cursor icon + the throw lockout (the icon draw
+    // is the render layer's follow-up; the fields carry the state).
+    let item_icon: u16 = match q.kind {
+        1094 => 5664,
+        1113 => 6149,
+        1098 | 1123 => 5667,
+        1118 => 6161,
+        1093 => 5663,
+        _ => 6148, // 1112
+    };
+    app.no_throw = 4;
+    app.cursor_item_icon_id = i32::from(item_icon);
+    // `:37964` — the fresh right press with the block counter clear.
+    if !press_edge || block_interaction != 0 {
+        return false;
+    }
+    // `:37966-37969` — the consumed click: the interface latch + the
+    // tile-interaction flags. `tileInteractAttempted`/`tileInteractionHappened`
+    // are the chat-arm's guards (`Main.cs:43077`) — the port's talk arm
+    // reads `talk_npc` instead; `releaseUseTile = false` is the port's
+    // `place_released` latch clear.
+    app.ui_right_release_latch = false;
+    app.place_released = false;
+    // `GetPettingInfo` + `PetAnimal` (`Player.cs:33358-33399`). The grapple
+    // teardown (`RemoveAllGrapplingHooks`, `:33379`) needs the pool — the
+    // caller-side order runs it BEFORE `pet_animal` when the snap is going
+    // to land (the sleep_down bobber-teardown precedent). The repeat-click
+    // toggle (`:33373-33377`) fires BEFORE the teardown in C# — probe it
+    // first so a toggle-off never kills the hooks.
+    let info = get_petting_info(
+        slot,
+        q.kind,
+        Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5),
+        pcx,
+    );
+    let target_bottom = (q.pos.x + q.w * 0.5, q.pos.y + q.h);
+    let snap = (
+        (target_bottom.0 + info.offset_from_pet.0).floor(),
+        (target_bottom.1 + info.offset_from_pet.1).floor(),
+    );
+    let (bx, by) = p.bottom();
+    let toggles_off = p.petting.is_petting && (bx, by) == snap;
+    let snap_ok = p.can_snap_to(&app.world, snap.0 - bx, snap.1 - by)
+        && crate::projectile_ai026_c::solid_tile_allow_bottom_slope(
+            &app.world,
+            snap.0 as i32 / 16,
+            snap.1 as i32 / 16,
+        );
+    if !toggles_off && snap_ok {
+        let owner = app.local_id as u8;
+        app.projectiles.remove_all_grappling_hooks(owner);
+    }
+    let p = app.player.as_mut().expect("the player borrow above");
+    let _ = p.pet_animal(&app.world, &app.npcs, info, None);
+    true
+}
 /// W4-a1 phase 1 — the useStyle-1 swing-rect hit seam. Wires the landed
 /// `melee_swing::melee_hitbox` (`Player.cs:45099-45190`) into the old
 /// cursor-point melee arm: the press starts the use (`start_use_timers`),
@@ -6819,117 +7009,6 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     let Some(tile) = app.world.tile(tx, ty).copied() else {
         return false;
     };
-    let q = &app.projectiles.slots()[slot];
-    // `:37932` — `IsProjectileInteractableAndInInteractionRange`
-    // (`Player.cs:23153-23169`): active + interactable + the closest-point
-    // tile inside the Simple reach region (`TileReachCheckSettings.cs:45-54`
-    // — the chest route's region, `chest.rs:1382-1387`).
-    if !q.active || !is_interactable(q.kind) {
-        return false;
-    }
-    // `TryPetting` is only called from the pet DrawProj arms (the foxsparks
-    // `:33203`, the digtoise `:33700`, the cattiva/claypot `:34264`). The
-    // other `IsInteractable` rows — the Money Trough 525, the Void Lens 734,
-    // Chester 960 — ride their own interaction machines
-    // (`TryInteractingWithMoneyTrough`/`TryInteractingWithVoidLens`, unported),
-    // so the pet seam refuses them.
-    if !matches!(q.kind, 1093 | 1094 | 1098 | 1112 | 1113 | 1118 | 1123) {
-        return false;
-    }
-    let (pcx, pcy) = p.center();
-    let closest = closest_point_in_rect(Vec2::new(pcx, pcy), q.pos, q.w, q.h);
-    let tx = (closest.x / TILE_PX) as i32;
-    let ty = (closest.y / TILE_PX) as i32;
-    let (reach_x, reach_y) = p.tile_interaction_reach();
-    if !tile_in_reach_rect(p, tx, ty, reach_x, reach_y, 0) {
-        return false;
-    }
-    // `:37936-37942` — the mouse-world point inside the hitbox; the
-    // foxsparks (1094/1113) inflate 6 each way first. XNA `Contains` is
-    // half-open on Right/Bottom; `ToPoint` truncates.
-    let inflate = if q.kind == 1094 || q.kind == 1113 { 6.0 } else { 0.0 };
-    let (hx0, hy0) = (q.pos.x - inflate, q.pos.y - inflate);
-    let (hx1, hy1) = (q.pos.x + q.w + inflate, q.pos.y + q.h + inflate);
-    let mx = mouse_world.x as i32;
-    let my = mouse_world.y as i32;
-    let hover = mx >= hx0 as i32 && mx < hx1 as i32 && my >= hy0 as i32 && my < hy1 as i32;
-    // `:37943-37952` — the hover gate (the smart-interact arm is folded).
-    if !hover {
-        return false;
-    }
-    // `:37953-37959` — the cursor icon + the throw lockout (the icon draw
-    // is the render layer's follow-up; the fields carry the state).
-    let item_icon: u16 = match q.kind {
-        1094 => 5664,
-        1113 => 6149,
-        1098 | 1123 => 5667,
-        1118 => 6161,
-        1093 => 5663,
-        _ => 6148, // 1112
-    };
-    app.no_throw = 4;
-    app.cursor_item_icon_id = item_icon;
-    // `:37964` — the fresh right press with the block counter clear.
-    if !press_edge || block_interaction != 0 {
-        return false;
-    }
-    // `:37966-37969` — the consumed click: the interface latch + the
-    // tile-interaction flags. `tileInteractAttempted`/`tileInteractionHappened`
-    // are the chat-arm's guards (`Main.cs:43077`) — the port's talk arm
-    // reads `talk_npc` instead; `releaseUseTile = false` is the port's
-    // `place_released` latch clear.
-    app.ui_right_release_latch = false;
-    app.place_released = false;
-    // `GetPettingInfo` + `PetAnimal` (`Player.cs:33358-33399`). The grapple
-    // teardown (`RemoveAllGrapplingHooks`, `:33379`) needs the pool — the
-    // caller-side order runs it BEFORE `pet_animal` when the snap is going
-    // to land (the sleep_down bobber-teardown precedent). The repeat-click
-    // toggle (`:33373-33377`) fires BEFORE the teardown in C# — probe it
-    // first so a toggle-off never kills the hooks.
-    let info = get_petting_info(
-        slot,
-        q.kind,
-        Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5),
-        pcx,
-    );
-    let target_bottom = (q.pos.x + q.w * 0.5, q.pos.y + q.h);
-    let snap = (
-        (target_bottom.0 + info.offset_from_pet.0).floor(),
-        (target_bottom.1 + info.offset_from_pet.1).floor(),
-    );
-    let (bx, by) = p.bottom();
-    let toggles_off = p.petting.is_petting && (bx, by) == snap;
-    let snap_ok = p.can_snap_to(&app.world, snap.0 - bx, snap.1 - by)
-        && crate::projectile_ai026_c::solid_tile_allow_bottom_slope(
-            &app.world,
-            snap.0 as i32 / 16,
-            snap.1 as i32 / 16,
-        );
-    if !toggles_off && snap_ok {
-        let owner = app.local_id as u8;
-        app.projectiles.remove_all_grappling_hooks(owner);
-    }
-    let p = app.player.as_mut().expect("the player borrow above");
-    let _ = p.pet_animal(&app.world, &app.npcs, info);
-    true
-}
-
-/// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
-/// minable/chopable tile the held tool can work, and the vanilla checks the
-/// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
-/// (`Player.cs:43593`) runs ahead of the melee-hit box block
-/// (`Player.cs:43644-43686`). The weapons take the NPC arm regardless
-/// (`damage > 0` and `!noMelee`, `Player.cs:43648`).
-fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
-    let held = app.inventory[app.selected];
-    if held.count == 0 {
-        return false;
-    }
-    let tx = (world_pos.x / TILE_PX).floor() as i32;
-    let ty = (world_pos.y / TILE_PX).floor() as i32;
-    let Some(tile) = app.world.tile(tx, ty).copied() else {
-        return false;
-    };
     if !tile.active() {
         return false;
     }
@@ -6946,6 +7025,39 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
 }
 
+/// The `Player.ItemCheck` use-arm ladder the union merge displaced out of
+/// [`update_editing`]: the bucket/sponge arm (`:43575`), the melee swing
+/// dispatch (`ItemCheck_MeleeHitNPCs`, `:43644`), the mount swap
+/// (`:42768`/`Mount.CanMount`), the pick/axe/hammer mining pass
+/// (`ItemCheck_UseMiningTools`, `:43593`), the tile/wall placement
+/// (`PlaceThing_Tiles_PlaceIt` / `PlaceThing_Walls`, `:40141`/`:39623`),
+/// the wiring/paint tools, the block swap, the extractinator and the pot
+/// arms — i.e. the whole "use" half that `update_editing`'s shoot half
+/// follows in the C#. The body is restored verbatim (every constant, dust
+/// draw and RNG slot intact); the reconstructed tree has not re-attached
+/// the call site yet, so the ladder is defined-but-unwired — no behaviour
+/// change versus the union state.
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn item_use_arms(
+    app: &mut App,
+    tx: i32,
+    ty: i32,
+    held: ItemSlot,
+    held_fx: Option<crate::prefix::PrefixedStats>,
+    held_use_ammo: i32,
+    def: &'static registry::ItemDef,
+    held_weapon: bool,
+    world_pos: Vec2,
+    prev_mine_released: bool,
+    prev_mine_down: bool,
+    cursor_blocked: bool,
+    thrust_took: bool,
+    prev_place_released: bool,
+    prev_place_down: bool,
+    screen: Vec2,
+    player_in_reach: bool,
+) {
     // W4-g45 doc-sweep — the bucket/sponge family
     // (`Player.ItemCheck_UseBuckets`, `Player.cs:46318-46504`, called at
     // `:43575` BEFORE the melee-hitbox block `:43644`). The twelve kinds
@@ -7046,6 +7158,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // gone with it (S1-P-i37): every melee strike already returns, so
         // the block was unreachable for NPCs in reach, and the drink family
         // now rides `potions::use_potion_item` at the use-start seam.
+    }
     // Melee (W4-a1 phase 1): the useStyle-1 swing-rect seam REPLACES the
     // old cursor-point pick — `melee_swing::melee_hitbox`
     // (`Player.cs:45099-45190`) off the live `swing_item_placement` arc
@@ -8015,7 +8128,6 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    if app.place_down && !app.inventory_open && (starting || inside_swing) {
     // W4-g79 — the paint-tool family (`Player.PlaceThing_Paintbrush` /
     // `PlaceThing_PaintRoller` / `PlaceThing_PaintScraper`, `Player.cs:39586-
     // 39588`): the brush/roller/scraper answer before the extractinator and
@@ -8156,6 +8268,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
+    }
 }
 
 pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
@@ -8187,12 +8300,13 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
     // `UpdatePlayers` (W4-d54 batch 2).
     {
         let ctx = app.spawn_ctx();
-        let mut gen = app.world.frame_rng.clone();
+        let mut gen_rng = app.world.frame_rng.clone();
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         crate::world_dust_wall::wall_break_burst(
-            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
+            rng, &mut gen_rng, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
         );
-        app.world.frame_rng = gen;
+        app.world.frame_rng = gen_rng;
+    }
     if matches!(outcome, edit::WallBreak::Failed(_)) {
         // `:60395-60399` — the fail return: no drop, no wall write, no edit
         // record (the 3-dust burst is the recorded dust-layer skip).
@@ -8283,12 +8397,12 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
             // The `genRand` type rolls ride the `frame_rng` snapshot.
             {
                 let ctx = app.spawn_ctx();
-                let mut gen = app.world.frame_rng.clone();
+                let mut gen_rng = app.world.frame_rng.clone();
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 crate::world_dust_wall::wall_break_burst(
-                    rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, old, 10,
+                    rng, &mut gen_rng, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, old, 10,
                 );
-                app.world.frame_rng = gen;
+                app.world.frame_rng = gen_rng;
             }
             // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
             // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
@@ -8540,7 +8654,11 @@ fn bulb_summon_plantera(app: &mut App, bx: i32, by: i32) {
         any_danger: false,
         probe_exists: false,
         sky_behind_player: false,
+        wyvern_exists: false,
         moon_boss_cap_count: 0.0,
+        luck: app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+        downed_boss1: app.world.downed_eoc,
+        sandstorm_happening: app.sandstorm.happening,
     };
     let Some((sx, sy)) = crate::spawner::spawn_on_player_tile(
         &ctx,
@@ -8564,7 +8682,8 @@ fn bulb_summon_plantera(app: &mut App, bx: i32, by: i32) {
     crate::spawner::stamp_boss_spawn(&mut boss, &mut app.chat, "Plantera");
     app.npcs.push(boss);
 
-        }/// W4-c14 - one mining fail-tick cue: the `WorldGen.KillTile(x, y, fail:
+}
+/// W4-c14 - one mining fail-tick cue: the `WorldGen.KillTile(x, y, fail:
 /// true)` entry's `KillTile_PlaySounds(fail: true)` (`WorldGen.cs:63558`,
 /// the pick's fail arm `Player.cs:53815`, the hammer's `:45692`, the axe's
 /// `:45758`). The `CheckTileBreakability` refusal (`:63542-63545`'s `num ==
@@ -8574,15 +8693,233 @@ fn bulb_summon_plantera(app: &mut App, bx: i32, by: i32) {
 /// pinned `kill_cue` map plays it (the D3 pin - no gameplay draws).
 pub(crate) fn play_kill_fail_cue(app: &mut App, tx: i32, ty: i32) {
     if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
     let Some(t) = app.world.tile(tx, ty).filter(|t| t.active()).copied() else {
+        return;
+    };
     let sounds = edit::kill_tile_sound(t.kind, t.frame_x, true);
     let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
     for cue in [sounds.primary, sounds.extra, sounds.shatter]
         .into_iter()
         .flatten()
+    {
         if let Some((name, volume)) = kill_cue(cue) {
             app.audio.play_at(name, px, py, volume);
         }
+    }
+}
+
+/// W4-g17 wiring — `CheckPot`'s gore switch drain (`WorldGen.cs:
+/// 56878-56954` through [`crate::world_gore_b::pot_break_gores`]): one
+/// call per `PotEvent`, AFTER the break sound and BEFORE the
+/// `SpawnThingsFromPot` loot (the C# `CheckPot` order). The kicks ride
+/// the `UpdatePlayers` stream (the break's `Main.rand` swap); each
+/// event's styles 25-33 type picks ride a `FastRandom` genRand stand-in
+/// seeded by ONE throw — the `spawn_things_from_pot` owner's convention,
+/// drawn BEFORE that loot's own seed throw. The seed throw is
+/// unconditional (every style), matching the loot resolver's seam.
+fn pot_gore_drain(app: &mut App, kill: &edit::TileKill) {
+    for event in &kill.events {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        crate::world_gore_b::pot_break_gores(
+            event.style,
+            event.x,
+            event.y,
+            &mut app.gore,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            &mut gen_stream,
+            &app.world,
+        );
+    }
+}
+
+/// W4-g17 wiring — `ItemCheck`'s per-tick visual arms (`Player.cs:
+/// 43644-43653`): the melee-hitbox sparkle ladder (item 1450,
+/// `player_gore_e::melee_hitbox_sparkle`), the use-visual arms (65 /
+/// 3065 / meleeEnchant-7 / 1304, `player_gore_d`) and the useStyle-5
+/// lantern mote (4262, `player_gore_e::lantern_mote_gore`). The rect
+/// resolves through the shared `melee_swing` ports (the useStyle-1
+/// path); the useStyle-3 thrust rect rides `thrust_melee_hitbox`. The
+/// other use styles' rects are the item lane's — their visual arms skip
+/// (documented). Every gate ALWAYS draws on the `UpdatePlayers` stream
+/// (the ItemCheck swap, `Main.cs:17754`), in the C# arm order.
+fn item_use_visuals_tick(app: &mut App) {
+    if app.swing <= 0.0 {
+        return;
+    }
+    let held = app.inventory[app.selected];
+    if held.count == 0 || held.kind == 0 {
+        return;
+    }
+    let Some(def) = registry::get(held.kind) else {
+        return;
+    };
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    let anim = ticks_of(app.swing);
+    let anim_max = ticks_of(app.swing_max).max(1);
+    let scale = crate::player::adjusted_item_scale(
+        crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(def.scale, |s| s.scale),
+    );
+    let (frame_w, frame_h) = app
+        .lookups
+        .item_icon(held.kind)
+        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
+    // The rect: useStyle 1 through the swing placement + hitbox ports,
+    // useStyle 3 through the thrust pair. The other styles park.
+    let rect: Option<(i32, i32, i32, i32)> = match def.use_style {
+        1 => {
+            let (loc, _) = crate::melee_swing::swing_item_placement(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                [p.x, p.y],
+                crate::player::WIDTH,
+                crate::player::HEIGHT,
+                frame_w,
+                frame_h,
+                0.0,
+            );
+            let r = crate::melee_swing::melee_hitbox(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                loc,
+                frame_w as i32,
+                frame_h as i32,
+                scale,
+            );
+            Some((r.x, r.y, r.width, r.height))
+        }
+        3 => {
+            let remaining = app.swing / app.swing_max.max(f32::EPSILON);
+            let (loc, _) = crate::player::thrust_item_placement(
+                p.x,
+                p.y,
+                crate::player::WIDTH,
+                p.facing as f32,
+                remaining,
+                frame_w,
+                scale,
+                0.0,
+                i32::from(held.kind),
+            );
+            crate::player::thrust_melee_hitbox(
+                loc,
+                frame_w,
+                frame_h,
+                scale,
+                p.facing,
+                remaining,
+                i32::from(held.kind),
+            )
+        }
+        _ => None,
+    };
+    let spawn_ctx = app.spawn_ctx();
+    // `:43644-43646` — `ItemCheck_GetMeleeHitboxParticles`: the 1450
+    // sparkle ladder (the outer Next(3) gate ALWAYS draws).
+    if held.kind == 1450 {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let state = crate::player_gore_e::MeleeHitboxGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+            };
+            crate::player_gore_e::melee_hitbox_sparkle(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
+    // `:43648-43653` — `ItemCheck_EmitUseVisuals`' gate: `(damage >= 0 &&
+    // type > 0 && !noMelee) || the bug-net trio`. The port's itemdata
+    // carries no noMelee field — every registered row stands noMelee-false
+    // (the documented stand-in), so the gate folds to `damage >= 0` plus
+    // the trio (their damage is -1).
+    let emit_gate = def.damage >= 0 || matches!(held.kind, 1991 | 3183 | 4821);
+    if emit_gate {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let gore_disabled = app.gore.child_safety.disabled;
+            let state = crate::player_gore_d::ItemUseGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+                vx: p.vx,
+                vy: p.vy,
+            };
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            match held.kind {
+                65 => crate::player_gore_d::item65_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                3065 => crate::player_gore_d::item3065_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                1304 => crate::player_gore_d::item1304_use_gore(
+                    &state,
+                    &mut app.gore,
+                    rng,
+                    &app.world,
+                    gore_disabled,
+                ),
+                _ => {}
+            }
+            // `:44901-45008` — the meleeEnchant ladder's 7 arm (the
+            // Confetti Flask): `melee && !noMelee && !noUseGraphic &&
+            // meleeEnchant == 7`. The other enchant rows are dust-only
+            // (the dust lane's) — their gates draw too in the C#, but
+            // the port's enchant-7-only slice documents the remainder.
+            if def.melee && p.melee_enchant == 7 {
+                crate::player_gore_d::enchant7_use_gore(
+                    &state,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
+        }
+    }
+    // `:51099-51125` — the useStyle-5 lantern mote (4262): the
+    // `DontHoldItems` mount gate (55/56/61) then the Next(20) gate.
+    if def.use_style == 5 && held.kind == 4262 {
+        let mounted_blocks = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+        if !mounted_blocks {
+            let (cx, _) = p.center();
+            let (_, mcy) = p.mounted_center();
+            let state = crate::player_gore_e::LanternMoteState {
+                center_x: cx,
+                item_location_y: mcy - 6.0,
+                direction: p.facing,
+                wind_for_visuals: app.wind.speed_current,
+            };
+            crate::player_gore_e::lantern_mote_gore(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
 }
 
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
@@ -8656,14 +8993,13 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
         crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
         app.wiring.destroy_plate(&mut app.world, tx, ty);
     }
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
     // W4-g83: the break cascade's framing dispatch rides the UpdatePlayers
     // stream (the active genRand of the player tick, contract §2).
     let Some(kill) = edit::kill_tile(
         &mut app.world,
         tx,
         ty,
-        false,
+        no_item,
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     ) else {
         return;
@@ -8676,11 +9012,6 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
     if let Some(hit) = &hit {
         crate::signs::kill_broken_sign_record(app, hit.kind, hit.x, hit.y, hit.frame_x, hit.frame_y);
     }
-    // W4-c36 — `WorldGen.CheckOrb`'s tail (`WorldGen.cs:54331`): a completed
-    // orb/heart/mana-crystal smash fires progression 7 (SMASHING_POPPET).
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
-        return;
-    };
     // W4-g85 wiring round 2 — `WorldGen.CheckOrb`'s achievement tail
     // (`WorldGen.cs:54331`): a completed case-31 orb/heart smash fires
     // progression 7 (SMASHING_POPPET). The core kill plan sets the flag
@@ -8761,12 +9092,12 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
     // `UpdatePlayers`.
     if let Some(t) = &dust_tile {
         let ctx = app.spawn_ctx();
-        let mut gen = app.world.frame_rng.clone();
+        let mut gen_rng = app.world.frame_rng.clone();
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         crate::world_dust_tile::tile_break_burst(
-            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
+            rng, &mut gen_rng, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
         );
-        app.world.frame_rng = gen;
+        app.world.frame_rng = gen_rng;
     }
     // W4-c14 - the `Check*` routines' own tail sounds (`CheckOrb`
     // `WorldGen.cs:54335-54342`: the crimson Heart's killed 4 / the Shatter
@@ -8791,6 +9122,8 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
     // `noItem`-gated (the C# plays them outside the drop gate), so they
     // drain unconditionally.
     for &(id, style, cx, cy) in &kill.check_cues {
+        if let Some((name, volume)) = kill_cue((id, style)) {
+            app.audio
                 .play_at(name, cx as f32 * TILE_PX, cy as f32 * TILE_PX, volume);
         }
     }
@@ -8821,7 +9154,6 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
             &ctx,
         )
     };
-    for (id, count, px, py) in drops {
     // `noItem: true` (`WorldGen.cs:63860`) suppresses the loot — the
     // fossil-shatter kills drop nothing.
     for (id, count, x, y) in drops.into_iter().filter(|_| !no_item) {
@@ -8832,7 +9164,7 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
         // The positions are PIXELS (the object records carry the C# rect
         // centre, the g78 FIX-ONCE) — spawn through the pixel seam.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        super::items::spawn_item_drop_px(&mut app.items, rng, id, count, Vec2::new(px, py));
+        super::items::spawn_item_drop_px(&mut app.items, rng, id, count, Vec2::new(x, y));
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
@@ -8956,7 +9288,7 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
         }
         // The §8.2 echoes: SP discards (the netMode-0 return).
         for (n, x, y, d) in app.wiring.take_door_echoes() {
-            app.send_door_toggle(n, x, y, d);
+            app.send_door_toggle(n as u8, x, y, d);
         }
     }
     // `CheckJunglePlant`'s 238 arm (`WorldGen.cs:48007-48026`): the broken
@@ -9035,7 +9367,13 @@ pub(crate) fn replicated_break(app: &mut App, tx: i32, ty: i32, no_item: bool, s
             app.audio.play_at(name, px, py, volume);
         }
     }
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
+    let Some(kill) = edit::kill_tile(
+        &mut app.world,
+        tx,
+        ty,
+        no_item,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    ) else {
         return;
     };
     // The chest/dresser store close (`Chest.DestroyChest`,
@@ -9079,7 +9417,13 @@ pub(crate) fn replicated_break(app: &mut App, tx: i32, ty: i32, no_item: bool, s
         };
         for (id, count, x, y) in drops {
             let rng = app.rngs.global();
-            spawn_item_drop(&mut app.items, rng, id, count, x, y);
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut app.items,
+                rng,
+                id,
+                count,
+                Vec2::new(x, y),
+            );
         }
         for (px, py) in portals {
             let _ = app.projectiles.spawn_with_data(
@@ -9110,7 +9454,13 @@ pub(crate) fn replicated_break(app: &mut App, tx: i32, ty: i32, no_item: bool, s
             cell.frame_y = frame_y;
         }
     }
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(
+            &mut app.world,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            tx,
+            ty,
+            3,
+        );
     // The falling check (`WorldGen.TileFrame`, `WorldGen.cs:81380`).
     if let Some(fall) = tr_core::falling::check_falling(&app.world, tx, ty - 1) {
         if let Some(t) = app.world.tile_mut(tx, ty - 1) {
@@ -9194,7 +9544,13 @@ pub(crate) fn resolve_liquid_edit_kills(app: &mut App, kills: Vec<edit::TileKill
         };
         for (id, count, x, y) in drops {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
-            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, count, x, y);
+            crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            id,
+            count,
+            Vec2::new(x, y),
+        );
         }
     }
 }
@@ -9280,11 +9636,6 @@ pub(crate) struct HitCell {
 /// lane). Plus the Coin Portal projectile requests. Free of `App` — the RNG
 /// streams come in as parameters (`genRand` = the seeded `FastRandom`
 /// stand-in, `Main.rand` = the caller's `UnifiedRandom` stage stream).
-fn break_drop_events(
-/// (:47130-47245). `(item, stack, x, y)` in spawn order, plus the Coin
-/// Portal projectile requests. Free of `App` — the RNG streams come in as
-/// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
-/// the caller's `UnifiedRandom` stage stream).
 pub(crate) fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
@@ -9320,7 +9671,7 @@ pub(crate) fn break_drop_events(
         if let Some(id) = id {
             let (px, py) = drop.spawn_center_px();
             events.push((id, 1, px, py));
-            events.push((id, 1, drop.x, drop.y));
+            events.push((id, 1, drop.x as f32, drop.y as f32));
             // W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:
             // :54248-54249` / `:54275-54276`): the gun (Musket 96 / The
             // Undertaker 800) spawns WITH a Musket Ball 97 stack of
@@ -9329,7 +9680,7 @@ pub(crate) fn break_drop_events(
             // `:4445`); the stack spawns at the same rect, after the gun.
             if matches!(id, 96 | 800) && drop.tile_kind == 31 {
                 let stack = main_rng.next_range(100, 101) as u32;
-                events.push((97, stack, drop.x, drop.y));
+                events.push((97, stack, drop.x as f32, drop.y as f32));
             }
         }
     }
@@ -9486,7 +9837,7 @@ pub(crate) fn break_drop_events(
     // loot).
     for pig in &kill.pigronata_events {
         for (id, count) in pigronata_loot(main_rng) {
-            events.push((id, count, pig.x, pig.y));
+            events.push((id, count, pig.x as f32, pig.y as f32));
         }
     }
     (events, portals)
@@ -11385,7 +11736,13 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         // against the new piece (research-71 §6 census).
         crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
     }
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(
+            &mut app.world,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            tx,
+            ty,
+            3,
+        );
     app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
     // `WorldGen.PlaceTile` tail switch (`WorldGen.cs:60263-60282` — 127 →
@@ -11599,8 +11956,6 @@ pub(crate) fn apply_edit(
     y: i32,
     kind: u8,
     tile: u16,
-    rng: &mut tr_core::UnifiedRandom,
-) -> Option<u16> {
 ) -> Option<edit::WallBreak> {
     match kind {
         0 => {
@@ -11612,7 +11967,10 @@ pub(crate) fn apply_edit(
             // store is reachable from a bare world, so that case passes
             // (the store is empty until M3-CHEST-UI anyway).
             if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
-                edit::kill_tile(world, x, y, true, rng);
+                // The net replay carries no `App`, so the cascade rides the
+                // world-derived `legacy_gen_rng` stand-in (the `Main.rand`
+                // shape the handler used before the `rng` threading).
+                edit::kill_tile_legacy(world, x, y, true);
             }
             None
         }
@@ -11684,18 +12042,17 @@ fn resolve_melee_strike(
     melee_pen: i32,
     pcx: f32,
 ) {
-                let n = &app.npcs[idx];
                 // W4-e7 lane 23: the struck NPC's Copy reads, captured up
                 // front so the `n` borrow ends BEFORE the Snapping Stone
                 // strike's `&mut app.npcs` below (the NLL convention the
                 // pre-strike buff borrow already uses). `n_kind` feeds the
                 // cane/Flymeal gates; the defense/position/size/cue reads
                 // move here from their old pre-StatusToNPC spot.
-                let n_kind = n.kind;
-                let n_defense = n.defense();
-                let (nx, ny) = (n.x, n.y);
-                let (bw, bh) = n.size();
-                let hit_cue = n.kind.hit_sound();
+                let n_kind = app.npcs[idx].kind;
+                let n_defense = app.npcs[idx].defense();
+                let (nx, ny) = (app.npcs[idx].x, app.npcs[idx].y);
+                let (bw, bh) = app.npcs[idx].size();
+                let hit_cue = app.npcs[idx].kind.hit_sound();
                 // The Flymeal's TERRARIST (42) fires before the strike in the
                 // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
                 // needs `&mut app` — it lands just ahead of the strike below,
@@ -11734,6 +12091,9 @@ fn resolve_melee_strike(
                 // `:44362-44371` — the item drop rides the M3 item system).
                 let mut raw = if n_kind.is_town_npc_like() && held.kind == 3351 {
                     1.0
+                } else {
+                    raw
+                };
                 // `Player.GetWeaponDamage`'s int truncation + the `5E-06f`
                 // epsilon (`Player.cs:53421-53429`): `ItemCheck`'s
                 // `weaponDamage` (`:42653`) is the INT the melee scan passes
@@ -11763,7 +12123,7 @@ fn resolve_melee_strike(
                 let raw = match app
                     .player
                     .as_ref()
-                    .and_then(|p| p.banner_buff_for_npc(n.kind.cs_id() as i32))
+                    .and_then(|p| p.banner_buff_for_npc(app.npcs[idx].kind.cs_id() as i32))
                 {
                     Some((dealt, _)) => (raw * dealt) as i32 as f32,
                     None => raw,
@@ -11776,7 +12136,7 @@ fn resolve_melee_strike(
                 // 0.62) per landed hit on a mortal NPC — the target dummy
                 // (`immortal`, `NPC.cs:6259`) never charges. The tooltip's
                 // read-only half (`Main.cs:20675`) reads the same field.
-                let immortal = n.immortal;
+                let immortal = app.npcs[idx].immortal;
                 if let Some(p) = app.player.as_mut() {
                     dmg = p.apply_rapid_attack_bonus(dmg, held.kind, !immortal);
                 }
@@ -11785,7 +12145,7 @@ fn resolve_melee_strike(
                 // one-damage slap on the town (it showers coins on mobs,
                 // `:44367-44375` — the item drop rides the M3 item system).
                 // AFTER the rapid-attack arm, the C#'s own order.
-                if n.kind.is_town_npc_like() && held.kind == 3351 {
+                if app.npcs[idx].kind.is_town_npc_like() && held.kind == 3351 {
                     dmg = 1;
                 }
                 let raw = dmg as f32;
@@ -11810,7 +12170,7 @@ fn resolve_melee_strike(
                 // precedes `:44342`), after the crit roll (`:44298`) —
                 // the draw order is untouched (no new draws).
                 let held_is_melee = registry::get(held.kind).is_some_and(|d| d.melee);
-                let raw = if held_is_melee
+                let mut raw = if held_is_melee
                     && app.player.as_ref().is_some_and(|p| p.parry_damage_buff)
                 {
                     if let Some(p) = app.player.as_mut() {
@@ -11835,7 +12195,7 @@ fn resolve_melee_strike(
                         let p = app.player.as_ref().unwrap();
                         (p.x, p.y, p.width, p.height)
                     };
-                    let strike_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    let strike_rng = &mut *loot_rng;
                     // The C# `dmg += num13` adds the bonus to the int damage;
                     // the bonus is independent of the incoming value, so the
                     // port accumulates it from 0 and adds to the f32 `raw`
@@ -11860,7 +12220,7 @@ fn resolve_melee_strike(
                     // — not at the projectile pass tail — keeps the case-2
                     // draws on the melee lane's stream.
                     for sound in app.projectiles.drain_striking_sounds() {
-                        let sound_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        let sound_rng = &mut *loot_rng;
                         crate::snapping_stone::play_striking_sound(&mut app.audio, sound, sound_rng);
                     }
                 }
@@ -11912,13 +12272,13 @@ fn resolve_melee_strike(
                 // ClassyCane particle is a visual skip. Runs pre-strike
                 // (the C# block precedes `StrikeNPC` `:44403`), so the
                 // life gate reads the PRE-hit hp.
-                if held.kind == 3351 && n.hp > 5 {
+                if held.kind == 3351 && app.npcs[idx].hp > 5 {
                     let dir = app.player.as_ref().map_or(1, |p| p.facing);
                     let vx = (2.0 + loot_rng.next_float() * 2.0) * dir as f32;
                     let vy = -2.0 - loot_rng.next_float() * 2.0;
-                    let (nw, nh) = n.size();
-                    let cx = n.x + loot_rng.next_max(nw as i32) as f32;
-                    let cy = n.y + loot_rng.next_max(nh as i32) as f32;
+                    let (nw, nh) = app.npcs[idx].size();
+                    let cx = app.npcs[idx].x + loot_rng.next_max(nw as i32) as f32;
+                    let cy = app.npcs[idx].y + loot_rng.next_max(nh as i32) as f32;
                     let stack = 1 + tr_core::loot::roll_bad_luck(loot_rng, luck, 25);
                     // `NewItemOwnership.GrabDelayForAllPlayers` — every
                     // player (and the monsters) wait the 100-tick delay.
@@ -11942,16 +12302,16 @@ fn resolve_melee_strike(
                 // borrow ended — the old pre-StatusToNPC re-reads are gone.
                 // The struck NPC's Copy reads — captured before the
                 // mutable buff borrow below ends the `n` borrow (NLL).
-                let n_defense = n.defense();
-                let (nx, ny) = (n.x, n.y);
-                let (bw, bh) = n.size();
+                let n_defense = app.npcs[idx].defense();
+                let (nx, ny) = (app.npcs[idx].x, app.npcs[idx].y);
+                let (bw, bh) = app.npcs[idx].size();
                 // The kind's hit cue (`NPC.HitSound`) — read before the app
                 // borrows below.
-                let hit_cue = n.kind.hit_sound();
+                let hit_cue = app.npcs[idx].kind.hit_sound();
                 // W4-e4 — the Classy Cane gate's NPC reads, captured before
                 // the app borrows below (the `n` borrow ends here).
-                let cane_gate = held.kind == 3351 && n.kind.to_u16() != 488 && n.max_hp > 5;
-                let (cane_ncx, cane_ncy) = n.center();
+                let cane_gate = held.kind == 3351 && app.npcs[idx].kind.to_u16() != 488 && app.npcs[idx].max_hp > 5;
+                let (cane_ncx, cane_ncy) = app.npcs[idx].center();
                 // W4-e4 — the Classy Cane's (3351) coin shower
                 // (`Player.cs:44367-44375`): `nPC.type != 488 && lifeMax > 5`.
                 // The C# runs it AFTER DamageVar (`:44342`) and BEFORE
@@ -12014,8 +12374,8 @@ fn resolve_melee_strike(
                 }
                 // `NPC.cs:81250-81254` — the combat text's gate + colour arm
                 // read `lifeMax > 1` and `friendly` (the town pair).
-                let n_friendly = n.friendly;
-                let n_life_max_gt1 = n.max_hp > 1;
+                let n_friendly = app.npcs[idx].friendly;
+                let n_life_max_gt1 = app.npcs[idx].max_hp > 1;
                 // W4-c13: the hit cue resolves AFTER the strike now —
                 // `strike_hit_cue` reads the type-1 voice switch (the
                 // chicken roll rides the strike's stream), so the
@@ -12112,7 +12472,7 @@ fn resolve_melee_strike(
                 // ×15 reads the player's expert flag (the port's world-mode
                 // stand-in, `BuffSlots.expert_mode`).
                 let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
-                let dealt = crate::npc::Npc::strike_melee(
+                let landed = crate::npc::Npc::strike_melee(
                     &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
                 );
                 // W4-d12 DOC-SWEEP items 3/4 — `ApplyNPCOnHitEffects`' sticker
@@ -12193,7 +12553,7 @@ fn resolve_melee_strike(
                         .player
                         .as_ref()
                         .is_some_and(|p| p.spawn_volcano_explosion);
-                    if armed && app.npcs[idx].hittable_for_on_hit_rewards() {
+                    if armed && app.npcs[idx].can_be_chased_by() {
                         let (ncx, ncy) = app.npcs[idx].center();
                         let spawned = app.projectiles.spawn_volcano_proc(
                             me,
@@ -12208,7 +12568,6 @@ fn resolve_melee_strike(
                         }
                     }
                 }
-                let landed = dealt > 0;
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -12247,7 +12606,7 @@ fn resolve_melee_strike(
                     // the network arm (`:81261`) never fires on the local
                     // strike. `flag` (the 9999 instakill, `:81237`) is
                     // false on every ported melee lane.
-                    let text = dealt.to_string();
+                    let text = dmg.to_string();
                     let font = if crit {
                         app.lookups.combat_crit_font.as_ref()
                     } else {
@@ -12296,7 +12655,10 @@ fn resolve_melee_strike(
                     for req in reqs {
                         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                         crate::world_sim::npcs::play_npc_sound_request(
-                            &mut app.audio, req, rng,
+                            &mut app.audio,
+                            &mut app.npcs[idx],
+                            req,
+                            rng,
                         );
                     }
                     let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -12311,16 +12673,6 @@ fn resolve_melee_strike(
                 // the landed damage folds into the pending-damage entry
                 // (`AddStrikeDamage`, `NPC.cs:81383`, W4-g51 id-162).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx, if landed { dmg } else { 0 });
-                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81544-81553`) — the kind's own hit cue through
-                // the faithful case-3 path (S1-E-21 wave C): the volume
-                // arms + the `Main.rand.Next(-10, 11) * 0.01` pitch draw
-                // ride the `UpdatePlayers` stream (`Main.cs:17754`), only
-                // after the attenuation gate passed. The C#'s `null`
-                // guard: the kinds with no row play nothing.
-                if let Some(cue) = hit_cue {
-                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
                 // `NPC.StrikeNPC`'s sound section (`NPC.cs:81490-81554`,
                 // S1-E-21 wave C + W4-c13): the type-1 voice-override
                 // switch, else the kind's own `HitSound` at
@@ -12585,6 +12937,75 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// W4-g17 g17d — the i30-compose seam witness: the axe fail tick's
+    /// ShakeTree compose (`axe_tile_hit` `:1870-1901`) draws EXACTLY ONE
+    /// UpdatePlayers throw to seed the genRand FastRandom stand-in, then
+    /// the loot ladder (the genRand gates on the stand-in, the Main.rand
+    /// item/NPC rolls on UpdatePlayers), then the FX tail — the C# order
+    /// (`WorldGen.cs:63131-63418`). The manual twin (resolve → ONE throw →
+    /// ladder → FX) must end on the identical stream + pools. The i30 chop
+    /// lane's break path never runs on a fail tick (no break drops), so
+    /// this compose is the tick's whole draw; a second seed throw (or a
+    /// reordering) diverges the streams. Written, NOT run (code-only).
+    #[test]
+    fn w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw() {
+        use tr_core::tree::{shake_tree_fx_at, shake_tree_resolve};
+        let seed = 0x5EEDi32;
+        // The live path: one fail hit through axe_tile_hit.
+        let mut live = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        live.inventory[live.selected].kind = 10; // the Iron Axe, axe 9
+        *live.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let held = live.inventory[live.selected];
+        let broke = axe_tile_hit(&mut live, 30, 260, 5, 9, held);
+        assert!(!broke, "the first hit is a fail tick (10 damage < 100)");
+        // The manual twin: the documented compose, step by step.
+        let mut twin = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        twin.inventory[twin.selected].kind = 10;
+        *twin.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let site = shake_tree_resolve(&mut twin.world, 30, 260).expect("the tree shakes");
+        let spawn_ctx = twin.spawn_ctx();
+        {
+            // ONE throw seeds the stand-in (the spawn_things_from_pot
+            // convention), drawn BEFORE the ladder and the FX.
+            let mut gen_rng = tr_core::tile_light::FastRandom::new(
+                twin.rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next() as u64,
+            );
+            let mut rng = twin
+                .rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .clone();
+            shake_loot::shake_tree_loot(&mut twin, &site, 30, 260, &mut gen_rng, &mut rng);
+            *twin.rngs.stream(crate::app::RngKey::UpdatePlayers) = rng;
+        }
+        if let Some((bx, by, style)) = shake_tree_fx_at(&twin.world, &site) {
+            crate::world_gore_a::tree_grow_fx(
+                bx,
+                by,
+                1,
+                style,
+                true,
+                &mut twin.gore,
+                &mut twin.dust,
+                &spawn_ctx,
+                twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &twin.world,
+            );
+        }
+        assert_eq!(
+            live.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            "the compose draws ONE seed throw + the ladder + the FX, no more"
+        );
+        assert_eq!(live.items.len(), twin.items.len(), "the ladder's drops match");
+        assert_eq!(live.npcs.len(), twin.npcs.len(), "the ladder's critters match");
+        let lg = live.gore.slots().iter().filter(|g| g.active).count();
+        let tg = twin.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(lg, tg, "the FX burst matches");
+        assert_eq!(live.world.tree_shakes, twin.world.tree_shakes);
+    }
+
     /// W4-g24 — `WorldGen.PlaceObject`'s plain-0 cue (`WorldGen.cs:51441`,
     /// `PlaySound(0, x * 16, y * 16)` behind `!mute`): the port's
     /// `TileObject`-routed placement plays through the SAME
@@ -12603,6 +13024,7 @@ mod tests {
         for kind in [127u16, 314, 330, 331, 332, 333] {
             assert!(!tr_core::tileobject::routes_through_tile_object(kind, 0));
         }
+    }
     /// W4-d4 union item 2 — `PlaceThing_Tiles_CheckRopeUsability`
     /// (`Player.cs:41506-41545`, the g82-extras union per research/169):
     /// the rope-on-rope down-column walk. Written NOT run (code-only).
@@ -12851,9 +13273,9 @@ mod tests {
         let mut saw_shroom = false;
         let mut saw_none = false;
         for seed in 0..200i32 {
-            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             let drops = mushroom_tree_drops(&mut rng);
-            let mut mirror = tr_core::UnifiedRandom::new(seed);
+            let mut mirror = tr_core::UnifiedRandom::new(seed as i32);
             let r40 = mirror.next_max(40);
             if r40 == 0 {
                 assert_eq!(drops, vec![(194, 1)], "the 1-in-40 seeds");
@@ -14215,7 +14637,8 @@ mod tests {
             "the banner arm draws nothing — the stream matches the baseline"
         );
 
-        }    /// W4-f32 — the Tax Collector's cane coin shower (`Player.cs:44367-
+}
+/// W4-f32 — the Tax Collector's cane coin shower (`Player.cs:44367-
     /// 44374`): a 3351 hit on a `life > 5` NPC draws the velocity pair
     /// (NextFloat ×2), the centre pair (Next(width), Next(height)) and the
     /// stack's `RollBadLuck(25)`, then spawns the 71 copper with
@@ -14565,7 +14988,7 @@ mod tests {
             });
             let (drops, portals) = drop_events(&kill, hit);
             assert!(portals.is_empty());
-            assert_eq!(drops, vec![(gem, 1, 5, 9)], "178 style {style}");
+            assert_eq!(drops, vec![(gem, 1, 5.0, 9.0)], "178 style {style}");
         }
         // An out-of-range column drops nothing (the C# `dropItem > 0` gate,
         // `WorldGen.cs:63953` — the switch leaves `dropItem = 0`).
@@ -14592,22 +15015,22 @@ mod tests {
         let kill = edit::TileKill { kind: 63, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 63, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(177, 1, 3, 4)]);
+        assert_eq!(drops, vec![(177, 1, 3.0, 4.0)]);
         // The moss tile 179 drops the Stone Block 3 (`:63999-64011`).
         let kill = edit::TileKill { kind: 179, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 179, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(3, 1, 3, 4)]);
+        assert_eq!(drops, vec![(3, 1, 3.0, 4.0)]);
         // The moss brick 512 drops the Gray Brick 129 (`:64012-64024`).
         let kill = edit::TileKill { kind: 512, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 512, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(129, 1, 3, 4)]);
+        assert_eq!(drops, vec![(129, 1, 3.0, 4.0)]);
         // The rainbow moss 627 drops the Stone Block 3 (`:64009-64011`).
         let kill = edit::TileKill { kind: 627, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 627, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(3, 1, 3, 4)]);
+        assert_eq!(drops, vec![(3, 1, 3.0, 4.0)]);
     }
 
     /// W4-g42 tail D3: the dye plants 227 drop by `frameX/34` style
@@ -14617,17 +15040,17 @@ mod tests {
     /// old `by_tile` fallback dropped 1107 for EVERY style.
     #[test]
     fn w4_g42_tail_dye_plants_drop_by_the_frame_style() {
-        let drop_for = |frame_x: i16| -> Vec<(u16, u32, i32, i32)> {
+        let drop_for = |frame_x: i16| -> Vec<(u16, u32, f32, f32)> {
             let kill = edit::TileKill { kind: 227, ..Default::default() };
             let hit = Some(HitCell { x: 5, y: 9, kind: 227, frame_x, frame_y: 0 });
             drop_events(&kill, hit).0
         };
         // Style 0 (the teal mushroom) → 1107; style 3 → 1110.
-        assert_eq!(drop_for(0), vec![(1107, 1, 5, 9)], "style 0 → teal mushroom");
-        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 5, 9)], "style 3 → 1110");
+        assert_eq!(drop_for(0), vec![(1107, 1, 5.0, 9.0)], "style 0 → teal mushroom");
+        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 5.0, 9.0)], "style 3 → 1110");
         // Styles 8-11 → the Strange Plants 3385-3388.
-        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 5, 9)], "style 8 → Strange Plant1");
-        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 5, 9)], "style 11 → Strange Plant4");
+        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 5.0, 9.0)], "style 8 → Strange Plant1");
+        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 5.0, 9.0)], "style 11 → Strange Plant4");
     }
 
     /// W4-g42 tail D2: the mushroom grass 70 (and the jungle grasses 60/661/662)
@@ -14640,7 +15063,7 @@ mod tests {
             let hit = Some(HitCell { x: 4, y: 8, kind, frame_x: 0, frame_y: 0 });
             assert_eq!(
                 drop_events(&kill, hit).0,
-                vec![(176, 1, 4, 8)],
+                vec![(176, 1, 4.0, 8.0)],
                 "tile {kind} drops mud 176"
             );
         }
@@ -14726,7 +15149,7 @@ mod tests {
             let (drops, _) = drop_events(&kill, None);
             assert_eq!(
                 drops,
-                vec![(gun as u16, 1, 10, 19), (97, 100, 10, 19)],
+                vec![(gun as u16, 1, 10.0, 19.0), (97, 100, 10.0, 19.0)],
                 "the gun then the 100-stack at the same rect"
             );
         }
@@ -14741,7 +15164,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 10, 19)]);
+        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 10.0, 19.0)]);
         // The replica/heart/crystal records never pair (their ids are not
         // the guns; the tile_kind gate also holds).
         for (item, tk) in [(5469i32, 696u16), (29, 12), (109, 639)] {
@@ -14755,7 +15178,7 @@ mod tests {
                 }],
                 ..Default::default()
             };
-            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 10, 19)]);
+            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 10.0, 19.0)]);
         }
         // The stack draw rides the caller's Main.rand stream: the resolver
         // consumes exactly one Next(100,101) per gun record.
@@ -16305,7 +16728,7 @@ mod tests {
         // DW-4.4, same count contract), so a later refactor cannot silently
         // add or drop a draw.
         let draws_after = |seed: i32, n: usize| {
-            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             for _ in 0..n {
                 rng.next();
             }
@@ -16315,7 +16738,7 @@ mod tests {
         // The same shot without the cycler: no spawn-time draw at all.
         let mut plain = shooter_rig(435, "Cobalt Repeater", &[(0, 40, 12)]);
         let seed = 0x5EED_CA5Eu64 as i32;
-        *plain.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *plain.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         let screen = plain.screen_size().into();
         let mut log = Vec::new();
         hold(&mut plain, screen, 26, &mut log);
@@ -16347,7 +16770,7 @@ mod tests {
         );
         // The offset is that first draw (`UnifiedRandom::next` is already
         // .NET's non-negative `Random.Next()`).
-        let mut first_draw = tr_core::UnifiedRandom::new(seed);
+        let mut first_draw = tr_core::UnifiedRandom::new(seed as i32);
         let expected_offset = first_draw.next();
         assert_eq!(
             random.player.as_ref().unwrap().ammo_cycling.offset,
@@ -16503,7 +16926,6 @@ mod tests {
             &mut rng,
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let rocket = app.projectiles.slots().iter().find(|p| p.active).unwrap();
         assert_eq!(rocket.damage, 95, ":47175 — the keep-damage list");
@@ -16540,7 +16962,6 @@ mod tests {
                 crate::projectile::YoyoInputs::default(),
                 crate::projectile::FlailInputs::default(),
                 &mut rng, 0, false,
-                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(
@@ -16552,7 +16973,6 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng, 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (app.projectiles.slots()[slot].vel.y - 0.2).abs() < 1e-5,
@@ -16572,7 +16992,6 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng2, 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let vy1 = app2.projectiles.slots()[slot2].vel.y;
         assert!(
@@ -16891,7 +17310,7 @@ mod tests {
             assert_eq!(d.dust_type, 5, "the heart stage (:68968)");
             assert_eq!(d.alpha, 0, "the plain tail (:69166)");
         }
-        let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
         // The mirror: 3 plain NewDust(5) on a clone — the heart burst adds
         // no stage draws, so the streams agree.
         let mut mirror = before;
@@ -16913,7 +17332,7 @@ mod tests {
                 1.0,
             );
         }
-        assert_eq!(*after, mirror, "the heart stage is draw-free");
+        assert_eq!(after, mirror, "the heart stage is draw-free");
         // Orb stage (frameX 0): 3 dusts of type 1|14, one Next(2) each —
         // the stream diverges from the plain mirror.
         let mut app2 = pick_world_at(31, 30, 260);
@@ -16948,7 +17367,7 @@ mod tests {
         assert!(tr_core::tool::is_hammer_tile(31));
         assert!(tr_core::tool::is_hammer_tile(696));
         assert!(!tr_core::tool::is_no_fail_tile(31));
-        let held = ItemSlot { kind: 7, count: 1, prefix: 0 }; // Iron Hammer 40
+        let held = ItemSlot { kind: 7, name: crate::registry::name(7), count: 1, prefix: 0 }; // Iron Hammer 40
         let id = app.hit_tile.hit_object(30, 260, tr_core::hit_tile::TILE);
         hammer_tile_hit(&mut app, 30, 260, 31, 40, id, held);
         assert!(app.world.tile(30, 260).unwrap().active(), "hit 1 stands");
@@ -17083,7 +17502,7 @@ mod tests {
         crate::lang::init(tr_core::localization::GameCulture::English);
         // An unnamed chest at the cursor tile (30, 260), style 1 (frameX 36).
         let mut app = pick_world_at(21, 30, 260);
-        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        { let i = app.world.index(30, 260); app.world.tiles[i].frame_x = 36; }
         app.world_chests.push(crate::chest::WorldChest {
             tile: (30, 260),
             ..Default::default()
@@ -17097,7 +17516,7 @@ mod tests {
         assert_eq!(app.no_throw, 2, ":34802");
         // A named chest keeps its name, ID stays -1.
         let mut app = pick_world_at(21, 30, 260);
-        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        { let i = app.world.index(30, 260); app.world.tiles[i].frame_x = 36; }
         app.world_chests.push(crate::chest::WorldChest {
             tile: (30, 260),
             name: "My Stash".into(),
@@ -17135,7 +17554,7 @@ mod tests {
         assert!(app.cursor_item_icon_enabled);
         // Cannon frameX 36 → 928, NOT Reversed.
         let mut app = pick_world_at(209, 30, 260);
-        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        { let i = app.world.index(30, 260); app.world.tiles[i].frame_x = 36; }
         app.inventory[app.selected] = crate::item::EMPTY_SLOT;
         app.mine_down = false;
         update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
@@ -19006,59 +19425,6 @@ mod tests {
         assert_eq!(registry::place_tile(3747), Some(455));
         assert_eq!(registry::place_style(3747), 0);
         assert!(!legacy_precheck_applies(455, 0), "the registry route");
-    // ---- W4-g82: the CheckRopeUsability retarget through the item route ----
-
-    /// `PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`) wired
-    /// into `use_tile_item`: a Rope item (965 → tile 213) clicked onto a
-    /// rope column walks DOWN to the first free cell and places THERE —
-    /// the clicked cells stay untouched, one item consumed. The gate's
-    /// own maths witnesses (the platform cap, the lava exemption) live in
-    /// `projectile_rope_coil.rs`. WRITTEN NOT RUN (code-only mode).
-    #[test]
-    fn w4_g82_the_rope_item_retargets_down_the_column() {
-        // object_world's stone floor is row 20; rope at (10,17)/(10,18),
-        // row 19 free. Clicking the column TOP places at the free bottom.
-        let mut app = flow_app(None, vec![], vec![]);
-        let mut w = object_world();
-        set_tile(&mut w, 10, 17, 213);
-        set_tile(&mut w, 10, 18, 213);
-        app.world = w;
-        app.inventory[app.selected] = slot(965, 5);
-        assert!(use_tile_item(&mut app, 10, 17));
-        assert_eq!(app.inventory[app.selected].count, 4, "one rope consumed");
-        let t = *app.world.tile(10, 19).unwrap();
-        assert!(t.active() && t.kind == 213, "the link lands at the free cell");
-        assert_eq!(app.world.tile(10, 17).unwrap().kind, 213, "the clicked cell untouched");
-        // A column with NO free landing keeps the target: the walk stops
-        // at the stone floor (row 20), the landing is not free/cuttable,
-        // the target stays on the active rope → the placement refuses.
-        let mut app2 = flow_app(None, vec![], vec![]);
-        let mut w2 = object_world();
-        set_tile(&mut w2, 10, 18, 213);
-        set_tile(&mut w2, 10, 19, 213);
-        app2.world = w2;
-        app2.inventory[app2.selected] = slot(965, 5);
-        assert!(!use_tile_item(&mut app2, 10, 18));
-        assert_eq!(app2.inventory[app2.selected].count, 5, "the rope is kept");
-        // A NON-rope item never walks: dirt clicked beside the column
-        // places at the clicked cell, not below the rope.
-        let mut app3 = flow_app(None, vec![], vec![]);
-        let mut w3 = object_world();
-        set_tile(&mut w3, 10, 17, 213);
-        set_tile(&mut w3, 10, 18, 213);
-        app3.world = w3;
-        app3.inventory[app3.selected] = slot(2, 5); // DirtBlock
-        let dirt_tile = registry::place_tile(2).unwrap();
-        assert!(use_tile_item(&mut app3, 11, 19));
-        assert_eq!(app3.world.tile(11, 19).unwrap().kind, dirt_tile);
-    }
-
-    // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
-
-    /// A staged break rig: the world swapped in, a local player present (the
-    /// `FindClosest` stand-in), the `UpdatePlayers` stream pinned for
-    /// determinism.
-    fn break_app(world: World, seed: u64) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = object_world();
         app.inventory[app.selected] = slot(3747, 2);
@@ -19080,6 +19446,19 @@ mod tests {
         app2.inventory[app2.selected] = slot(3747, 1);
         assert!(!use_tile_item(&mut app2, 11, 10));
         assert_eq!(app2.inventory[app2.selected].count, 1, "kept");
+    }
+
+    // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
+
+    /// A staged break rig: the world swapped in, a local player present (the
+    /// `FindClosest` stand-in), the `UpdatePlayers` stream pinned for
+    /// determinism.
+    fn break_app(world: World, seed: u64) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world;
+        app.player = Some(Player::spawn(&app.world));
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
+        app
     }
 
     // ---- W4-f41 closeout: the Pigronata loot rolls --------------------------
@@ -19113,8 +19492,8 @@ mod tests {
         }
         let mut seen = [false; 9];
         for seed in 0..400i32 {
-            let mut rng = tr_core::UnifiedRandom::new(seed);
-            let mut oracle = tr_core::UnifiedRandom::new(seed);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let mut oracle = tr_core::UnifiedRandom::new(seed as i32);
             let drops = pigronata_loot(&mut rng);
             let outcome = oracle.next_max(9);
             seen[outcome as usize] = true;
@@ -19221,7 +19600,7 @@ mod tests {
     /// A staged break rig: the world swapped in, a local player present (the
     /// `FindClosest` stand-in), the `UpdatePlayers` stream pinned for
     /// determinism.
-    fn break_app(world: World, seed: u64) -> App {
+    fn break_app_union_b(world: World, seed: u64) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
         app.player = Some(Player::spawn(&app.world));
@@ -21558,7 +21937,7 @@ mod tests {
     /// `draws_after`: splitmix rounds out, `UnifiedRandom` draws in — the
     /// draw-count contract is unchanged).
     fn draws_after(seed: i32, n: usize) -> tr_core::UnifiedRandom {
-        let mut rng = tr_core::UnifiedRandom::new(seed);
+        let mut rng = tr_core::UnifiedRandom::new(seed as i32);
         for _ in 0..n {
             rng.next();
         }
@@ -21567,7 +21946,7 @@ mod tests {
 
     /// Pins the editing pass's `UpdatePlayers` stream to `seed`.
     fn seed_stream(app: &mut App, seed: i32) {
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
     }
 
     /// The editing pass's `UpdatePlayers` stream state (the registry's
@@ -21692,7 +22071,7 @@ mod tests {
     fn s1_p_i21_the_razorpine_draw_chain_is_seed_deterministic() {
         let seed = 0x51A2_0001;
         // Replay the count to know the draw total.
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let count = 2 + state.next_range(0, 3);
         let mut app = staff_app(1930, "Razorpine");
         seed_stream(&mut app, seed);
@@ -21783,7 +22162,7 @@ mod tests {
     #[test]
     fn s1_p_i21_the_bat_scepter_draw_chain_is_seed_deterministic() {
         let seed = 0xBA75_0003u32 as i32;
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let count = state.next_range(2, 4);
         let mut app = staff_app(1801, "Bat Scepter");
         seed_stream(&mut app, seed);
@@ -22028,7 +22407,7 @@ mod tests {
     #[test]
     fn s1_p_i21_the_razorpine_volley_draw_order_is_per_shot() {
         let seed = 0x51A2_0004;
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let count = 2 + state.next_range(0, 3);
         let mut app = staff_app(1930, "Razorpine");
         app.player.as_mut().unwrap().mana = 100;
@@ -22319,7 +22698,7 @@ mod tests {
         );
         assert_eq!(blobs[0].damage, 0, "the :22882 damage 0");
         // The roll: one Next(10, 31) draw, ai[1] = draw * 0.1 in [1.0, 3.0].
-        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut probe = tr_core::UnifiedRandom::new(seed as i32);
         let draw = probe.next_range(10, 31);
         assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10915 roll");
         assert_eq!(blobs[0].ai[0], 0.0, "the case assigns no ai0");
@@ -22353,7 +22732,7 @@ mod tests {
             "shootSpeed 8 (|v|={})",
             blobs[0].vel.length()
         );
-        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut probe = tr_core::UnifiedRandom::new(seed as i32);
         let draw = probe.next_range(10, 21);
         assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10918 roll");
         assert_eq!(stream_of(&mut app), draws_after(seed, 1));
@@ -22409,7 +22788,7 @@ mod tests {
         seed_stream(&mut app, seed);
         fire_once(&mut app);
         // The twin stream: the four count gates, then 2 draws per knife.
-        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut probe = tr_core::UnifiedRandom::new(seed as i32);
         let mut count = 4;
         for max in [2, 4, 8, 16] {
             if probe.next_range(0, max) == 0 {
@@ -22733,7 +23112,7 @@ mod tests {
         assert_eq!(log.len(), 3, "the volley fired");
         // The replay: seed, seed, seed — the per-shot generic-tail order
         // (no crit draw; the crit is per-hit on UpdateProjectiles).
-        let mut rng = tr_core::UnifiedRandom::new(seed);
+        let mut rng = tr_core::UnifiedRandom::new(seed as i32);
         let seed1 = rng.next_range(0, 20000);
         let seed2 = rng.next_range(0, 20000);
         let seed3 = rng.next_range(0, 20000);
@@ -22833,7 +23212,7 @@ mod tests {
         assert_eq!(bolts.len(), 1, "one laser");
         assert_eq!(bolts[0].kind, crate::projectile::PURPLE_LASER);
         // The replay: draw 1 the ai0 roll (no crit draw).
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let ai0 = state.next_range(3, 6);
         assert_eq!(bolts[0].ai[0], ai0 as f32, "ai0 = Next(3,6)");
         assert!((3.0..6.0).contains(&bolts[0].ai[0]), "the roll range");
@@ -22890,7 +23269,7 @@ mod tests {
         fire_once(&mut app);
         let notes: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
         assert_eq!(notes.len(), 1, "one note");
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let kind = 76 + state.next_range(0, 3);
         assert_eq!(notes[0].kind, kind as u16, "the note kind roll");
         assert!([76u16, 77, 78].contains(&notes[0].kind));
@@ -22916,7 +23295,7 @@ mod tests {
         assert_eq!(bolts.len(), 1, "one fracture");
         assert_eq!(bolts[0].kind, crate::projectile::SKY_FRACTURE);
         // The replay: angle, pre-loop radial (discarded), loop radial.
-        let mut state = tr_core::UnifiedRandom::new(seed);
+        let mut state = tr_core::UnifiedRandom::new(seed as i32);
         let face = state.next_float() * std::f32::consts::TAU;
         let _pre = state.next_float();
         let radius = 20.0 + 40.0 * state.next_float();
@@ -23521,6 +23900,7 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
             plx,
             ply,
             0.0,
+            1.0,
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     } else {
@@ -23533,7 +23913,6 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     // `play_roar`, research/32 D4).
     let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, rx, ry);
-    }
     // `NPC.SpawnBoss`'s MechaMayhem bookends (`NPC.cs:80664-80685`): a mech
     // type (127/134) runs `MechaMayhem_Clear` BEFORE the spawn and
     // `MechaMayhem_Start` AFTER it. The 544 arm ran its own per-eye bookends
@@ -23914,7 +24293,7 @@ pub(crate) fn use_torch_gods_favor(app: &mut App) -> bool {
 /// → `moonPhase = 5`, `:44017-44020`) and the `Lang.misc[8]` row. The C#
 /// sets `Main.bloodMoon` directly — NOT `startBloodMoon` (no dial-cooldown
 /// reset on this path).
-pub(crate) fn use_blood_moon_starter(app: &mut App) -> bool {
+pub(crate) fn use_blood_moon_starter_v2(app: &mut App) -> bool {
     if app.world.day_time || app.world.blood_moon {
         return false;
     }
@@ -24923,14 +25302,21 @@ mod use_loop_tests {
     use glam::Vec2;
 
     pub(super) fn app_with_staff(kind: u16) -> crate::app::App {
-        // A real staged world (the 8×8 `flow_app` default is too small — the
-        // reach gate and the `LimitPointToPlayerReachableArea` clamp misbehave
-        // on it): 64 wide, a solid floor at row 300, the player + camera near
-        // column 30. The cursor sits at the screen centre the tests pass
-        // (800×600 → mouse 400,300), so the use-path cursor == the camera and
-        // the reach clamp is the identity (the cursor is beside the player).
-        let mut w = tr_core::World::new("t".into(), 64, 800);
-        for x in 0..64 {
+        app_with_staff_w(kind, 64)
+    }
+
+    pub(super) fn app_with_staff_w(kind: u16, width: i32) -> crate::app::App {
+        // A real staged world (`flow_app`'s 8x8 default is too small -
+        // the reach gate and the `LimitPointToPlayerReachableArea` clamp
+        // misbehave on it): `width` wide, a solid floor at row 300, the
+        // player + camera near column 30. The cursor sits at the screen
+        // centre the tests pass (800x600 -> mouse 400,300), so the use-path
+        // cursor == the camera, and the reach clamp is the identity (the
+        // cursor is beside the player). A world narrower than 3200 px
+        // degenerates the 1920-px reachable-area rect (the clinger tests
+        // pass 256); the 64-column default only needs the small-world path.
+        let mut w = tr_core::World::new("t".into(), width, 800);
+        for x in 0..w.width {
             let i = w.index(x, 300);
             w.tiles[i] = tr_core::tile::Tile {
                 kind: 1,
@@ -25021,7 +25407,6 @@ mod use_loop_tests {
             &mut rng,
             local,
             host,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
@@ -25067,6 +25452,7 @@ mod use_loop_tests {
         assert!(p.channel, "StartChanneling latches the hold");
         assert_eq!(p.channel_item, 3835, "the channel names the staff");
         assert_eq!(p.channel_proj_expected, 697, "the cancel-key seed");
+    }
     /// W4-g89i — the 5337 Aegis Crystal use arm
     /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45387-45392`, the
     /// FIRST arm of the cluster): ONE press unlocks `usedAegisCrystal`
@@ -25684,7 +26070,7 @@ mod use_loop_tests {
     fn i25_the_summon_shot_spends_no_crit_draw() {
         let mut app = app_with_staff(2364); // Hornet Staff — no kind pick
         let seed = 0x51A7;
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
@@ -25692,7 +26078,7 @@ mod use_loop_tests {
             app.projectiles.slots().iter().any(|s| s.active && s.kind == 373),
             "the Hornet spawned"
         );
-        let mut want = tr_core::UnifiedRandom::new(seed);
+        let mut want = tr_core::UnifiedRandom::new(seed as i32);
         // Zero draws: the stream is byte-equal to its fresh state.
         assert_eq!(
             app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
@@ -25701,7 +26087,7 @@ mod use_loop_tests {
         );
         // The Pygmy's kind pick is the ONE draw the summon arm spends.
         let mut pygmy = app_with_staff(1157);
-        *pygmy.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *pygmy.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         pygmy.mine_down = true;
         pygmy.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut pygmy, 1.0 / 60.0, Vec2::new(800.0, 600.0));
@@ -25975,6 +26361,9 @@ mod use_loop_tests {
     #[test]
     fn w4_d9_the_magic_lantern_use_grants_the_buff_and_spawns() {
         let mut app = app_with_staff(3043); // the Magic Lantern — shoot 492, buff 152
+        // The mouse sits at the screen centre -> world == camera. Put the
+        // camera on the player-centre row (4773) so the aim is exactly -X.
+        app.camera = Vec2::new(488.0, 4773.0);
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
@@ -25994,7 +26383,7 @@ mod use_loop_tests {
         // The cursor sits left of the player (the fixture's camera column
         // 30 vs the player column 33) — the aim is (-1, 0), so the spawn
         // point is the centre + (-10, 0).
-        assert_eq!((slot.pos.x, slot.pos.y), (cx - 10.0, cy));
+        assert_eq!((slot.pos.x, slot.pos.y), (cx - 10.0 - 9.0, cy - 16.0));
     }
 
     /// W4-d9 wiring — the ClingerStaff 3014 USE path (`Player.cs:48591-
@@ -26008,7 +26397,7 @@ mod use_loop_tests {
     /// 4656. WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_d9_the_clinger_staff_use_spawns_the_wall_in_the_gap() {
-        let mut app = app_with_staff(3014); // the Clinger Staff — shoot 482, magic
+        let mut app = app_with_staff_w(3014, 256); // the Clinger Staff — shoot 482, magic
         // The ceiling over the wall region (the floor row 300 already rides
         // app_with_staff). Rows 297-299 stay air so the CanHitLine walk holds.
         for x in 36..=44 {
@@ -26032,20 +26421,28 @@ mod use_loop_tests {
         assert_eq!((slot.pos.x, slot.pos.y), (632.0, 4673.0));
     }
 
-    /// W4-d9 wiring — the ClingerStaff's `flag8` refusal (`Player.cs:48619-
-    /// 48622`): with NO ceiling above the cursor column the up scan runs out
-    /// of solid tiles, the gap is unbounded → no wall spawns. WRITTEN, NOT
-    /// RUN (code-only mode).
+    /// W4-d9 wiring - the ClingerStaff's `flag8` refusal (`Player.cs:48619-
+    /// 48622`): `flag8` is the DOWN scan's verdict, not the up scan's -
+    /// with no floor under the cursor column the 30-tile walk finds
+    /// neither solid nor platform, so the arm refuses the spawn. (A
+    /// missing ceiling only clamps the gap to the 15-tile cap; it does
+    /// not refuse.) WRITTEN, NOT RUN (code-only mode).
     #[test]
-    fn w4_d9_the_clinger_staff_refuses_without_a_ceiling() {
-        let mut app = app_with_staff(3014); // floor row 300 only, NO ceiling
+    fn w4_d9_the_clinger_staff_refuses_without_a_floor() {
+        let mut app = app_with_staff_w(3014, 256);
+        // Clear the floor under the cursor column (40): the down scan
+        // runs its full 30 tiles with no solid and no platform -> flag8.
+        for x in 36..=44 {
+            let t = app.world.tile_mut(x, 300).unwrap();
+            *t = tr_core::tile::Tile::default();
+        }
         app.camera = Vec2::new(648.0, 4773.0);
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
         assert!(
             !app.projectiles.slots().iter().any(|s| s.active && s.kind == 482),
-            "no ceiling → flag8 → no wall"
+            "no floor -> flag8 -> no wall"
         );
     }
 
@@ -26061,6 +26458,9 @@ mod use_loop_tests {
     #[test]
     fn w4_d9_the_influx_waver_use_seeds_the_launch_fade() {
         let mut app = app_with_staff(2880); // the Influx Waver — shoot 451, melee
+        // The mouse sits at the screen centre -> world == camera. Put the
+        // camera on the player-centre row (4773) so the aim is exactly -X.
+        app.camera = Vec2::new(488.0, 4773.0);
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
@@ -26765,6 +27165,8 @@ mod item_mechanics {
         w.compute_column_surface();
         w.compute_chunks();
         app.world = w;
+    }
+
     // ---- W4-f33: the biome-torch conversion census -------------------------
     // WRITTEN NOT RUN (code-only mode). `BiomeTorchPlaceStyle`
     // (`Player.cs:40236-40289`) — every arm's style id + the C# arm order,
@@ -27249,49 +27651,6 @@ mod item_mechanics {
         assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
     }
 
-    /// W4-d17 doc-sweep — the Release Doves 4682 (`Item.cs:38555-38562`,
-    /// DefaultToThrownWeapon(851, 25, 4), noUseGraphic, consumable) fires
-    /// THREE doves per use (`Player.cs:48383-48392`), each jittered by
-    /// `Next(-20,21)*0.1` per axis — six `UpdatePlayers` draws. ONE bucket
-    /// is consumed (the consumable tail runs once per use, not per dove).
-    /// The Release Lantern 4702 keeps the generic single shot.
-    /// W4-d17 SEAL (f40 correction 3): the six-draw witness + the lantern's
-    /// zero-draw contrast (`Player.cs:48385-48389` X-before-Y per dove; the
-    /// generic tail draws nothing for 855).
-    #[test]
-    fn w4_d17_the_doves_release_three_and_the_lantern_one() {
-        let mut app = thrown_app(4682, 5);
-        let screen = MINE_SCREEN;
-        update_editing(&mut app, 1.0 / 60.0, screen);
-        let doves: Vec<_> = app
-            .projectiles
-            .slots()
-            .iter()
-            .filter(|p| p.active && p.kind == 851)
-            .collect();
-        assert_eq!(doves.len(), 3, "three doves per use (:48385)");
-        // Each dove's velocity sits inside the ±2 px jitter band around
-        // the aim-normalized shootSpeed 4.
-        for d in &doves {
-            assert!(d.vel.x > 0.0, "the flock flies toward the cursor");
-            assert!(
-                (d.vel.length() - 4.0).abs() < 2.9,
-                "shootSpeed 4 ± the jitter band"
-            );
-        }
-        assert_eq!(app.inventory[app.selected].count, 4, "ONE consumed per use");
-        // The lantern: one 855, no special arm.
-        let mut app = thrown_app(4702, 5);
-        update_editing(&mut app, 1.0 / 60.0, screen);
-        let lanterns: Vec<_> = app
-            .projectiles
-            .slots()
-            .iter()
-            .filter(|p| p.active && p.kind == 855)
-            .collect();
-        assert_eq!(lanterns.len(), 1, "the lantern is a single generic shot");
-        assert_eq!(app.inventory[app.selected].count, 4);
-    }
 
     /// W4-d17 SEAL (f40 keep-one graft, 85a9253c) — the doves' SIX
     /// `UpdatePlayers` draws (`Player.cs:48385-48389`: per dove the X
@@ -27305,7 +27664,7 @@ mod item_mechanics {
         *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
             tr_core::UnifiedRandom::new(seed);
         update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
-        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut probe = tr_core::UnifiedRandom::new(seed as i32);
         for _ in 0..3 {
             let _ = probe.next_range(-20, 21); // the X jitter first
             let _ = probe.next_range(-20, 21); // then the Y jitter
@@ -27539,12 +27898,12 @@ mod s1_p_i08_throw_tests {
     /// Pins the editing pass's `UpdatePlayers` stream to `seed`
     /// (`tests::seed_stream`'s shape).
     fn seed_stream(app: &mut App, seed: i32) {
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
     }
 
     /// The stream state after `n` draws from `seed` (`tests::draws_after`).
     fn draws_after(seed: i32, n: usize) -> tr_core::UnifiedRandom {
-        let mut rng = tr_core::UnifiedRandom::new(seed);
+        let mut rng = tr_core::UnifiedRandom::new(seed as i32);
         for _ in 0..n {
             rng.next();
         }
@@ -28028,20 +28387,20 @@ mod s1_p_i08_throw_tests {
         let mut found_single = false;
         let mut found_double = false;
         for seed in 1i32..400 {
-            let mut probe = tr_core::UnifiedRandom::new(seed);
+            let mut probe = tr_core::UnifiedRandom::new(seed as i32);
             let first = probe.next_range(0, 21);
-            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             let pick = random_fractal_profile(&mut rng);
             if first != 20 {
                 assert_eq!(pick, FRACTAL_PROFILE_KEYS[first as usize]);
                 // The stream state matches ONE Next(21) draw.
-                let mut one = tr_core::UnifiedRandom::new(seed);
+                let mut one = tr_core::UnifiedRandom::new(seed as i32);
                 one.next_range(0, 21);
                 assert_eq!(rng, one, "seed {seed}: one draw on a non-4956 hit");
                 found_single = true;
             } else {
                 assert_ne!(pick, 4956, "the re-roll never returns the Zenith key");
-                let mut two = tr_core::UnifiedRandom::new(seed);
+                let mut two = tr_core::UnifiedRandom::new(seed as i32);
                 two.next_range(0, 21);
                 two.next_range(0, 20);
                 assert_eq!(rng, two, "seed {seed}: two draws on a 4956 hit");
@@ -28343,6 +28702,7 @@ mod s1_p_i08_throw_tests {
         let live: Vec<usize> = app.projectiles.slots().iter().enumerate()
             .filter(|(_, p)| p.active && p.kind == 994 && p.owner == 0).map(|(i, _)| i).collect();
         assert_eq!(live.len(), 1, "exactly one own pet alive after the re-use");
+    }
     // ---- W4-g90: the Artisan Loaf's permanent unlock -----------------------
     // WRITTEN NOT RUN (code-only mode). `ItemCheck_UseArtisanLoaf`
     // (`Player.cs:45216-45224`): the 5326 use sets `ateArtisanBread` ONCE —
@@ -28710,7 +29070,7 @@ mod w4_f40_release_tests {
             p.ammo_cost75 = true;
         }
         let seed = 0x4702;
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         fire(&mut app);
         assert_eq!(app.inventory[app.selected].count, 2, "always consume");
         assert_eq!(
@@ -28732,11 +29092,11 @@ mod w4_f40_release_tests {
     fn w4_f40_the_doves_fire_a_three_shot_volley_of_six_draws() {
         let mut app = release_app(4682, 3);
         let seed = 0x4682;
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         fire(&mut app);
         assert_eq!(app.inventory[app.selected].count, 2, "one consume per use");
         // The six draws: 3 shots x (X jitter, Y jitter), Next(-20, 21) each.
-        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut probe = tr_core::UnifiedRandom::new(seed as i32);
         for _ in 0..3 {
             let _ = probe.next_range(-20, 21);
             let _ = probe.next_range(-20, 21);
@@ -28748,7 +29108,7 @@ mod w4_f40_release_tests {
         );
         // The lantern contrast: ONE shot, ZERO draws (the generic tail).
         let mut app = release_app(4702, 3);
-        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed as i32);
         fire(&mut app);
         assert_eq!(
             app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
@@ -29222,7 +29582,7 @@ mod wall_placement_tests {
         let _ = app.wiring.take_door_cues();
         let _ = app.wiring.take_switch_clicks();
         for (n, x, y, d) in app.wiring.take_door_echoes() {
-            app.send_door_toggle(n, x, y, d);
+            app.send_door_toggle(n as u8, x, y, d);
         }
         break_tile(&mut app, 10, 20);
         // The release poke closes the trapdoor (the 387 pair closes back
@@ -29241,6 +29601,7 @@ mod wall_placement_tests {
 /// the 707 normal arm. WRITTEN NOT RUN (code-only round).
 #[cfg(test)]
 mod w4_d15_monk_staff_use_tests {
+    }
     use super::*;
     use super::tests::{hold, shooter_rig};
 
@@ -29428,6 +29789,9 @@ mod w4_e26_gnome_placement_tests {
         // (30, 10) is mid-air: the bottom anchor finds no solid support.
         assert!(!use_tile_item(&mut app2, 30, 10), "mid-air refuses");
         assert_eq!(app2.inventory[app2.selected].count, 3, "the item is kept");
+    }
+}
+
 /// W4-g45 doc-sweep — the bucket/sponge family
 /// (`Player.ItemCheck_UseBuckets`, `Player.cs:46318-46504`) witnesses. The
 /// twelve kinds were entirely unported before this pass (the S1-E-21f census
@@ -29863,7 +30227,6 @@ mod extractinator_use_gate_tests {
         });
         app
     }
-    }
 
     /// Over an EMPTY cell the extractinator-consumable refuses the use: no
     /// swing, the stack untouched.
@@ -29904,8 +30267,3 @@ mod extractinator_use_gate_tests {
         assert!(app.items.iter().any(|d| d.kind == 1329), "the Tissue Sample dropped");
     }
 }
-
-// balance-close (union shared delimiter)
-}}
-}
-}}}

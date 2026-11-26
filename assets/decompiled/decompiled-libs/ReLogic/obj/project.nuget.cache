@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "ZSkbobKIiu4=",
+  "dgSpecHash": "FsbpBmJxDmw=",
   "success": true,
-  "projectFilePath": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
+  "projectFilePath": "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\DreadLord\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
     "C:\\Users\\DreadLord\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net40\\1.0.3\\microsoft.netframework.referenceassemblies.net40.1.0.3.nupkg.sha512"

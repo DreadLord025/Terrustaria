@@ -286,7 +286,7 @@ pub(crate) fn ornament(
     // style-1 variation at the pass tail; the arm itself draws nothing).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
-        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:24874` — the frame pin.
     p.frame = p.ai[1] as i32;
@@ -641,7 +641,7 @@ mod tests {
         let mut rng = RecordRng::default();
         let mut out = Vec::new();
         ornament(&mut p, &mut rng, &mut out);
-        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0, 1.0)));
         assert!(rng.draws.is_empty(), "the cue draws nothing in the arm");
         p.wants_sound = None;
         ornament(&mut p, &mut rng, &mut out);

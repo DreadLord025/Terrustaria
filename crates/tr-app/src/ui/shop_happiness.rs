@@ -1,15 +1,3 @@
-//! The shop happiness chrome (W4-g58) — `Main.DrawInventory`'s shop block
-//! (`Main.cs:41788-41797`): the `Lang.inter[28]` "Shop" label at
-//! `(504, invBottom)`, the `NPCHappiness` icon (the 4-frame strip whose
-//! frame rides the price multiplier's bands) and the multiplier's `P0`
-//! percent label. The offsets are the statics `Main.cs:67266-67269`
-//! (`shopHappinessTextOffset = (26, 98)`, `shopHappinessIconOffset =
-//! (12, 108)`); `invBottom = 258` (`Main.cs:6608`).
-//!
-//! The `ItemSlot.DrawSavings` coin pile (`:41791`) lands here too
-//! (W4-g58 D5, `ui::savings`): the four banks' combined coins as the
-//! bank-icon pile + the coin spin strips, drawn between the Shop label
-//! and the happiness icon.
 //! The shop happiness chrome (W4-g58's slice, ported onto this branch —
 //! research/142-savings-keep-one.md) — `Main.DrawInventory`'s shop block
 //! (`Main.cs:41788-41797`): the `Lang.inter[28]` "Shop" label at
@@ -37,7 +25,7 @@ pub(crate) const TEXT_OFFSET: [f32; 2] = [26.0, 98.0];
 /// `Main.shopHappinessIconOffsetX/Y` (`Main.cs:67268-67269`).
 pub(crate) const ICON_OFFSET: [f32; 2] = [12.0, 108.0];
 
-/// The icon's frame index (`Main.cs:41794`): `Frame(4, 1, …)` picks
+/// The icon's frame index (`Main.cs:41794`): `Frame(4, 1, ...)` picks
 /// `0` at ≤0.82 (`MaxHappinessAchievementPriceMultiplier`,
 /// `ShopHelper.cs:14`), `1` at ≤1, `2` at ≤1.1, `3` above — the nested
 /// ternary's exact band order.
@@ -56,10 +44,6 @@ pub(crate) fn icon_frame(price_adjustment: f32) -> i32 {
 /// `priceAdjustment.ToString("P0")` (`Main.cs:41797`) — .NET's percent
 /// format at 0 decimals: `value × 100` rounded to the nearest integer,
 /// the en-US `" %"` group separator (`NumberFormatInfo.
-/// PercentPositivePattern = 0` — "n %", a space before the sign). The multiplier
-/// is already cents-rounded (`ShopHelper.LimitAndRoundMultiplier`
-/// `:176-181`), so the ×100 is integral in practice and the midpoint
-/// convention never fires.
 /// PercentPositivePattern = 0` — "n %", a space before the sign). The
 /// multiplier is already cents-rounded (`ShopHelper.
 /// LimitAndRoundMultiplier` `:176-181`), so the ×100 is integral in
@@ -84,12 +68,6 @@ pub(crate) fn icon_pos() -> [f32; 2] {
 }
 
 /// The shop block's happiness chrome (`Main.cs:41790-41797`): the "Shop"
-/// label + the savings pile (`:41791`, W4-g58 D5) + the icon + the
-/// percent, all tinted `Color.White * (mouseTextColor / 255f)` — the
-/// border passes stay `Color.Black` (`Utils.DrawBorderStringFourWay`,
-/// `Utils.cs:2464-2496`: the four ±2 px side passes then the colour pass).
-/// `savings` carries the coin cells + the player's four banks; `None`
-/// skips the pile (the headless/no-player draws).
 /// label + the savings pile (`:41791`) + the icon + the percent, all
 /// tinted `Color.White * (mouseTextColor / 255f)` — the border passes
 /// stay `Color.Black` (`Utils.DrawBorderStringFourWay`, `Utils.cs:
@@ -123,10 +101,6 @@ pub(crate) fn draw(
         &crate::lang::inter(28),
     );
     // `:41791` — `ItemSlot.DrawSavings(Main.spriteBatch, 504f, invBottom)`:
-    // the four banks' combined coins as the bank-icon pile + the coin spin
-    // strips (W4-g58 D5).
-    if let Some((coin_slot, banks)) = savings {
-        crate::ui::savings::draw_savings(r, lookups, coin_slot, banks, 504.0, INV_BOTTOM, tint);
     // the vertical arm (the default `horizontal: false`).
     if let Some((coin_slot, banks, currency)) = savings {
         crate::ui::savings::draw_savings(
@@ -174,7 +148,6 @@ pub(crate) fn draw(
 }
 
 #[cfg(test)]
-mod w4_g58_tests {
 mod tests {
     use super::*;
 

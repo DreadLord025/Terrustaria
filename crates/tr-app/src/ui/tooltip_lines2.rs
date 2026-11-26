@@ -1243,10 +1243,10 @@ mod w4_f28_tests {
             open_chest: -2,
             ..Default::default()
         };
-        let rows = item_tooltip_lines(3213, def(3213), ctx);
+        let rows = item_tooltip_lines(3213, def(3213), ctx.clone());
         assert!(texts(&rows).contains(&"Placing into itself will be blocked"));
         // The Void Lens needs bank4 (−5), not the piggy bank.
-        let rows = item_tooltip_lines(4131, def(4131), ctx);
+        let rows = item_tooltip_lines(4131, def(4131), ctx.clone());
         assert!(!texts(&rows).contains(&"Placing into itself will be blocked"));
         // The social row: a plain helmet in the vanity column prints
         // tip[61]; the Depth Meter (hasVanityEffects) does not.
@@ -1254,9 +1254,9 @@ mod w4_f28_tests {
             flags: HoverFlags { social: true, ..Default::default() },
             ..Default::default()
         };
-        let rows = item_tooltip_lines(88, def(88), ctx);
+        let rows = item_tooltip_lines(88, def(88), ctx.clone());
         assert!(texts(&rows).contains(&crate::lang::tip(61).as_str()));
-        let rows = item_tooltip_lines(18, def(18), ctx);
+        let rows = item_tooltip_lines(18, def(18), ctx.clone());
         assert!(!texts(&rows).contains(&crate::lang::tip(61).as_str()));
         // The Living Wood Wand consumes Wood: tip[52] + the name.
         let rows = item_tooltip_lines(832, def(832), TooltipContext::default());

@@ -544,14 +544,6 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     let difficulty = app.active_player_difficulty();
     let gems_only = difficulty == 0 || difficulty == 3;
     drop_items(app, x, y, gems_only);
-    // `KillMe` `:38864-38866`: `if (Main.myPlayer == whoAmI && difficulty ==
-    // 2) HardcoreDeathPenalty()` — AFTER DropItems, BEFORE PlayDeathSound.
-    // The port's single player IS myPlayer. The penalty's file deletion is
-    // the death-side half of the persistence lane (the f44-family owns the
-    // .plr read/write walk; THIS call is the hardcore permadeath).
-    if difficulty == 2 {
-        hardcore_death_penalty(app);
-    }
     // `KillMe`'s coin bookkeeping: `:38849-38853` books `lostCoins =
     // coinsOwned` for EVERY difficulty first; `:38925-38936` overwrites with
     // `DropCoins()`'s dropped value for difficulty 0/3 only (softcore halves
@@ -612,16 +604,6 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
         }
     }
     app.death_text = death_text.to_string();
-    // W4-d2 — `Player.DropTombstone` (`Player.cs:39108-39136`): the kind
-    // roll (`roll_tombstone` — the scatter retry + Next(6) + the rich
-    // gate) THEN the launch-velocity draws, all on the `UpdatePlayers`
-    // stream (`KillMe` runs inside `Player.Update`, `Main.cs:17754`).
-    // The aiStyle-17 projectile replaces the dead `TombFall` stand-in
-    // (`tick_tomb_falls` was never called — the tombstones never
-    // placed); the `tomb_falls` record stays for the death-screen
-    // bookkeeping witness, the FLIGHT rides the pool.
-    let get_good = app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
-    let (kind, launch_vx, launch_vy, damage, kb) = {
     // W4-f30 — `KillMe`'s hardcore arm (`Player.cs:38864-38867`):
     // `Main.myPlayer == whoAmI && difficulty == 2` → HardcoreDeathPenalty,
     // AFTER the drops and BEFORE the tombstone (`:38945`). The surviving
@@ -635,61 +617,10 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     }
     let mut tomb = {
         let rng = app.rngs.stream(RngKey::UpdatePlayers);
-        let tomb = roll_tombstone(rng, coins_owned);
-        // `:39127` — `Next(10, 30) * 0.1f * hitDirection + num` X and
-        // `Next(-40, -20) * 0.1f` Y (getGoodWorld: both ×1.5f). The
-        // port's death seam carries no hitDirection (the KillMe
-        // parameter is unported) — the +1 stand-in is recorded in
-        // ANALYSIS.
-        let hit_direction = 1.0f32;
-        let mut lvx = rng.next_range(10, 30) as f32 * 0.1 * hit_direction + tomb.vel.x;
-        let mut lvy = rng.next_range(-40, -20) as f32 * 0.1;
-        if get_good {
-            lvx *= 1.5;
-            lvy *= 1.5;
-        }
-        // `:39119-39125` — damage 0 / knockback 0 classic; 70 / 10 FTW.
-        let (damage, kb) = if get_good { (70, 10.0) } else { (0, 0.0) };
-        (tomb.kind, lvx, lvy, damage, kb)
+        roll_tombstone(rng, coins_owned)
     };
-    // `NewProjectile` centres the box on the player centre
-    // (`Projectile.cs:10876-10877`): the death spot's top-left + the
-    // INTEGER player box halves (`:39127`'s `(float)(width / 2)`).
-    let cx = x + (crate::player::WIDTH as i32 / 2) as f32;
-    let cy = y + (crate::player::HEIGHT as i32 / 2) as f32;
-    let d = crate::projectile::proj_data(kind).expect("the tombstone row");
-    if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
-        kind,
-        app.local_id as u8,
-        cx - d.w * 0.5,
-        cy - d.h * 0.5,
-        launch_vx,
-        launch_vy,
-        damage,
-        kb,
-        0.0,
-        0.0,
-    ) {
-        // `:39134-39135` — `miscText = deathText + "\n" + date`; the
-        // wall-clock date suffix is the recorded deviation (ANALYSIS)
-        // — the resolved death text alone is stored.
-        app.projectiles.slots_mut()[slot].misc_text = death_text.to_string();
-        // The FTW tombstone is friendly AND hostile (`:1265-1269`);
-        // the classic row keeps the stock false/false.
-        if get_good {
-            app.projectiles.slots_mut()[slot].friendly = true;
-        }
-    }
-    // The death-screen bookkeeping record (the pre-W4-d2 stand-in's
-    // observable — the flight itself rides the pool above).
-    let tomb = crate::death::TombFall {
-        pos: Vec2::new(x, y),
-        vel: Vec2::new(launch_vx, launch_vy),
-        kind,
-        text: death_text.to_string(),
-        alive: true,
-    };
-    app.tomb_falls.push(tomb);
+    tomb.pos = Vec2::new(x, y);
+    tomb.text = death_text.to_string();
     // W4-f30 — `Player.DropTombstone` (`Player.cs:39108-39137`): the REAL
     // aiStyle-17 gravestone projectile. The scatter vx + the kind already
     // rolled above (`roll_tombstone`, the same `Next(-35,36)` retry / `Next(6)`
@@ -713,6 +644,7 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
         }
     };
     let kind = tomb.kind;
+    app.tomb_falls.push(tomb);
     let owner = app.local_id as u8;
     // `NewProjectile`'s X/Y overload centres the box on the player centre
     // (`Player.cs:39127`'s `position.X + width/2, position.Y + height/2`).
@@ -759,64 +691,10 @@ fn tombstone_date() -> String {
     format!("{} {}, {}", MONTHS[(m - 1) as usize], d, year)
 }
 
-/// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`) — the App glue
-/// around the [`crate::player::Player::hardcore_death_penalty`] stat half.
-/// Inside `Main.surviveHardcoreDeath` the −60 `statLifeMax` runs; a positive
-/// remainder survives and fires `NotifyProgressionEvent(35)` (EXTRA_LIFE,
-/// `:38782`). Otherwise (no crossover, or the pool hit 0) `KillMeForGood`
-/// (`:38786`) deletes the character file.
-fn hardcore_death_penalty(app: &mut App) {
-    let seeds = app.world.seeds;
-    // `HardcoreDeathPenalty` is a method on the live player — no player, no
-    // penalty (the death caller always has one; the guard keeps the disk-less
-    // test Apps from deleting a file). The stat half runs on the player
-    // borrow; the App-side tails run after it releases.
-    let survived = match app.player.as_mut() {
-        Some(p) => p.hardcore_death_penalty(seeds),
-        None => return,
-    };
-    if survived {
-        // `:38782` — the survive arm's progression event.
-        let _ = app.notify_progression_net(35);
-        return;
-    }
-    kill_me_for_good(app);
-}
-
-/// `Player.KillMeForGood` (`Player.cs:38789-38805`): the hardcore permadeath
-/// file deletion. `Main.playerPathName` is `ActivePlayerFileData.Path`
-/// (`Main.cs:2857`) — the port's active-player file is the session draft's
-/// saved `.plr` (`session.rs::save_created_character` →
-/// `save::default_player_path(name)`). The `!ServerSideCharacter` gate
-/// (`:38792`) has no port carrier (the port has no server-side characters),
-/// so the deletion always runs; a disk-less session stand-in resolves a path
-/// whose `Exists` is false, so nothing deletes — exactly the C# `Exists`
-/// guard.
-///
-/// **Deviation — the `ActivePlayerFileData = new PlayerFileData()` reset
-/// (`:38803`) is NOT ported as a `session_draft` clear.** In C# the reset
-/// swaps the *file-data* singleton, but `Main.player[myPlayer]` still points
-/// at the OLD `Player` object, so its `difficulty` stays 2 and `UpdateDead`
-/// still latches the ghost. The port derives `Player.difficulty` from
-/// `session_draft` every tick (`world_sim/player.rs:638`); clearing the draft
-/// would reset the live difficulty to 0 and break the ghost latch the sibling
-/// lane landed. The reset's only observable effect is menu-side (the
-/// character select shows no active player), which the port's disk re-list
-/// already reflects once the file is gone. Documented in ANALYSIS.
-fn kill_me_for_good(app: &mut App) {
-    let name = app
-        .session_draft
-        .as_ref()
-        .map(|d| d.name.clone())
-        .unwrap_or_else(|| app.player_name.clone());
-    if let Some(path) = tr_core::save::default_player_path(&name) {
-        crate::player_file::kill_player_files(&path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
     use tr_core::UnifiedRandom;
 
     #[test]
@@ -927,6 +805,7 @@ mod tests {
         assert_eq!(classic.coins, 5_000);
     }
 
+}
 #[cfg(test)]
 mod revenge_tests {
     use super::*;
@@ -1372,6 +1251,8 @@ mod revenge_tests {
             expect,
             "the loadout drop draws ride the same stream before the re-grant"
         );
+    }
+
     /// W4-f30 — `Main.surviveHardcoreDeath` (`Main.cs:2638-2648`): only the
     /// constant world (Don't Starve + 10th Anniversary) survives, and For The
     /// Worthy cancels even that.

@@ -770,9 +770,6 @@ mod tests {
             inventory,
             inv_favorites: 0,
             used_aegis_fruit: false,
-            used_gummy_worm: false,
-            used_ambrosia: false,
-            used_aegis_crystal: false,
             last_saved_binary: 0,
             ..Default::default()
         };
@@ -846,9 +843,6 @@ mod tests {
             inventory,
             inv_favorites: 0,
             used_aegis_fruit: false,
-            used_gummy_worm: false,
-            used_ambrosia: false,
-            used_aegis_crystal: false,
             last_saved_binary: 0,
             ..Default::default()
         };
@@ -1124,9 +1118,6 @@ mod tests {
                 // Slots 0 and 4 starred — the BUG-03 half of the card.
                 inv_favorites: 1 << 0 | 1 << 4,
                 used_aegis_fruit: false,
-                used_gummy_worm: false,
-                used_ambrosia: false,
-                used_aegis_crystal: false,
                 last_saved_binary: 0,
                 ..Default::default()
             },

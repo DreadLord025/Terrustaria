@@ -110,7 +110,7 @@
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
-use crate::projectile::catmull_rom;
+use crate::npc_ai_sand_elemental::catmull_rom;
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::stray::expand_vertically;
@@ -1060,7 +1060,7 @@ mod tests {
             }
         }
         assert_eq!(out.shots.len(), accepted.len(), "the roll oracle count");
-        assert_eq!(rng.peek(), oracle.peek(), "the placement draw order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the placement draw order");
         // The client never fires.
         let mut n = elemental(280.0, 120.0 * 16.0 - 76.0);
         n.ai[0] = 53.0;

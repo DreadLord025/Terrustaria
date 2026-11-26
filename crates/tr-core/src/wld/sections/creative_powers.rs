@@ -533,12 +533,14 @@ mod tests {
         // Freeze-rain (9) and freeze-wind (10) are per-world toggles; the
         // difficulty slider (12) decodes its cache into the derived strength
         // (`UpdateInfoFromSliderValueCache:1018-1028`) — cache 0.33 is the
-        // segment seam, strength 1.0.
-        let bytes = section(&[
-            bool_record(9, true),
-            bool_record(10, true),
-            f32_record(12, 0.33),
-        ]);
+        // segment seam, strength 1.0. Build the records hand-written from the
+        // C#: id 12's payload is the raw [0,1] cache, NOT the derived strength,
+        // so `section()` (which applies the strength→cache inverse) would
+        // double-remap it.
+        let mut bytes = record(9, &WldCreativeValue::Bool(true));
+        bytes.extend(record(10, &WldCreativeValue::Bool(true)));
+        bytes.extend(record(12, &WldCreativeValue::F32(0.33))); // raw cache
+        bytes.push(0); // terminator
         let (back, pos) = read_at(&bytes);
         assert_eq!(
             back,
@@ -559,7 +561,11 @@ mod tests {
         // `Load:1167-1171` derives `StrengthMultiplierToGiveNPCs`
         // (`UpdateInfoFromSliderValueCache:1018-1028`). Cache 0.75 →
         // Remap(0.33,1,1,3) = 2.2537313 → *20 = 45.07 → round 45 → 2.25.
-        let bytes = section(&[f32_record(12, 0.75)]);
+        // Hand-build the raw cache record: the wire payload is the slider's
+        // [0,1] `_sliderCurrentValueCache` (`DifficultySliderPower.Save:1162`),
+        // not the derived strength, so `section()` would apply the inverse.
+        let mut bytes = record(12, &WldCreativeValue::F32(0.75));
+        bytes.push(0); // terminator
         assert_eq!(&bytes[3..7], &0.75f32.to_le_bytes(), "the raw cache on the wire");
         let (back, pos) = read_at(&bytes);
         assert_eq!(

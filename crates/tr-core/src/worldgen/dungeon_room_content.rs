@@ -2089,9 +2089,12 @@ mod tests {
         w.rock_layer = 150.0; // midpoint 100 — place below it
         // A floor under both the target (30, 120) and the quirk cell
         // (120, 120)… the quirk cell needs a book AT (120,120).
+        // A shelf (table 14) under the book sites: `WorldGen.PlaceTile`'s
+        // type-50 arm routes through `PlaceOnTable1x1`, which needs a table
+        // below (plain stone refuses).
         for x in 0..200 {
             if let Some(t) = w.tile_mut(x, 121) {
-                t.kind = 1;
+                t.kind = 14;
                 t.flags |= FLAG_ACTIVE;
             }
         }

@@ -174,7 +174,7 @@ pub fn leaf_shot_step(
         p.sound_delay = -1;
         // `SoundEngine.PlaySound(6, (int)X, (int)Y)` — the int overload's
         // default style 1 (the drain's id-6 façade is the wiring follow-up).
-        p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0, 1.0));
         // `:27867-27874` — the 8× dust-157 burst, pool internals + the
         // POST-spawn NextFloat blend (the e3 emitter, activated).
         crystal_leaf_burst_227(p, world, dust, rng, ctx);
@@ -199,7 +199,7 @@ pub fn leaf_shot_step(
 /// `UpdateProjectiles` stream); the g65 body-lane supersedes this hook's
 /// former 15-float census, exactly like the AI burst's e3 supersede.
 pub fn leaf_shot_kill(p: &mut Projectile) {
-    p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0));
+    p.wants_sound = Some((6, 1, p.pos.x, p.pos.y, 0.0, 1.0));
 }
 
 #[cfg(test)]
@@ -265,7 +265,7 @@ mod tests {
         let mut p = shot(Vec2::new(12.0, 0.0));
         leaf_shot_step(&mut p, &w, &mut dust, &mut rng, &c, 0);
         assert_eq!(p.sound_delay, -1);
-        assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0, 1.0)));
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 8);
         for d in &active {
@@ -361,7 +361,7 @@ mod tests {
         let mut oracle = UnifiedRandom::new(5);
         let mut p = shot(Vec2::new(3.0, 4.0));
         leaf_shot_kill(&mut p);
-        assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(p.wants_sound, Some((6, 1, p.pos.x, p.pos.y, 0.0, 1.0)));
         assert_eq!(rng.next_float().to_bits(), oracle.next_float().to_bits(), "zero draws");
         assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999));
     }

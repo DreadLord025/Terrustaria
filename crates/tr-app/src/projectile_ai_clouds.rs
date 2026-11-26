@@ -155,7 +155,7 @@ pub(crate) fn cloud_family_step(
             slots[i].direction = 1;
         }
         let (cx, cy) = slots[i].center();
-        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0));
+        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0, 1.0));
     }
     // `:32580-32584` — the age; a hit cloud (ai[1] >= 1) ages triple.
     slots[i].ai[0] += 1.0;
@@ -748,7 +748,7 @@ mod tests {
         cloud_family_step(&mut slots, 0, &w, Some(&mut pl), &mut npcs, &mut rng);
         assert_eq!(
             slots[0].wants_sound,
-            Some((2, 16, c0.0, c0.1, 0.0)),
+            Some((2, 16, c0.0, c0.1, 0.0, 1.0)),
             "the broadcast cue at the pre-growth centre"
         );
         assert!(slots[0].scale > 1.0, "the 1→6 growth ramp (`:32603`)");

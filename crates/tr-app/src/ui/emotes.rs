@@ -236,6 +236,10 @@ pub fn compare_group_order(a: i32, b: i32) -> std::cmp::Ordering {
 /// inside the 34x28 `EmoteButton` rect (`ContainsPoint` `:354-357`, the
 /// truncated `Rectangle.Contains`). A button straddling the list's edge is
 /// hittable in its visible part — the scissor clips the DRAW, not the hit.
+/// The fix/emote-hover-and-spawn centred-lattice helper `pub fn grid_origin`
+/// (the draw and hit test used to share one origin) folded into the grouped
+/// `EmotesGroupListItem` lattice at W4-g54: `group_button_top_left` is now
+/// the single origin — no second grid is kept here.
 pub fn card_at(screen: Vec2, mouse: Vec2, groups: &[EmoteGroup], scroll: f32) -> Option<i32> {
     let panel = panel_rect(screen, true);
     let attached = scrollbar_attaches(groups, &panel);

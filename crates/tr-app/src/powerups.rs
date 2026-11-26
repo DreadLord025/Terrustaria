@@ -171,9 +171,9 @@ fn use_life_fruit(app: &mut App) -> bool {
         p.max_hp += 5;
         p.hp += 5;
         // `HealEffect(5)` (`:45300`) — the RAW 5 text, no statLife cap.
-        crate::potions::spawn_heal_text(app, 5);
         (p.life_max_base, p.mana_max_base)
     };
+    crate::potions::spawn_heal_text(app, 5);
     let _ = app.achievements.complete_condition("GET_A_LIFE", "Use"); // `:45302` case 2
     if life_after == 500 && mana_base == 200 {
         let _ = app.achievements.complete_condition("TOPPED_OFF", "Use");
@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(p.mana_max, 40, "statManaMax2 += 20");
         assert_eq!(p.mana, 40, "statMana += 20");
         assert_eq!(app.inventory[app.selected].count, 2);
-        assert_eq!(p.take_mana_effect(), Some(20), "ManaEffect(20) queued");
+        assert_eq!(app.player.as_mut().unwrap().take_mana_effect(), Some(20), "ManaEffect(20) queued");
         let star = app.achievements.list.iter().find(|a| a.name == "STAR_POWER").unwrap();
         assert!(star.completed, "HandleSpecialEvent(1) → STAR_POWER");
     }

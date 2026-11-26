@@ -14,7 +14,7 @@
 //! the pass that invoked it — the caller passes `&mut UnifiedRandom`,
 //! never a new stream. Argument draws run BEFORE the pool internals (C#
 //! evaluates arguments first). `WorldGen.genRand` rides the port's runtime
-//! stand-in (`World::frame_rng`), passed as `gen`.
+//! stand-in (`World::frame_rng`), passed as `gen_rng`.
 //!
 //! The particle-pool requests (`FadingParticle`/`PrettySparkleParticle`)
 //! are the documented renderer skip (research/15: no particle renderer);
@@ -308,7 +308,7 @@ pub(crate) fn snapping_stone_summon(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paladins_hammer_shockwave(
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -344,7 +344,7 @@ pub(crate) fn paladins_hammer_shockwave(
             };
             let num6 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num6 {
-                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num5 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -352,7 +352,7 @@ pub(crate) fn paladins_hammer_shockwave(
                 obj.scale += num5 as f32 * 0.03;
             }
             for _ in 0..num6 - 1 {
-                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(j, k, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                 let obj2 = dust.slot_mut(idx);
                 obj2.velocity.y -= 1.0 + num5 as f32;
                 obj2.velocity.y *= rng.next_float();
@@ -572,10 +572,10 @@ mod tests {
         let mv = Vec2::new(48.0, 32.0);
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         for i in 0..100 {
-            paladins_hammer_shockwave(&mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, pos, mv);
+            paladins_hammer_shockwave(&mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, pos, mv);
             for _ in 0..50 {
                 if probe.next_max(2) == 0 {
                     block(&mut probe, 57, 48, 32);

@@ -490,15 +490,6 @@ pub fn interact_at(
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
     }
-    // W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
-    // right-click buff tiles, tested as kind literals BEFORE the dial branches
-    // (`:32636`) and the crafting-station tail (`:33279`), exactly the C# chain
-    // order. The buff grant + the `SoundID.ItemNN` style play are app-side (the
-    // core has no player); the variant carries the kind. 699 also counts as a
-    // Bone Welder (`TileCountsAs` 699→13), but the buff arm wins the click first.
-    if matches!(t.kind, 125 | 621 | 464 | 699 | 377 | 354 | 287) {
-        return TileInteraction::BuffStation { kind: t.kind };
-    }
     // The station-buff arms (W4-e28 + W4-f34, `Player.cs:32594-32635`): the
     // C# chain tests the kind literals in this order before the dials —
     // 125 Crystal Ball → 29 (:32594-32599), 621 Slice of Cake → 192 for
@@ -525,15 +516,6 @@ pub fn interact_at(
             buff_type,
             buff_time,
         };
-    }
-    // The monolith family (`Player.cs:32271-32277`, W4-c42 final — the g78
-    // research/76 request): the nine kinds flip via `SwitchMonolith` on
-    // right-click. The C# chain sits after the fountain (207) arm and
-    // before the party box (455); neither has a port arm, so the literal
-    // test lands here beside the switch family (the same pre-registry
-    // shape — 657's def carries `Interaction::None`).
-    if matches!(t.kind, 410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733) {
-        return TileInteraction::MonolithToggle { x: i, y: j };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
@@ -1913,7 +1895,14 @@ mod tests {
         assert_eq!(w.tile(11, 19).unwrap().kind, 387);
         assert!(!w.tile(10, 18).unwrap().active(), "the top row cleared");
         // Re-open from the closed pair (player_above = true → the 2x2 grows
-        // DOWN, rows 19-20; frameX carries the +36 above-half).
+        // DOWN, rows 19-20; frameX carries the +36 above-half). The C# close
+        // branch's destination-row gate (`:51547-51555`) refuses an active
+        // non-cut cell, so the two floor cells the 2x2 will occupy are cleared
+        // first (a downward flip into the stone floor is unreachable in play).
+        for x in [10i32, 11] {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile::default();
+        }
         let (res, cue) = shift_trapdoor(&mut w, 10, 19, true, -1, &free);
         assert!(res.shifted);
         assert_eq!(cue, Some((10 * 16 + 16, 19 * 16)));
@@ -2142,15 +2131,15 @@ mod tests {
         set_active(&mut w, 10, 19, 455);
         let revision = w.revision;
         let blocked = |_: i32, _: i32| false;
-        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
-        assert!(matches!(hit, TileInteraction::PartyMonolithToggle));
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked, &mut rng());
+        assert!(matches!(hit, TileInteraction::RightClickToggle { kind: 455, .. }));
         assert!(w.tile(10, 19).unwrap().active(), "no world write");
         assert_eq!(w.revision, revision);
         // An inactive cell never reaches the chain (`TileInteractionsCheck`
         // gates on active tiles only, `Player.cs:32031-32041`).
         let i = w.index(10, 19);
         w.tiles[i].flags &= !FLAG_ACTIVE;
-        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked, &mut rng());
         assert!(matches!(hit, TileInteraction::None));
     }
 
@@ -2188,8 +2177,8 @@ mod tests {
         // (`Player.cs:32278-32284`'s kind test).
         let blocked = no_blocker as fn(i32, i32) -> bool;
         assert!(matches!(
-            interact_at(&mut w, 12, 17, 1, &blocked),
-            TileInteraction::PartyMonolithToggle
+            interact_at(&mut w, 12, 17, 1, &blocked, &mut rng()),
+            TileInteraction::RightClickToggle { kind: 455, .. }
         ));
         // A floating click (no solid floor under the object) is refused —
         // the bottom anchor gate, and the world stays unchanged.
@@ -2531,7 +2520,7 @@ mod tests {
     /// frames keep, the occupancy gate refuses a blocked cell, and a
     /// non-gate cell refuses outright.
     #[test]
-    fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
+    fn w4_g4_shift_tall_gate_opens_the_closed_gate_direct_frames() {
         let mut w = doorway_world();
         // The closed tall gate at column 10, rows 14..18 (the 1×5 style-0
         // object): frameX 0, frameY the coordinate-heights prefix
@@ -2544,14 +2533,16 @@ mod tests {
         }
         let mut drops = Vec::new();
         assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+    }
+
     /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
-    /// zombie door-bash drain's gate-388 open, re-pointed at the c42
-    /// canonical body (research/95 §3 witness union — the richest unit
-    /// pin: open/close round-trip + blocked refusal + forced bypass +
-    /// non-gate refusal). The 1×5 style-0 object at column 10, rows
-    /// 14..18; frameY on the real placement grid (the [18,16,16,16,18]
-    /// coordinate-heights prefix + 2px padding → 0/20/38/56/74).
-    /// WRITTEN NOT RUN (code-only).
+    /// wired tall-gate body (the c42 canonical `edit::shift::shift_tall_gate`,
+    /// re-exported as `shift_tall_gate_wired`), re-pointed at the canonical
+    /// witness (research/95 §3 — open/close round-trip + blocked refusal +
+    /// forced bypass + non-gate refusal + the adjusted-top cue pin). The 1×5
+    /// style-0 object at column 10, rows 14..18; frameY on the real placement
+    /// grid (the [18,16,16,16,18] coordinate-heights prefix + 2px padding →
+    /// 0/20/38/56/74).
     #[test]
     fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
         let mut w = doorway_world();
@@ -2569,8 +2560,6 @@ mod tests {
             let t = w.tile(10, y).unwrap();
             assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
         }
-        // The open gate shifts back to closed (388) with `closing: true`.
-        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
         // The cue queues at the ADJUSTED top centre (`:51762`).
         assert_eq!(cues, vec![(true, 10 * 16 + 16, 14 * 16 + 16)]);
         // The open gate shifts back to closed (388) with `closing: true`.
@@ -2582,13 +2571,6 @@ mod tests {
         }
         // A blocked cell refuses the shift (the occupancy gate).
         let blocked = |_: i32, _: i32| true;
-        assert!(!shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &blocked, &mut drops));
-        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
-        // `forced` skips the occupancy gate.
-        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, true, &blocked, &mut drops));
-        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
-        // A non-gate cell refuses outright.
-        assert!(!shift_tall_gate_with_drops(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
         assert!(!shift_tall_gate_wired(
             &mut w, 10, 18, false, false, &blocked, &mut drops, None, &mut cues
         ));
@@ -2604,6 +2586,37 @@ mod tests {
         ));
     }
 
+    /// The same `WorldGen.ShiftTallGate` flow through the drops-only wrapper
+    /// (`shift_tall_gate_with_drops` — the W4-g4 c42 entry point that drops
+    /// the cue/skip seam): the open/close round trip plus the occupancy gate.
+    #[test]
+    fn w4_g4_shift_tall_gate_with_drops_round_trips() {
+        let mut w = doorway_world();
+        for (k, y) in (14..=18).enumerate() {
+            set_active(&mut w, 10, y, 388);
+            let fy = [0i16, 20, 38, 56, 74][k];
+            w.tile_mut(10, y).unwrap().frame_y = fy;
+        }
+        let mut drops = Vec::new();
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            assert_eq!(w.tile(10, y).unwrap().kind, 389, "gate row {y} opens");
+        }
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            assert_eq!(w.tile(10, y).unwrap().kind, 388, "gate row {y} closes");
+        }
+        // A blocked cell refuses the shift (the occupancy gate).
+        let blocked = |_: i32, _: i32| true;
+        assert!(!shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
+        // `forced` skips the occupancy gate.
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, true, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
+        // A non-gate cell refuses outright.
+        assert!(!shift_tall_gate_with_drops(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
+    }
+
     #[test]
     fn test_DW_4_2_open_door_right_leaf_frames() {
         // `WorldGen.OpenDoor` direction +1 (`WorldGen.cs:37733-37776`): the
@@ -2613,8 +2626,7 @@ mod tests {
         w.tile_mut(10, 17).unwrap().set_paint(3);
         w.tile_mut(10, 18).unwrap().set_paint(5);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None, &mut rng()));
         assert!(drops.is_empty());
         let row_paint = [3u8, 5, 0]; // cache rows (:37676-37690)
         for (k, y, fy) in [(0usize, 17i32, 0i16), (1, 18, 18), (2, 19, 36)] {
@@ -2641,8 +2653,7 @@ mod tests {
         let mut w = closed_door_world();
         w.tile_mut(10, 17).unwrap().set_paint(3);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None, &mut rng()));
         for (y, fy) in [(17i32, 0i16), (18, 18), (19, 36)] {
             let hinge = w.tile(9, y).unwrap();
             assert!(hinge.active() && hinge.kind == 11, "hinge row {y}");
@@ -2676,7 +2687,7 @@ mod tests {
                 false,
                 &no_blocker,
                 &mut drops,
-                None
+                None,
                 &mut rng()
             ));
             assert!(drops.is_empty());
@@ -2702,8 +2713,7 @@ mod tests {
         let mut w = doorway_world();
         open_the_door(&mut w, true);
         let mut drops = Vec::new();
-        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
-        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, &mut rng()));
+        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None, &mut rng()));
         for dy in 0..3i32 {
             let hinge = w.tile(10, 17 + dy).unwrap();
             assert!(hinge.active() && hinge.kind == 10, "left hinge row {dy}");
@@ -2755,8 +2765,7 @@ mod tests {
             set_active(&mut w, 11, y, 1);
         }
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None, &mut rng()));
         assert!(drops.is_empty());
         for y in 17..=19 {
             let t = w.tile(10, y).unwrap();
@@ -2769,8 +2778,7 @@ mod tests {
         }
         // The opposite direction's column is free — the open succeeds there
         // (the dispatcher-level retry is DW-4.1's test).
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None, &mut rng()));
     }
 
     #[test]
@@ -2780,8 +2788,7 @@ mod tests {
         let mut w = closed_door_world();
         set_active(&mut w, 11, 18, 3); // kind 3 ∈ Main.tileCut
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None, &mut rng()));
         assert!(drops.is_empty()); // a cut plant carries no object drop
         let t = w.tile(11, 18).unwrap();
         assert!(t.active() && t.kind == 11);
@@ -2796,12 +2803,9 @@ mod tests {
         open_the_door(&mut w, false);
         let blocked = |x: i32, y: i32| x == 10 && y == 18;
         let mut drops = Vec::new();
-        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops, None));
+        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops, None, &mut rng()));
         assert!(w.tile(10, 18).unwrap().kind == 11, "door stays open");
-        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops, None));
-        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops, &mut rng()));
-        assert!(w.tile(10, 18).unwrap().kind == 11, "door stays open");
-        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops, &mut rng()));
+        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops, None, &mut rng()));
         assert!(w.tile(10, 18).unwrap().kind == 10, "forced closes");
     }
 
@@ -2810,16 +2814,11 @@ mod tests {
         // Cross-kind calls refuse without touching the world (:37645/:31818).
         let mut w = closed_door_world();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 40, 40, 1, &mut drops, None)); // out of bounds
-        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
+        assert!(!open_door(&mut w, 40, 40, 1, &mut drops, None, &mut rng())); // out of bounds
+        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None, &mut rng()));
         let mut w2 = doorway_world();
         open_the_door(&mut w2, false);
-        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops, None));
-        assert!(!open_door(&mut w, 40, 40, 1, &mut drops, &mut rng())); // out of bounds
-        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, &mut rng()));
-        let mut w2 = doorway_world();
-        open_the_door(&mut w2, false);
-        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops, None, &mut rng()));
     }
 
     #[test]
@@ -2831,8 +2830,7 @@ mod tests {
             set_object_cell(&mut w, 10, 17 + dy, 10, 0, fy);
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 17, 1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 17, 1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 17, 1, &mut drops, None, &mut rng()));
         for dy in 0..3i32 {
             let t = w.tile(10, 17 + dy).unwrap();
             assert_eq!(t.frame_y, 54 + dy as i16 * 18, "style row {dy}");
@@ -2851,8 +2849,7 @@ mod tests {
         let broken = w.index(10, 19);
         w.tiles[broken] = crate::tile::Tile::default();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None, &mut rng()));
         for y in 17..=19 {
             assert!(!w.tile(10, y).unwrap().active(), "row {y} cleaned up");
         }
@@ -3023,8 +3020,7 @@ mod tests {
             t.wall = 0; // no wall behind the door anywhere
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops, &mut rng()));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None, &mut rng()));
         assert!(w.tile(10, 17).unwrap().kind == 11);
     }
 
@@ -3113,7 +3109,7 @@ mod tests {
             let mut w = object_world();
             set_active(&mut w, 10, 19, kind);
             let blocked = no_blocker as fn(i32, i32) -> bool;
-            match interact_at(&mut w, 10, 19, 1, &blocked) {
+            match interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()) {
                 TileInteraction::StationBuff {
                     buff_type,
                     buff_time,
@@ -3131,7 +3127,7 @@ mod tests {
         let mut w = object_world();
         set_active(&mut w, 10, 19, 126);
         assert!(matches!(
-            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            interact_at(&mut w, 10, 19, 1, &no_blocker, &mut rng()),
             TileInteraction::StationInteract { .. }
         ));
     }
@@ -3155,7 +3151,7 @@ mod tests {
             let mut w = object_world();
             set_active(&mut w, 10, 19, kind);
             let blocked = no_blocker as fn(i32, i32) -> bool;
-            match interact_at(&mut w, 10, 19, 1, &blocked) {
+            match interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()) {
                 TileInteraction::StationBuff {
                     buff_type,
                     buff_time,
@@ -3178,7 +3174,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            interact_at(&mut w, 10, 19, 1, &no_blocker, &mut rng()),
             TileInteraction::None
         ));
     }
@@ -3306,7 +3302,7 @@ mod tests {
         for kind in [139u16, 207, 410, 455] {
             let mut w = object_world();
             set_active(&mut w, 10, 19, kind);
-            match interact_at(&mut w, 10, 19, 1, &blocked) {
+            match interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()) {
                 TileInteraction::RightClickToggle { x, y, kind: k } => {
                     assert_eq!((x, y, k), (10, 19, kind));
                 }
@@ -3326,7 +3322,7 @@ mod tests {
                 w.tiles[i].frame_y = ((y - 18) * 18) as i16;
             }
         }
-        match interact_at(&mut w, 10, 19, 1, &blocked) {
+        match interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()) {
             TileInteraction::RightClickToggle { kind: 215, .. } => {}
             other => panic!("campfire: expected RightClickToggle, got {other:?}"),
         }
@@ -3341,7 +3337,7 @@ mod tests {
         }
         // The re-click flips back (`frameY >= 36` -> -36).
         assert!(matches!(
-            interact_at(&mut w, 10, 19, 1, &blocked),
+            interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()),
             TileInteraction::RightClickToggle { kind: 215, .. }
         ));
         assert_eq!(w.tile_frame_y(9, 18), 0);
@@ -3358,26 +3354,42 @@ mod tests {
             }
         }
         assert!(matches!(
-            interact_at(&mut w2, 10, 19, 1, &blocked),
+            interact_at(&mut w2, 10, 19, 1, &blocked, &mut rng()),
             TileInteraction::RightClickToggle { kind: 215, .. }
         ));
         assert_eq!(w2.tile_frame_y(9, 18), 0, "the invalid square keeps its frames");
     }
 
     /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
-    /// right-click buff tiles answer `BuffStation` with their kind, BEFORE the
-    /// dial branches (`:32636`) and the crafting-station tail (`:33279`). 699
-    /// also counts as a Bone Welder (`TileCountsAs` 699→13), but the buff arm
-    /// wins the click first — it never reaches the station tail.
+    /// right-click buff tiles answer the station-buff route (W4-f34's
+    /// `StationBuff { buff_type, buff_time }` — the anchor-bearing superset)
+    /// BEFORE the dial branches (`:32636`) and the crafting-station tail
+    /// (`:33279`). 699 also counts as a Bone Welder (`TileCountsAs` 699→13),
+    /// but the buff arm wins the click first — it never reaches the station
+    /// tail.
     #[test]
     fn w4_e10_the_buff_station_family_routes_before_the_station_tail() {
         let blocked = no_blocker as fn(i32, i32) -> bool;
-        for kind in [125u16, 621, 464, 699, 377, 354, 287] {
+        for (kind, buff, time) in [
+            (125u16, 29, 108_000),
+            (621, 192, 7_200),
+            (464, 348, 108_000),
+            (699, 366, 108_000),
+            (377, 159, 108_000),
+            (354, 150, 108_000),
+            (287, 93, 108_000),
+        ] {
             let mut w = object_world();
             set_active(&mut w, 10, 19, kind);
-            match interact_at(&mut w, 10, 19, 1, &blocked) {
-                TileInteraction::BuffStation { kind: k } => assert_eq!(k, kind),
-                other => panic!("kind {kind}: expected BuffStation, got {other:?}"),
+            match interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()) {
+                TileInteraction::StationBuff {
+                    buff_type,
+                    buff_time,
+                } => {
+                    assert_eq!(buff_type, buff, "tile {kind}");
+                    assert_eq!(buff_time, time, "tile {kind}");
+                }
+                other => panic!("kind {kind}: expected StationBuff, got {other:?}"),
             }
         }
         // An inactive station cell is invisible (`TileInteractionsCheck`).
@@ -3388,7 +3400,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            interact_at(&mut w, 10, 19, 1, &blocked),
+            interact_at(&mut w, 10, 19, 1, &blocked, &mut rng()),
             TileInteraction::None
         ));
     }
@@ -3411,5 +3423,4 @@ mod tests {
         ));
         assert!(!w.fast_forward_to_dawn);
     }
-}
 }

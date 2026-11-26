@@ -328,9 +328,11 @@ mod tests {
         assert_eq!(inner_r.right(), 3980);
         let (inner_l, outer_l) =
             create_potential_dungeon_bounds(4200, 1200, 300.0, 350.0, 1000, true, false);
-        // Left dungeon: x in [0.05·W, 0.45·W] = [210, 1890].
+        // Left dungeon: x in [0.05·W, 0.45·W] = [210, 1889].
+        // The C# computes `(int)(4200.0 * (0.5 - 0.10000000149011612 / 2))`
+        // = 1889.999996... → 1889 (the f64 `0.05` subtraction truncates).
         assert_eq!(outer_l.left(), 210);
-        assert_eq!(outer_l.right(), 1890);
+        assert_eq!(outer_l.right(), 1889);
         assert_eq!(inner_l.left(), 220);
         // Top = (worldSurface+10) = 310; bottom = UnderworldLayer-10 = 990.
         assert_eq!(outer_r.top(), 310);

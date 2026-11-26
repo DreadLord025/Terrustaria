@@ -259,7 +259,7 @@ fn kite_logic(
             p.sound_delay = 30;
             let pitch = (p.local_ai[2] - num) / (num2 - num) * -0.12 + 0.06;
             if !flag {
-                p.wants_sound = Some((2, 192, pl.x, pl.y, pitch));
+                p.wants_sound = Some((2, 192, pl.x, pl.y, pitch, 1.0));
             }
         }
     }
@@ -623,7 +623,7 @@ mod w4_d16_160_tests {
         assert_eq!(p.local_ai[2], 245.0, "the length latch follows");
         // The cue: soundDelay was 0 → 30, then the per-sub-step tick → 29.
         assert_eq!(p.sound_delay, 29);
-        let (id, style, _, _, pitch) = p.wants_sound.expect("the Item192 cue");
+        let (id, style, _, _, pitch, _vol) = p.wants_sound.expect("the Item192 cue");
         assert_eq!((id, style), (2, 192));
         let want = (245.0 - 4.0) / (500.0 - 4.0) * -0.12 + 0.06;
         assert!((pitch - want).abs() < 1e-6, "the kite pitch: {pitch} vs {want}");

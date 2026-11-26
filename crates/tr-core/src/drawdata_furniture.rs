@@ -260,49 +260,7 @@ pub fn is_lane2_cage_kind(kind: u16) -> bool {
     )
 }
 
-/// The chest half of `CacheSpecialDraws_Part2` (TileDrawing.cs:4289-4330),
-/// which `DrawSingleTile` runs AFTER `GetTileDrawData` (:993): the source
-/// rect folds back to the chest's sheet origin per sub-cell, the opening
-/// animation adds +38/+76 to the row, and every row below the first is 18 px
-/// tall. `chest_frame` is `Main.chest[Chest.FindChest(anchor)].frame` —
-/// `None` when `FindChest` returns -1 (:4309). The anchor probe itself
-/// (`key.X--` when `fx % 36 != 0`, `key.Y--` when `fy % 36 != 0`, :4292-4299)
-/// belongs to the caller's chest lookup; the port's `World::chests`
-/// (`save::ChestRecord`) carries the anchor `(x, y)` for it.
-///
-/// Deviation (TILE-DRAW-2 scope): the 21-columns-48/49 `glowSourceRect`
-/// (:4326-4329) is not carried — `TileDrawData` has no glow fields yet.
-/// The `typeCache == 378` training-dummy half (:4331-4355) needs
-/// `TETrainingDummy` + `Main.npc[npc].frame` and stays unported.
-pub fn chest_draw_rewrite(
-    kind: u16,
-    frame_x: i16,
-    frame_y: i16,
-    chest_frame: Option<i32>,
-    data: &mut TileDrawData,
-) {
-    if !is_basic_chest(kind) {
-        return;
-    }
-    let fx = frame_x as i32;
-    let fy = frame_y as i32;
-    let num = fx / 18;
-    let num2 = fy / 18;
-    data.add_fr_x = (num * 18 - fx) as i16;
-    let mut num4 = num2 * 18;
-    if let Some(frame) = chest_frame {
-        if frame == 1 {
-            num4 += 38;
-        }
-        if frame == 2 {
-            num4 += 76;
-        }
-    }
-    data.add_fr_y = (num4 - fy) as i16;
-    if num2 != 0 {
-        data.height = 18;
-    }
-}
+/// The wave-C dispatch hook: given the `draw_data` result for a cell, apply
 
 /// The wave-C dispatch hook: given the `draw_data` result for a cell, apply
 /// the cage rewrites this module owns. `cage_frames` is `Main.cageFrames`

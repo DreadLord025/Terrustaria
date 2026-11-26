@@ -256,15 +256,6 @@ pub(crate) fn death_hover_rect(pos: [f32; 2], head_scale: f32, minimap: bool) ->
         28.0 * head_scale,
         28.0 * head_scale,
     ]
-    // `:56455-56458`: num3 = num + 4 - 14*s, num4 = num2 + 2 - 14*s, then
-    // `num3 -= 4; num4 -= 4` — the box origin is pos + (0, -2) - 14*s.
-    let rect = [
-        pos[0] - 14.0 * head_scale,
-        pos[1] - 2.0 - 14.0 * head_scale,
-        28.0 * head_scale,
-        28.0 * head_scale,
-    ];
-    hover_inclusive(rect, mouse)
 }
 
 /// `Game.PlayerDeathTime` ("{0} died {1} ago", `Main.cs:55986`): the
@@ -520,7 +511,6 @@ pub(crate) fn draw_revenge_map_icon(
     // `TextureAssets.Coin[tier]` — the animation strip, not Item_71..74
     // (`CoinLossRevengeSystem.cs:262`, W4-f29 fix F4).
     let Some(sheet) = lookups.coin_anim[tier] else {
-    let Some(sheet) = lookups.coins[tier] else {
         return false;
     };
     // `value.Frame(1, 8)` — the first of the 8 animation rows.
@@ -605,10 +595,6 @@ pub(crate) fn draw_revenge_mouse_over(
         // centred, scale 1 (the 1024 size limit never bites a 16px coin).
         // W4-f29 fix F4: the animation strip, not the Item_71..74 icon.
         if let Some(sheet) = lookups.coin_anim[3 - i] {
-        // `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-253`): frame 0 of the
-        // 8-row coin strip, centred, scale 1 (the 1024 size limit never
-        // bites a 16px coin).
-        if let Some(sheet) = lookups.coins[3 - i] {
             let fh = sheet.height / 8;
             let uv = lookups.health_bar_uv(&sheet, 0, 0, sheet.width, fh);
             r.push_ui_sprite(
@@ -802,7 +788,11 @@ mod tests {
         // A negative coordinate truncates toward zero (not Math.Floor,
         // which would answer -126).
         assert_eq!(utils_floor([-125.265, -97.64]), [-125.0, -97.0]);
-        // The death box: (pos.x - 14s, pos.y - 2 - 14s, 28s, 28s).
+        // The death box: (pos.x + 4 - 14s, pos.y + 2 - 14s, 28s, 28s) — the
+        // fullscreen box minus 4 on both axes is the minimap net `(0, -2)`.
+        let pos = [100.0f32, 200.0];
+        let s = 1.5f32;
+        let head = death_hover_rect(pos, s, false);
         assert_eq!(head[0] - 4.0, pos[0] - 14.0 * s);
         assert_eq!(head[1] - 4.0, pos[1] - 2.0 - 14.0 * s);
         assert_eq!(head[2], 28.0 * s);

@@ -116,7 +116,7 @@ pub fn enchant_seven_gore(
     // `:17450-17457` — the gore gate, then the type + kicks + five rolls.
     if rng.next_max(40) == 0 {
         let ty = rng.next_range(276, 283);
-        let idx = gore.new_gore(rng, world, p.pos, vector, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vector, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.x *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
         g.velocity.y *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
@@ -139,7 +139,7 @@ pub fn super_star_trail(
     if ctx.on_screen && rng.next_max(6) == 0 {
         // `Utils.SelectRandom` = `Next(4)` over the list (`Utils.cs:2459`).
         let ty = [16, 17, 17, 17][rng.next_max(4) as usize];
-        gore.new_gore(rng, world, p.pos, p.vel * 0.2, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, p.vel * 0.2, ty, 1.0);
     }
 }
 
@@ -158,8 +158,7 @@ pub fn tombstone_landing_gore(
     // `:23312` / `:23357` / `:23402` — position −10/−10, default velocity,
     // the `Next(61, 64)` type; the kicks roll inside the pool.
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore(
-        rng, world,
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world,
         Vec2::new(p.pos.x - 10.0, p.pos.y - 10.0),
         Vec2::ZERO, ty, 1.0,
     );
@@ -182,8 +181,7 @@ pub fn ai503_trail(
     world: &World,
 ) {
     if rng.next_max(48) == 0 {
-        let idx = gore.new_gore(
-            rng, world, center(p),
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, center(p),
             Vec2::new(p.vel.x * 0.2, p.vel.y * 0.2), 16, 1.0,
         );
         let g = gore.slot_mut(idx);
@@ -208,7 +206,7 @@ pub fn falling_star_trail(
         if ctx.anniversary {
             ty = [16, 16, 16, 17][rng.next_max(4) as usize];
         }
-        gore.new_gore(rng, world, p.pos, p.vel * 0.2, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, p.vel * 0.2, ty, 1.0);
     }
 }
 
@@ -225,7 +223,7 @@ pub fn shadowflare_trail(
 ) {
     if ctx.on_screen && rng.next_max(24) == 0 {
         let ty = [16, 17][rng.next_max(2) as usize];
-        gore.new_gore(rng, world, p.pos, p.vel * 0.2, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, p.vel * 0.2, ty, 1.0);
     }
 }
 
@@ -239,7 +237,7 @@ pub fn ai723_trail(
     world: &World,
 ) {
     if ctx.on_screen && rng.next_max(6) == 0 {
-        gore.new_gore(rng, world, p.pos, p.vel * 0.2, 17, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, p.vel * 0.2, 17, 1.0);
     }
 }
 
@@ -255,7 +253,7 @@ pub fn ai9_trail(
 ) {
     if ctx.on_screen && rng.next_max(20) == 0 {
         let ty = rng.next_range(16, 18);
-        gore.new_gore(rng, world, p.pos, p.vel * 0.2, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, p.vel * 0.2, ty, 1.0);
     }
 }
 
@@ -271,8 +269,7 @@ pub fn ai_style2_gore(
 ) {
     if rng.next_max(20) == 0 {
         let ty = rng.next_range(16, 18);
-        gore.new_gore(
-            rng, world, p.pos,
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos,
             Vec2::new(p.vel.x * 0.2, p.vel.y * 0.2), ty, 1.0,
         );
     }

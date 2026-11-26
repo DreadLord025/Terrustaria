@@ -451,6 +451,12 @@ impl App {
                 using_biome_torches: f.using_biome_torches,
                 ate_artisan_bread: f.ate_artisan_bread,
                 used_upgrades: f.used_upgrades,
+                used_aegis_crystal: f.used_aegis_crystal,
+                used_aegis_fruit: f.used_aegis_fruit,
+                used_arcane_crystal: f.used_arcane_crystal,
+                used_galaxy_pearl: f.used_galaxy_pearl,
+                used_gummy_worm: f.used_gummy_worm,
+                used_ambrosia: f.used_ambrosia,
                 downed_dd2_any_difficulty: f.downed_dd2_any_difficulty,
                 tax_money: f.tax_money,
                 deaths_pve: f.deaths_pve,
@@ -710,7 +716,7 @@ impl App {
 mod tests {
     // W4-f39 census witness (written-not-run, code-only lane): the
     // menu-return StopSlimeRain (Main.cs:48216-48219).
-    #[path = "saveglue_w4_f39.rs"]
+    #[path = "../../saveglue_w4_f39.rs"]
     mod saveglue_w4_f39;
 
     use super::*;
@@ -1397,6 +1403,7 @@ mod chest_save_tests {
             [0; 3],
             &[0; 10],
             &[],
+            0,
         )
         .expect("the sidecar writes");
         // Overwrite the sidecar's hp line: the writer stamped the fresh

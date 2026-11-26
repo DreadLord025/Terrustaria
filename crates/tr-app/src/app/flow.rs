@@ -235,7 +235,7 @@ pub(crate) enum KeyboardTail {
 /// [`next_flow_state`] table. The card actions carry the clicked index where
 /// the App needs it (`FlowClick::CharDelete(i)` parks the confirm target the
 /// way `Main.selectedPlayer` is parked, `UICharacterListItem.cs:246-249`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FlowClick {
     /// `GoBackClick`: `menuMode = 0` (`UICharacterSelect.cs:116-120`).
     CharBack,
@@ -2068,7 +2068,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             return None;
                         }
                         let name = entry.name.clone();
-                        let parked = state.clone();
+                        let parked = (**state).clone();
                         app.audio.play("Menu_Open");
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
@@ -2454,9 +2454,17 @@ impl App {
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
         let mouse = self.mouse_pos;
+        let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+        let info = match self.front.as_ref() {
+            Some(FrontScreen::ResourcePackInfo(state)) => state.pack.as_ref().map(|pack| {
+                let l = self.pack_info_layout(screen, pack);
+                let desc_h = self.pack_info_desc_height(pack, l.list[2]);
+                (l, desc_h)
+            }),
+            _ => None,
+        };
         match self.front.as_mut() {
             Some(FrontScreen::ResourcePackSelection(state)) => {
-                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
                 let l = ui::resource_packs::layout(screen, header_w);
                 let avail_h = ui::workshop_kit::pack_content_height(state.available().len());
                 let en_h = ui::workshop_kit::pack_content_height(state.enabled().len());
@@ -2482,10 +2490,8 @@ impl App {
                 // The description height needs the renderer for the wrap
                 // measure; the wheel only needs the list rect + the content
                 // height. The renderer-free measure uses the font when present.
-                let Some(pack) = state.pack.clone() else { return true };
-                let l = self.pack_info_layout(screen, &pack);
+                let Some((l, desc_h)) = info else { return true };
                 if ui::resource_pack_info::wheel_target(&l, mouse) {
-                    let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
                     state.scroll = ui::char_select::scroll_wheel(
                         state.scroll, delta, l.container[3], desc_h,
                     );
@@ -2586,9 +2592,17 @@ impl App {
                 ))
             }
         };
+        let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+        let info = match self.front.as_ref() {
+            Some(FrontScreen::ResourcePackInfo(state)) => state.pack.as_ref().map(|pack| {
+                let l = self.pack_info_layout(screen, pack);
+                let desc_h = self.pack_info_desc_height(pack, l.list[2]);
+                (l, desc_h)
+            }),
+            _ => None,
+        };
         match self.front.as_mut() {
             Some(FrontScreen::ResourcePackSelection(state)) => {
-                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
                 let l = ui::resource_packs::layout(screen, header_w);
                 let avail_h = ui::workshop_kit::pack_content_height(state.available().len());
                 let en_h = ui::workshop_kit::pack_content_height(state.enabled().len());
@@ -2611,12 +2625,10 @@ impl App {
                 false
             }
             Some(FrontScreen::ResourcePackInfo(state)) => {
-                let Some(pack) = state.pack.clone() else { return false };
-                let l = self.pack_info_layout(screen, &pack);
+                let Some((l, desc_h)) = info else { return false };
                 if !l.attached {
                     return false;
                 }
-                let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
                 if let Some((scroll, drag)) =
                     bar_press(l.scrollbar, l.container[3], desc_h, state.scroll)
                 {
@@ -2659,9 +2671,17 @@ impl App {
         let screen = Vec2::new(sw, sh);
         let mouse_y = self.mouse_pos.y;
         let enabled = self.front_scroll_drag_enabled;
+        let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+        let info = match self.front.as_ref() {
+            Some(FrontScreen::ResourcePackInfo(state)) => state.pack.as_ref().map(|pack| {
+                let l = self.pack_info_layout(screen, pack);
+                let desc_h = self.pack_info_desc_height(pack, l.list[2]);
+                (l, desc_h)
+            }),
+            _ => None,
+        };
         match self.front.as_mut() {
             Some(FrontScreen::ResourcePackSelection(state)) => {
-                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
                 let l = ui::resource_packs::layout(screen, header_w);
                 let (bar, view_h, content_h) = if enabled {
                     (l.enabled_bar, l.enabled_list[3],
@@ -2679,12 +2699,10 @@ impl App {
                 true
             }
             Some(FrontScreen::ResourcePackInfo(state)) => {
-                let Some(pack) = state.pack.clone() else { return false };
-                let l = self.pack_info_layout(screen, &pack);
+                let Some((l, desc_h)) = info else { return false };
                 if !l.attached {
                     return false;
                 }
-                let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
                 state.scroll =
                     ui::panel::scrollbar_drag_value(l.scrollbar, l.container[3], desc_h, offset, mouse_y);
                 true
@@ -2899,8 +2917,8 @@ impl App {
             // W4-g22 DOC-SWEEP — the keyboard's hover census: ONLY the
             // Submit/Cancel pair sounds (`FadedMouseOver`); the grid keys
             // are colour-only. The +3000 base keeps the ids separate.
-            FrontScreen::Keyboard(_) => {
-                let l = ui::keyboard::layout(screen, self.vk_grid);
+            FrontScreen::Keyboard(session) => {
+                let l = ui::keyboard::layout(screen, self.vk_grid, session.request.context);
                 ui::keyboard::hover_element(&l, self.mouse_pos).map(|id| id + 3000)
             }
             FrontScreen::WorkshopPublishPacks(state) => {
@@ -3807,7 +3825,7 @@ pub(crate) mod front_flow_tests {
         front_press(&mut app);
         // The grid layer (`TR_VK_GRID=1`'s shape).
         app.vk_grid = true;
-        let l = ui::keyboard::layout(screen, true);
+        let l = ui::keyboard::layout(screen, true, ui::keyboard::Context::Text);
         // A letter key (0, 0).
         app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 0, 1));
         let before = app.audio.played_count();
@@ -4721,6 +4739,8 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         let cloud_field = crate::cloud::CloudField::new(world.seed);
+        let world_seed = world.seed;
+        let liquid_rand = tr_core::UnifiedRandom::new(world_seed as i32);
         let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         let mut app = App {
             // The `Main.cs:67229-67236` load reset (strength 0, x/y -1).
@@ -5164,7 +5184,7 @@ pub(crate) mod front_flow_tests {
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
             slime_sky: crate::slime_sky::SlimeSky::new(0),
-            lantern_sky: crate::render::lantern_sky::LanternSky::new(world.seed),
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(world_seed),
             lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
@@ -5210,6 +5230,17 @@ pub(crate) mod front_flow_tests {
             summon_shot: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
+            shopping_settings: crate::happiness::ShoppingSettings::default(),
+            custom_currency_for_savings: crate::custom_currency::CURRENCY_NONE,
+            net_te_anchors: HashMap::new(),
+            net_armor_last: [0; 20],
+            net_beat: 0,
+            liquid_rand,
+            ug_back: crate::render::bg_styles::UgBackState {
+                style: 0,
+                old_style: 0,
+                transition: 0.0,
+            },
         };
         // W4-g34 union (research/197 §4): the ctor warm-up twin — the same
         // fresh-clone form as `App::new` (seed 1, this harness's stand-in
@@ -5282,9 +5313,6 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 used_aegis_fruit: false,
-                used_gummy_worm: false,
-                used_ambrosia: false,
-                used_aegis_crystal: false,
                 last_saved_binary: 0,
                 ..Default::default()
             },

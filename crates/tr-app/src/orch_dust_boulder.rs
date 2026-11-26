@@ -296,7 +296,7 @@ pub(crate) fn dead_cells_barrel_explosion(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dead_cells_flint(
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -345,7 +345,7 @@ pub(crate) fn dead_cells_flint(
             }
             let num9 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num9 {
-                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num8 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -354,7 +354,7 @@ pub(crate) fn dead_cells_flint(
             }
             if num8 >= 2 {
                 for _ in 0..num9 - 1 {
-                    let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                    let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                     let obj2 = dust.slot_mut(idx);
                     obj2.velocity.y -= 1.0 + num8 as f32;
                     obj2.velocity.y *= rng.next_float();

@@ -67,14 +67,10 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, can_hit, can_hit_line, chaseable, chaseable_held, get_lerp_value, rotate,
-    safe_normalize,
-    Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
-    BUBBLE, DRILL_MOUNT_CROSSHAIR, FLAIRON_BUBBLE, SCUTLIX_LASER_CROSSHAIR,
-    SCUTLIX_LASER_FRIENDLY,
     Projectile, alpha_of, can_hit, can_hit_line, chaseable, chaseable_held, csign,
     get_lerp_value, npc_center, remap, rotate, rotation_vector, safe_normalize, solid_tiles,
-    wrap_angle,
+    wrap_angle, BUBBLE, DRILL_MOUNT_CROSSHAIR, FLAIRON_BUBBLE, SCUTLIX_LASER_CROSSHAIR,
+    SCUTLIX_LASER_FRIENDLY,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) тАФ the Clentaminator
@@ -113,12 +109,10 @@ pub(crate) fn ai_spray(
     gen_rng: &mut tr_core::UnifiedRandom,
 ) {
     // `:26788` — the solution flag (`ai[1] == 1` = the wider spray).
-pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
-    // `:26788` тАФ the solution flag (`ai[1] == 1` = the wider spray).
     let solution = p.ai[1] == 1.0;
-    // `:26789-26825` тАФ the per-kind (dust type, conversion type) ladder.
-    // The dust type feeds only the skipped dust; the conversion type is
-    // the `WorldGen.Convert` argument.
+    // `:26789-26825` — the per-kind conversion ladder. Dust types feed only
+    // the skipped dust bodies; conversion types 1/4 are the d1 powder cells,
+    // while type 0 is the cleanse cell. Other types remain unported here.
     let conversion: u8 = match p.kind {
         147 => 1,
         146 => 2,
@@ -129,31 +123,19 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
         1017 => 7,
         _ => 0,
     };
-    // `:26826-26835` тАФ the owner-gated conversion: `Center.ToTileCoordinates`
-    // (the `(int)(X/16)` truncation), size 2 (3 for the solution). Only the
-    // type-0 cleanse cell is ported here (`spread::convert_cleanse`); the
-    // 146-149/1015-1017 rows exist (W4-d18), their conversion cells are
-    // f25's wiring (types 2/5/6/7) + d1/g42's (types 1/3/4) тАФ a no-op on
-    // this branch until those merge.
-    if p.owner == local_owner && conversion == 0 {
-    // (the `(int)(X/16)` truncation), size 2 (3 for the solution). The
-    // ported cells dispatch here (W4-d1 retire compose): type 0 the
-    // cleanse (`spread::convert_cleanse`), types 1/4 the corrupt/crimson
-    // ladders (`spread::convert_sized` — d1's powder cells, the SAME
-    // `Convert(i, j, type, size)` entry the powders call at size 1).
-    // Types 2/5/6/7 (f25's C3/C4) and type 3 (g42's mushroom) stay no-ops
-    // on this branch until those merges — the counter/cap/spin run for
-    // every kind regardless.
+    // `:26826-26835` — owner-gated conversion at Center.ToTileCoordinates,
+    // size 2 (3 for the solution). `gen_rng` is the active UpdateProjectiles
+    // genRand stream (W4-g83); cleanse framing may draw from it.
     if p.owner == local_owner {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
         let size = if solution { 3 } else { 2 };
         match conversion {
-            0 => tr_core::spread::convert_cleanse(world, tx, ty, size),
+            0 => tr_core::spread::convert_cleanse(world, tx, ty, size, gen_rng),
             1 | 4 => tr_core::spread::convert_sized(world, tx, ty, conversion, size),
+            2 => tr_core::spread::convert_sized_hallow(world, tx, ty, size),
             _ => {}
         }
-        tr_core::spread::convert_cleanse(world, tx, ty, size, gen_rng);
     }
     // `:26836-26839` тАФ the 133-tick life cap (per sub-step).
     if p.time_left > 133 {
@@ -190,7 +172,6 @@ pub(crate) fn ai_flamethrower(
     who_am_i: usize,
 ) {
     // `:41339-41348` — the age counter, the 72-tick kill, the 60-tick decay.
-pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
     // `:41339-41348` тАФ the age counter, the 72-tick kill, the 60-tick decay.
     p.local_ai[0] += 1.0;
     let num = 60.0f32;
@@ -231,8 +212,7 @@ pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
                 -34,
                 p.pos.x + p.w * 0.5,
                 p.pos.y + p.h * 0.5,
-                0.0,
-            ));
+                0.0, 1.0));
         }
     }
     let chance_smoke = 0.5f32;
@@ -844,6 +824,10 @@ pub(crate) fn onyx_bolt_death_draws(rng: &mut dyn DropRng) {
     }
     for _ in 0..70 {
         let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+}
+
 /// The Bubble family's `Kill()` pop (`Projectile.cs:72849-72873` the
 /// Flairon bubble 405, `:72919-72943` the Bubble Gun's bubble 410): the
 /// `SoundID.Item54` pop at `base.position` (the legacy style (2, 54),
@@ -865,14 +849,16 @@ pub(crate) fn bubble_pop_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
     };
     // `:72851`/`:72921` — `SoundEngine.PlaySound(SoundID.Item54,
     // base.position)`: the legacy (2, 54) at the slot's top-left.
-    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0));
+    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0, 1.0));
     for _ in 0..count {
         // `:72868`/`:72938` — the hslToRgb hue draw (0.4 + NextDouble *
         // 0.2); the colour body is the dust layer's.
         let _ = rng.next_double();
 
         }
-        }/// W4-f50 deviation 2 — the Solar Flare hurt blast's `Kill()` dust/gore
+        }
+
+/// W4-f50 deviation 2 — the Solar Flare hurt blast's `Kill()` dust/gore
 /// burst BODIES (`Projectile.cs:72183-72224`), ported through the dust seam
 /// in the g64 adapter pattern (`BlastRng`: `DustRng`/`GoreRng` over the
 /// caller's `&mut dyn DropRng`, `Next(max) = Next(0, max)` — one `Sample()`
@@ -920,12 +906,15 @@ pub(crate) fn solar_flare_blast_bodies(
         let angle = r.0.next_double() * PI_F - r.0.next_double() * PI_F;
         let radius = r.0.next_double() as f32 * w / 2.0;
         center + crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), angle) * radius
+    };
     // `UnitX.RotatedByRandom(π).RotatedBy(velocity.ToRotation()) * width/2f`
     // — `ToRotation` is `(float)Math.Atan2(Y, X)` (`Utils.cs:1655-1658`).
     let rot = (vel.y as f64).atan2(vel.x as f64) as f32;
     let ring_x = |r: &mut BlastRng| -> Vec2 {
+        let angle = r.0.next_double() * PI_F - r.0.next_double() * PI_F;
         let spun = crate::bow_launch::rotated_by(Vec2::new(1.0, 0.0), angle);
         center + crate::bow_launch::rotated_by(spun, rot as f64) * (w / 2.0)
+    };
     let spawn = |r: &mut BlastRng,
                  dust: &mut tr_core::particles::DustPool,
                  dust_type: i32,
@@ -941,10 +930,12 @@ pub(crate) fn solar_flare_blast_bodies(
             hi,
             dust_type,
             0.0,
+            0.0,
             alpha,
             tr_core::particles::Color::default(),
             scale,
         )
+    };
     // `:72183-72187` — 4× dust 31.
     for _ in 0..4 {
         let idx = spawn(&mut r, dust, 31, 100, 1.5);
@@ -958,14 +949,28 @@ pub(crate) fn solar_flare_blast_bodies(
         d.no_gravity = true;
         d.velocity *= 3.0;
         let idx = spawn(&mut r, dust, 6, 100, 1.5);
+        let d = dust.slot_mut(idx);
+        d.position = ring_y(&mut r);
         d.velocity *= 2.0;
+        d.no_gravity = true;
         d.fade_in = 2.5;
+    }
     // `:72202-72209` — 10× dust 6, the velocity-rotated UnitX ring.
     for _ in 0..10 {
         let idx = spawn(&mut r, dust, 6, 0, 2.7);
+        let d = dust.slot_mut(idx);
         d.position = ring_x(&mut r);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
     // `:72210-72216` — 10× dust 31, the same ring.
+    for _ in 0..10 {
         let idx = spawn(&mut r, dust, 31, 0, 1.5);
+        let d = dust.slot_mut(idx);
+        d.position = ring_x(&mut r);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
     // `:72217-72224` — 2× gore 61-63.
     for _ in 0..2 {
         let gx = (wi * r.0.next_range(0, 100)) as f32 / 100.0;
@@ -973,6 +978,7 @@ pub(crate) fn solar_flare_blast_bodies(
         let gore_type = r.0.next_range(61, 64);
         let idx = gore.new_gore(
             &mut r,
+            world,
             pos + Vec2::new(gx, gy) - Vec2::ONE * 10.0,
             Vec2::ZERO,
             gore_type,
@@ -983,6 +989,7 @@ pub(crate) fn solar_flare_blast_bodies(
         g.velocity *= 0.3;
         g.velocity.x += r.0.next_range(-10, 11) as f32 * 0.05;
         g.velocity.y += r.0.next_range(-10, 11) as f32 * 0.05;
+    }
 }
 
 /// The g64-pattern adapter: the pool traits over the machine's
@@ -990,16 +997,33 @@ pub(crate) fn solar_flare_blast_bodies(
 /// `Sample()` step (`UnifiedRandom.cs:134-141`); `NextFloatDirection` =
 /// `(float)NextDouble() * 2f - 1f` (`Utils.cs:1203-1206`).
 pub(crate) struct BlastRng<'a>(pub &'a mut dyn DropRng);
+
 impl tr_core::particles::DustRng for BlastRng<'_> {
     fn next_max(&mut self, max: i32) -> i32 {
         self.0.next_range(0, max)
+    }
     fn next_range(&mut self, min: i32, max: i32) -> i32 {
         self.0.next_range(min, max)
+    }
     fn next_float(&mut self) -> f32 {
         self.0.next_float()
+    }
+}
+
 impl tr_core::gore::GoreRng for BlastRng<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
     fn next_float_direction(&mut self) -> f32 {
         self.0.next_double() as f32 * 2.0 - 1.0
+    }
+}
 /// The DRAW CENSUS oracle (the pre-body form, kept for the stream-parity
 /// witness): every EXPLICIT `Main.rand` draw of the burst in the C#'s
 /// order — the bodies fn above consumes exactly these plus the
@@ -1419,6 +1443,84 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         .is_some_and(|t| t.active() && t.kind == 338);
     if !anchored {
         p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:30490-30495` — the jet speed `num569 = 2f`, scaled by
+    // `timeLeft / 60f` below 1. The float division + compare are the C#'s
+    // exactly (`num570 < 1f`); the product feeds every jet vector below.
+    let mut jet_speed = 2.0f32;
+    let life_scale = p.time_left as f32 / 60.0;
+    if life_scale < 1.0 {
+        jet_speed *= life_scale;
+    }
+    // The per-kind dust choreographies. Each two-dust loop draws, in the
+    // C#'s order: a `NextDouble` speed-scale + a `NextDouble` rotation
+    // (the jet vector, `:30500`), the red 420 / rainbow 422 `Next(5)`
+    // colour pick (`:30522`/`:30590`), a `NextDouble` dust scale
+    // (`:30503`) and a `Next(-2, 3)` position jitter (`:30509`). The dust
+    // BODIES skip; the `Dust.NewDust` internal rolls go with the dust pool
+    // (the module's RNG note). The jet vectors are COMPUTED (the sweep's
+    // gameplay-math port); their consumers are the skipped dust slots.
+    match p.kind {
+        419 => {
+            // `:30496-30515` — the yellow: two dust-222, the ±π/2 rotation.
+            for _ in 0..2 {
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_double(); // the dust scale (`:30503`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30509`)
+            }
+        }
+        420 => {
+            // `:30516-30541` — the red: two dust-219 (1-in-5 dust-222).
+            for _ in 0..2 {
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_range(0, 5); // the colour pick (`:30522`)
+                let _ = rng.next_double(); // the dust scale (`:30528`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30534`)
+            }
+        }
+        421 => {
+            // `:30542-30582` — the blue: two dust-221 (the ±π/4 rotation),
+            // then the timeLeft%10 burst's nine dust-222.
+            for _ in 0..2 {
+                let _jet = fountain_jet(jet_speed, 0.7851111111131433, rng);
+                let _ = rng.next_double(); // the dust scale (`:30549`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30555`)
+            }
+            if p.time_left % 10 == 0 {
+                // `:30563` — the burst's shared speed scale.
+                let burst_scale = 0.85 + rng.next_double() as f32 * 0.2;
+                for spoke in 0..9 {
+                    // `:30566` — the deterministic spoke fan:
+                    // `((spoke - 4) / 5f, -num569 * num578)`.
+                    let _jet = Vec2::new(
+                        (spoke - 4) as f32 / 5.0,
+                        (0.0 - jet_speed) * burst_scale,
+                    );
+                    // `:30569`/`:30575` — per burst dust: the scale draw +
+                    // the position jitter.
+                    let _ = rng.next_double();
+                    let _ = rng.next_range(-2, 3);
+                }
+            }
+        }
+        422 => {
+            // `:30583-30603` — the rainbow: two dust-(219 + Next(5)).
+            for _ in 0..2 {
+                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _ = rng.next_range(0, 5); // the colour offset (`:30590`)
+                let _ = rng.next_double(); // the dust scale (`:30592`)
+                let _ = rng.next_range(-2, 3); // the position jitter (`:30598`)
+            }
+        }
+        _ => {}
+    }
+    // The movement: the row keeps `tileCollide = true`, but the fountain
+    // sits still (velocity 0) on its anchor tile — the dispatch's
+    // `kill_step` integrates the zero velocity (no move, no kill).
+}
 // W4-d16 тАФ projectile aiStyles 151-160 MINUS 156/164 (task/W4-a9 owns those
 // two). The census found 157/158 already armed (projectile.rs's
 // `ai_sharp_tears`/`ai_baby_bird` тАФ verify-only) and 151/152/153/154/155/
@@ -1460,7 +1562,7 @@ pub(crate) fn ai_super_star(
     // ahead of the AI, `:16768-16771`; the `-1` latch convention holds).
     if p.sound_delay == 0 {
         p.sound_delay = 20 + rng.next_range(0, 40);
-        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:22151` тАФ the spin.
     let direction = if p.vel.x < 0.0 { -1.0 } else { 1.0 };
@@ -1536,12 +1638,12 @@ pub(crate) fn ai_super_star_slash(p: &mut Projectile, world: &World, rng: &mut d
     if p.sound_delay == 0 {
         if p.kind == ZENITH_MURAMASA_SLASH || p.kind == MOON_LORD_WHIP_PROC {
             p.sound_delay = -1;
-            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
         } else if p.kind == ZENITH_GRASS_SLASH {
             p.sound_delay = -1; // the silent latch (`:22270-22273`)
         } else {
             p.sound_delay = 20 + rng.next_range(0, 40);
-            p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0, 1.0));
         }
     }
     // `:22280-22291` тАФ the ai[0] spin.
@@ -1744,7 +1846,10 @@ fn snake_remove_rope(world: &mut World, start: (i32, i32), end: (i32, i32)) {
     let mut y = start.1;
     while y >= end.1 {
         if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 504) {
-            let _ = tr_core::edit::kill_tile(world, x, y, false);
+            // The C# `WorldGen.KillTile` draws nothing (noItem: false); the
+            // legacy genRand stand-in keeps the AI stream untouched (the
+            // W4-g83 stream threading's documented call-site seam).
+            let _ = tr_core::edit::kill_tile_legacy(world, x, y, false);
         }
         y -= 1;
     }
@@ -1806,91 +1911,181 @@ pub(crate) fn ai_mystic_snake_coil(
     local_owner: u8,
     rng: &mut dyn DropRng,
 ) {
-    // `:51941-51949` тАФ the orphan kill: remove the rope column, die.
+    // `:51941-51949` — the orphan kill: remove the rope column, die.
     if !owner_active {
         let num = p.ai[0];
         let y = p.pos.y;
         let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
-        // (`point.Y` тАФ the centre's tile row тАФ is computed in the C# but
+        // (`point.Y` — the centre's tile row — is computed in the C# but
         // only its X feeds the removal points, `:51945-51946`.)
         snake_remove_rope(world, (cx, num as i32 / 16), (cx, y as i32 / 16));
         p.active = false;
         p.time_left = 0;
         return;
     }
-    // `:30490-30495` — the jet speed `num569 = 2f`, scaled by
-    // `timeLeft / 60f` below 1. The float division + compare are the C#'s
-    // exactly (`num570 < 1f`); the product feeds every jet vector below.
-    let mut jet_speed = 2.0f32;
-    let life_scale = p.time_left as f32 / 60.0;
-    if life_scale < 1.0 {
-        jet_speed *= life_scale;
+    let owner_center = owner_center.unwrap_or(Vec2::ZERO);
+    // `:51950-51957` — the launch latch.
+    let num2 = 100;
+    let num3 = 1800;
+    if p.ai[1] == 0.0 {
+        let pcx = owner_center.x;
+        let scx = p.pos.x + p.w * 0.5;
+        p.sprite_direction = if !(pcx > scx) { 1 } else { -1 };
+        p.ai[1] = 1.0;
+        p.vel.y = -5.0;
     }
-    // The per-kind dust choreographies. Each two-dust loop draws, in the
-    // C#'s order: a `NextDouble` speed-scale + a `NextDouble` rotation
-    // (the jet vector, `:30500`), the red 420 / rainbow 422 `Next(5)`
-    // colour pick (`:30522`/`:30590`), a `NextDouble` dust scale
-    // (`:30503`) and a `Next(-2, 3)` position jitter (`:30509`). The dust
-    // BODIES skip; the `Dust.NewDust` internal rolls go with the dust pool
-    // (the module's RNG note). The jet vectors are COMPUTED (the sweep's
-    // gameplay-math port); their consumers are the skipped dust slots.
-    match p.kind {
-        419 => {
-            // `:30496-30515` — the yellow: two dust-222, the ±π/2 rotation.
-            for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
-                let _ = rng.next_double(); // the dust scale (`:30503`)
-                let _ = rng.next_range(-2, 3); // the position jitter (`:30509`)
+    // `:51958-52047` — the rise state.
+    if p.ai[1] == 1.0 {
+        p.local_ai[1] += 1.0;
+        // `:51961-51964` — the ease + the launch, then the truncation.
+        let num4 = remap_clamped(p.local_ai[1], 15.0, 30.0, 0.0, 1.0);
+        let num5 = if p.local_ai[1] >= 60.0 { 1 } else { 0 };
+        p.vel.y = -3.0 * (1.0 - num4) + (-32 * num5) as f32;
+        p.vel.y = p.vel.y as i32 as f32;
+        // `:51965-51982` — the 60-tick burst: 30 dust, each the
+        // NextFloatDirection X jitter + the rotated-velocity pair
+        // (NextFloatDirection × 0 — the ANGLE draw still happens) + the
+        // conditional NextFloat Y scale. The dust bodies are skipped;
+        // the explicit call-site draws stay.
+        if p.local_ai[1] == 60.0 {
+            for _ in 0..30 {
+                let _ = rng.next_float(); // NextFloatDirection (`:51975`)
+                let _ = rng.next_float(); // the RotatedBy angle's NextFloatDirection (`:51976`)
+                let _ = rng.next_float(); // the speed's NextFloatDirection (`:51976`)
+                // The rotated (0,-1) vector's Y is -cos(0) = -1 < 0 for
+                // EVERY draw (the angle is ×0f) — the conditional scale
+                // ALWAYS fires (`:51977-51980`).
+                let _ = rng.next_float();
             }
         }
-        420 => {
-            // `:30516-30541` — the red: two dust-219 (1-in-5 dust-222).
-            for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
-                let _ = rng.next_range(0, 5); // the colour pick (`:30522`)
-                let _ = rng.next_double(); // the dust scale (`:30528`)
-                let _ = rng.next_range(-2, 3); // the position jitter (`:30534`)
+        // `:51983-51992` — the trail dust gate: `flag = num4 > 0 &&
+        // num5 <= 0`; `(Next(6) == 0 || num5 > 0) && !flag` — the roll is
+        // the LEFT operand, so it runs EVERY rise tick (num5 > 0 only
+        // short-circuits the right operand when the roll failed; flag
+        // suppresses the body, never the roll). The body is skipped.
+        let flag = num4 > 0.0 && num5 <= 0;
+        let rolled = rng.next_range(0, 6) == 0;
+        let gate = rolled || num5 > 0;
+        if gate && !flag {
+            // The dust spawn — SKIPPED (no explicit draws inside).
+        }
+        // `:51993` — the alpha ramp.
+        p.alpha = (p.alpha - 5).clamp(0, 255);
+        // `:51994-52001` — the 12-tick 4-frame cycle.
+        p.frame_counter += 1;
+        if p.frame_counter >= 12 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 4 {
+                p.frame = 0;
             }
         }
-        421 => {
-            // `:30542-30582` — the blue: two dust-221 (the ±π/4 rotation),
-            // then the timeLeft%10 burst's nine dust-222.
-            for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 0.7851111111131433, rng);
-                let _ = rng.next_double(); // the dust scale (`:30549`)
-                let _ = rng.next_range(-2, 3); // the position jitter (`:30555`)
+        // `:52002-52046` — the owner-gated rope placement.
+        if local_owner == p.owner {
+            let num6 = p.ai[0];
+            let y2 = p.pos.y;
+            let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+            // (`point2.Y` is computed but only its X feeds the points.)
+            let point3 = (cx, y2 as i32 / 16);
+            let point4 = (cx, num6 as i32 / 16);
+            let mut flag2 = point4.1 - point3.1 >= num2;
+            let x = point4.0;
+            if !in_world_fluff(world, x, point3.1, 40) || !in_world_fluff(world, x, point4.1, 40) {
+                flag2 = true;
             }
-            if p.time_left % 10 == 0 {
-                // `:30563` — the burst's shared speed scale.
-                let burst_scale = 0.85 + rng.next_double() as f32 * 0.2;
-                for spoke in 0..9 {
-                    // `:30566` — the deterministic spoke fan:
-                    // `((spoke - 4) / 5f, -num569 * num578)`.
-                    let _jet = Vec2::new(
-                        (spoke - 4) as f32 / 5.0,
-                        (0.0 - jet_speed) * burst_scale,
-                    );
-                    // `:30569`/`:30575` — per burst dust: the scale draw +
-                    // the position jitter.
-                    let _ = rng.next_double();
-                    let _ = rng.next_range(-2, 3);
+            if !flag2 {
+                let mut y = point4.1;
+                while y >= point3.1 {
+                    if world.tile(x, y).is_some_and(|t| {
+                        t.active() && !tr_core::tileobject::tile_cut(t.kind) && t.kind != 504
+                    }) {
+                        flag2 = true;
+                        break;
+                    }
+                    y -= 1;
                 }
             }
-        }
-        422 => {
-            // `:30583-30603` — the rainbow: two dust-(219 + Next(5)).
-            for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
-                let _ = rng.next_range(0, 5); // the colour offset (`:30590`)
-                let _ = rng.next_double(); // the dust scale (`:30592`)
-                let _ = rng.next_range(-2, 3); // the position jitter (`:30598`)
+            if flag2 {
+                // `:52028-52039` — the column fill (the count is unused
+                // state in the C# — `num8` feeds nothing).
+                let mut y = point4.1;
+                while y > point3.1 {
+                    let empty_or_cut = tile_empty(world, x, y)
+                        || world.tile(x, y).is_some_and(|t| tr_core::tileobject::tile_cut(t.kind));
+                    if empty_or_cut && tr_core::edit::place_tile(world, x, y, 504) {
+                        // The net SendData — the MP skip.
+                    }
+                    y -= 1;
+                }
+                // `:52040-52044` — the attach: the life re-arm, the
+                // state flip, the snap (Top = the anchor cell's bottom
+                // centre) and the velocity zero.
+                p.time_left = num3;
+                p.ai[1] = 2.0;
+                p.net_update = true;
+                p.pos = Vec2::new(x as f32 * 16.0 + 8.0 - p.w * 0.5, point3.1 as f32 * 16.0 + 16.0);
+                p.vel = Vec2::ZERO;
             }
         }
-        _ => {}
     }
-    // The movement: the row keeps `tileCollide = true`, but the fountain
-    // sits still (velocity 0) on its anchor tile — the dispatch's
-    // `kill_step` integrates the zero velocity (no move, no kill).
+    // `:52048-52051` — only the attached state continues.
+    if p.ai[1] != 2.0 {
+        return;
+    }
+    // `:52052-52059` — the attached head.
+    p.alpha = 0;
+    let num10 = p.ai[0];
+    let y3 = p.pos.y;
+    let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+    // (`point5.Y` is computed but only its X feeds the points.)
+    let end = (cx, y3 as i32 / 16);
+    let start = (cx, num10 as i32 / 16);
+    let x2 = start.0;
+    // `:52060-52086` — the one-shot conversion / the per-tick dust walk.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
+                snake_spawn_rope_in(rng);
+            }
+            y -= 1;
+        }
+    } else {
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504)
+                && rng.next_range(0, 80) == 0
+            {
+                // The dust spawn — SKIPPED (no explicit draws inside).
+            }
+            y -= 1;
+        }
+    }
+    // `:52087-52097` — the timeLeft-4 re-burst.
+    if p.time_left == 4 {
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
+                snake_spawn_rope_in(rng);
+            }
+            y -= 1;
+        }
+    }
+    // `:52098-52111` — the death window.
+    if p.time_left > 4 {
+        return;
+    }
+    if !in_world_fluff(world, x2, end.1, 20) || !in_world_fluff(world, x2, start.1, 20) {
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    if local_owner == p.owner {
+        snake_remove_rope(world, start, end);
+    }
+    p.active = false;
+    p.time_left = 0;
 }
 
 /// The fountain's per-dust jet vector — `(new Vector2(0f, 0f - num569) *
@@ -2001,169 +2196,111 @@ pub(crate) fn ai_mount_crosshair(
         _ => false,
     };
     if !mount_ok {
-    let owner_center = owner_center.unwrap_or(Vec2::ZERO);
-    // `:51950-51957` тАФ the launch latch.
-    let num2 = 100;
-    let num3 = 1800;
-    if p.ai[1] == 0.0 {
-        let pcx = owner_center.x;
-        let scx = p.pos.x + p.w * 0.5;
-        p.sprite_direction = if !(pcx > scx) { 1 } else { -1 };
-        p.ai[1] = 1.0;
-        p.vel.y = -5.0;
-    }
-    // `:51958-52047` тАФ the rise state.
-    if p.ai[1] == 1.0 {
-        p.local_ai[1] += 1.0;
-        // `:51961-51964` тАФ the ease + the launch, then the truncation.
-        let num4 = remap_clamped(p.local_ai[1], 15.0, 30.0, 0.0, 1.0);
-        let num5 = if p.local_ai[1] >= 60.0 { 1 } else { 0 };
-        p.vel.y = -3.0 * (1.0 - num4) + (-32 * num5) as f32;
-        p.vel.y = p.vel.y as i32 as f32;
-        // `:51965-51982` тАФ the 60-tick burst: 30 dust, each the
-        // NextFloatDirection X jitter + the rotated-velocity pair
-        // (NextFloatDirection ├Ч 0 тАФ the ANGLE draw still happens) + the
-        // conditional NextFloat Y scale. The dust bodies are skipped;
-        // the explicit call-site draws stay.
-        if p.local_ai[1] == 60.0 {
-            for _ in 0..30 {
-                let _ = rng.next_float(); // NextFloatDirection (`:51975`)
-                let _ = rng.next_float(); // the RotatedBy angle's NextFloatDirection (`:51976`)
-                let _ = rng.next_float(); // the speed's NextFloatDirection (`:51976`)
-                // The rotated (0,-1) vector's Y is -cos(0) = -1 < 0 for
-                // EVERY draw (the angle is ├Ч0f) тАФ the conditional scale
-                // ALWAYS fires (`:51977-51980`).
-                let _ = rng.next_float();
-            }
-        }
-        // `:51983-51992` тАФ the trail dust gate: `flag = num4 > 0 &&
-        // num5 <= 0`; `(Next(6) == 0 || num5 > 0) && !flag` тАФ the roll is
-        // the LEFT operand, so it runs EVERY rise tick (num5 > 0 only
-        // short-circuits the right operand when the roll failed; flag
-        // suppresses the body, never the roll). The body is skipped.
-        let flag = num4 > 0.0 && num5 <= 0;
-        let rolled = rng.next_range(0, 6) == 0;
-        let gate = rolled || num5 > 0;
-        if gate && !flag {
-            // The dust spawn тАФ SKIPPED (no explicit draws inside).
-        }
-        // `:51993` тАФ the alpha ramp.
-        p.alpha = (p.alpha - 5).clamp(0, 255);
-        // `:51994-52001` тАФ the 12-tick 4-frame cycle.
-        p.frame_counter += 1;
-        if p.frame_counter >= 12 {
-            p.frame_counter = 0;
-            p.frame += 1;
-            if p.frame >= 4 {
-                p.frame = 0;
-            }
-        }
-        // `:52002-52046` тАФ the owner-gated rope placement.
-        if local_owner == p.owner {
-            let num6 = p.ai[0];
-            let y2 = p.pos.y;
-            let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
-            // (`point2.Y` is computed but only its X feeds the points.)
-            let point3 = (cx, y2 as i32 / 16);
-            let point4 = (cx, num6 as i32 / 16);
-            let mut flag2 = point4.1 - point3.1 >= num2;
-            let x = point4.0;
-            if !in_world_fluff(world, x, point3.1, 40) || !in_world_fluff(world, x, point4.1, 40) {
-                flag2 = true;
-            }
-            if !flag2 {
-                let mut y = point4.1;
-                while y >= point3.1 {
-                    if world.tile(x, y).is_some_and(|t| {
-                        t.active() && !tr_core::tileobject::tile_cut(t.kind) && t.kind != 504
-                    }) {
-                        flag2 = true;
-                        break;
-                    }
-                    y -= 1;
-                }
-            }
-            if flag2 {
-                // `:52028-52039` тАФ the column fill (the count is unused
-                // state in the C# тАФ `num8` feeds nothing).
-                let mut y = point4.1;
-                while y > point3.1 {
-                    let empty_or_cut = tile_empty(world, x, y)
-                        || world.tile(x, y).is_some_and(|t| tr_core::tileobject::tile_cut(t.kind));
-                    if empty_or_cut && tr_core::edit::place_tile(world, x, y, 504) {
-                        // The net SendData тАФ the MP skip.
-                    }
-                    y -= 1;
-                }
-                // `:52040-52044` тАФ the attach: the life re-arm, the
-                // state flip, the snap (Top = the anchor cell's bottom
-                // centre) and the velocity zero.
-                p.time_left = num3;
-                p.ai[1] = 2.0;
-                p.net_update = true;
-                p.pos = Vec2::new(x as f32 * 16.0 + 8.0 - p.w * 0.5, point3.1 as f32 * 16.0 + 16.0);
-                p.vel = Vec2::ZERO;
-            }
-        }
-    }
-    // `:52048-52051` тАФ only the attached state continues.
-    if p.ai[1] != 2.0 {
-        return;
-    }
-    // `:52052-52059` тАФ the attached head.
-    p.alpha = 0;
-    let num10 = p.ai[0];
-    let y3 = p.pos.y;
-    let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
-    // (`point5.Y` is computed but only its X feeds the points.)
-    let end = (cx, y3 as i32 / 16);
-    let start = (cx, num10 as i32 / 16);
-    let x2 = start.0;
-    // `:52060-52086` тАФ the one-shot conversion / the per-tick dust walk.
-    if p.local_ai[0] == 0.0 {
-        p.local_ai[0] = 1.0;
-        let mut y = start.1;
-        while y >= end.1 {
-            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
-                snake_spawn_rope_in(rng);
-            }
-            y -= 1;
-        }
-    } else {
-        let mut y = start.1;
-        while y >= end.1 {
-            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504)
-                && rng.next_range(0, 80) == 0
-            {
-                // The dust spawn тАФ SKIPPED (no explicit draws inside).
-            }
-            y -= 1;
-        }
-    }
-    // `:52087-52097` тАФ the timeLeft-4 re-burst.
-    if p.time_left == 4 {
-        let mut y = start.1;
-        while y >= end.1 {
-            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
-                snake_spawn_rope_in(rng);
-            }
-            y -= 1;
-        }
-    }
-    // `:52098-52111` тАФ the death window.
-    if p.time_left > 4 {
-        return;
-    }
-    if !in_world_fluff(world, x2, end.1, 20) || !in_world_fluff(world, x2, start.1, 20) {
+        p.kill_time_left = p.time_left;
         p.active = false;
         p.time_left = 0;
         return;
     }
-    if local_owner == p.owner {
-        snake_remove_rope(world, start, end);
+    if p.owner == local_owner {
+        // `:30638-30654` — the local owner: the mouse-world aim, the
+        // owner-relative ai[0]/ai[1] pin (netUpdate on change), the
+        // channel-release kill. `Main.screenPosition + mouse` is the
+        // pass's aim snapshot.
+        if let Some((mx, my)) = aim {
+            p.pos = Vec2::new(mx, my);
+            let dx = p.pos.x - pl.x;
+            let dy = p.pos.y - pl.y;
+            if p.ai[0] != dx || p.ai[1] != dy {
+                p.net_update = true;
+            }
+            p.ai[0] = dx;
+            p.ai[1] = dy;
+        }
+        // `:30648` — `mount.AimAbility(player6, base.position)`: the
+        // Scutlix head's aim (the facing write rides the player) OR the
+        // Drill's diode aim (W4-d8 FINAL-PHASE (1): the self-contained
+        // Drill half — the diode target/wrap + the crosshair pin). The
+        // position is the crosshair's own (the mouse pin above), NOT the
+        // clamped cursor — the clamp lives inside the ability.
+        let (pcx, pcy) = pl.center();
+        if p.kind == DRILL_MOUNT_CROSSHAIR {
+            let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
+        } else {
+            let mut facing = pl.facing;
+            let _ = pl.mount.aim_ability_scutlix(
+                Vec2::new(pcx, pcy),
+                &mut facing,
+                pl.vx,
+                p.pos,
+            );
+            pl.facing = facing;
+        }
+        // `:30649-30653` — the channel release: `UseAbility(player6,
+        // base.position, toggleOn: false)` then `Kill()`. The Scutlix fire
+        // spawns the two 606 beams (the intent parks on the slot); the
+        // Drill's `toggleOn: false` clears `_abilityActive` (`Mount.cs:
+        // 3317-3320`) — the flag the mining layer reads (W4-d8 FINAL-PHASE
+        // (1): the clear is ported; the `UseDrill` write stays M2-MOUNT-4).
+        if !pl.channel {
+            if p.kind == SCUTLIX_LASER_CROSSHAIR {
+                if let Some(beams) = pl.mount.scutlix_laser_fire(
+                    Vec2::new(pl.x, pl.y),
+                    pl.width,
+                    pl.height,
+                    pl.facing,
+                    p.pos,
+                ) {
+                    p.wants_scutlix_beams.extend_from_slice(&beams);
+                }
+            } else {
+                // The 453 release: the local `UseAbility(toggleOn: false)`
+                // (`:3317-3320`) — no spawn, just the flag clear.
+                let _ = pl.mount.use_ability_drill(
+                    Vec2::new(pl.x, pl.y),
+                    p.pos,
+                    false,
+                    true,
+                );
+            }
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+        }
+        return;
     }
-    p.active = false;
-    p.time_left = 0;
+    // `:30656-30669` — the remote owner: the position follows the stored
+    // owner-relative offset.
+    p.pos = Vec2::new(pl.x + p.ai[0], pl.y + p.ai[1]);
+    // `:30658-30664` — the 441: `StartAbilityCharge` when not already
+    // charging. The REMOTE branch (`Mount.cs:2916-2919`) only sets the
+    // flag — the local-owner 441 spawn is the auto-aim's path.
+    if p.kind == SCUTLIX_LASER_CROSSHAIR && !pl.mount.ability_charging() {
+        pl.mount.start_ability_charge_remote();
+    }
+    // `:30665-30668` — the 453: `UseAbility(toggleOn: false)` when the
+    // drill is not active — the Drill half clears `_abilityActive`
+    // (`Mount.cs:3332-3335`, the remote branch), the mining layer's gate.
+    // The flag write is the DrillMountData payload's (M2-MOUNT-4) — the
+    // port carries `ability_active` on the state, so the clear lands.
+    if p.kind == DRILL_MOUNT_CROSSHAIR && !pl.mount.ability_active() {
+        pl.mount.set_ability_active(false);
+    }
+    // `:30669` — the remote `AimAbility` (the Scutlix head's aim OR the
+    // Drill's diode aim — W4-d8 FINAL-PHASE (1): the Drill half is ported,
+    // the remote smart-cursor reads the crosshair pin it writes).
+    let (pcx, pcy) = pl.center();
+    if p.kind == DRILL_MOUNT_CROSSHAIR {
+        let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
+    } else {
+        let mut facing = pl.facing;
+        let _ = pl.mount.aim_ability_scutlix(
+            Vec2::new(pcx, pcy),
+            &mut facing,
+            pl.vx,
+            p.pos,
+        );
+        pl.facing = facing;
+    }
 }
 
 /// `AI_159_PaperAirplanes` (`Projectile.cs:48695-48755`) тАФ the thrown
@@ -2555,7 +2692,7 @@ pub(crate) fn ai_petal(
             // `SoundID.Item17` at base.Center (netMode != 2 folds open).
             let cx = p.pos.x + p.w * 0.5;
             let cy = p.pos.y + p.h * 0.5;
-            p.wants_sound = Some((2, 17, cx, cy, 0.0));
+            p.wants_sound = Some((2, 17, cx, cy, 0.0, 1.0));
         }
         p.frame = rng.next_range(0, 8);
         p.sprite_direction = if !(p.vel.x < 0.0) { 1 } else { -1 };
@@ -2861,110 +2998,6 @@ pub(crate) fn ai_jims_drone(
         p.time_left = 0;
         return;
     }
-    if p.owner == local_owner {
-        // `:30638-30654` — the local owner: the mouse-world aim, the
-        // owner-relative ai[0]/ai[1] pin (netUpdate on change), the
-        // channel-release kill. `Main.screenPosition + mouse` is the
-        // pass's aim snapshot.
-        if let Some((mx, my)) = aim {
-            p.pos = Vec2::new(mx, my);
-            let dx = p.pos.x - pl.x;
-            let dy = p.pos.y - pl.y;
-            if p.ai[0] != dx || p.ai[1] != dy {
-                p.net_update = true;
-            }
-            p.ai[0] = dx;
-            p.ai[1] = dy;
-        }
-        // `:30648` — `mount.AimAbility(player6, base.position)`: the
-        // Scutlix head's aim (the facing write rides the player) OR the
-        // Drill's diode aim (W4-d8 FINAL-PHASE (1): the self-contained
-        // Drill half — the diode target/wrap + the crosshair pin). The
-        // position is the crosshair's own (the mouse pin above), NOT the
-        // clamped cursor — the clamp lives inside the ability.
-        let (pcx, pcy) = pl.center();
-        if p.kind == DRILL_MOUNT_CROSSHAIR {
-            let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
-        } else {
-            let mut facing = pl.facing;
-            let _ = pl.mount.aim_ability_scutlix(
-                Vec2::new(pcx, pcy),
-                &mut facing,
-                pl.vx,
-                p.pos,
-            );
-            pl.facing = facing;
-        }
-        // `:30649-30653` — the channel release: `UseAbility(player6,
-        // base.position, toggleOn: false)` then `Kill()`. The Scutlix fire
-        // spawns the two 606 beams (the intent parks on the slot); the
-        // Drill's `toggleOn: false` clears `_abilityActive` (`Mount.cs:
-        // 3317-3320`) — the flag the mining layer reads (W4-d8 FINAL-PHASE
-        // (1): the clear is ported; the `UseDrill` write stays M2-MOUNT-4).
-        if !pl.channel {
-            if p.kind == SCUTLIX_LASER_CROSSHAIR {
-                if let Some(beams) = pl.mount.scutlix_laser_fire(
-                    Vec2::new(pl.x, pl.y),
-                    pl.width,
-                    pl.height,
-                    pl.facing,
-                    p.pos,
-                ) {
-                    p.wants_scutlix_beams.extend_from_slice(&beams);
-                }
-            } else {
-                // The 453 release: the local `UseAbility(toggleOn: false)`
-                // (`:3317-3320`) — no spawn, just the flag clear.
-                let _ = pl.mount.use_ability_drill(
-                    Vec2::new(pl.x, pl.y),
-                    p.pos,
-                    false,
-                    true,
-                );
-            }
-            p.kill_time_left = p.time_left;
-            p.active = false;
-            p.time_left = 0;
-        }
-        return;
-    }
-    // `:30656-30669` — the remote owner: the position follows the stored
-    // owner-relative offset.
-    p.pos = Vec2::new(pl.x + p.ai[0], pl.y + p.ai[1]);
-    // `:30658-30664` — the 441: `StartAbilityCharge` when not already
-    // charging. The REMOTE branch (`Mount.cs:2916-2919`) only sets the
-    // flag — the local-owner 441 spawn is the auto-aim's path.
-    if p.kind == SCUTLIX_LASER_CROSSHAIR && !pl.mount.ability_charging() {
-        pl.mount.start_ability_charge_remote();
-    }
-    // `:30665-30668` — the 453: `UseAbility(toggleOn: false)` when the
-    // drill is not active — the Drill half clears `_abilityActive`
-    // (`Mount.cs:3332-3335`, the remote branch), the mining layer's gate.
-    // The flag write is the DrillMountData payload's (M2-MOUNT-4) — the
-    // port carries `ability_active` on the state, so the clear lands.
-    if p.kind == DRILL_MOUNT_CROSSHAIR && !pl.mount.ability_active() {
-        pl.mount.set_ability_active(false);
-    }
-    // `:30669` — the remote `AimAbility` (the Scutlix head's aim OR the
-    // Drill's diode aim — W4-d8 FINAL-PHASE (1): the Drill half is ported,
-    // the remote smart-cursor reads the crosshair pin it writes).
-    let (pcx, pcy) = pl.center();
-    if p.kind == DRILL_MOUNT_CROSSHAIR {
-        let _ = pl.mount.aim_ability_drill(Vec2::new(pcx, pcy), p.pos);
-    } else {
-        let mut facing = pl.facing;
-        let _ = pl.mount.aim_ability_scutlix(
-            Vec2::new(pcx, pcy),
-            &mut facing,
-            pl.vx,
-            p.pos,
-        );
-        pl.facing = facing;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
     // `:40962-40967` тАФ unpack the input bits; rotation = ai[1].
     let bits = p.ai[0] as u8;
     p.rot = p.ai[1];
@@ -3370,7 +3403,7 @@ pub(crate) fn ai_true_nights_edge(
     }
     // `:41654-41657` тАФ the 973 first-tick Item8 cue.
     if p.local_ai[0] == 0.0 && p.kind == 973 {
-        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:41658-41666` тАФ the age counter and the two fast-forward arms.
     p.local_ai[0] += 1.0;
@@ -3712,16 +3745,19 @@ mod tests {
         p.vel.x = 10.0;
         p.ai[1] = 0.0; // > -1: the homing arm runs
         // Target to the RIGHT of the spawner's centre → positive X.
-        star_spawner_convert(&mut p, p.pos.x + p.w * 0.5 + 100.0);
+        let mut target = p.pos.x + p.w * 0.5 + 100.0;
+        star_spawner_convert(&mut p, target);
         assert!((p.vel.x - 3.5).abs() < 1e-6);
         // Target to the LEFT → negative X.
         p.vel.x = 10.0;
-        star_spawner_convert(&mut p, p.pos.x + p.w * 0.5 - 100.0);
+        target = p.pos.x + p.w * 0.5 - 100.0;
+        star_spawner_convert(&mut p, target);
         assert!((p.vel.x + 3.5).abs() < 1e-6);
         // ai[1] == -1: no homing (the velocity keeps its value).
         p.vel.x = 10.0;
         p.ai[1] = -1.0;
-        star_spawner_convert(&mut p, p.pos.x + 1000.0);
+        target = p.pos.x + 1000.0;
+        star_spawner_convert(&mut p, target);
         assert_eq!(p.vel.x, 10.0);
     }
 
@@ -3781,7 +3817,7 @@ mod tests {
         put(&mut w, 100, 51, 53);
         let mut p = proj(147);
         p.time_left = 3600;
-        ai_spray(&mut p, &mut w, 0);
+        ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(100, 50).unwrap().kind, 23, "the grass corrupts");
         assert_eq!(w.tile(101, 50).unwrap().kind, 25, "the stone → ebonstone");
         assert_eq!(w.tile(100, 51).unwrap().kind, 112, "the sand → ebonsand");
@@ -3793,7 +3829,7 @@ mod tests {
         put(&mut w, 101, 50, 1);
         put(&mut w, 100, 51, 53);
         let mut p = proj(149);
-        ai_spray(&mut p, &mut w, 0);
+        ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(100, 50).unwrap().kind, 199, "the grass crimson");
         assert_eq!(w.tile(101, 50).unwrap().kind, 203, "the stone → crimstone");
         assert_eq!(w.tile(100, 51).unwrap().kind, 234, "the sand → crimsand");
@@ -3803,14 +3839,14 @@ mod tests {
         put(&mut w, 103, 52, 2); // Manhattan 5, outside size 2
         let mut p = proj(147);
         p.ai[1] = 1.0;
-        ai_spray(&mut p, &mut w, 0);
+        ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(103, 52).unwrap().kind, 23, "the size-3 evil disc");
         // The non-owner refuses (`:26826`).
         let mut w = world();
         put(&mut w, 100, 50, 2);
         let mut p = proj(149);
         p.owner = 1;
-        ai_spray(&mut p, &mut w, 0);
+        ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the owner gate");
         // The f25/g42-owned kinds stay no-ops here (their cells land at
         // those merges) — the grass keeps its kind, the machine runs.
@@ -3818,7 +3854,7 @@ mod tests {
             let mut w = world();
             put(&mut w, 100, 50, 2);
             let mut p = proj(kind);
-            ai_spray(&mut p, &mut w, 0);
+            ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
             assert_eq!(w.tile(100, 50).unwrap().kind, 2, "kind {kind} waits for its cell");
             assert_eq!(p.ai[0], 1.0, "kind {kind} counter");
         }
@@ -3861,7 +3897,7 @@ mod tests {
         // f32 accumulation — repeated * 0.95, not a pow.
         ai_flamethrower(&mut p, &mut rng, 0);
         // f32 accumulation тАФ repeated * 0.95, not a pow.
-        ai_flamethrower(&mut p, &mut rng);
+        ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(p.vel.x, 8.0f32 * 0.95 * 0.95, "the second decay at tick 61");
         assert_eq!(rng.floats, 49 * 3 + 12 * 7);
         // Ticks 62..72: the kill lands at 72 but the arm runs on.
@@ -3912,7 +3948,7 @@ mod tests {
         ai_flamethrower(&mut p, &mut rng, 3);
         assert_eq!(
             p.wants_sound,
-            Some((2, -34, 1603.0, 803.0, 0.0)),
+            Some((2, -34, 1603.0, 803.0, 0.0, 1.0)),
             "the named-row marker at Center"
         );
         assert_eq!(p.sound_delay, -1, "the one-cue-per-life latch");
@@ -4230,7 +4266,6 @@ mod tests {
             &mut rng,
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = &pool.slots()[slot];
         assert!(!p.active, "the tile contact killed it");
@@ -4269,7 +4304,6 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[s145].ai[0], 3.0, "31: 3 sub-steps");
         assert_eq!(pool.slots()[s715].local_ai[0], 3.0, "147: 3 sub-steps");
@@ -4604,7 +4638,7 @@ mod tests {
         p.pos = Vec2::new(300.0, 200.0);
         let mut rng = census();
         bubble_pop_kill(&mut p, &mut rng);
-        assert_eq!(p.wants_sound, Some((2, 54, 300.0, 200.0, 0.0)),
+        assert_eq!(p.wants_sound, Some((2, 54, 300.0, 200.0, 0.0, 1.0)),
             "the Item54 pop (`:72921`, SoundID.cs:1437)");
         assert_eq!(rng.doubles, 10, "the 410's ten hue draws (`:72923/72938`)");
         assert!(rng.ranges.is_empty(), "the Next(45,91) else is dead (`:72930`)");
@@ -4614,7 +4648,7 @@ mod tests {
         q.pos = Vec2::new(400.0, 100.0);
         let mut rng2 = census();
         bubble_pop_kill(&mut q, &mut rng2);
-        assert_eq!(q.wants_sound, Some((2, 54, 400.0, 100.0, 0.0)),
+        assert_eq!(q.wants_sound, Some((2, 54, 400.0, 100.0, 0.0, 1.0)),
             "the 405's Item54 pop (`:72851`)");
         assert_eq!(rng2.doubles, 20, "the 405's twenty hue draws (`:72853/72868`)");
         assert!(rng2.ranges.is_empty(), "the 405's else is dead too (`:72860`)");
@@ -4625,7 +4659,10 @@ mod tests {
         assert_eq!(r.wants_sound, None);
         assert_eq!(rng3.doubles, 0);
 
-        }    // ---- W4-f50 deviation 2: the 608 blast burst BODIES -------------------
+    }
+
+    // ---- W4-f50 deviation 2: the 608 blast burst BODIES -------------------
+
     /// A recording `Main.rand` stand-in over a real seeded stream: every
     /// draw is logged as `(tag, a, b)` — tag 0 = `Next(min,max)`, 1 =
     /// `NextFloat`, 2 = `NextDouble`. The bodies fn and the census oracle
@@ -4633,19 +4670,27 @@ mod tests {
     struct BlastRecord {
         inner: tr_core::UnifiedRandom,
         log: Vec<(u8, i32, i32)>,
+    }
     impl BlastRecord {
         fn new(seed: i32) -> Self {
             Self { inner: tr_core::UnifiedRandom::new(seed), log: Vec::new() }
+        }
+    }
     impl DropRng for BlastRecord {
         fn next_range(&mut self, min: i32, max: i32) -> i32 {
             self.log.push((0, min, max));
             self.inner.next_range(min, max)
+        }
         fn next_float(&mut self) -> f32 {
             self.log.push((1, 0, 0));
             self.inner.next_float()
+        }
         fn next_double(&mut self) -> f64 {
             self.log.push((2, 0, 0));
             self.inner.next_double()
+        }
+    }
+
     fn blast_ctx() -> tr_core::particles::SpawnCtx {
         tr_core::particles::SpawnCtx {
             game_menu: false,
@@ -4654,12 +4699,17 @@ mod tests {
             screen_position: Vec2::ZERO,
             screen_size: Vec2::new(4800.0, 3200.0),
             max_dust_to_draw: 6000,
+        }
+    }
+
     /// The bodies spawn the C#'s 84 dust + 2 gore, in type order, with the
     /// post-arms (`Projectile.cs:72183-72224`): 4× dust 31, 60× dust 6 (the
     /// 30 pairs), 10× dust 6, 10× dust 31, 2× gore 61-63. The pair's second
     /// dust carries `fadeIn = 2.5`; every burst dust but the first four is
     /// `noGravity`.
+    #[test]
     fn w4_f50_the_608_blast_bodies_spawn_the_census_counts_and_post_arms() {
+        let w = world();
         let ctx = blast_ctx();
         let mut dust = tr_core::particles::DustPool::new();
         let mut gore = tr_core::gore::GorePool::new();
@@ -4673,8 +4723,10 @@ mod tests {
             &mut gore,
             center - Vec2::new(80.0, 80.0),
             160.0,
+            160.0,
             center,
             Vec2::new(3.0, -4.0),
+        );
         let active: Vec<&tr_core::particles::Dust> =
             dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 84, "4 + 60 + 10 + 10 dust (:72183-72216)");
@@ -4690,20 +4742,40 @@ mod tests {
         // The pair's second dust (odd index within 4..64) carries fadeIn 2.5.
         for i in (5..64).step_by(2) {
             assert_eq!(active[i].fade_in, 2.5, "pair second fadeIn (:72199)");
+        }
         // 2 gore, types in 61..=63.
         let gores: Vec<&tr_core::gore::Gore> =
             gore.slots().iter().filter(|g| g.active).collect();
         assert_eq!(gores.len(), 2, "2× gore (:72217)");
         assert!(gores.iter().all(|g| (61..=63).contains(&g.gore_type)));
+    }
+
     /// Stream parity: the bodies fn consumes EXACTLY the census oracle's
     /// explicit draws (in order) PLUS the `NewDust`/`NewGore` internal
     /// draws. The oracle's log is an ordered subsequence of the bodies'
     /// log; the unmatched draws are the 578 internal rolls (14 dust-31 × 6
     /// + 70 dust-6 × 7 defaults/damps + 2 gore × 2 kicks). Total 830 =
     /// 252 + 578.
+    #[test]
     fn w4_f50_the_608_blast_bodies_keep_the_census_stream_order() {
+        let w = world();
+        let ctx = blast_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let center = Vec2::new(1600.0, 800.0);
         let mut bodies_rng = BlastRecord::new(42);
+        solar_flare_blast_bodies(
             &mut bodies_rng,
+            &mut dust,
+            &ctx,
+            &w,
+            &mut gore,
+            center - Vec2::new(80.0, 80.0),
+            160.0,
+            160.0,
+            center,
+            Vec2::new(3.0, -4.0),
+        );
         let mut census_rng = BlastRecord::new(42);
         solar_flare_blast_draws(&mut census_rng);
         let a = &bodies_rng.log;
@@ -4719,10 +4791,10 @@ mod tests {
             if bi < b.len() && *draw == b[bi] {
                 bi += 1;
             }
+        }
         assert_eq!(bi, b.len(), "the census is an ordered subsequence of the bodies");
         assert_eq!(a.len() - b.len(), 578, "the unmatched draws are the internal rolls");
     }
-}
 
     // ---- W4-d20 aiStyle 200 (BirdDroppings) тАФ WRITTEN NOT RUN ----
 
@@ -5684,7 +5756,7 @@ mod w4_d16_151_tests {
         ai_super_star(&mut p, &mut rng, None);
         assert_eq!(p.alpha, 245, "255 ╤В╨Ш╨в 10");
         assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
-        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)), "Item9");
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0, 1.0)), "Item9");
         assert!((p.rot - 0.035).abs() < 1e-6, "the spin: {}", p.rot);
         assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)], "no Next(6) off-screen");
         assert_eq!(rng.floats, 0);
@@ -5846,7 +5918,7 @@ mod w4_d16_152_tests {
         ai_super_star_slash(&mut p, &w, &mut rng);
         assert_eq!(p.alpha, 245);
         assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
-        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0, 1.0)));
         assert_eq!(rng.ranges, vec![(0, 40)], "the cue draw only");
         // The spin: RotatedBy(1 rad) of (10,0) ╤В╨Р╨д cos/sin in double.
         let c = 1.0f64.cos() as f32;
@@ -5871,7 +5943,7 @@ mod w4_d16_152_tests {
         let w = World::new("t".into(), 300, 200);
         ai_super_star_slash(&mut p, &w, &mut rng);
         assert_eq!(p.sound_delay, -1, "the one-cue latch");
-        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0)), "Item1");
+        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0, 1.0)), "Item1");
         assert!((p.vel.x - 9.6).abs() < 1e-5, "the тФЬ╨з0.96 drag");
         assert_eq!(rng.ranges, vec![(0, 8)]);
         assert_eq!(rng.floats, 2, "NextVector2Circular(1,1) ╤В╨Р╨д the rewritten velocity");
@@ -6741,7 +6813,7 @@ mod w4_d16_159_tests {
         );
         assert!(!pool.slots()[slot].active, "the tile kill");
         let sounds = pool.drain_proj_sounds();
-        assert!(sounds.iter().any(|&(id, style, _, _, _)| id == 2 && style == 10), "the Item10 cue");
+        assert!(sounds.iter().any(|&(id, style, _, _, _, _)| id == 2 && style == 10), "the Item10 cue");
         let drops = pool.drain_item_drops();
         assert_eq!(drops.len(), 1, "the recovery drop");
         assert_eq!(drops[0].0, 4343, "761 ╤В╨Ц╨в 4343");
@@ -6805,7 +6877,7 @@ mod w4_d16_159_tests {
         assert!(!pool.slots()[s].active);
         assert!(pool.drain_item_drops().is_empty(), "the owner gate");
         assert!(
-            pool.drain_proj_sounds().iter().any(|&(id, style, _, _, _)| id == 2 && style == 10),
+            pool.drain_proj_sounds().iter().any(|&(id, style, _, _, _, _)| id == 2 && style == 10),
             "the cue plays regardless"
         );
         // The local owner's noDropItem flag.
@@ -7499,7 +7571,7 @@ pub(crate) fn weather_pain_sync_siblings(slots: &mut [Projectile], me: usize) {
 pub(crate) fn ai_fire_explosion(p: &mut Projectile, rng: &mut dyn DropRng) {
     if p.local_ai[0] == 0.0 {
         // `:45271` ╤В╨Р╨д the explosion cue (the wants_sound seam).
-        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
         // `:45272-45276` ╤В╨Р╨д the 4тФЬ╨з dust-31 ring: RotatedByRandom pair +
         // the NextDouble radius each.
         for _ in 0..4 {
@@ -8442,7 +8514,7 @@ mod w4_d18_178_tests {
         // 2 gores тФЬ╨з (2 position + 1 type + 2 NewGore kicks + 2 velocity) = 14.
         assert_eq!(rng.ranges.len(), 14, "the range census");
         assert_eq!(rng.floats, 0, "no float draws");
-        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0)), "the Item14 cue");
+        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0, 1.0)), "the Item14 cue");
         assert_eq!(p.local_ai[0], 1.0);
         assert!(p.active);
         // The gore range order: position, position, type, Y, X, velX, velY.
@@ -8503,7 +8575,4 @@ mod w4_d18_178_tests {
         assert_eq!(rng.doubles, 238);
     }
 
-// balance-close (union shared delimiter)
-}}}}}}}}}}}}}}}}}}}}}}}})
 }
-}}

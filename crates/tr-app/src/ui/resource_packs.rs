@@ -184,29 +184,29 @@ mod tests {
         assert_eq!((HEIGHT, MIN_WIDTH, PANEL_PADDING), (102.0, 102.0, 5.0));
     }
 }
-//! `UIResourcePackSelectionMenu` (`GameContent/UI/States/
-//! UIResourcePackSelectionMenu.cs:17-591`) — the two-list resource-pack
-//! screen: available packs on the left, enabled packs (with the priority
-//! arrows) on the right, Back + Open Folder below. W4-d84 row 5;
-//! `FrontScreen::ResourcePackSelection`.
-//!
-//! The pack store rides the payload (`_packsList`, `:25`) — the C# mutates
-//! the shared `ResourcePack` objects in place; the port's rows carry store
-//! indices into it. `PopulatePackList` (`:60-121`) re-derives the two views
-//! after every toggle/offset, exactly as the C# rebuilds the element lists.
-//!
-//! Deviations (docs/ANALYSIS.md "The Workshop/ResourcePack screens"):
-//! - `ApplyListChanges` (`:272-275`) feeds `AssetSourceController.
-//!   UseResourcePacks` — the port has no content-source pipeline, so the
-//!   Back tail stores the enabled-only list in `Settings.resource_packs`
-//!   (`Main.SaveSettings`, `:480`) and saves; the asset reload is the
-//!   documented no-op.
-//! - `Main.instance.ResetAllContentBasedRenderTargets()` (`:162/:204`) has
-//!   no port seam (no content render targets) — dropped with the same note.
-//! - The hover `MouseText` (`DisplayMouseTextIfHovered`, `:528-535`) rides
-//!   the port's `front_hint` notice channel (the world-select rejection's
-//!   convention), not a cursor-following tooltip.
-//! - The gamepad snap points (`:543-590`) are out of scope (§J.3).
+// `UIResourcePackSelectionMenu` (`GameContent/UI/States/
+// UIResourcePackSelectionMenu.cs:17-591`) — the two-list resource-pack
+// screen: available packs on the left, enabled packs (with the priority
+// arrows) on the right, Back + Open Folder below. W4-d84 row 5;
+// `FrontScreen::ResourcePackSelection`.
+//
+// The pack store rides the payload (`_packsList`, `:25`) — the C# mutates
+// the shared `ResourcePack` objects in place; the port's rows carry store
+// indices into it. `PopulatePackList` (`:60-121`) re-derives the two views
+// after every toggle/offset, exactly as the C# rebuilds the element lists.
+//
+// Deviations (docs/ANALYSIS.md "The Workshop/ResourcePack screens"):
+// - `ApplyListChanges` (`:272-275`) feeds `AssetSourceController.
+//   UseResourcePacks` — the port has no content-source pipeline, so the
+//   Back tail stores the enabled-only list in `Settings.resource_packs`
+//   (`Main.SaveSettings`, `:480`) and saves; the asset reload is the
+//   documented no-op.
+// - `Main.instance.ResetAllContentBasedRenderTargets()` (`:162/:204`) has
+//   no port seam (no content render targets) — dropped with the same note.
+// - The hover `MouseText` (`DisplayMouseTextIfHovered`, `:528-535`) rides
+//   the port's `front_hint` notice channel (the world-select rejection's
+//   convention), not a cursor-following tooltip.
+// - The gamepad snap points (`:543-590`) are out of scope (§J.3).
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
@@ -215,7 +215,10 @@ use crate::assets;
 use crate::resource_pack::{ResourcePack, ResourcePackList};
 use crate::ui::text::{self, font_width};
 use crate::ui::uistate::{self, Style};
-use crate::ui::{color, panel, workshop_kit as kit};
+// `color` is already imported at the top of this spliced module (`use
+// super::color`); keep this second header's other imports and drop only the
+// duplicate binding (E0252 union fix).
+use crate::ui::{panel, workshop_kit as kit};
 
 /// The screen's own state — `_packsList` (`:25`), the two `UIList` scroll
 /// offsets (`_availablePacksList`/`_enabledPacksList`, `:21-23`) and the

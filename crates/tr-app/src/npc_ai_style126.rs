@@ -524,13 +524,13 @@ mod tests {
         let w = air();
         let players = [cand(100000.0, 100000.0)];
         let mut rng = UnifiedRandom::new(126);
-        let mut gen = UnifiedRandom::new(999);
+        let mut gen_rng = UnifiedRandom::new(999);
         let mut gen_oracle = UnifiedRandom::new(999);
         let mut n = mimic(100.0, 100.0);
         let mut env = Style126Env {
             world: &w,
             rng: &mut rng,
-            gen_rand: &mut gen,
+            gen_rand: &mut gen_rng,
             players: &players,
             net_mode: 0,
             no_tile_collide: false,
@@ -541,7 +541,7 @@ mod tests {
         while (43..=49).contains(&style) {
             style = gen_oracle.next_max(83);
         }
-        assert_eq!(gen.peek(), gen_oracle.peek(), "the genRand re-roll");
+        assert_eq!(gen_rng.peek(), gen_oracle.peek(), "the genRand re-roll");
         assert_eq!(n.ai[1], style as f32);
         assert_eq!(n.local_ai[1], 1.0);
         assert!(!(43..=49).contains(&(n.ai[1] as i32)));
@@ -557,13 +557,13 @@ mod tests {
         let w = air();
         let players = [cand(150.0, 100.0)]; // ~50 px from the mimic centre
         let mut rng = UnifiedRandom::new(126);
-        let mut gen = UnifiedRandom::new(999);
+        let mut gen_rng = UnifiedRandom::new(999);
         let mut n = mimic(100.0, 100.0);
         n.local_ai[1] = 1.0; // skip the latch
         let mut env = Style126Env {
             world: &w,
             rng: &mut rng,
-            gen_rand: &mut gen,
+            gen_rand: &mut gen_rng,
             players: &players,
             net_mode: 0,
             no_tile_collide: false,
@@ -581,7 +581,7 @@ mod tests {
         let w = air();
         let players = [cand(100000.0, 100000.0)];
         let mut rng = UnifiedRandom::new(126);
-        let mut gen = UnifiedRandom::new(999);
+        let mut gen_rng = UnifiedRandom::new(999);
         let mut n = mimic(100.0, 100.0);
         n.ai[0] = 1.0;
         n.immortal = true;
@@ -589,7 +589,7 @@ mod tests {
         let mut env = Style126Env {
             world: &w,
             rng: &mut rng,
-            gen_rand: &mut gen,
+            gen_rand: &mut gen_rng,
             players: &players,
             net_mode: 0,
             no_tile_collide: false,
@@ -609,7 +609,7 @@ mod tests {
         let w = air();
         let players = [cand(300.0, 100.0)]; // level, to the right
         let mut rng = UnifiedRandom::new(126);
-        let mut gen = UnifiedRandom::new(999);
+        let mut gen_rng = UnifiedRandom::new(999);
         let mut n = mimic(100.0, 100.0);
         n.ai[0] = 1.0;
         n.local_ai[2] = 1.0; // skip the scare
@@ -618,7 +618,7 @@ mod tests {
         let mut env = Style126Env {
             world: &w,
             rng: &mut rng,
-            gen_rand: &mut gen,
+            gen_rand: &mut gen_rng,
             players: &players,
             net_mode: 0,
             no_tile_collide: false,
@@ -637,8 +637,8 @@ mod tests {
     fn w4_d33_s126_the_style_reroll_range() {
         // Seed a stream and verify the result is never in 43..=49.
         for seed in 0..50 {
-            let mut gen = UnifiedRandom::new(seed);
-            let style = get_random_statue_style(&mut gen);
+            let mut gen_rng = UnifiedRandom::new(seed);
+            let style = get_random_statue_style(&mut gen_rng);
             assert!(!(43..=49).contains(&style), "seed {seed} gave {style}");
             assert!((0..83).contains(&style));
         }

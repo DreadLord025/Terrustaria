@@ -308,7 +308,7 @@ impl App {
         let vanilla_cursor = self.menu.is_none()
             && self.front.is_none()
             && !crate::env::no_hud()
-            && (!self.map.as_ref().is_some_and(|m| m.open) || self.settings.map_enabled);
+            && (!self.map.as_ref().is_some_and(|m| m.open) || self.settings.map_enabled)
             // `Main.hideUI` hides the game cursor (layer 36 is after the
             // layer-8 check) — the OS pointer stays hidden while focused
             // (`FocusHelper.cs:160-163`), so the screenshot has no cursor.

@@ -350,17 +350,17 @@ mod tests {
         assert_eq!(n.ai[0], 0.0);
         assert!(!n.net_update);
         // vy > 0.3 wakes (the f32 field promotes above the f64 0.3).
-        let mut n2 = n;
+        let mut n2 = n.clone();
         n2.vy = 0.4;
         ai_style25(85, &mut n2, &w, &[far], 0);
         assert_eq!(n2.ai[0], 1.0);
         assert!(n2.net_update);
         // The overlap wakes (player inside the inflated box).
-        let mut n3 = n;
+        let mut n3 = n.clone();
         ai_style25(85, &mut n3, &w, &[cand(1050.0, 1600.0)], 0);
         assert_eq!(n3.ai[0], 1.0);
         // Damage wakes.
-        let mut n4 = n;
+        let mut n4 = n.clone();
         n4.hp = 499;
         ai_style25(85, &mut n4, &w, &[far], 0);
         assert_eq!(n4.ai[0], 1.0);

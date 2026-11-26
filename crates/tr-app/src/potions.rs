@@ -276,13 +276,7 @@ pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: 
 /// 333-expiry arm fired (`:12127-12139`) — its `PlaySound(SoundID.Hungry)`
 /// (`:12138`) is the app-level caller's (the emote `:12137` stays a UI seam).
 fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
-    let mut hungry = false;
-    let slots: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
-        .filter(|&i| p.buffs.buff_type[i] > 0 && p.buffs.buff_time[i] > 0)
-        .map(|i| (p.buffs.buff_type[i], p.buffs.buff_time[i]))
-/// every other world 18000 (`:12116`).
-fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
-    update_hunger_buffs_slots(&mut p.buffs, dont_starve, remix);
+    update_hunger_buffs_slots(&mut p.buffs, dont_starve, remix)
 }
 
 /// The slot-level keep-one of `UpdateHungerBuffs` (S1-E-7 wave F): the
@@ -290,7 +284,8 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
 /// runs the SAME ladder on `BuffSlots` — no second copy of the expiry
 /// logic. The emote/sound requests the frame adds are gated on the same
 /// pre-expiry timers this ladder reads.
-pub fn update_hunger_buffs_slots(slots: &mut BuffSlots, dont_starve: bool, remix: bool) {
+pub fn update_hunger_buffs_slots(slots: &mut BuffSlots, dont_starve: bool, remix: bool) -> bool {
+    let mut hungry = false;
     let live: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
         .filter(|&i| slots.buff_type[i] > 0 && slots.buff_time[i] > 0)
         .map(|i| (slots.buff_type[i], slots.buff_time[i]))
@@ -321,12 +316,11 @@ pub fn update_hunger_buffs_slots(slots: &mut BuffSlots, dont_starve: bool, remix
             }
             333 => {
                 if time <= 2 {
-                    p.buffs.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
+                    slots.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
                     // `:12138`: `SoundEngine.PlaySound(SoundID.Hungry)` —
                     // UNPOSITIONED, the case-42 trackable (one variation,
                     // no gameplay draw; the façade NextFloat audio-only).
                     hungry = true;
-                    slots.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
                 }
                 if !dont_starve {
                     if let Some(s) = slots.find_buff_index(333) {
@@ -995,18 +989,13 @@ pub fn quick_mana_on(app: &mut App, key: crate::app::RngKey) -> bool {
             let rng = app.rngs.stream(key);
             app.audio.play_use_sound(idx, x, y, pitch, rng); // `:5613`
         }
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let rng = app.rngs.stream(key);
         let hungry = if def.potion {
             apply_potion_delay(p, def, &times, rng, dont_starve, remix) // `:5614-5617`
         } else {
             false
         };
         (apply_life_and_or_mana(p, def, rng), hungry) // `:5618`
-        let rng = app.rngs.stream(key);
-        if def.potion {
-            apply_potion_delay(p, def, &times, rng, dont_starve, remix); // `:5614-5617`
-        }
-        apply_life_and_or_mana(p, def, rng) // `:5618`
     };
     // W4-e10 — the reset's 333-expiry arm fired (`Player.cs:12138`), the
     // unpositioned case-42 Hungry trackable, no gameplay draw (the QuickHeal
@@ -1064,8 +1053,9 @@ pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
 /// W4-f49 — [`spawn_heal_text`] with an explicit stream key (the prism
 /// flower drink's text rides `UpdateProjectiles`, `Main.cs:17775`).
 fn spawn_heal_text_on(app: &mut App, amount: i32, key: crate::app::RngKey) {
-    let rng = app.rngs.stream(key);
-    spawn_heal_text_with(app, amount, rng);
+    let mut rng = app.rngs.stream(key).clone();
+    spawn_heal_text_with(app, amount, &mut rng);
+    *app.rngs.stream(key) = rng;
 }
 
 /// W4-f37 — [`spawn_heal_text`] with the caller's stream — the nurse-heal
@@ -2708,12 +2698,13 @@ mod tests {
         let mut app2 = drink_app();
         app2.inventory[0] = slot(1912, 2);
         app2.selected = 0;
+        let held2 = app2.inventory[0];
         let p = app2.player.as_mut().unwrap();
         p.hp = 10;
         p.buffs.add_buff(333, 2);
         let before2 = app2.audio.played_count();
         let mut mirror2 = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
-        assert!(use_potion_item(&mut app2, app2.inventory[0]));
+        assert!(use_potion_item(&mut app2, held2));
         assert_eq!(app2.audio.played_count(), before2, "silent: no plays");
         let _ = mirror2.next_range(-10, 11);
         let _ = mirror2.next_range(-21, 22);
@@ -2756,6 +2747,8 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.potion_delay, 1800, "the mushroom delay row");
         assert!(p.buffs.find_buff_index(334).is_some());
+    }
+
     // ---- W4-f49: the mana-flower auto-drink lane + the sickness stacking ----
     // WRITTEN NOT RUN (code-only mode, no compiler invoked).
 

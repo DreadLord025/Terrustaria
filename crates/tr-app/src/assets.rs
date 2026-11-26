@@ -294,23 +294,23 @@ impl BgStyleBytes {
     /// The sorted, deduped bg sheet ids for these style bytes (the same set
     /// `world_bg_sheet_ids` computes from a `World`).
     fn sheet_ids(&self) -> Vec<i32> {
-        let desert = crate::world::desert_bg_set(self.desert as i32);
+        let desert = tr_core::world::desert_bg_set(self.desert as i32);
         let mut ids: Vec<i32> = [
-            crate::world::surface_bg_texture_ids(1, self.corrupt as i32).unwrap(),
-            crate::world::surface_bg_texture_ids(2, self.jungle as i32).unwrap(),
-            crate::world::surface_bg_texture_ids(3, self.snow as i32).unwrap(),
-            crate::world::surface_bg_texture_ids(4, self.hallow as i32).unwrap(),
-            crate::world::surface_bg_texture_ids(5, self.crimson as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(1, self.corrupt as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(2, self.jungle as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(3, self.snow as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(4, self.hallow as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(5, self.crimson as i32).unwrap(),
             desert[0],
             desert[1],
             desert[2],
             desert[3],
-            crate::world::surface_bg_texture_ids(8, self.mushroom as i32).unwrap(),
+            tr_core::world::surface_bg_texture_ids(8, self.mushroom as i32).unwrap(),
         ]
         .into_iter()
         .flatten()
-        .chain(crate::world::snow_mountain_texture_ids(self.snow as i32))
-        .chain([crate::world::ocean_bg_texture_id(self.ocean as i32)])
+        .chain(tr_core::world::snow_mountain_texture_ids(self.snow as i32))
+        .chain([tr_core::world::ocean_bg_texture_id(self.ocean as i32)])
         .filter(|&id| id >= 0)
         .collect();
         ids.sort_unstable();
@@ -359,7 +359,7 @@ const BG_BUDGET_SLOTS: [i32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
 /// inputs — no RNG, no global state.
 pub(crate) fn fit_bg_styles_to_atlas(
     styles: BgStyleBytes,
-    pack_height: impl Fn(&[i32]) -> u32,
+    mut pack_height: impl FnMut(&[i32]) -> u32,
     max_height: u32,
 ) -> Vec<i32> {
     let mut reverted = Vec::new();
@@ -542,6 +542,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // `TextureAssets.PlayerHairAlt` (`Player_HairAlt_1`): the alternate
+        // hair strip (`PlayerDrawLayers.cs:2104-2109`).
+        "Player_HairAlt_1",
         // W4-c46 — `TextureAssets.Ghost` (`Images/Ghost`,
         // `AssetInitializer.cs:318`): the hardcore ghost's 4-row sheet
         // (`LegacyPlayerRenderer.DrawGhost`, `:514-524`).
@@ -3736,6 +3739,10 @@ pub struct Lookups {
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
     pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
+    /// The ambient leaf gores the world's trees can shed: `Gore_910`
+    /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
+    /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
+    pub leaf_gores: [Option<tr_render::SheetRect>; 2],
     /// `TextureAssets.Gore[type]` — one packed sheet per gore id whose
     /// `Images/Gore_<id>` file exists (`AssetInitializer.cs:135-137`), the
     /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
@@ -3749,15 +3756,6 @@ pub struct Lookups {
     /// the coin SPIN strips — 8 vertical frames each, the
     /// `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242-243`). The shop
     /// savings pile draws these (`ItemSlot.DrawSavings`, W4-g58 D5).
-    pub coin_strips: [Option<tr_render::SheetRect>; 4],
-    /// `TextureAssets.Coin[0..4]` (`AssetInitializer.cs:369`): the 1x8 coin
-    /// ANIMATION strips the revenge map markers draw
-    /// (`CoinLossRevengeSystem.cs:262-264`, `CoinSlot.cs:242`) — distinct
-    /// from the `Item_71..74` inventory icons in [`Self::coins`].
-    /// W4-f29 fix F4 (research/140 §3).
-    /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:369`): the
-    /// 1x8 spin strips `CoinSlot.DrawItemCoin` frames (`CoinSlot.cs:242-
-    /// 243`) — the savings pile's coin icons (W4-g12 doc-sweep).
     pub coin_strips: [Option<tr_render::SheetRect>; 4],
     /// W4-d122: `TextureAssets.Coin[0..3]` (`Images/Coin_0..3`,
     /// `AssetInitializer.cs:369`) — the 8-frame vertical spin strips
@@ -4091,11 +4089,6 @@ pub struct Lookups {
     pub ui_bestiary_star_light: Option<tr_render::SheetRect>,
     pub ui_bestiary_star_dim: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_panel: Option<tr_render::SheetRect>,
-    /// W4-e23: the Blue-theme search magnifier
-    /// (`UIWrappedSearchBar.AddSearchBar`, `:97-101` — the bestiary keeps
-    /// the default Blue theme; the crafting bar's Red one rides
-    /// `ui_search_icon`).
-    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
     pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
     /// The dedicated single-frame portraits — the `CustomTexturePath` rows
@@ -4450,6 +4443,7 @@ impl Lookups {
                         .map(|r| (k, r))
                 })
                 .collect(),
+            leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             // Every `Gore_<id>` sheet that made it into the atlas, keyed by
             // the parsed id (`AssetInitializer.cs:135-137` names them
             // `Images/Gore_<l>`) — the same prefix scan as `item_icons`; an
@@ -4614,7 +4608,6 @@ impl Lookups {
                 atlas.sheet("UI/Creative/Research_GearC").copied(),
             ],
             ui_research_spark: atlas.sheet("UI/Creative/Research_Spark").copied(),
-            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_reforge: [
@@ -5393,7 +5386,6 @@ atlas.sheet("NPC_442").copied(),
                         .map(|s| (name, s))
                 })
                 .collect(),
-            ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),

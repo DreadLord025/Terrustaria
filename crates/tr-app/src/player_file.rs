@@ -232,11 +232,6 @@ pub struct PlayerFile {
     pub undershirt_color: [u8; 3],
     pub pants_color: [u8; 3],
     pub shoe_color: [u8; 3],
-    /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// permanent +4 crafting reach — read at release >= 256
-    /// (`Deserialize`, `Player.cs:55243-55246`); older files load false
-    /// (the ctor default, `:56077`). W4-g90.
-    pub ate_artisan_bread: bool,
     /// `Player.usedAegisCrystal` (`Player.cs:852`) — the 5337 permanent
     /// life-regen ramp; read at release >= 260 (`:55255`, the six-unlock
     /// block's FIRST bool). W4-g90 lane 7; older files load false
@@ -266,15 +261,6 @@ pub struct PlayerFile {
     /// six-unlock block's second bool) — W4-g89. Older releases (< 260)
     /// carry no unlock block; the flag reads false.
     pub used_aegis_fruit: bool,
-    /// `Player.usedGummyWorm` (`Player.cs:2074`, load `:55259`, the 260+
-    /// six-unlock block's FIFTH bool) — W4-g89. Same version gate.
-    pub used_gummy_worm: bool,
-    /// `Player.usedAmbrosia` (`Player.cs:862`, load `:55260`, the 260+
-    /// six-unlock block's SIXTH bool) — W4-g89c. Same version gate.
-    pub used_ambrosia: bool,
-    /// `Player.usedAegisCrystal` (`Player.cs:852`, load `:55255`, the 260+
-    /// six-unlock block's FIRST bool) — W4-g89i. Same version gate.
-    pub used_aegis_crystal: bool,
     pub is_favorite: bool,
     pub revision: u32,
     /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, read `:55722`, clamped
@@ -399,6 +385,11 @@ pub struct PlayerFile {
     /// `LoadPlayer_LastMinuteFixes` clamps it to 1..4 (`:55831`). Below 280
     /// it derives from `Male ? 1 : 2` (`:55735`, `PlayerVariantID.Sets.Male`
     /// = {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`).
+    /// The W4-e10 canonical shape was `pub voice_variant: i32` (the live
+    /// `Player.voice_variant` is still i32, clamped 1..4 at `:55831`); W4-f44's
+    /// keep-one fold narrowed the FILE transport to u8 (the byte written at
+    /// `:54924`), so the i32 model now lives in the live Player instead of a
+    /// second copy here. Byte parity and the 1..4 clamp are unchanged.
     pub voice_variant: u8,
     /// `Player.voicePitchOffset` (`Player.cs:1348`, `Serialize:54925` /
     /// `Deserialize:55738-55741`, gate 281; below 281 it is 0f `:55742-55745`).
@@ -564,12 +555,22 @@ pub fn read_player_file(path: &Path) -> Result<PlayerFile, PlayerFileError> {
     // local files only тАФ the port has no cloud saves). `PlayerFileData.LastPlayed`
     // (`PlayerFileData.cs:38`) reads through it. The port's own writer stamps 0
     // ("unknown"), so every port-written character rides this fallback.
+    with_mtime_fallback(&mut file, path);
+    Ok(file)
+}
+
+/// `LoadPlayer:55096-55099`: a zero `lastTimePlayerWasSaved` falls back to
+/// `File.GetLastWriteTimeUtc(playerPath).ToBinary()` — the local-file arm
+/// (`!cloudSave`; the port has no cloud saves). The port's own writer stamps
+/// 0 ("unknown"), so every port-written character rides this fallback.
+/// The named helper keeps the byte-level walk caller-stamped and applies the
+/// mtime only on the DISK read (the W4-c43 canonical shape).
+fn with_mtime_fallback(file: &mut PlayerFile, path: &Path) {
     if file.last_saved_binary == 0 {
         if let Some(binary) = last_write_time_binary(path) {
             file.last_saved_binary = binary;
         }
     }
-    Ok(file)
 }
 
 /// `File.GetLastWriteTimeUtc(path).ToBinary()` for the zero-stamp fallback
@@ -1496,7 +1497,6 @@ fn finish_player_file(
         life_max,
         mana,
         mana_max,
-        ate_artisan_bread,
         used_aegis_crystal: unlocks[0],
         used_arcane_crystal: unlocks[1],
         used_galaxy_pearl: unlocks[2],
@@ -1512,9 +1512,6 @@ fn finish_player_file(
         inventory,
         inv_favorites,
         used_aegis_fruit,
-        used_gummy_worm,
-        used_ambrosia,
-        used_aegis_crystal,
         is_favorite,
         revision,
         current_loadout: tail.current_loadout,
@@ -1597,6 +1594,7 @@ fn read_legacy_port_subset(
     let mut used_upgrades = [false; 6];
     for slot in used_upgrades.iter_mut() {
         *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    }
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
     // the 11 bools the old subset writer emitted (no 324 dead slot). The
     // bread is the 4th (index 3) — W4-g90 models it (the old writer always
@@ -1686,7 +1684,6 @@ fn read_legacy_port_subset(
         life_max,
         mana,
         mana_max,
-        ate_artisan_bread,
         used_aegis_crystal: unlocks[0],
         used_arcane_crystal: unlocks[1],
         used_galaxy_pearl: unlocks[2],
@@ -1704,9 +1701,6 @@ fn read_legacy_port_subset(
         // The port-only 279 subset predates the unlock modelling (W4-g89
         // reads it only on the full 326 walk).
         used_aegis_fruit: false,
-        used_gummy_worm: false,
-        used_ambrosia: false,
-        used_aegis_crystal: false,
         is_favorite,
         revision,
         // The subset files end after the inventory тАФ the per-player tail was
@@ -1792,9 +1786,6 @@ pub struct PlayerFileWrite {
     pub life_max: i32,
     pub mana: i32,
     pub mana_max: i32,
-    /// `Player.ateArtisanBread` (`Player.cs:2048`) — written at `:54779`
-    /// (W4-g90). A fresh character carries false (the ctor, `:56077`).
-    pub ate_artisan_bread: bool,
     /// `Player.usedAegisCrystal` (`Player.cs:852`) — written at `:54781`
     /// (W4-g90 lane 7). A fresh character carries false (ctor `:56078`).
     pub used_aegis_crystal: bool,
@@ -1826,16 +1817,6 @@ pub struct PlayerFileWrite {
     /// The 5338 permanent +4 defense unlock persists through the vanilla
     /// `Serialize` slot (previously hardcoded `false`).
     pub used_aegis_fruit: bool,
-    /// `Player.usedGummyWorm` (`Player.cs:2074`, save `:54785`) — W4-g89.
-    /// The 5341 permanent +3 fishing-skill unlock, same block.
-    pub used_gummy_worm: bool,
-    /// `Player.usedAmbrosia` (`Player.cs:862`, save `:54786`) — W4-g89c.
-    /// The 5342 permanent mining/placement-speed unlock, same block.
-    pub used_ambrosia: bool,
-    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781`) — W4-g89i.
-    /// The 5337 permanent +0.2 lifeRegenTime unlock, the block's FIRST bool
-    /// (previously hardcoded `false`).
-    pub used_aegis_crystal: bool,
     /// `DateTime.UtcNow.ToBinary()` at save time (`Player.cs:54909`) — the
     /// one wall-clock field in `Serialize`. The port does not track a clock,
     /// so the caller stamps it (0 = the port's historical "unknown" stamp);
@@ -1936,6 +1917,12 @@ impl Default for PlayerFileWrite {
             unlocked_biome_torches: false,
             using_biome_torches: false,
             ate_artisan_bread: false,
+            used_aegis_fruit: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
+            used_aegis_crystal: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
             used_upgrades: [false; 6],
             downed_dd2_any_difficulty: false,
             tax_money: 0,
@@ -2502,9 +2489,6 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             used_aegis_fruit: false,
-            used_gummy_worm: false,
-            used_ambrosia: false,
-            used_aegis_crystal: false,
             last_saved_binary: 0,
             ..Default::default()
         }
@@ -3156,6 +3140,8 @@ mod tests {
         assert_eq!(file.bank[0], (0, 42, 0));
         assert_eq!(file.bank[1], (8, 99, 0));
         assert_eq!(file.bank3, [(0, 0, 0); 40]);
+    }
+
     /// W4-g89 — `usedAegisFruit` round-trips through the vanilla `Serialize`
     /// slot (`Player.cs:54782` write / `:55256` read, the 260+ unlock block's
     /// SECOND bool): the permanent unlock survives a .plr save + load, and
@@ -3544,9 +3530,6 @@ mod tests {
             inventory,
             inv_favorites: 1 << 3,
             used_aegis_fruit: false, // the harness player used no upgrade
-            used_gummy_worm: false,
-            used_ambrosia: false,
-            used_aegis_crystal: false,
             // FixtureClock.UtcNow.ToBinary() (Shims/FixtureClock.cs):
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc тЖТ kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
@@ -3927,7 +3910,7 @@ mod tests {
         let plain = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
         let file = read_player_bytes(&plain).expect("the C# fixture must read");
         assert_eq!(file.current_loadout, 0);
-        assert_eq!(file.loadouts, Default::default());
+        assert_eq!(file.loadouts, [LoadoutData::default(), LoadoutData::default(), LoadoutData::default()]);
         assert_eq!(file.void_vault_info, 0);
         assert_eq!(file.bank4, [(0, 0, 0, false); 40]);
         assert!(file.research.is_empty());
@@ -3997,7 +3980,7 @@ mod tests {
         assert_eq!(inc1.void_vault_info, 1);
         assert_eq!(inc1.bank4[7], (8, 99, 0, true));
         assert!(inc1.research.is_empty(), "inc1 never reached the research");
-        assert_eq!(inc1.loadouts, Default::default());
+        assert_eq!(inc1.loadouts, [LoadoutData::default(), LoadoutData::default(), LoadoutData::default()]);
         // W4-f44 ph2: the armor/hide BitsBytes sit BEFORE the cut тАФ captured.
         assert_eq!(inc1.armor[0], (89, 81, true));
         assert_eq!(inc1.hide_info, [false; 13], "inc1 never reached hideInfo");
@@ -4012,7 +3995,7 @@ mod tests {
         assert_eq!(inc2.void_vault_info, 1);
         assert_eq!(inc2.bank4[7], (8, 99, 0, true));
         assert!(inc2.research.is_empty());
-        assert_eq!(inc2.loadouts, Default::default());
+        assert_eq!(inc2.loadouts, [LoadoutData::default(), LoadoutData::default(), LoadoutData::default()]);
         assert_eq!(inc2.armor[0], (89, 81, true));
         assert!(inc2.hide_info[2], "inc2 reached hideInfo");
         assert_eq!(
@@ -4086,7 +4069,7 @@ mod tests {
         assert!(read.hide_info[0] && read.hide_info[12] && !read.hide_info[1]);
         // The card state + the phase-1 tail are unaffected.
         assert_eq!(read.inventory, file.inventory);
-        assert_eq!(read.loadouts, Default::default());
+        assert_eq!(read.loadouts, [LoadoutData::default(), LoadoutData::default(), LoadoutData::default()]);
     }
 
     /// The write side is byte-faithful: non-default equip/hide values move
@@ -4215,7 +4198,7 @@ mod tests {
         let read = read_player_bytes(&w.into_inner()).expect("the break keeps the walk aligned");
         assert_eq!(read.powers, CreativePowersSave::default(), "nothing loaded, the reset stands");
         assert_eq!(read.current_loadout, 0);
-        assert_eq!(read.loadouts, Default::default());
+        assert_eq!(read.loadouts, [LoadoutData::default(), LoadoutData::default(), LoadoutData::default()]);
         assert_eq!(read.inventory, sample().inventory);
     }
 

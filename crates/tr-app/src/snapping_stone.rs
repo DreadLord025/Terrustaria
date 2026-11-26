@@ -573,9 +573,10 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let before = rng.peek();
         let mut dmg = 10;
+        let hitbox = (p.x, p.y, p.width, p.height);
         try_making_snapping_stone_strike(
             &mut pool, &w, &mut npcs, &mut p, 0,
-            (p.x, p.y, p.width, p.height), 0, &mut dmg, 0, &mut rng,
+            hitbox, 0, &mut dmg, 0, &mut rng,
         );
         assert_eq!(dmg, 10, "no bonus while cooling");
         assert!(pool.drain_striking_sounds().is_empty());
@@ -595,9 +596,10 @@ mod tests {
         let mut pool = ProjectilePool::new();
         let mut rng = UnifiedRandom::new(7);
         let mut dmg = 10;
+        let hitbox = (p.x, p.y, p.width, p.height);
         try_making_snapping_stone_strike(
             &mut pool, &w, &mut npcs, &mut p, 0,
-            (p.x, p.y, p.width, p.height), 0, &mut dmg, 0, &mut rng,
+            hitbox, 0, &mut dmg, 0, &mut rng,
         );
         assert_eq!(p.acc_snapping_stone_cooldown, 360, "the setter (:14316)");
         assert_eq!(dmg, 70, "40 + 10×2 missed slots, ×1 ranged (:14368-14371)");
@@ -617,9 +619,10 @@ mod tests {
         let mut pool = ProjectilePool::new();
         let mut rng = UnifiedRandom::new(7);
         let mut dmg = 10;
+        let hitbox = (p.x, p.y, p.width, p.height);
         try_making_snapping_stone_strike(
             &mut pool, &w, &mut npcs, &mut p, 0,
-            (p.x, p.y, p.width, p.height), 0, &mut dmg, 1, &mut rng,
+            hitbox, 0, &mut dmg, 1, &mut rng,
         );
         let spawned: Vec<_> = pool.slots().iter().filter(|s| s.active).collect();
         assert_eq!(spawned.len(), 1, "one extra target in the 300 range");
@@ -644,9 +647,10 @@ mod tests {
         let mut pool = ProjectilePool::new();
         let mut rng = UnifiedRandom::new(7);
         let mut dmg = 0;
+        let hitbox = (p.x, p.y, p.width, p.height);
         try_making_snapping_stone_strike(
             &mut pool, &w, &mut npcs, &mut p, 0,
-            (p.x, p.y, p.width, p.height), 0, &mut dmg, 2, &mut rng,
+            hitbox, 0, &mut dmg, 2, &mut rng,
         );
         // bonus = (150 + 10×2) × minionDamage 2 = 340.
         assert_eq!(dmg, 340, "(:14368/:14380)");

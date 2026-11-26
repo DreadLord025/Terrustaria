@@ -147,8 +147,10 @@ fn gravity_of(kind: u16) -> Gravity {
 
 /// `AI_001` for one special-arrow kind, in the C#'s own block order.
 /// The 225's bounce needs the NPC scan, so the whole step takes `npcs`
-/// (the ai001_c precedent); no other kind reads it.
-pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+/// (the ai001_c precedent); no other kind reads it. W4-f20 F7: `immune`
+/// feeds the Harpy-charm tail (`:57769-57793`) — the special arrows ARE
+/// charm-eligible (the producer's `arrow` gate).
+pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
     // precedent): the witnesses below run the flight on a scratch pool;
     // the live sim threads the real pool through [`step_dust`].
@@ -165,7 +167,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
         max_dust_to_draw: 6000,
     };
     let mut rng = tr_core::UnifiedRandom::new(0);
-    step_dust(p, world, npcs, &mut rng, &mut dust, &ctx);
+    step_dust(p, world, npcs, &mut rng, &mut dust, &ctx, immune);
 }
 
 /// W4-g63 — the full step with the caller's `UpdateProjectiles` stream +
@@ -180,12 +182,10 @@ pub(crate) fn step_dust(
     rng: &mut dyn DropRng,
     dust: &mut tr_core::particles::DustPool,
     dust_ctx: &tr_core::particles::SpawnCtx,
+    immune: &[i32],
 ) {
-
-        }/// (the ai001_c precedent); no other kind reads it. W4-f20 F7: `immune`
-/// feeds the Harpy-charm tail (`:57769-57793`) — the special arrows ARE
-/// charm-eligible (the producer's `arrow` gate).
-pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
+    // W4-f20 F7 — `immune` feeds the Harpy-charm tail (`:57769-57793`):
+    // the special arrows ARE charm-eligible (the producer's `arrow` gate).
     // ---- 1. The hook group above the counter ------------------------------
     // `:55003-55011` — W4-g63: the 282 Venom Arrow's per-tick dust 171
     // RE-ARMED (the `Next(1,10)` scale draw rides the pass's stream).
@@ -703,7 +703,8 @@ pub(crate) fn bee_arrow_kill(
 /// localAI[0] latch, `alpha += (int)(25 * localAI[0])` with the 200/0
 /// bounce), the spin (`:23952` — `rotation += (|vx|+|vy|) * 0.01 *
 /// direction`), the light 0.9 (`:24053`). The star's `soundDelay` arm
-/// (`:23881-23885`, `20 + Next(40)`) stays the documented sound skip.
+/// (`:23881-23885`, `20 + Next(40)`) is ported (S1-E-21h d75): the re-arm
+/// roll rides the arm's rng seam, the Item9 cue queues draw-free.
 /// W4-g63: the 1/10 dust + 1/20 gore gates (`:24054-24061`) are RE-ARMED
 /// on the live pool (the `type == 92` arm runs them EVERY tick — the
 /// `||` right operand is always true for the 92).
@@ -714,12 +715,6 @@ pub(crate) fn falling_star_step(
     dust: &mut tr_core::particles::DustPool,
     dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
-
-        }/// (`:23881-23885`, `20 + Next(40)`) is ported (S1-E-21h d75): the re-arm
-/// roll rides the arm's rng seam, the Item9 cue queues draw-free. The
-/// 1/10 dust + 1/20 gore gates (`:24054-24061`) stay the documented dust
-/// skips — their draws go with the layer.
-pub(crate) fn falling_star_step(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
     // `:23858-23864` — the 92 arm: below the spawn floor the star
     // collides with tiles (above it, it falls through — the Holy Arrow
     // spawns it 600-900 px up with ai[1] = the arrow's death Y).
@@ -732,7 +727,7 @@ pub(crate) fn falling_star_step(p: &mut Projectile, world: &World, rng: &mut dyn
     // stream BEFORE the Item9 cue queues at `base.position`.
     if p.sound_delay == 0 {
         p.sound_delay = 20 + rng.next_range(0, 40);
-        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:23928-23945` — the generic alpha pulse (the 92 is not on any of
     // the special-case lists above it).
@@ -1272,43 +1267,47 @@ mod tests {
             screen_size: Vec2::new(w.width as f32 * tr_core::TILE_PX, w.height as f32 * tr_core::TILE_PX),
             max_dust_to_draw: 6000,
         };
-        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut rng = ScriptRng::new(vec![
+            7, 1, 1, // p tick 1: hum 20+Next(40), dust gate, gore gate
+            1, 1, // p tick 2: dust gate, gore gate (the cooldown holds)
+            0, 1, 1, // q tick 1: hum, dust gate, gore gate
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // q ticks 2-7
+            1, 1, // q tick 8
+        ]);
         let mut p = shot(FALLING_STAR);
         p.ai[1] = 900.0; // the floor below the star
         p.vel = Vec2::new(0.0, 22.0);
         assert!(!p.tile_collide);
         falling_star_step(&mut p, &w, &mut rng, &mut dust, &dctx);
-        let mut rng = ScriptRng::new(vec![7, 7]);
-        falling_star_step(&mut p, &w, &mut rng);
         assert!(!p.tile_collide, "above the floor: falls through");
         assert_eq!(p.alpha, 75, "50 + 25");
         assert_eq!(p.light, 0.9);
         // S1-E-21h d75 — the hum: the first tick re-arms 20 + Next(40)
         // and queues the Item9 cue; the cooldown holds the next tick.
         assert_eq!(p.sound_delay, 27, "20 + the scripted 7");
-        assert_eq!(p.wants_sound, Some((2, 9, p.pos.x, p.pos.y, 0.0)));
-        assert_eq!(rng.ranges, vec![(0, 40)]);
+        // The cue carries the WRITE-TIME position (before the movement tail
+        // steps `p.pos` to y 822): the C# queues at `base.position`.
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0, 1.0)));
+        // The C# draw order on this tick: the hum re-arm (0,40) first, then
+        // the re-armed dust (0,10) + gore (0,20) gates (`:24054-24061`).
+        assert_eq!(rng.ranges, vec![(0, 40), (0, 10), (0, 20)]);
         p.wants_sound = None;
         p.pos.y = 950.0;
         falling_star_step(&mut p, &w, &mut rng, &mut dust, &dctx);
-        falling_star_step(&mut p, &w, &mut rng);
         assert!(p.tile_collide, "below the floor: collides");
         assert_eq!(p.wants_sound, None, "the cooldown holds");
-        assert_eq!(rng.ranges.len(), 1, "no second re-arm roll");
+        assert_eq!(rng.ranges.len(), 5, "no second re-arm roll; dust+gore only");
         // Drive the pulse to the 200 cap and the flip: 50 +25×6 = 200 on
         // step 6 (NOT > 200, no flip yet); step 7 rolls 225 → clamps 200
         // and flips localAI[0] to −1.
         let mut q = shot(FALLING_STAR);
         q.ai[1] = 100000.0;
-        let mut rng2 = ScriptRng::new(vec![7]);
         for _ in 0..7 {
             falling_star_step(&mut q, &w, &mut rng, &mut dust, &dctx);
         }
         assert_eq!(q.alpha, 200);
         assert_eq!(q.local_ai[0], -1.0, "the cap flips the pulse");
         falling_star_step(&mut q, &w, &mut rng, &mut dust, &dctx);
-            falling_star_step(&mut q, &w, &mut rng2);
-        falling_star_step(&mut q, &w, &mut rng2);
         assert_eq!(q.alpha, 175, "200 − 25");
     }
 
@@ -1336,7 +1335,6 @@ mod tests {
             &mut tr_core::UnifiedRandom::new(7),
             0,
             true,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the arrow died");
         let star = pool
@@ -1373,7 +1371,6 @@ mod tests {
             &mut tr_core::UnifiedRandom::new(7),
             0,
             true,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the arrow died");
         let bees: Vec<_> = pool

@@ -57,17 +57,6 @@ pub(crate) struct WorldEvents {
     pub celebrating_npcs: Vec<usize>,
     /// `BirthdayParty._wasCelebrating`.
     was_celebrating: bool,
-    /// `NPC.freeCake` (`NPC.cs:6093`): the Party Girl's free-cake gift latch.
-    /// `NaturalAttempt` raises it on a fresh party (`BirthdayParty.cs:106`),
-    /// the dusk `UpdateTime_StartNight` clears it (`Main.cs:65222`), and the
-    /// `FreeCakeDialogue` consumes it on the next talk
-    /// (`ConditionalDialogue.cs:58-66`). The clear-world reset
-    /// (`WorldGen.cs:6945`, the `NPC` static ctor `:95165`) zeroes it too.
-    /// `NPC.freeCake` (`NPC.cs:6093`): the genuine party hands the Party
-    /// Girl's free-cake dialogue its condition (`BirthdayParty.cs:106`);
-    /// dusk clears it (`Main.cs:65222`), `clearWorld` too
-    /// (`WorldGen.cs:6945`).
-    pub free_cake: bool,
     // --- CultistRitual (`CultistRitual.cs`) ---
     /// `CultistRitual.delay` (`CultistRitual.delayStart` = 86400).
     pub cultist_delay: i32,
@@ -410,32 +399,6 @@ pub(crate) fn update_time_cultist(
     false
 }
 
-/// `NPC.OnGameEventClearedForTheFirstTime`'s lantern half (`NPC.cs:78769-
-/// 78793`): a boss/event's FIRST clear arms the next night as a lantern
-/// night. The C# `SetEventFlagCleared(ref flag, id)` (`:78759-78766`) calls
-/// this only on the flag's false→true edge, so the caller passes `first` =
-/// "the downed flag was false before this kill". The switch sets
-/// `NextNightIsLanternNight = true` for the default arm and cases 10
-/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Mourning Wood,
-/// type 325), 21 (Everscream, 344) and 22 (SantaNK1, 346) — the moon-event
-/// bosses — skip it. Pumpking (327) is id **5**, the DEFAULT arm: its
-/// first kill ARMS the lantern night (research/114 §0.1 — the earlier
-/// "case 4 (Pumpking)" label was wrong). The case-10 credits roll and the
-/// case-16/17/18 Plantera-bulb generation are separate systems (the bulb
-/// pass is unported; recorded). The port's `game_event_id` is the C#
-/// `gameEventId` the death arms already cite.
-pub(crate) fn on_game_event_cleared(ev: &mut WorldEvents, game_event_id: i32, first: bool) {
-    if !first {
-        return;
-    }
-    // `NPC.cs:78789-78792`: the three moon-event bosses never arm it.
-    if matches!(game_event_id, 4 | 21 | 22) {
-        return;
-    }
-    // The default arm + cases 10/16/17/18 all set the flag (`:78773-78788`).
-    ev.next_night_is_lantern_night = true;
-}
-
 /// `CultistRitual.CultistSlain` (`CultistRitual.cs:48-51`): `- 3600`.
 pub(crate) fn cultist_slain(ev: &mut WorldEvents) {
     ev.cultist_delay -= 3600;
@@ -682,7 +645,6 @@ mod tests {
             party_days_on_cooldown: 5,
             celebrating_npcs: vec![1, 2, 3],
             was_celebrating: true,
-            free_cake: true,
             cultist_delay: 86400,
             cultist_recheck: 600,
         };

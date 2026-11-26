@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 
@@ -533,6 +535,9 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-d76/s1-e-21h: the kill-hook batch the merged projectile body calls
+// (`crystal_pulse*`, `charged_blaster_orb*`, `ice_block_kill_draws`).
+mod projectile_kill_hooks_a;
 // W4-d5: UNWIRED projectile aiStyle machines (research/156, was 26d) — the rows +
 // dispatch arms are the wiring round (the npc_ai_style25 precedent).
 mod projectile_ai_style41;

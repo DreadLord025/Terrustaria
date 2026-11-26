@@ -520,7 +520,7 @@ pub(crate) fn draw_npc_map_icons_fullscreen(
                 let px = v[0] / 16.0 * scale + x - 10.0 * scale;
                 let py = v[1] / 16.0 * scale + y - 10.0 * scale;
                 if let Some(sheet) = lookups.npc_heads.get(head as usize).copied().flatten() {
-                    let (hw, hh) = hover_half(sheet.width, sheet.height, hs);
+                    let [hw, hh] = hover_half(sheet.width, sheet.height, hs);
                     let (hx, hy) = (px - hw, py - hh);
                     if view.mouse.x >= hx
                         && view.mouse.x <= hx + sheet.width as f32 * hs
@@ -549,7 +549,7 @@ pub(crate) fn draw_npc_map_icons_fullscreen(
         let py = v[1] / 16.0 * scale + y - 10.0 * scale;
         draw_head_boss(r, lookups, boss, [px, py], a, hs, rotation, flip);
         if let Some(sheet) = lookups.npc_boss_heads.get(boss as usize).copied().flatten() {
-            let (hw, hh) = hover_half(sheet.width, sheet.height, hs);
+            let [hw, hh] = hover_half(sheet.width, sheet.height, hs);
             let (hx, hy) = (px - hw, py - hh);
             if view.mouse.x >= hx
                 && view.mouse.x <= hx + sheet.width as f32 * hs
@@ -597,7 +597,7 @@ pub(crate) fn draw_npc_map_icons_minimap(
                 let py = (v[1] / 16.0 - top) * scale + y2 - 2.0 * scale / 5.0 + yoff;
                 if in_clip(px, py) {
                     if let Some(sheet) = lookups.npc_heads.get(head as usize).copied().flatten() {
-                        let (hw, hh) = hover_half(sheet.width, sheet.height, hs);
+                        let [hw, hh] = hover_half(sheet.width, sheet.height, hs);
                         let (hx, hy) = (px - hw, py - hh);
                         if view.mouse.x >= hx
                             && view.mouse.x <= hx + sheet.width as f32 * hs
@@ -626,7 +626,7 @@ pub(crate) fn draw_npc_map_icons_minimap(
         let py = (v[1] / 16.0 - top) * scale + y2 - 2.0 * scale / 5.0 + yoff;
         if in_clip(px, py) {
             if let Some(sheet) = lookups.npc_boss_heads.get(boss as usize).copied().flatten() {
-                let (hw, hh) = hover_half(sheet.width, sheet.height, hs);
+                let [hw, hh] = hover_half(sheet.width, sheet.height, hs);
                 let (hx, hy) = (px - hw, py - hh);
                 if view.mouse.x >= hx
                     && view.mouse.x <= hx + sheet.width as f32 * hs

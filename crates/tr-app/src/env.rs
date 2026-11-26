@@ -695,14 +695,6 @@ pin_num! {
 }
 
 pin_bool! {
-    /// `TR_DEBUG_COMMANDS`: `DebugOptions.enableDebugCommands`
-    /// (`Testing/DebugOptions.cs:8`) — the `/hh`/`/loadouts` chat commands
-    /// register only under it (`DebugCommandProcessor.cs:30-33`).
-    debug_commands,
-    "TR_DEBUG_COMMANDS"
-}
-
-pin_bool! {
     /// `TR_DEBUG_COMMANDS_LIST`: opens `UIDebugCommandsList` on start (the
     /// W4-d85 screenshot fixture; the vanilla opens on `/hh` only).
     debug_commands_list_open,

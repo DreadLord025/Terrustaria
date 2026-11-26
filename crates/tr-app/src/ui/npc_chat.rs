@@ -81,6 +81,8 @@ pub(crate) fn interactions(sign_open: bool, edit_sign: bool) -> Vec<String> {
         rows.push(crate::lang::inter(if edit_sign { 47 } else { 48 }));
     }
     rows
+}
+
 /// The interaction rows the port renders (`NPCInteractions.Initialize`
 /// registration order, `NPCInteractions.cs:513-530`): `CloseChat` (`:515`)
 /// always, then `ReportHappiness` (`:529`) when its Condition holds
@@ -89,7 +91,7 @@ pub(crate) fn interactions(sign_open: bool, edit_sign: bool) -> Vec<String> {
 /// (shop/housing/reforge/…) stay deferred (module header).
 /// `_neededInteractionLines = ceil(count / 4)` (`NPCChatPanel.cs:174`,
 /// `AllowedInteractionsPerLine = 4` `:30`) — 1 line for either count.
-fn interaction_lines(happiness: bool) -> usize {
+fn happiness_interaction_lines(happiness: bool) -> usize {
     let count = 1 + usize::from(happiness);
     count.div_ceil(4)
 }
@@ -158,11 +160,18 @@ pub(crate) fn interaction_rects(
         x += w + 30.0; // `:135`
     }
     out
+}
+
+/// The panel box in the JFL/g58 happiness lane.
+pub(crate) fn happiness_panel_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
     happiness: bool,
 ) -> [f32; 4] {
     let base = chat_box_rect(screen.x as i32, screen.y as i32);
     let lines = panel_lines(lookups, chat_text).len();
-    let h = chat_box_height(lines, interaction_lines(happiness));
+    let h = chat_box_height(lines, happiness_interaction_lines(happiness));
     [base.x as f32, base.y as f32, base.w as f32, h as f32]
 }
 
@@ -178,8 +187,8 @@ fn button_rect(
     happiness: bool,
     index: usize,
 ) -> [f32; 4] {
-    let panel = panel_rect(lookups, screen, chat_text, happiness);
-    let il = interaction_lines(happiness) as f32;
+    let panel = happiness_panel_rect(lookups, screen, chat_text, happiness);
+    let il = happiness_interaction_lines(happiness) as f32;
     let row_x = panel[0] + 30.0;
     let row_y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
     let labels = [crate::lang::inter(52), happiness_label()];
@@ -206,7 +215,8 @@ fn button_rect(
 }
 
 /// The Close button's hit rect — interaction index 0.
-pub(crate) fn close_button_rect(
+/// Happiness-style Close button rect (JFL/g58).
+pub(crate) fn happiness_close_button_rect(
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
@@ -215,8 +225,6 @@ pub(crate) fn close_button_rect(
     button_rect(lookups, screen, chat_text, happiness, 0)
 }
 
-/// The Happiness button's hit rect — interaction index 1 (`None` when the
-/// button's Condition is off).
 pub(crate) fn happiness_button_rect(
     lookups: &Lookups,
     screen: Vec2,
@@ -232,6 +240,7 @@ pub(crate) fn happiness_button_rect(
 /// Dryad's Stardew bit shows (`stardew` true), the "Purify" button is index 0
 /// and Close index 1; otherwise Close is index 0. Returns
 /// `(stardew_rect, close_rect)` — the stardew rect is zero-width when absent.
+#[allow(dead_code)] // the f30 Purify+Close pair; `interaction_rects` lays the live row
 pub(crate) fn button_rects(
     lookups: &Lookups,
     screen: Vec2,
@@ -302,10 +311,6 @@ pub(crate) fn draw_panel(
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
     let panel = panel_rect(lookups, screen, chat_text, interaction_count(sign_open));
-    dryad_status: bool,
-) -> bool {
-    let lines = panel_lines(lookups, chat_text);
-    let panel = panel_rect(lookups, screen, chat_text, happiness);
     let (x, y, _w, h) = (panel[0], panel[1], panel[2], panel[3]);
     // `:71-72` — the top splice (source `(0, 0, ChatBack.Width(), h−30)`)
     // and the bottom 30 px (`(0, Height−30, Width, 30)`), both at scale 1:
@@ -372,8 +377,17 @@ pub(crate) fn draw_panel(
             );
         }
     }
-    draw_interactions(r, lookups, screen, chat_text, pulse, mouse, sign_open, edit_sign);
-    draw_close_button(r, lookups, screen, chat_text, pulse, mouse, stardew);
+    draw_interactions(
+        r,
+        lookups,
+        screen,
+        chat_text,
+        pulse,
+        mouse,
+        sign_open,
+        edit_sign,
+        stardew,
+    );
     super::in_rect(mouse, panel)
 }
 
@@ -385,11 +399,28 @@ pub(crate) fn draw_panel(
 /// the hover x-shift `−(1.2−0.9)·width·0.5` (`:125`).
 #[allow(clippy::too_many_arguments)]
 fn draw_interactions(
-    draw_interaction_button(r, lookups, screen, chat_text, happiness, 0, pulse, mouse);
-    if happiness {
-        draw_interaction_button(r, lookups, screen, chat_text, happiness, 1, pulse, mouse);
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    pulse: UiPulse,
+    mouse: Vec2,
+    sign_open: bool,
+    edit_sign: bool,
+    stardew: bool,
+) {
+    // W4-f30 + W4-f22 union: ONE interaction row. The Dryad Purify button
+    // (index 0) joins while the Stardew bit shows and shifts Close right by
+    // its width + 30 (`NPCChatPanel.cs:135`); the sign's Edit/Save toggle
+    // follows Close. `interaction_rects` lays the row out left-to-right.
+    let mut labels = interactions(sign_open, edit_sign);
+    if stardew {
+        labels.insert(0, crate::dryad_stardew::give_cola_button_text());
     }
-    super::in_rect(mouse, panel)
+    let rects = interaction_rects(lookups, screen, chat_text, &labels);
+    for (label, rect) in labels.iter().zip(rects.iter()) {
+        draw_interaction(r, lookups, *rect, label, pulse, mouse);
+    }
 }
 
 /// One interaction button (`DrawButtons`, `NPCChatPanel.cs:88-162`): idle
@@ -398,32 +429,14 @@ fn draw_interactions(
 /// (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
 /// left/centre-Y (`:120-122`) with the hover x-shift
 /// `−(1.2−0.9)·width·0.5` (`:125`).
-fn draw_interaction_button(
+/// The Happiness button's draw (JFL/g58).
+fn happiness_interaction_button(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
     happiness: bool,
     index: usize,
-    pulse: UiPulse,
-    mouse: Vec2,
-    sign_open: bool,
-    edit_sign: bool,
-) {
-    let labels = interactions(sign_open, edit_sign);
-    let rects = interaction_rects(lookups, screen, chat_text, &labels);
-    for (label, rect) in labels.iter().zip(rects.iter()) {
-        draw_interaction(r, lookups, *rect, label, pulse, mouse);
-    }
-}
-
-/// One interaction button's draw — the `DrawButtons` loop body
-/// (`NPCChatPanel.cs:108-135`).
-fn draw_interaction(
-    r: &mut SpriteRenderer,
-    lookups: &Lookups,
-    rect: [f32; 4],
-    label: &str,
     pulse: UiPulse,
     mouse: Vec2,
 ) {
@@ -433,25 +446,70 @@ fn draw_interaction(
     } else {
         happiness_label()
     };
-    stardew: bool,
-) {
-    // W4-f30 — the interaction row: the Purify button (index 0) when the
-    // Stardew bit shows, then Close. Both ride the same label-draw shape.
-    let (purify_rect, rect) = button_rects(lookups, screen, chat_text, stardew);
-    if stardew {
-        draw_interaction_button(r, lookups, purify_rect, &crate::dryad_stardew::give_cola_button_text(), pulse, mouse);
+    // The shared border/measure helpers take `&str`; keep the owned label
+    // alive for the whole draw.
+    let label = label.as_str();
+    let hovered = super::in_rect(mouse, rect);
+    let b = (pulse.text * 255.0) as i32;
+    let chat_color = [
+        b as f32 / 255.0,
+        (b as f64 / 1.1) as i32 as f32 / 255.0, // `:102` тАФ `(int)(b/1.1)`
+        (b / 2) as f32 / 255.0,
+        b as f32 / 255.0,
+    ];
+    // `Color.Brown` = (165, 42, 42) тАФ the hovered shadow (`:121`).
+    let shadow = if hovered {
+        [165.0 / 255.0, 42.0 / 255.0, 42.0 / 255.0, 1.0]
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    };
+    let scale = if hovered { 1.2 } else { 0.9 };
+    let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+    let mut px = rect[0];
+    if hovered {
+        // `:125` тАФ `(int)((1.2 тИТ 0.9) ┬╖ rectangle.Width ┬╖ 0.5)`.
+        px -= ((1.2 - 0.9) * rect[2] * 0.5).floor();
     }
-    draw_interaction_button(r, lookups, rect, &crate::lang::inter(52), pulse, mouse);
+    // `origin = (0, stringSize.Y ┬╖ 0.5)` (`:120`) where stringSize is
+    // measured at 0.9 (`:112`); XNA applies origin ├Ч draw scale, so the
+    // top-left y is centre-Y тИТ h(0.9)┬╖0.5┬╖(scale┬╖shrink).
+    let lh = text::ui_font_height(lookups, 0.9).unwrap_or(8.0 * 0.9);
+    let py = rect[1] + rect[3] * 0.5 - lh * 0.5 * scale * shrink;
+    // `ChatManager.DrawColorCodedStringShadow` (`:132`): four passes at
+    // `ShadowDirections ┬╖ spread` тАФ ┬▒X/┬▒Y ├Ч 2 (`ChatManager.cs:200-205`,
+    // `:376-382`) тАФ in Brown hovered / Black idle (`:121`), then the
+    // colour pass (`DrawColorCodedString`, `:133`).
+    for [dx, dy] in [[2.0, 0.0], [-2.0, 0.0], [0.0, 2.0], [0.0, -2.0]] {
+        text::draw_border_string(
+            r,
+            lookups,
+            text::BorderFont::Ui,
+            px + dx,
+            py + dy,
+            scale * shrink,
+            &[],
+            shadow,
+            label,
+        );
+    }
+    text::draw_border_string(
+        r,
+        lookups,
+        text::BorderFont::Ui,
+        px,
+        py,
+        scale * shrink,
+        &[],
+        chat_color,
+        label,
+    );
 }
 
-/// One interaction button's label (`NPCChatPanel.DrawButtons`,
-/// `NPCChatPanel.cs:98-135`): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the
-/// label colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
-/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
-/// left/centre-Y (`:120-122`) with the hover x-shift
-/// `−(1.2−0.9)·width·0.5` (`:125`). W4-f30: extracted from the Close-only
-/// draw so the Purify button shares it (the house shared-helper rule).
-fn draw_interaction_button(
+/// One interaction button's draw — the `DrawButtons` loop body
+/// (`NPCChatPanel.cs:108-135`).
+/// One interaction button's draw — the `DrawButtons` loop body (f22).
+fn draw_interaction(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     rect: [f32; 4],
@@ -463,11 +521,11 @@ fn draw_interaction_button(
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
         b as f32 / 255.0,
-        (b as f64 / 1.1) as i32 as f32 / 255.0, // `:102` — `(int)(b/1.1)`
+        (b as f64 / 1.1) as i32 as f32 / 255.0, // `:102` тАФ `(int)(b/1.1)`
         (b / 2) as f32 / 255.0,
         b as f32 / 255.0,
     ];
-    // `Color.Brown` = (165, 42, 42) — the hovered shadow (`:121`).
+    // `Color.Brown` = (165, 42, 42) тАФ the hovered shadow (`:121`).
     let shadow = if hovered {
         [165.0 / 255.0, 42.0 / 255.0, 42.0 / 255.0, 1.0]
     } else {
@@ -478,17 +536,17 @@ fn draw_interaction_button(
     let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let mut px = rect[0];
     if hovered {
-        // `:125` — `(int)((1.2 − 0.9) · rectangle.Width · 0.5)`.
+        // `:125` тАФ `(int)((1.2 тИТ 0.9) ┬╖ rectangle.Width ┬╖ 0.5)`.
         px -= ((1.2 - 0.9) * rect[2] * 0.5).floor();
     }
-    // `origin = (0, stringSize.Y · 0.5)` (`:120`) where stringSize is
-    // measured at 0.9 (`:112`); XNA applies origin × draw scale, so the
-    // top-left y is centre-Y − h(0.9)·0.5·(scale·shrink).
+    // `origin = (0, stringSize.Y ┬╖ 0.5)` (`:120`) where stringSize is
+    // measured at 0.9 (`:112`); XNA applies origin ├Ч draw scale, so the
+    // top-left y is centre-Y тИТ h(0.9)┬╖0.5┬╖(scale┬╖shrink).
     let lh = text::ui_font_height(lookups, 0.9).unwrap_or(8.0 * 0.9);
     let py = rect[1] + rect[3] * 0.5 - lh * 0.5 * scale * shrink;
     // `ChatManager.DrawColorCodedStringShadow` (`:132`): four passes at
-    // `ShadowDirections · spread` — ±X/±Y × 2 (`ChatManager.cs:200-205`,
-    // `:376-382`) — in Brown hovered / Black idle (`:121`), then the
+    // `ShadowDirections ┬╖ spread` тАФ ┬▒X/┬▒Y ├Ч 2 (`ChatManager.cs:200-205`,
+    // `:376-382`) тАФ in Brown hovered / Black idle (`:121`), then the
     // colour pass (`DrawColorCodedString`, `:133`).
     for [dx, dy] in [[2.0, 0.0], [-2.0, 0.0], [0.0, 2.0], [0.0, -2.0]] {
         text::draw_border_string(
@@ -725,11 +783,10 @@ mod tests {
         let lookups = assets::Lookups::default();
         let screen = Vec2::new(1920.0, 1080.0);
         let panel = panel_rect(&lookups, screen, "Hello there", 1);
-        let panel = panel_rect(&lookups, screen, "Hello there", false);
         // One text line (no font sheet: the 8 px/char estimate keeps
         // "Hello there" well under 460), one interaction line.
         assert_eq!(panel, [710.0, 100.0, 500.0, 90.0], "30 + 30·1 + 30·1");
-        let rect = close_button_rect(&lookups, screen, "Hello there", false);
+        let rect = close_button_rect(&lookups, screen, "Hello there");
         assert_eq!(rect[0], 740.0, "panel left + 30 (`:93`)");
         assert_eq!(rect[1], 100.0 + 90.0 - 22.0 - 4.0, "bottom − 22·1 − 4 (`:93`)");
         assert_eq!(rect[3], 22.0, "the 22 px row (`:97`)");
@@ -787,7 +844,7 @@ mod tests {
         app.talk_npc = Some(0);
         app.npc_chat_text = "Hello there".to_string();
         let (sw, sh) = app.screen_size();
-        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text, false);
+        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text);
         app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
         app.ui_left_press = true;
         app.handle_npc_chat_clicks();
@@ -906,7 +963,7 @@ mod tests {
         app.npc_chat_text = "Hello there".to_string();
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
-        let close = close_button_rect(&app.lookups, screen, &app.npc_chat_text, true);
+        let close = close_button_rect(&app.lookups, screen, &app.npc_chat_text);
         let happy = happiness_button_rect(&app.lookups, screen, &app.npc_chat_text, true)
             .expect("the Condition holds");
         // `:135` — the next button starts at Close's right edge + 30.
@@ -1047,6 +1104,9 @@ mod tests {
         app.set_talk_npc(None);
         assert_eq!(app.npc_chat_portrait_frame_counter, 9, "the close is hop-free");
     }
+}
+// g49 union compile-fix: `mod tests` closed here — the Dryad-status helpers
+// below are production code (called from `ui::mod::draw_hud`), not tests.
 
 /// The rect at an explicit row origin (`:97`/`:117`).
 fn button_rect_at(lookups: &Lookups, label: &str, x: f32, y: f32) -> [f32; 4] {
@@ -1060,25 +1120,6 @@ fn label_width(lookups: &Lookups, label: &str) -> f32 {
     let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
     let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     (w0 * shrink).trunc()
-}
-
-
-/// The Close button (`DrawButtons`, `NPCChatPanel.cs:88-162`, one
-/// interaction): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the label
-/// colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
-/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
-/// left/centre-Y (`:120-122`) with the hover x-shift
-/// `−(1.2−0.9)·width·0.5` (`:125`).
-fn draw_close_button(
-    r: &mut SpriteRenderer,
-    lookups: &Lookups,
-    screen: Vec2,
-    chat_text: &str,
-    pulse: UiPulse,
-    mouse: Vec2,
-) {
-    let rect = close_button_rect(lookups, screen, chat_text);
-    draw_interaction_button(r, lookups, &crate::lang::inter(52), rect, pulse, mouse);
 }
 
 
@@ -1101,6 +1142,4 @@ pub(crate) fn dryad_status_active(npcs: &[crate::npc::Npc], talk_npc: Option<usi
 pub(crate) fn dryad_status_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
     let close = close_button_rect(lookups, screen, chat_text);
     button_rect_at(lookups, &crate::lang::inter(49), close[0] + close[2] + 30.0, close[1])
-}
-
 }

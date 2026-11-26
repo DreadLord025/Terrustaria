@@ -1558,6 +1558,8 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     // torch at rest — `happyFunTorchTime && createTile == 4 &&
     // itemAnimation == 0`. The swing (`itemAnimation > 0`) keeps the sprite.
     if s.happy_fun_torch_time && s.held_create_tile == 4 && resting {
+        return Vec::new();
+    }
     // W4-f40 DOC-SWEEP — `heldItem.noUseGraphic` (`PlayerDrawLayers.cs:3089`):
     // the release lanterns/doves, boomerangs, spears, whips, kites, golf
     // balls, bombs and captured critters draw NO held sprite — the use
@@ -2559,6 +2561,7 @@ mod tests {
             pants: Some(sheet()),
             shoes: Some(sheet()),
             hair: Some(sheet()),
+            hair_alt: Some(sheet()),
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
@@ -3672,6 +3675,7 @@ mod player_draw_tests {
             pants: dummy(40.0, 1120.0),
             shoes: dummy(40.0, 1120.0),
             hair: dummy(40.0, 784.0),
+            hair_alt: dummy(40.0, 784.0),
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],

@@ -1045,16 +1045,6 @@ mod tests {
             game_menu: false,
             game_paused: false,
             generating: false,
-            screen_position: glam::Vec2::ZERO,
-            screen_size: glam::Vec2::new(8000.0, 8000.0),
-            max_dust_to_draw: 6000,
-        };
-        let mut rng = UnifiedRandom::new(23);
-        // Replay the NewDust internals on a witness stream (the empty
-        // pool takes slot 0, no pressure-band draw): the position pair
-        // (the < 5 floor makes width 10 → Next(6) and height 4 → 5 →
-        // Next(1)), the velocity pair, the frame row, the scale roll —
-        // the particles.rs verbatim.
             screen_position: Vec2::ZERO,
             screen_size: Vec2::new(8000.0, 8000.0),
             max_dust_to_draw: 6000,
@@ -1069,9 +1059,6 @@ mod tests {
             &mut witness,
             &ctx,
             &w,
-            glam::Vec2::new(1003.0, 998.0),
-            10,
-            4,
             Vec2::new(1003.0, 998.0),
             14,
             14,
@@ -1090,13 +1077,6 @@ mod tests {
         assert!(d.active, "the empty pool spawns");
         assert_eq!(d.dust_type, 43);
         assert_eq!(d.alpha, 254);
-        assert_eq!(d.color, tr_core::particles::Color::new(255, 255, 0, 255));
-        assert_eq!(d.velocity, e.velocity);
-        assert_eq!(d.velocity, glam::Vec2::ZERO, ":92364 velocity *= 0f");
-        assert_eq!(d.scale, e.scale, "the rolled scale ×0.5");
-        assert_eq!(d.position, e.position, "the netOffset-added position");
-        // The NPC's own position never moved (the port reads a copy).
-        assert_eq!((n.x, n.y), (1000.0, 1000.0));
         assert_eq!(d.scale, 0.5);
         assert_eq!(d.velocity, Vec2::ZERO, "velocity *= 0f (:92364)");
         assert_eq!(d.position, e.position, "the netOffset-added position");

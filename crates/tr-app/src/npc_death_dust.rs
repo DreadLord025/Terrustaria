@@ -503,7 +503,6 @@
 //!   MisterStabby/SnowBalla naming) are dust-neutral — every id in the
 //!   trio draws the same burst.
 
-use crate::npc::Npc;
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::{UnifiedRandom, World};
@@ -1356,7 +1355,7 @@ mod tests {
             world: &w,
         };
         death_dust_draws(&mut fx);
-        let mut r = peek;
+        let mut r = peek.clone();
         for k in 0..2 {
             let rolls = replay_spawn(&mut r, 130, 150);
             // Circular: unit NextFloat then radius NextFloat.
@@ -2436,6 +2435,9 @@ mod tests {
             assert!(pool.slot((n - 1) as usize).active);
             assert!(!pool.slot(n as usize).active, "{ty}: exactly {n} dusts");
         }
+    }
+}
+
 /// The batch-1 death dust feed: draws the kind's `HitEffect` DEATH half in
 /// C# order. Returns true when an arm ran (the wiring gate mirrors the
 /// match; the flag is the witness seam). `npc_type` is the C# `NPC.type`
@@ -3461,7 +3463,7 @@ pub fn death_dust(
 
 // ---- witness tests (WRITTEN, NOT RUN — code-only mode, no compiler) ----
 #[cfg(test)]
-mod tests {
+mod tests_union_b {
     use super::*;
     use crate::npc::NpcKind;
 

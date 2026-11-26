@@ -74,7 +74,7 @@ impl Projectile {
         if self.sound_delay == 0 {
             self.sound_delay = -1;
             let (cx, cy) = self.center();
-            self.wants_sound = Some((2, 60, cx, cy, 0.0));
+            self.wants_sound = Some((2, 60, cx, cy, 0.0, 1.0));
         }
         // `:36094-36117` — the spawn plume (localAI[1] < 30), one dust.
         if self.local_ai[1] < 30.0 {

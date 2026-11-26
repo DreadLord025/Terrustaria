@@ -1228,7 +1228,7 @@ mod tests {
         // at rest (speed 0 — the first term draws nothing).
         let mut seed = 0u64;
         loop {
-            let mut probe = UnifiedRandom::new(seed);
+            let mut probe = UnifiedRandom::new(seed as i32);
             if probe.next_max(5) == 0 {
                 break;
             }
@@ -1236,7 +1236,7 @@ mod tests {
         }
         let mut n = slime(NpcKind::ShimmerSlime);
         n.ai[0] = -50.0; // mid-cadence: no hop this tick
-        let mut rng = UnifiedRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         let mut mirror = rng.clone();
         ai_001_slimes(&mut n, &w, &ctx, &mut rng);
         assert_eq!(mirror.next_max(5), 0, "the gate hit");
@@ -1275,7 +1275,7 @@ mod tests {
         let ctx = ctx_classic(&players);
         let mut seed = 0u64;
         loop {
-            let mut probe = UnifiedRandom::new(seed);
+            let mut probe = UnifiedRandom::new(seed as i32);
             if probe.next_max(3) == 0 {
                 break;
             }
@@ -1284,7 +1284,7 @@ mod tests {
         let mut n = slime(NpcKind::ShimmerSlime);
         n.ai[0] = -50.0;
         n.vx = 2.0; // speed 2 > 1 — the first term draws
-        let mut rng = UnifiedRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         let mut mirror = rng.clone();
         ai_001_slimes(&mut n, &w, &ctx, &mut rng);
         assert_eq!(mirror.next_max(3), 0, "the speed gate hit");
@@ -1304,7 +1304,7 @@ mod tests {
         let ctx = ctx_classic(&players);
         let mut seed = 0u64;
         loop {
-            let mut probe = UnifiedRandom::new(seed);
+            let mut probe = UnifiedRandom::new(seed as i32);
             if probe.next_max(3) != 0 && probe.next_max(5) != 0 {
                 break;
             }
@@ -1313,7 +1313,7 @@ mod tests {
         let mut n = slime(NpcKind::ShimmerSlime);
         n.ai[0] = -50.0;
         n.vx = 2.0;
-        let mut rng = UnifiedRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         let mut mirror = rng.clone();
         ai_001_slimes(&mut n, &w, &ctx, &mut rng);
         assert_ne!(mirror.next_max(3), 0);

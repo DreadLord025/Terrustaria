@@ -1237,10 +1237,9 @@ mod tests {
     }
 
     fn gv(lava_line: i32) -> GenVars {
-        GenVars {
-            lava_line,
-            ..Default::default()
-        }
+        let mut gv = GenVars::default();
+        gv.lava_line = lava_line;
+        gv
     }
 
     /// The seed gate: a classic world never enters either function — the
@@ -1310,7 +1309,9 @@ mod tests {
     /// the lava line becomes jungle grass 60, below becomes mushroom 70.
     #[test]
     fn grass_converts_by_the_lava_line() {
-        let mut w = air(900, 400, 100.0, 180.0);
+        // The sweep covers j in 5..height-180; height 700 puts the
+        // below-lava-line cell (350 > 300) inside the swept band.
+        let mut w = air(900, 700, 100.0, 180.0);
         put(&mut w, 450, 120, TILE_GRASS); // above lava line 300
         put(&mut w, 450, 350, TILE_GRASS); // below lava line 300
         let o = opts(SeedFlags::NOT_THE_BEES);
@@ -1337,8 +1338,11 @@ mod tests {
     #[test]
     fn liquid_turns_to_honey_inland() {
         let mut w = air(900, 400, 100.0, 180.0);
-        let i = w.index(700, 120);
-        w.tiles[i].liquid = 100; // inland (x > 0.6*900 = 540), above lava line
+        // Left of the centre strip (0.4w..0.6w): the right-side inland
+        // band is unreachable on a 900-wide world (the i > w/2 ocean arm
+        // returns first); the honey arm's `else` covers this side.
+        let i = w.index(340, 120);
+        w.tiles[i].liquid = 100; // left-of-centre, above lava line
         let c = w.index(450, 120);
         w.tiles[c].liquid = 100; // centre strip (0.4*900 < 450 < 0.6*900)
         let o = opts(SeedFlags::NOT_THE_BEES);
@@ -1441,13 +1445,20 @@ mod tests {
     fn spread_wall2_solid_cell_takes_the_wall_without_spreading() {
         let mut w = air(120, 120, 40.0, 60.0);
         wall(&mut w, 50, 60, 1);
-        put(&mut w, 51, 60, TILE_STONE); // solid blocker
+        // A two-thick solid pair: the wall-spread's ±2 neighbour jump
+        // (`WorldGen.cs:3506-3515`) reaches the second solid cell (52)
+        // from the origin (50), but neither solid cell enqueues its own
+        // neighbours (`:3518-3521`), so the flood stops at the pair.
+        put(&mut w, 51, 60, TILE_STONE);
         wall(&mut w, 51, 60, 1);
+        put(&mut w, 52, 60, TILE_STONE);
         wall(&mut w, 52, 60, 1);
+        wall(&mut w, 53, 60, 1);
         spread_wall2(&mut w, 50, 60, WALL_SPIDER);
         assert_eq!(w.tiles[w.index(50, 60)].wall, WALL_SPIDER);
-        assert_eq!(w.tiles[w.index(51, 60)].wall, WALL_SPIDER, "the solid cell takes the wall");
-        assert_eq!(w.tiles[w.index(52, 60)].wall, 1, "the flood does not spread past the solid");
+        assert_eq!(w.tiles[w.index(51, 60)].wall, WALL_SPIDER, "the first solid cell takes the wall");
+        assert_eq!(w.tiles[w.index(52, 60)].wall, WALL_SPIDER, "the ±2 jump reaches the second solid cell");
+        assert_eq!(w.tiles[w.index(53, 60)].wall, 1, "the flood does not spread past the solid pair");
     }
 
     /// The larva `Place3x3` (`:53534-53634`): a 3×3 larva lands on a solid

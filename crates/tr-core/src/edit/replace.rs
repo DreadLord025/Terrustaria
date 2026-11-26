@@ -790,6 +790,11 @@ mod tests {
     #[test]
     fn w4_g80_the_platform_pair_keeps_the_slope() {
         let mut w = world();
+        // `Main.tileFrameImportant[19] = true` (`Main.cs:7654`): the real
+        // global table marks platforms frame-important, so the trailing
+        // `SquareTileFrame` leaves their frames alone (a plain block would be
+        // re-derived by the cosmetic pass). The blank fixture sets the bit.
+        w.frame_important[19] = true;
         let i = w.index(10, 19);
         w.tiles[i] = Tile {
             kind: 19,

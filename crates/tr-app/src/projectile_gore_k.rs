@@ -88,7 +88,7 @@ pub fn kill286_gore(
 ) {
     let ty = rng.next_range(61, 64);
     let pos = Vec2::new(p.pos.x - 10.0, p.pos.y - 10.0);
-    let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity *= 0.3;
     g.velocity.x += rng.next_range(-10, 11) as f32 * 0.05;
@@ -106,7 +106,7 @@ pub fn kill712_gores(
 ) {
     for _ in 0..3 {
         let scale = 1.0 + rng.next_float_direction() * 0.2;
-        let idx = gore.new_gore_direct(rng, world, p.pos, Vec2::ZERO, 1008, scale);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, 1008, scale);
         gore.slot_mut(idx).velocity *= 4.0;
     }
 }
@@ -122,7 +122,7 @@ pub fn kill41_gores(
 ) {
     for _ in 0..2 {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity *= 0.4;
         g.velocity.x += rng.next_range(-10, 11) as f32 * 0.1;
@@ -142,7 +142,7 @@ pub fn bee_gores(
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
     for (sx, sy) in signs {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.x += sx;
         g.velocity.y += sy;
@@ -165,7 +165,7 @@ pub fn barrel_gores(
     for i in 0..8 {
         let pos = c + next_vector2_circular(rng, p.w, p.h) * 0.125;
         let ty = 61 + rng.next_max(3);
-        let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
         let angle = std::f32::consts::PI * 2.0 * i as f32 / 8.0;
         let dir = Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32);
         gore.slot_mut(idx).velocity = dir * rng.next_float() * 8.0;

@@ -1,5 +1,3 @@
-{{
-// balance-open (union shared delimiter)
 //! The bestiary screen (`UIBestiaryTest.cs`, opened through
 //! `Main.DrawBestiaryIcon`'s inventory button) — the entry grid
 //! (`UIBestiaryEntryGrid`/`UIBestiaryEntryButton`), the per-entry info page
@@ -1177,8 +1175,6 @@ pub fn draw_screen(
     screen: Vec2,
     tracker: &WorldBestiary,
     ui: &super::bestiary_screen::BestiaryUi,
-    tracker: &tr_core::bestiary::WorldBestiary,
-    tracker: &WorldBestiary,
     selected: Option<usize>,
     mouse: Vec2,
 ) {
@@ -1265,8 +1261,6 @@ fn draw_grid(
     screen: Vec2,
     tracker: &WorldBestiary,
     ui: &super::bestiary_screen::BestiaryUi,
-    tracker: &tr_core::bestiary::WorldBestiary,
-    tracker: &WorldBestiary,
     mouse: Vec2,
 ) {
     let panel = panel_rect(screen);
@@ -1290,7 +1284,7 @@ fn draw_grid(
         let x = rect[0] + col as f32 * CELL;
         let y = rect[1] + row as f32 * CELL;
         let cell = [x, y, CELL, CELL];
-        draw_card(r, lookups, cell, entry, tracker, hovered == Some(slot));
+        draw_card(r, lookups, cell, entry, tracker, idx, hovered == Some(slot));
     }
     // `UIBestiaryEntryButton.DrawSelf` (`UIBestiaryEntryButton.cs:142-148`):
     // the hovered card prints the icon's hover text — the NPC name once
@@ -1324,8 +1318,6 @@ fn draw_card(
     lookups: &Lookups,
     cell: [f32; 4],
     entry: &crate::bestiary::BestiaryEntryDef,
-    tracker: &WorldBestiary,
-    tracker: &tr_core::bestiary::WorldBestiary,
     tracker: &WorldBestiary,
     idx: usize,
     hover: bool,
@@ -2437,6 +2429,7 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 30.0)
                 .unwrap_or(44.0);
             (sheet_i, h, 44.0, h, white)
+        }
         // W4-e26 — the luck critter portraits (E8 keep-one): the sheet's
         // own row height over `Main.npcFrameCount[type]` (361 thirteen,
         // 604/605 eight — `Main.cs:67082`), the frame width the sheet's
@@ -2567,7 +2560,6 @@ fn portrait_data(
                 .unwrap_or(10.0);
             (sheet_i, h, h, h, white)
         },
-        }
         // The man-eater family (W4-d23): the portraits rest the sheet's
         // own row height over `Main.npcFrameCount[type]` (43/56/175 three
         // frames, 101 five, 259 four, 260 two — `Main.cs:67082`), the
@@ -2772,6 +2764,11 @@ fn portrait_data(
             (sheet_i, h, 30.0, h, white)
         }
         (NpcKind::CorruptGoldfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
         // W4-d41 — the cavern crawdads'/shellies' portraits: the sheet's
         // own row height over `Main.npcFrameCount[type]` (494/495 eight
         // frames, 496/497 twelve; `Main.cs:67082`), the frame width the
@@ -2818,6 +2815,7 @@ fn portrait_data(
                 .unwrap_or(31.0);
             (sheet_i, h, 50.0, h, white)
         }
+        (NpcKind::GiantFlyingAntlion, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 9.0)
                 .unwrap_or(31.0);
@@ -3455,6 +3453,7 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(10.0);
             (sheet_i, h, h, h, white)
+        }
         // W4-d120 — the four town kinds' portraits rest the town twin's
         // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
         // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
@@ -3463,6 +3462,9 @@ fn portrait_data(
             (sheet_i, 48.0, 38.0, 48.0, white)
         }
         (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
+        // The rest of the 688-kind roster rests the generic 32x32 portrait
+        // box until its own arm lands (the WyvernHead literal-size shape).
+        _ => (sheet_i, 32.0, 32.0, 32.0, white),
     }
 }
 
@@ -3557,165 +3559,19 @@ fn build_info_rows(
             // `loot.rs:292-294` gap), so the cache joins an empty list —
             // the writer seam is live for the conditions port.
             let notes = bestiary_notes(&[]);
-            g.push((InfoRow::Drop { item_id: row.item_id, name, rate, locked, notes }, h));
+            g.push((
+                InfoRow::Drop {
+                    item_id: row.item_id,
+                    name: name.to_string(),
+                    rate,
+                    locked,
+                    notes,
+                },
+                h,
+            ));
         }
         if !g.is_empty() {
             groups.push(g);
-        (NpcKind::TruffleWorm | NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, h, h, white)
-        }
-        // The digger: hidden in the bestiary (`NPCID.cs:3714-3718`'s
-        // `Hide = true`) — it folds onto the TruffleWorm's entry, so this
-        // arm never renders; the SetDefaults box (10x10, `NPC.cs:13779-
-        // 13780`) stands as the shape (the ForceBubble precedent).
-        (NpcKind::TruffleWormDigger, _) => (sheet_i, 10.0, 10.0, 10.0, white),
-        // W4-c9 — the snail family + its shimmer target: the portrait
-        // rests each kind's `SetDefaults` box (`NPC.cs:13575-13576` /
-        // `:13589-13590` / `:17282-17283` / `:17581-17582`), the
-        // wave-A shape.
-        // E8 merge: the Shimmerfly portrait is c7's arm above; the 5
-        // gold portraits are d40's arms above (the dup drops).
-        (NpcKind::Snail, _) => (sheet_i, 12.0, 12.0, 12.0, white),
-        (NpcKind::GlowingSnail | NpcKind::MagmaSnail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
-        // W4-c10 — the waterfowl family's portraits: the sheet's own row
-        // height over `Main.npcFrameCount[type]` = 15 (`Main.cs:67082`),
-        // the `SetDefaults` box the anchor rests on — the walkers 22x26
-        // (`NPC.cs:13615-13616`/`:13639-13640`/`:16741-16742`/`:16811-
-        // 16812`), the swimmers 28x22 (`:13627-13628`/`:13651-13652`/
-        // `:16753-16754`/`:16823-16824`). The small-kinds precedent: the
-        // frame height rides the sheet, the box is the unscaled size.
-        // E8 merge: Seagull/Grebe ride the d42 portrait arms above.
-        (NpcKind::Duck | NpcKind::DuckWhite, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 22.0, 26.0, white)
-        }
-        (NpcKind::Duck2 | NpcKind::DuckWhite2, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 28.0, 22.0, white)
-        }
-        // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
-        // W4-c10 roster tail — the twelve critters' portraits: the sheet's
-        // own row height over each kind's `Main.npcFrameCount`
-        // (`Main.cs:67082`: 357→2, 442→5, 443→7, 444→3, 445→13, 446→2,
-        // 447→6, 448→2, 484→2, 485/486/487→4), the `SetDefaults` box the
-        // anchor rests on (`NPC.cs:13547-13548`/`:14249-14346`/
-        // `:14578-14579`). The waterfowl precedent: the frame height
-        // rides the sheet, the box is the unscaled size.
-        (NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(4.0);
-            (sheet_i, h, 10.0, 4.0, white)
-        }
-        (NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(4.0);
-            (sheet_i, h, 10.0, 4.0, white)
-        }
-        (NpcKind::GoldBird, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 5.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, 14.0, white)
-        }
-        (NpcKind::GoldBunny, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, 20.0, white)
-        }
-        (NpcKind::GoldButterfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, 10.0, white)
-        }
-        (NpcKind::GoldFrog, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 12.0, 10.0, white)
-        }
-        (NpcKind::GoldGrasshopper, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 14.0, 10.0, white)
-        }
-        (NpcKind::GoldMouse, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(12.0);
-            (sheet_i, h, 14.0, 12.0, white)
-        }
-        // W4-f18 first-20 port — batch 1's critters: the sheet's own row
-        // height over `Main.npcFrameCount[type]` (355/358 four frames,
-        // 356 twenty-four, 357 two, 359 six; `Main.cs:67082-67153`), the
-        // frame width the sheet's own (the small-kinds wiring wave's
-        // portrait shape). The portrait reads row 0 — the butterfly's
-        // first colour style's first flap row (the vanilla's bestiary
-        // preview draws the sheet's first frame the same way).
-        (NpcKind::Firefly | NpcKind::LightningBug, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Butterfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 24.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Worm, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(4.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Snail, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(12.0);
-            (sheet_i, h, 12.0, h, white)
-        }
-        // W4-f18 batch 2 — the GlowingSnail (6 frames), the Frog (13), the
-        // walker ducks (15; the Duck2 363 folds onto the Duck 362's entry,
-        // so its portrait reads the Duck's sheet — the Hide=true fold).
-        (NpcKind::GlowingSnail, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::Frog, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 12.0, h, white)
-        }
-        (NpcKind::Duck | NpcKind::DuckWhite, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // The Duck2 363 folds onto the Duck 362's entry (Hide=true), so
-        // `entry.kind` is never Duck2 here — the arm keeps the exhaustive
-        // match whole (the DetonatingBubble/Sharkron2 fold precedent).
-        (NpcKind::Duck2, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 28.0, h, white)
         }
     }
     // 6. Misc — the spawn-condition tag rows
@@ -3752,23 +3608,6 @@ fn build_info_rows(
         if i + 1 < n {
             out.push((InfoRow::Separator, INFO_SEPARATOR_H));
         }
-        // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
-        // The Hide-folds: these kinds fold onto their credit's entry
-        // (`entry_for_npc`), so `entry.kind` never reaches these arms —
-        // they exist to keep the match exhaustive and restate the fold
-        // target's shape (the Wyvern-segment precedent).
-        (NpcKind::GoldfishWalker, _) => (sheet_i, 18.0, 20.0, 18.0, white),
-        (NpcKind::JungleCreeper | NpcKind::BloodCrawler, _) => {
-            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(20.0);
-            (sheet_i, h, 50.0, 20.0, white)
-        // W4-d120 — the four town kinds' portraits rest the town twin's
-        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
-        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
-        // the match exhaustive at the flat 34x8 box.
-        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
-            (sheet_i, 48.0, 38.0, 48.0, white)
-        }
-        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
     }
     out
 }
@@ -3849,6 +3688,8 @@ fn draw_info_page(
     super::panel::draw_scrollbar_themed(r, lookups, bar, view, total_h, pos, false, lookups.ui_scrollbar_blue);
 }
 
+
+
 /// One info-page row's draw at its scrolled top `ty`.
 fn draw_info_row(
     r: &mut SpriteRenderer,
@@ -3862,998 +3703,6 @@ fn draw_info_row(
     screen: Vec2,
     mouse: Vec2,
 ) {
-    let panel = panel_rect(screen);
-    let entry = &crate::bestiary::ENTRIES[idx];
-    let state = crate::bestiary::unlock_state_world(entry, tracker);
-    if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
-        // The portrait card left of the info (the pretty-portrait mode's
-        // 72 px card scaled up).
-        let size = 216.0;
-        let px = panel[0] + 24.0;
-        let py = panel[1] + 60.0;
-        let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
-        // The portrait card's inner container is `OverflowHidden` too
-        // (`UIBestiaryNPCEntryPortrait.cs:20-28`), and its icon draws with
-        // `isPortrait: true` (`:56`) — the `PortraitScale` /
-        // `PortraitPositionX-YOverride` arms of the offset table.
-        r.push_clip(inner);
-        if let Some(back) = lookups.ui_bestiary_slot_back {
-            push_whole(r, lookups, &back, inner, [1.0; 4]);
-        }
-        if state.known() {
-            draw_portrait(r, lookups, entry, inner, true);
-        } else if let Some(locked) = lookups.ui_bestiary_locked {
-            push_whole(r, lookups, &locked, inner, [0.15; 4]);
-        }
-        (NpcKind::BartenderUnconscious, _) => {
-            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 16.0).unwrap_or(40.0);
-            (sheet_i, h, 34.0, 8.0, white)
-        }
-        (NpcKind::ArmedTorchZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Seagull2 | NpcKind::Grebe2, _) => (sheet_i, 26.0, 22.0, 26.0, white),
-        (NpcKind::BloodEelBody | NpcKind::BloodEelTail, _) => (sheet_i, 28.0, 28.0, 28.0, white),
-        // W4-d25 STYLE-26 wiring: the gallopers' portraits rest the
-        // `SetDefaults` box (the d35 (C) convention — the Unicorn row
-        // mirrors 6ed8c22f verbatim; the Wolf's 46x30 `NPC.cs:10963-10964`,
-        // the Tumbleweed's 30x30 `:15974-15975`).
-        (NpcKind::Wolf, _) => (sheet_i, 30.0, 46.0, 30.0, white),
-        (NpcKind::Tumbleweed, _) => (sheet_i, 30.0, 30.0, 30.0, white),
-        // W4-d120 — the four town kinds' portraits rest the town twin's
-        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
-        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
-        // the match exhaustive at the flat 34x8 box.
-        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
-            (sheet_i, 48.0, 38.0, 48.0, white)
-        }
-        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
-        // W4-d125 empress wiring — the portraits ride the sheets' own
-        // row heights over `Main.npcFrameCount` (636 two frames, 661
-        // three; `Main.cs:67147`/`:67150`) and the sheets' own widths
-        // (`SetFrameSize`'s `frame.Width = tex.Width()`, the d35 shape).
-        // The sheets are PACKED (the sheets phase, `D125_SHEETS`); the
-        // `unwrap_or` fallbacks rest the `SetDefaults` boxes
-        // (`NPC.cs:17188`/`:17351`) for a content-less build.
-        (NpcKind::EmpressOfLight, _) => {
-            let s = entry_sheet(lookups, entry);
-            let h = s.map(|s| s.height as f32 / 2.0).unwrap_or(100.0);
-            let w = s.map(|s| s.width as f32).unwrap_or(100.0);
-            (sheet_i, h, w, h, white)
-        }
-        (NpcKind::PrismaticLacewing, _) => {
-            let s = entry_sheet(lookups, entry);
-            let h = s.map(|s| s.height as f32 / 3.0).unwrap_or(10.0);
-            let w = s.map(|s| s.width as f32).unwrap_or(10.0);
-            (sheet_i, h, w, h, white)
-        }
-        // W4-g5 — the two casters' 18x40 `SetDefaults` box
-        // (`NPC.cs:11156-11157`/`:17725-17726`).
-        (NpcKind::RuneWizard | NpcKind::LibrarianSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Antlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 5.0)
-                .unwrap_or(24.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::WalkingAntlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 26.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 9.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 30.0, h, white)
-        }
-        // W4-d9 wiring (d40 rows): the dragon head's portrait box (the
-        // SetDefaults 32x32; the segments fold onto its entry). The 521
-        // squidhead's 60x60 box rides its own entry.
-        (NpcKind::AncientCultistSquidhead, _) => (sheet_i, 60.0, 60.0, 60.0, white),
-        // W4-d39 (research/125) — the Butterfly's portrait: the sheet's
-        // own row height over `Main.npcFrameCount[356]` = 24
-        // (`Main.cs:67082`), the frame width the sheet's own. The 24-row
-        // sheet is 8 colour bands × 3 flap rows — the portrait shows
-        // band 0's flap.
-        // W4-f18 first-20 port — batch 1's critters: the sheet's own row
-        // height over `Main.npcFrameCount[type]` (355/358 four frames,
-        // 356 twenty-four, 357 two, 359 six; `Main.cs:67082-67153`), the
-        // frame width the sheet's own (the small-kinds wiring wave's
-        // portrait shape). The portrait reads row 0 — the butterfly's
-        // first colour style's first flap row (the vanilla's bestiary
-        // preview draws the sheet's first frame the same way).
-        (NpcKind::Firefly | NpcKind::LightningBug, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Butterfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 24.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        // W4-d39 — the scorpion pair's 4-row strips + the grasshopper's
-        // 2-row strip (`Main.npcFrameCount[366/367]` = 4, `[377]` = 2;
-        // `Main.cs:67082`), the frame width the sheet's own.
-        (NpcKind::Worm, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(4.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Snail, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(12.0);
-            (sheet_i, h, 12.0, h, white)
-        }
-        // W4-f18 batch 2 — the GlowingSnail (6 frames), the Frog (13), the
-        // walker ducks (15; the Duck2 363 folds onto the Duck 362's entry,
-        // so its portrait reads the Duck's sheet — the Hide=true fold).
-        (NpcKind::GlowingSnail, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 12.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // The Duck2 363 folds onto the Duck 362's entry (Hide=true), so
-        // `entry.kind` is never Duck2 here — the arm keeps the exhaustive
-        // match whole (the DetonatingBubble/Sharkron2 fold precedent).
-        (NpcKind::Duck2, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 28.0, h, white)
-        }
-        // W4-f18 batch 3 — the scorpion pair (4 frames) and the TruffleWorm
-        // (4). The DuckWhite2 365 folds onto the DuckWhite 364's entry and
-        // the TruffleWormDigger 375 onto the TruffleWorm 374's — their arms
-        // keep the exhaustive match whole (the fold precedent).
-        (NpcKind::ScorpionBlack | NpcKind::Scorpion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 26.0, h, white)
-        }
-        (NpcKind::TruffleWorm, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::DuckWhite2, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 28.0, h, white)
-        }
-        (NpcKind::TruffleWormDigger, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        // W4-f18 batch 4 — the Grasshopper (2 frames), the ChatteringTeethBomb
-        // (4), the CultistArcherBlue (12), the ArmedZombie (7). The
-        // CultistArcherWhite 380 folds onto the CultistArcherBlue 379's
-        // entry — its arm keeps the exhaustive match whole (the fold
-        // precedent).
-        (NpcKind::Grasshopper, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        // W4-d39 batch 3 — the teeth bomb's 4-row strip + the archer's
-        // 12-row strip (`Main.npcFrameCount[378]` = 4, `[379]` = 12;
-        // `Main.cs:67082`). The white archer folds onto 379's entry
-        // (the Hide=true exclusion) — its portrait is the blue's.
-        (NpcKind::ChatteringTeethBomb, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite, _) => {
-        (NpcKind::CultistArcherBlue, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        // Doc-sweep lane 36 — the ShimmerSlime's portrait rests the
-        // 2-frame strip's row height over the 24x18 box (the
-        // small-kinds shape).
-        (NpcKind::ShimmerSlime, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 32.0, h, white)
-        (NpcKind::CultistArcherWhite, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::ArmedZombie, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 30.0)
-                .unwrap_or(44.0);
-            (sheet_i, h, 44.0, h, white)
-        }
-        (NpcKind::PalworldCattivaDistressed, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::PalworldFoxsparksDistressed, _) => (sheet_i, 18.0, 18.0, 18.0, white),
-        (NpcKind::OwlMimic, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(34.0);
-            (sheet_i, h, 18.0, h, white)
-        // W4-f42 — the sandstorm debris + desert family's portraits: the
-        // sheet's own row height over `Main.npcFrameCount[type]`
-        // (`Main.cs:67082`: 546 one frame, 61 six, 69 five, the mummies
-        // sixteen, 580 six, 581 nine); the frame width the sheet's own.
-        (NpcKind::Tumbleweed, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32)
-                .unwrap_or(30.0);
-            (sheet_i, h, 30.0, h, white)
-        }
-        (NpcKind::Vulture, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(36.0);
-            (sheet_i, h, 36.0, h, white)
-        }
-        (NpcKind::Antlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 5.0)
-                .unwrap_or(24.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::WalkingAntlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 26.0, h, white)
-        }
-        (NpcKind::FlyingAntlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 9.0)
-                .unwrap_or(22.0);
-            (sheet_i, h, 30.0, h, white)
-        }
-    }
-}
-
-/// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
-/// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the
-/// stat rows (tier >= 2 — `Stat_HP`/`Stat_Attack`/`Stat_Defense`/
-/// `Stat_Knockback`/`Stat_Copper`), the kill progress and the drop lines
-/// (rates only from tier 4).
-fn draw_info_page(
-    r: &mut SpriteRenderer,
-    lookups: &Lookups,
-    screen: Vec2,
-    tracker: &tr_core::bestiary::WorldBestiary,
-    tracker: &WorldBestiary,
-    idx: usize,
-    mouse: Vec2,
-) {
-    let panel = panel_rect(screen);
-    let entry = &crate::bestiary::ENTRIES[idx];
-    let state = crate::bestiary::unlock_state_world(entry, tracker);
-    if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
-        // The portrait card left of the info (the pretty-portrait mode's
-        // 72 px card scaled up).
-        let size = 216.0;
-        let px = panel[0] + 24.0;
-        let py = panel[1] + 60.0;
-        let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
-        // The portrait card's inner container is `OverflowHidden` too
-        // (`UIBestiaryNPCEntryPortrait.cs:20-28`), and its icon draws with
-        // `isPortrait: true` (`:56`) — the `PortraitScale` /
-        // `PortraitPositionX-YOverride` arms of the offset table.
-        r.push_clip(inner);
-        if let Some(back) = lookups.ui_bestiary_slot_back {
-            push_whole(r, lookups, &back, inner, [1.0; 4]);
-        }
-        (NpcKind::StatueMimic, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 1.0)
-                .unwrap_or(38.0);
-            (sheet_i, h, 28.0, h, white)
-        }
-        (NpcKind::MossZombie, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::Orca, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(34.0);
-            (sheet_i, h, 120.0, h, white)
-        }
-        (NpcKind::LibrarianSkeleton, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownSlimeCopper, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::BoundTownSlimeOld, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 1.0)
-                .unwrap_or(28.0);
-            (sheet_i, h, 30.0, h, white)
-        }
-        (NpcKind::BoundTownSlimePurple, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 1.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::BoundTownSlimeYellow, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::Pufferfish, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(16.0);
-            (sheet_i, h, 32.0, h, white)
-        }
-        (NpcKind::TownSlimeOld, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownSlimePurple, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownSlimeRainbow, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownSlimeRed, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownSlimeYellow, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::YellowCockatiel, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::GrayCockatiel, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::Shimmerfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::TownSlimeGreen, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::Stinkbug, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 8.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::TownSlimeBlue, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::ScarletMacaw, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::BlueMacaw, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::Toucan, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::PirateGhost, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TorchGod, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(0.0);
-            (sheet_i, h, 0.0, h, white)
-        }
-        (NpcKind::ChaosBallTim, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 1.0)
-                .unwrap_or(16.0);
-            (sheet_i, h, 16.0, h, white)
-        }
-        (NpcKind::VileSpitEaterOfWorlds, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 1.0)
-                .unwrap_or(16.0);
-            (sheet_i, h, 16.0, h, white)
-        }
-        (NpcKind::GoldenSlime, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::QueenSlimeBoss, _) => (sheet_i, 100.0, 114.0, 100.0, white),
-        (NpcKind::QueenSlimeMinionBlue, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::QueenSlimeMinionPink, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::QueenSlimeMinionPurple, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(30.0);
-            (sheet_i, h, 40.0, h, white)
-        }
-        (NpcKind::EmpressButterfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::GemBunnyAmber, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::HellButterfly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::Lavafly, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(10.0);
-            (sheet_i, h, 10.0, h, white)
-        }
-        (NpcKind::MagmaSnail, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(14.0);
-            (sheet_i, h, 14.0, h, white)
-        }
-        (NpcKind::TownBunny, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 27.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnyTopaz, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnySapphire, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnyEmerald, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnyRuby, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnyDiamond, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelEmerald, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelRuby, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelDiamond, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelAmber, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemBunnyAmethyst, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownCat, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 28.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::TownDog, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 28.0)
-                .unwrap_or(28.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelAmethyst, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelTopaz, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::GemSquirrelSapphire, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 6.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::RockGolem, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 21.0)
-                .unwrap_or(48.0);
-            (sheet_i, h, 36.0, h, white)
-        }
-        (NpcKind::MaggotZombie, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 5.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 22.0, h, white)
-        (NpcKind::SporeSkeleton, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 18.0, h, white)
-        }
-        (NpcKind::HallowBoss, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(100.0);
-            (sheet_i, h, 100.0, h, white)
-        }
-        // W4-d36 census batch 0 portraits — the sheet's frame height
-        // (the vanilla strip / npcFrameCount) with the padded box width.
-        (NpcKind::ToxicSludge, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(28.0);
-            (sheet_i, h, 38.0, h, white)
-        }
-        (NpcKind::Penguin, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(34.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::PenguinBlack, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(34.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::GiantTortoise, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 8.0)
-                .unwrap_or(32.0);
-            (sheet_i, h, 50.0, h, white)
-        }
-        (NpcKind::IceTortoise, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 8.0)
-                .unwrap_or(32.0);
-            (sheet_i, h, 50.0, h, white)
-        }
-        // W4-d36 E4 portrait — the Wolf's sheet frame height (the vanilla
-        // strip: 155 = 13 rows, `Main.cs:67082`) with the padded box width
-        // (the b0 convention).
-        (NpcKind::Wolf, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(30.0);
-            (sheet_i, h, 50.0, h, white)
-        }
-        // W4-d36 E4b portrait — Frankenstein's sheet frame height (the
-        // vanilla strip: 162 = 15 rows, `Main.cs:67082`) with the padded
-        // box width (the b0 convention).
-        (NpcKind::Frankenstein, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // W4-d36 hover batch portraits — the sheet's frame height (the
-        // vanilla strips: 173 = 2 rows, 176 = 2, 205 = 3, `Main.cs:67082`)
-        // with the padded box width (the b0 convention).
-        (NpcKind::Crimera, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(30.0);
-            (sheet_i, h, 34.0, h, white)
-        }
-        (NpcKind::MossHornet, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(32.0);
-            (sheet_i, h, 38.0, h, white)
-        }
-        (NpcKind::Moth, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 3.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 44.0, h, white)
-        }
-        // W4-d36 E4 batch 2 portraits — the sheet's frame height (the
-        // vanilla strips: the 238 fold credit = 4 rows, 166 = 13,
-        // 167 = 15, `Main.cs:67082`) with the padded box width (the b0
-        // convention). The Black Recluse's entry carries the 238 net id,
-        // so its portrait samples the wall crawler's 4-row strip.
-        (NpcKind::BlackRecluse, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 4.0)
-                .unwrap_or(36.0);
-            (sheet_i, h, 40.0, h, white)
-        }
-        (NpcKind::SwampThing, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 13.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        (NpcKind::UndeadViking, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // W4-d36 E4 batch 3 portraits — the sheet's frame height (the
-        // vanilla strips: 168 = 12, 170/171/180 = 14, 181 = 16,
-        // `Main.cs:67082`) with the padded box width (the b0 convention).
-        (NpcKind::CorruptPenguin, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(34.0);
-            (sheet_i, h, 20.0, h, white)
-        }
-        (NpcKind::PigronCorruption | NpcKind::PigronHallow | NpcKind::PigronCrimson, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 14.0)
-                .unwrap_or(36.0);
-            (sheet_i, h, 48.0, h, white)
-        }
-        (NpcKind::FaceMonster, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(44.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // W4-d36 E4 batch 4 portraits — the sheet's frame height (the
-        // vanilla strips: 185 = 12, 197 = 15, 198 = 16, `Main.cs:67082`)
-        // with the padded box width (the b0 convention). The Lihzahrd
-        // entry carries the 198 net id (the 199 folded credit), so its
-        // portrait samples the visible form's 16-row strip; the crawler
-        // kind folds onto that entry (`entry_for_npc`).
-        (NpcKind::SnowFlinx, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 12.0)
-                .unwrap_or(28.0);
-            (sheet_i, h, 32.0, h, white)
-        }
-        (NpcKind::ArmoredViking, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        (NpcKind::Lihzahrd | NpcKind::LihzahrdCrawler, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // W4-d36 E4 batch 5 portraits — the sheet's frame height (the
-        // vanilla strips: 201/202 = 15, 203 = 16, 204 = 2, 206 = 20,
-        // `Main.cs:67104`) with the padded box width (the b0 convention).
-        (NpcKind::HeadacheSkeleton | NpcKind::MisassembledSkeleton, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 15.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        (NpcKind::PantlessSkeleton, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 16.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        (NpcKind::SpikedJungleSlime, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(18.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::IcyMerman, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 20.0)
-                .unwrap_or(40.0);
-            (sheet_i, h, 22.0, h, white)
-        }
-        // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
-        // Doc-sweep lane 36 — the ShimmerSlime's portrait rests the
-        // 2-frame strip's row height over the 24x18 box (the
-        // small-kinds shape).
-        (NpcKind::ShimmerSlime, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 2.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 32.0, h, white)
-        }
-    }
-}
-
-/// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
-/// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the
-/// stat rows (tier >= 2 — `Stat_HP`/`Stat_Attack`/`Stat_Defense`/
-/// `Stat_Knockback`/`Stat_Copper`), the kill progress and the drop lines
-/// (rates only from tier 4).
-fn draw_info_page(
-    r: &mut SpriteRenderer,
-    lookups: &Lookups,
-    screen: Vec2,
-    tracker: &tr_core::bestiary::WorldBestiary,
-    idx: usize,
-    mouse: Vec2,
-) {
-    let panel = panel_rect(screen);
-    let entry = &crate::bestiary::ENTRIES[idx];
-    let state = crate::bestiary::unlock_state_world(entry, tracker);
-    if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
-        // The portrait card left of the info (the pretty-portrait mode's
-        // 72 px card scaled up).
-        let size = 216.0;
-        let px = panel[0] + 24.0;
-        let py = panel[1] + 60.0;
-        let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
-        // The portrait card's inner container is `OverflowHidden` too
-        // (`UIBestiaryNPCEntryPortrait.cs:20-28`), and its icon draws with
-        // `isPortrait: true` (`:56`) — the `PortraitScale` /
-        // `PortraitPositionX-YOverride` arms of the offset table.
-        r.push_clip(inner);
-        if let Some(back) = lookups.ui_bestiary_slot_back {
-            push_whole(r, lookups, &back, inner, [1.0; 4]);
-        }
-        if state.known() {
-            draw_portrait(r, lookups, entry, inner, true);
-        } else if let Some(locked) = lookups.ui_bestiary_locked {
-            push_whole(r, lookups, &locked, inner, [0.15; 4]);
-        }
-        r.pop_clip();
-        if let Some(front) = lookups.ui_bestiary_slot_front {
-            push_whole(r, lookups, &front, inner, [1.0; 4]);
-        }
-    }
-    let tx = panel[0] + 264.0;
-    let mut ty = panel[1] + 60.0;
-    // The name — tier 1+ (`GetHoverText`'s `???` gate,
-    // `UnlockableNPCEntryIcon.cs:213-226`).
-    // `Lang.GetNPCNameValue(netId)` (`Lang.cs:175-178`) — the localized NPC
-    // name (the English column stays the fallback for a missing key — the
-    // shared `npc_name_or` seam, `task/W4-c23-lang-fsorder-npcnames`).
-    let shown_name = if state.known() {
-        crate::lang::npc_name_or(entry.net_id, entry.name)
-    } else {
-        "???".to_string()
-    };
-    text::hud_text(r, lookups, tx, ty, 1.2, [1.0, 0.9, 0.4, 1.0], &shown_name);
-    ty += 34.0;
-
-    // The stat rows — `NPCStatsReportInfoElement.ProvideUIElement`
-    // (`NPCStatsReportInfoElement.cs:57-128`): the block appears from tier 1
-    // (`== NotKnownAtAll_0` returns null, `:59-62`), but every value prints
-    // "???" until tier 2 (`:124-128`). The knockback column is the
-    // High/Med/Low/None label, not the raw resist (`:123`).
-    if state.known() {
-        let stats =
-            crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
-        let known = state >= UnlockState::CanShowStats;
-        let masked = |v: String| if known { v } else { "???".to_string() };
-        stat_row(
-            r,
-            lookups,
-            &mut ty,
-            tx,
-            lookups.ui_bestiary_stat_hp,
-            &masked(format!("{}", stats.hp)),
-        );
-        stat_row(
-            r,
-            lookups,
-            &mut ty,
-            tx,
-            lookups.ui_bestiary_stat_attack,
-            &masked(format!("{}", stats.damage)),
-        );
-        stat_row(
-            r,
-            lookups,
-            &mut ty,
-            tx,
-            lookups.ui_bestiary_stat_defense,
-            &masked(format!("{}", stats.defense)),
-        );
-        stat_row(
-            r,
-            lookups,
-            &mut ty,
-            tx,
-            lookups.ui_bestiary_stat_knockback,
-            &knockback_label(stats.kb, known),
-        );
-        stat_row(
-            r,
-            lookups,
-            &mut ty,
-            tx,
-            lookups.ui_bestiary_stat_copper,
-            &masked(format!("{}", stats.value as i64)),
-        );
-        ty += 10.0;
-    }
-
-    // The flavor text — `FlavorTextBestiaryInfoElement` (tier 2+,
-    // `FlavorTextBestiaryInfoElement.cs:20-23`), the wrapped 0.8-scale row
-    // in the (43, 56, 101) stat panel (`:24-33`); the panel grows with the
-    // wrapped text (`AddDynamicResize`, `:47-53`).
-    if let Some(flavor) = flavor_text(entry, state) {
-        let panel_w = 230.0 - 11.0; // `Width (-11, 1)` of the 230 px info page (`:26`, `UIBestiaryEntryInfoPage.cs:30`)
-        let lines = wrap_text(r, lookups, &flavor, 0.8, panel_w - 8.0);
-        let line_h = text::line_height(lookups) * 0.8;
-        let h = lines.len() as f32 * line_h + 8.0;
-        r.push_ui_sprite(
-            [tx, ty],
-            [panel_w, h],
-            r.white_uv(),
-            super::color::tint([43, 56, 101, 255]),
-        );
-        for (i, line) in lines.iter().enumerate() {
-            text::hud_text(r, lookups, tx + 4.0, ty + 4.0 + i as f32 * line_h, 0.8, [1.0; 4], line);
-        }
-        ty += h + 8.0;
-    }
-
-    // The kill counter — `NPCKillCounterInfoElement`
-    // (`NPCKillCounterInfoElement.cs:24-96`): the raw count (no "/needed" —
-    // the progress fraction is the port's own earlier stand-in) from the
-    // first kill, with the `BestiaryInfo.Slain` hover (`:90-96`).
-    let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
-    if let Some(count) = kill_counter_text(kills) {
-        text::hud_text(r, lookups, tx, ty, 0.85, [0.8, 0.85, 1.0, 1.0], &count);
-        if super::in_rect(mouse, [tx, ty, 60.0, 20.0]) {
-            super::tooltip::draw_mouse_text(
     let tx = content[0];
     match row {
         InfoRow::Nameplate => {
@@ -5575,29 +4424,6 @@ mod tests {
         // The inventory button's hover rect matches the vanilla constants.
         assert!(button_hit(Vec2::new(498.0, 278.0)));
         assert!(!button_hit(Vec2::new(490.0, 278.0)));
-    }
-
-    /// A `Lookups` with the full 174-slot `bestiary_npc_sheets` table
-    /// (`Lookups::default()` leaves it empty) — the exact runtime length, so
-    /// an index past the table's end panics the way the Solar Selenian arm's
-    /// `[174]` did (`BUG_REPORT.md` §15). The sheet sizes are a stand-in for
-    /// the content: `NPC_419`'s real 8-row strip.
-    fn full_bestiary_lookups() -> Lookups {
-        let mut lk = Lookups::default();
-        lk.atlas_size = (8192, 8192);
-        lk.bestiary_npc_sheets = crate::assets::BESTIARY_NPC_SHEET_IDS
-            .iter()
-            .map(|_| {
-                Some(tr_render::SheetRect {
-                    x: 0,
-                    y: 0,
-                    width: 22,
-                    height: 8 * 56,
-                    plain_frame: (0, 0),
-                })
-            })
-            .collect();
-        lk
     }
 
     #[test]
@@ -6416,7 +5242,7 @@ mod tests {
         let notes = bestiary_notes(&[Some("Expert only"), Some("  "), Some("Master only")]);
         assert_eq!(notes, "Expert only\nMaster only");
         // The reader: one white row per line, in order.
-        let rows = super::tooltip::bestiary_note_rows(Some(&notes));
+        let rows = crate::ui::tooltip::bestiary_note_rows(Some(&notes));
         assert_eq!(
             rows,
             vec![
@@ -6425,9 +5251,9 @@ mod tests {
             ]
         );
         // The empty/whitespace cache prints nothing (`:21335`).
-        assert!(super::tooltip::bestiary_note_rows(Some("")).is_empty());
-        assert!(super::tooltip::bestiary_note_rows(Some(" \n ")).is_empty());
-        assert!(super::tooltip::bestiary_note_rows(None).is_empty());
+        assert!(crate::ui::tooltip::bestiary_note_rows(Some("")).is_empty());
+        assert!(crate::ui::tooltip::bestiary_note_rows(Some(" \n ")).is_empty());
+        assert!(crate::ui::tooltip::bestiary_note_rows(None).is_empty());
         // The gate: hovered + unlocked shows, locked never does.
         assert!(info_item_shows_tooltip(true, false));
         assert!(!info_item_shows_tooltip(true, true));
@@ -6435,10 +5261,10 @@ mod tests {
         // The full pipeline through item_tooltip_lines: the notes ride
         // the context onto the tail (the last rows after the item's own).
         let d = crate::registry::get(23).expect("the gel row");
-        let lines = super::tooltip::item_tooltip_lines(
+        let lines = crate::ui::tooltip::item_tooltip_lines(
             23,
             d,
-            super::tooltip::TooltipContext {
+            crate::ui::tooltip::TooltipContext {
                 bestiary_notes: Some(&notes),
                 ..Default::default()
             },
@@ -6446,6 +5272,31 @@ mod tests {
         let tail: Vec<&str> = lines.iter().rev().take(2).map(|(s, _)| s.as_str()).collect();
         assert_eq!(tail, vec!["Master only", "Expert only"]);
     }
+}
+
+/// A `Lookups` with the full 174-slot `bestiary_npc_sheets` table
+/// (`Lookups::default()` leaves it empty) — the exact runtime length, so
+/// an index past the table's end panics the way the Solar Selenian arm's
+/// `[174]` did (`BUG_REPORT.md` §15). The sheet sizes are a stand-in for
+/// the content: `NPC_419`'s real 8-row strip. Module-level (not inside
+/// `tests`) so the portrait-tail witnesses below share it.
+#[cfg(test)]
+fn full_bestiary_lookups() -> Lookups {
+    let mut lk = Lookups::default();
+    lk.atlas_size = (8192, 8192);
+    lk.bestiary_npc_sheets = crate::assets::BESTIARY_NPC_SHEET_IDS
+        .iter()
+        .map(|_| {
+            Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: 22,
+                height: 8 * 56,
+                plain_frame: (0, 0),
+            })
+        })
+        .collect();
+    lk
 }
 
 /// `Utils.PrettifyPercentDisplay` (`Utils.cs:1105-1109`): the percent string
@@ -6471,6 +5322,7 @@ fn trim_percent(s: &str) -> String {
         .trim_end_matches(['0', '%', ' '])
         .trim_end_matches(['.', ' ']);
     format!("{}%", trimmed.trim_start_matches(['0', ' ']))
+}
 
 /// The entry index under the cursor (the grid's per-cell centre placement
 /// simplifies to a fixed lattice — the cards are `HAlign/VAlign = 0.5` with
@@ -6669,4 +5521,3 @@ fn stat_row(
     }
 
 
-}

@@ -1055,9 +1055,9 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
-                equip_tint(context, back),
-                equip_tint(context, INVENTORY_BACK),
+                // ONE tint channel: the loadout palette over the row's
+                // background (the shown-but-locked dim is the `back` local).
+                equip_tint(context, back, current_loadout, loadout_flash),
                 pulse,
                 None,
                 idx as i32,
@@ -1137,9 +1137,9 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
-                equip_tint(context, back),
-                equip_tint(context, INVENTORY_BACK),
+                // ONE tint channel: the loadout palette over the row's
+                // background (the shown-but-locked dim is the `back` local).
+                equip_tint(context, back, current_loadout, loadout_flash),
                 pulse,
                 None,
                 idx as i32,
@@ -1190,9 +1190,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(12, INVENTORY_BACK, current_loadout, loadout_flash),
-                equip_tint(12, back),
-                equip_tint(12, INVENTORY_BACK),
+                equip_tint(12, back, current_loadout, loadout_flash),
                 pulse,
                 None,
                 idx as i32,

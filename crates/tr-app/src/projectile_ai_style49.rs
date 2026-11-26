@@ -120,7 +120,7 @@ pub fn bunny_step(p: &mut Projectile, rng: &mut dyn DropRng) {
     // `:28256-28260` — the fuse hiss re-arm.
     if p.sound_delay == 0 {
         p.sound_delay = 3000;
-        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     if p.ai[0] >= 0.0 {
         // `:28263-28271` — the facing latch.
@@ -230,7 +230,7 @@ pub fn bunny_kill(p: &mut Projectile, rng: &mut dyn DropRng) -> BunnyKill {
     let mut out = BunnyKill::default();
     if p.ai[0] != -3.0 {
         // `:75753` — the int-overload NPCHit thud (style 1 default).
-        p.wants_sound = Some((4, 1, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((4, 1, p.pos.x, p.pos.y, 0.0, 1.0));
         // `:75754-75757` — gore 76 + 77: the call-site velocity pair
         // (X then Y, `Next(-20,21) * 0.2`), then the internal kicks.
         for _ in 0..2 {
@@ -239,7 +239,7 @@ pub fn bunny_kill(p: &mut Projectile, rng: &mut dyn DropRng) -> BunnyKill {
             gore_kicks(rng);
         }
         // `:75758` — the explosion blast (the last cue wins the slot).
-        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
         // `:75759-75771` — the dust loops: bodies + internals are the g65
         // drain's 281 arm (research/361 §3, the g65-Kill-309 compose); the
         // loops roll no explicit draws, so nothing stays on this stream.

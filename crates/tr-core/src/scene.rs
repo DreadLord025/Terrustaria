@@ -3331,30 +3331,49 @@ mod tests {
 
     /// W4-c40 — `Sandstorm.cs:58-59`: the start-delay denominator is
     /// `21600 * 3` pre-hardmode and `21600 * 2` in hardmode. The roll slot
-    /// COUNT is identical (one `Next(num)` per day-rate tick + the one
-    /// `Next(18000)` intention roll); only the denominator changes, so the
-    /// hardmode storm starts roughly 1.5x as often per tick. Witnessed by
-    /// a forced-boundary roll: a day rate that guarantees a hit under BOTH
-    /// denominators starts both, and the resulting durations come from the
-    /// SAME stream position (the start roll's slot index is unchanged).
+    /// COUNT and position are identical (one `Next(num)` per day-rate tick,
+    /// before the `Next(18000)` intention roll); only the denominator
+    /// changes, so a roll that is 0 modulo 43200 but not modulo 64800 starts
+    /// the hardmode storm and misses the classic one.
+    ///
+    /// RE-DERIVED (W4-c40 merge): the old witness assumed `day_rate = 70000`
+    /// "guarantees" a start — false (≈66 % for `Next(64800)`), and seed 7
+    /// misses. The seed below is searched for the split draw, so the
+    /// assertion is about the denominator, not about luck.
     #[test]
     fn w4_c40_the_start_denominator_halves_in_hardmode() {
-        // Classic: `Next(64800)` per tick. Hardmode: `Next(43200)`.
-        // A day rate above both maxima forces a start either way; the
-        // pre-start roll counts differ, so the duration draws differ —
-        // but each machine stays internally deterministic per seed.
-        for hard in [false, true] {
-            let mut a = Sandstorm::new(7);
-            a.update_time(70000, 0.8, hard);
-            assert!(a.happening, "hard={hard}");
-            let mut b = Sandstorm::new(7);
-            b.update_time(70000, 0.8, hard);
-            assert_eq!(a.time_left, b.time_left, "hard={hard} deterministic");
-            assert_eq!(a.severity.to_bits(), b.severity.to_bits());
+        // Multiples of 43200 with an odd multiplier hit the hardmode
+        // denominator (43200) but leave 43200 as the remainder of 64800.
+        let mut witness = None;
+        for seed in 0..2_000_000u64 {
+            let mut classic = FastRandom::new(seed);
+            let classic_miss = classic.next_range(0, 64800) != 0;
+            let mut hard = FastRandom::new(seed);
+            let hard_hit = hard.next_range(0, 43200) == 0;
+            if classic_miss && hard_hit {
+                witness = Some(seed);
+                break;
+            }
         }
-        // The denominator itself: with wind sufficient and NOT happening,
-        // the C# draws `Next(21600 * (hardMode ? 2 : 3))`. Pin the two
-        // values the port must use (the literals of `:58-59`).
+        let seed = witness.expect("a seed splitting Next(64800) from Next(43200)");
+        let mut a = Sandstorm::new(seed);
+        a.update_time(1, 0.8, false);
+        assert!(!a.happening, "classic Next(64800) misses at seed {seed}");
+        let mut b = Sandstorm::new(seed);
+        b.update_time(1, 0.8, true);
+        assert!(b.happening, "hardmode Next(43200) hits at seed {seed}");
+
+        // Each machine stays internally deterministic per seed.
+        for hard in [false, true] {
+            let mut x = Sandstorm::new(7);
+            x.update_time(70000, 0.8, hard);
+            let mut y = Sandstorm::new(7);
+            y.update_time(70000, 0.8, hard);
+            assert_eq!(x.happening, y.happening, "hard={hard} deterministic");
+            assert_eq!(x.time_left, y.time_left, "hard={hard} deterministic");
+            assert_eq!(x.severity.to_bits(), y.severity.to_bits());
+        }
+        // The denominator itself: the two literals of `:58-59`.
         assert_eq!(21600 * 3, 64800);
         assert_eq!(21600 * 2, 43200);
     }
@@ -4710,14 +4729,22 @@ mod w4_d70_moon_lord_shader_tests {
     }
 
     /// `:44-68`: a deathray eye (`ai[0] == 4`) at the attack-phase peak lerps
-    /// the anchor toward itself. `ai[1] = 90` lands in attack 1 (duration 90,
-    /// elapsed 90): rise `Remap(90, 0, 180, 0, 1) = 0.5`, fall
-    /// `Remap(90, 340, 360, 1, 0) = 1` → weight 0.5.
+    /// the anchor toward itself. `ai[1] = 90` lands in the SECOND attack row
+    /// of `NPC.MoonLordAttacksArray2[1] = { 53, 90, … }`: the walk consumes
+    /// the leading 53, so the elapsed tick is `num6 = 90 - 53 = 37`. Rise
+    /// `Remap(37, 0, 180, 0, 1) = 37/180`, fall `Remap(37, 340, 360, 1, 0)`
+    /// clamps to 1 → weight 37/180.
+    ///
+    /// RE-DERIVED (W4-d70 merge): the historical name says "half weight",
+    /// but the old witness read `ai[1]` itself as the elapsed tick and
+    /// expected 500. The duration row's 53-tick lead-in makes it
+    /// `1000 * 37/180 = 205.5556`.
     #[test]
     fn a_deathray_eye_at_half_weight_pulls_the_anchor_halfway() {
         let npcs = [core([0.0, 0.0], 0.0, 0.0), eye([1000.0, 0.0], 4.0, 90.0)];
         let t = moon_lord_target_position(&npcs);
-        assert!((t[0] - 500.0).abs() < 1e-3, "{t:?}");
+        let want = 1000.0 * 37.0 / 180.0;
+        assert!((t[0] - want).abs() < 1e-3, "{t:?} want {want}");
         assert_eq!(t[1], 0.0);
     }
 

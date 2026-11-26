@@ -52,9 +52,6 @@ pub struct ShopFlags {
     /// Glowstick row + `:2345-2358`'s Party Girl gift block) — the live
     /// scheduler state (`world_events::party_is_up`), W4-f41 final sweep.
     pub party_up: bool,
-    /// `LanternNight.LanternsUp` (`Chest.cs:2309-2312`'s Release Lantern
-    /// row) — the live scheduler state (`world_events::lanterns_up`).
-    pub lanterns_up: bool,
     pub downed_mech_any: bool,
     pub downed_mech_1: bool,
     pub downed_mech_2: bool,
@@ -79,8 +76,6 @@ pub struct ShopFlags {
     /// `NPC.downedGolemBoss` (`Chest.cs:2151`/`:2195`) — the Steampunk
     /// Wings and the jungle Lihzahrd Furnace.
     pub downed_golem: bool,
-    /// `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2186`).
-    pub zone_graveyard: bool,
     /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
     pub zone_sky_height: bool,
     /// `Main.player[Main.myPlayer].ZoneHallow` (`Chest.cs:2220`).
@@ -98,28 +93,13 @@ pub struct ShopFlags {
     /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`) — the Party Girl's
     /// 3369 row. The port has no town Pirate kind yet (constants-off).
     pub pirate_present: bool,
-    /// W4-d123: `NPC.downedGolemBoss` (`Chest.cs:2322`) — the Party Girl's
-    /// 3546 row.
-    pub downed_golem: bool,
     /// W4-d123: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) — the
     /// Party Girl's party block (`Chest.cs:2345-2358`).
     pub party_is_up: bool,
-    /// W4-d123: `Main.eclipse` — the Cyborg shop's event gates
-    /// (`Chest.cs:2368-2381`).
-    pub eclipse: bool,
-    /// W4-d123: `NPC.downedPlantBoss` — the Witch Doctor's and Painter's
-    /// Plantera gates (`Chest.cs:2630`/`:2475`).
-    pub downed_plant_boss: bool,
-    /// W4-d123: `NPC.AnyNPCs(124)` — the Mechanic's presence (the Painter's
-    /// 5344 row, `Chest.cs:2475`).
     pub mechanic_present: bool,
     /// W4-d123: `NPC.AnyNPCs(108)` — the Wizard's presence (the Witch
     /// Doctor's 2999 row, `Chest.cs:2618`).
     pub wizard_present: bool,
-    /// W4-d123: `Main.remixWorld` (`World.seeds`' REMIX bit) — the Skeleton
-    /// Merchant's phase-2 split (`Chest.cs:2822-2831`) and the pylon tail's
-    /// remix arms (`:3476-3533`).
-    pub remix_world: bool,
     /// W4-d123: `Main.time` — the Skeleton Merchant's 3004/8 clock row
     /// (`Chest.cs:2887`'s `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0`).
     pub world_time: f64,
@@ -134,10 +114,8 @@ pub struct ShopFlags {
     /// `ZoneUnderworldHeight`).
     pub zone_crimson: bool,
     pub zone_corrupt: bool,
-    pub zone_hallow: bool,
     pub zone_desert: bool,
     pub zone_dungeon: bool,
-    pub zone_sky_height: bool,
     pub zone_glowshroom: bool,
     pub zone_underworld_height: bool,
     /// W4-d123: `Main.IsItStorming` (`Chest.cs:2589`'s Decor 5251 row).
@@ -189,19 +167,9 @@ pub struct ShopFlags {
     /// Princess's anniversary block (`Chest.cs:3436-3468`). The port's
     /// `getGoodWorld` is the FOR_THE_WORTHY seed.
     pub anniversary_not_ftw: bool,
-    /// `Main.player[myPlayer].ZoneDesert` — the anniversary block's
-    /// Sandstorm-in-a-Bottle row (`Chest.cs:3441`).
-    pub zone_desert: bool,
     /// `NPC.downedPirates` — the anniversary block's pirate-gated moon-phase
     /// rows (`Chest.cs:3449`).
     pub downed_pirates: bool,
-    /// `Main.player[Main.myPlayer].ateArtisanBread` (`Chest.cs:2958`):
-    /// the Skeleton Merchant's Artisan Loaf row (5326) hides once the
-    /// local player ate one — the permanent unlock (W4-g90).
-    pub ate_artisan_bread: bool,
-    /// `Main.remixWorld` (`Chest.cs:2822-2831`): the Skeleton Merchant's
-    /// phase-2 row swaps the Glowstick (3069) for the Magic Mirror (517).
-    pub remix_world: bool,
     /// `Main.time` (`Chest.cs:2887`): the Skeleton Merchant's early-hours
     /// gate — `((time % 60.0) * 60.0) * 6.0 <= 10800.0` (verbatim; the
     /// first 30 ticks of every minute) sells the Ale (3004) over the Torch.
@@ -215,21 +183,11 @@ pub struct ShopFlags {
     /// sticky windy-day flag the port's `Wind.happy_windy_day` carries) —
     /// the Pin Wheel 4074 (`Chest.cs:1422`'s `dayTime &&` conjunct).
     pub happy_windy_day: bool,
-    /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`)
-    /// — the Party Bundle 5643 (`Chest.cs:1435`).
-    pub party_is_up: bool,
     /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver` (`WorldGen.cs:3289`)
     /// — the world's rolled silver-tier ore id (9 = Silver, 168 = Tungsten;
     /// `WorldGen.cs:11290`); the Arms Dealer's bullet split compares it to
     /// 168 (`Chest.cs:1489`). Fed from `World.ore_tiers.silver`.
     pub silver_ore_tier: i32,
-    /// W4-d122 shop 3: `Main.player[Main.myPlayer].ZoneGlowshroom`
-    /// (`Chest.cs:1651`) — the Mushroom set 194 under the else-if.
-    pub zone_glowshroom: bool,
-    /// W4-d122 shop 4: `NPC.downedPirates` (`Chest.cs:1766`) — the
-    /// Demolitionist's Holy Hand Grenade 937 triple conjunct. Fed from
-    /// `World.downed_pirates`.
-    pub downed_pirates: bool,
     /// W4-d122 shop 5: `NPC.downedClown` (`Chest.cs:1849`) — the port
     /// persists no clown latch, so the caller fills it (false until the
     /// hardmode blood-moon clown kill lands a bit).
@@ -257,10 +215,6 @@ pub struct ShopFlags {
     /// (`Chest.cs:3304`) — the Solar Monolith 4677. Fed from
     /// `World.downed_tower_solar`.
     pub downed_tower_solar: bool,
-    /// W4-d122 remainder census, shop 24: `Main.player[Main.myPlayer].ZoneDesert`
-    /// (`Chest.cs:3441`) — the anniversary block's Magic Carpet 857. The
-    /// scene metrics feed it at the open seam.
-    pub zone_desert: bool,
 }
 
 impl Default for ShopFlags {
@@ -284,7 +238,6 @@ impl Default for ShopFlags {
             coins_over_gold: false,
             party_girl_present: false,
             party_up: false,
-            lanterns_up: false,
             downed_mech_any: false,
             downed_mech_1: false,
             downed_mech_2: false,
@@ -297,28 +250,21 @@ impl Default for ShopFlags {
             eclipse: false,
             downed_boss1: false,
             downed_golem: false,
-            zone_graveyard: false,
             zone_sky_height: false,
             zone_hallow: false,
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
             pirate_present: false,
-            downed_golem: false,
             party_is_up: false,
-            eclipse: false,
-            downed_plant_boss: false,
             mechanic_present: false,
             wizard_present: false,
-            remix_world: false,
             world_time: 0.0,
             ate_artisan_bread: false,
             zone_crimson: false,
             zone_corrupt: false,
-            zone_hallow: false,
             zone_desert: false,
             zone_dungeon: false,
-            zone_sky_height: false,
             zone_glowshroom: false,
             zone_underworld_height: false,
             storming: false,
@@ -335,18 +281,12 @@ impl Default for ShopFlags {
             halloween: false,
             xmas: false,
             anniversary_not_ftw: false,
-            zone_desert: false,
             downed_pirates: false,
-            ate_artisan_bread: false,
-            remix_world: false,
             time: 0.0,
             not_the_bees: false,
             happy_windy_day: false,
-            party_is_up: false,
             // `SavedOreTiers::new`'s static default (`WorldGen.cs:3303`).
             silver_ore_tier: 9,
-            zone_glowshroom: false,
-            downed_pirates: false,
             downed_clown: false,
             downed_cultist: false,
             downed_frost: false,
@@ -354,7 +294,6 @@ impl Default for ShopFlags {
             angler_present: false,
             fairy_torch_available: false,
             downed_tower_solar: false,
-            zone_desert: false,
         }
     }
 }
@@ -404,21 +343,16 @@ impl ShopFlags {
             anniversary_not_ftw: world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
                 && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
             downed_pirates: world.downed_pirates,
-            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             time: world.time,
-            downed_plant_boss: world.downed_plant_boss,
             // `WorldGen.cs:11118-11121`: the three statics ride the seed
             // options — the port's persisted `World.seeds` bits.
-            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             anniversary_world: world
                 .seeds
                 .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
             get_good_world: world
                 .seeds
                 .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
-            eclipse: world.eclipse,
             downed_boss1: world.downed_eoc,
-            downed_golem: world.downed_golem,
             // W4-d122 shop 1: `Main.notTheBeesWorld` rides the seed options
             // (`WorldGen.cs:11116`) — the port's persisted `World.seeds` bit.
             not_the_bees: world.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
@@ -426,7 +360,6 @@ impl ShopFlags {
             // `:11290`) — the port's persisted `ore_tiers`.
             silver_ore_tier: world.ore_tiers.silver,
             // W4-d122 shop 4: `NPC.downedPirates` — the world's latch.
-            downed_pirates: world.downed_pirates,
             // W4-d122 shop 5: the Clothier's cultist/frost latches.
             downed_cultist: world.downed_ancient_cultist,
             downed_frost: world.downed_frost,
@@ -574,9 +507,6 @@ pub enum StockWhen {
     /// `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party Girl's
     /// Release Lantern 4702 row.
     LanternsUp,
-    /// W4-d123: `Main.dayTime` (`Chest.cs:2285`'s Party Girl 1449 row) —
-    /// the port's `night` is `!Main.dayTime`, so Day is its negation.
-    Day,
     /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`'s Party Girl 3369 row)
     /// — the Pirate's presence; the port has no town Pirate kind yet, so
     /// the flag stays false (constants-off, recorded in ANALYSIS).
@@ -787,9 +717,6 @@ pub enum StockWhen {
     /// `NPC.downedBoss1 && NPC.downedBoss2 && NPC.downedBoss3`
     /// (`Chest.cs:2174`) — the Steampunk Boiler 2203.
     DownedAllPreHardBosses,
-    /// `WorldGen.crimson` (`Chest.cs:2178`) — the Flesh Cloning Vaat 2193
-    /// over the Lesion Station 4142 split.
-    CrimsonWorld,
     /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
     ZoneSkyHeight,
     /// `NPC.downedMoonlord` (`Chest.cs:2228`) — the bare Moon Lord flag
@@ -799,9 +726,6 @@ pub enum StockWhen {
     /// cluster rockets and the HiTek/NightVision pair; no hardmode
     /// conjunct in the C#, unlike the Stylist's `DownedMartians`).
     DownedMartiansBare,
-    /// `Main.halloween` (`Chest.cs:2240`) — constants-off: the port has no
-    /// season system yet (the Steampunk Goggles 1742 stay hidden).
-    Halloween,
     /// `Main.moonPhase >= 4` (`Chest.cs:2141`'s first conjunct) — the
     /// Steampunker's Jetpack-vs-outfit split reads it with HardMode.
     MoonPhaseAtLeast(u32),
@@ -3250,7 +3174,6 @@ fn stock_gate(
             StockWhen::PartyUp => flags.party_up,
             StockWhen::LanternsUp => flags.lanterns_up,
             // W4-d123: the Party Girl's second-half gates (`Chest.cs:2285-2358`).
-            StockWhen::Day => !flags.night,
             StockWhen::PiratePresent => flags.pirate_present,
             StockWhen::DownedGolem => flags.downed_golem,
             StockWhen::PartyIsUp => flags.party_is_up,
@@ -3368,8 +3291,6 @@ fn stock_gate(
                     && flags.downed_pirates
                     && moon_phase / 2 == pair as u32
             }
-        })
-        .collect()
             // The Skeleton Merchant's gates (`Chest.cs:2811-2962`, W4-g90).
             StockWhen::MoonPhaseEq(n) => moon_phase == n as u32,
             StockWhen::MoonPhaseEqNotRemix(n) => moon_phase == n as u32 && !flags.remix_world,
@@ -3409,13 +3330,9 @@ fn stock_gate(
             StockWhen::DownedAllPreHardBosses => {
                 flags.downed_boss1 && flags.downed_boss2 && flags.downed_boss3
             }
-            StockWhen::CrimsonWorld => flags.crimson_world,
             StockWhen::ZoneSkyHeight => flags.zone_sky_height,
             StockWhen::DownedMoonlord => flags.downed_moon_lord,
             StockWhen::DownedMartiansBare => flags.downed_martians,
-            // The season system is unported — the halloween rows stay
-            // constants-off (the recorded deviation).
-            StockWhen::Halloween => false,
             StockWhen::MoonPhaseAtLeast(n) => moon_phase >= n,
             // W4-d122 shop 1 (`Chest.cs:1387` verbatim).
             StockWhen::NotTheBeesNotRemix => flags.not_the_bees && !flags.remix_world,
@@ -3696,6 +3613,8 @@ pub fn hair_restyle_cost(
     // banker's round of the /10000f, then ×10000.
     let adjusted = (num11 as f32 * mood) as i32;
     round_half_to_even(adjusted as f32 / 10000.0) as i64 * 10000
+}
+
 /// The price row's DISPLAY stack (`ItemSlot.EstimateDisplayStack`,
 /// `ItemSlot.cs:3150-3162`): `buyOnce ? 1 : stack`, × the bulk-buy amount
 /// while Shift is in use on a bulkable row. The bulk-craft arm (`:3157-3160`)
@@ -4254,6 +4173,8 @@ mod tests {
         assert_eq!(value(3736), 100);
         assert_eq!(value(3743), 1000);
         assert_eq!(value(3747), 200000, "the monolith, 20 gold (:33186)");
+    }
+
     /// W4-g90 — the Skeleton Merchant's Artisan Loaf row (`Chest.cs:2958-
     /// 2961`): the 5326 appears only in moon phases 3..=5 while the local
     /// player has NOT eaten one; the permanent flag hides it forever after.
@@ -4417,6 +4338,7 @@ mod tests {
     /// HasItem(3107) tail. Written, not run (code-only).
     #[test]
     fn the_merchant_full_stock_pins_the_num_order_and_every_gate() {
+        let mut w = World::new("t".into(), 200, 200);
         // Classic day, phase 0, no carried items: the always rows only.
         let base = resolve_stock(1, &ShopFlags::default(), &[]);
         assert_eq!(
@@ -4512,6 +4434,14 @@ mod tests {
         let lucky = setup_travel_shop(&w, 0.3, &mut UnifiedRandom::new(7));
         let lucky_rows = lucky.iter().filter(|v| **v != 0).count();
         assert_eq!(lucky_rows, 7, "seed 7's luck rolls all miss");
+        // The day twin: the Pin Wheel enters at its num slot (`:1422`).
+        let day = ShopFlags {
+            night: false,
+            ..full
+        };
+        let d = resolve_stock(1, &day, &[930, 3107]);
+        let i33 = d.iter().position(|v| *v == 33).unwrap();
+        assert_eq!(d[i33 + 1], 4074);
     }
 
     /// W4-a6 — `Chest.cs:1303-1306`: the Peddler's Satchel's permanent
@@ -4562,14 +4492,6 @@ mod tests {
         let mut twin2 = UnifiedRandom::new(42);
         assert_eq!(hit, twin2.next_max(4), "the base roll is one Next(range)");
         assert_eq!(base, twin2, "exactly one draw on the base path");
-        // The day twin: the Pin Wheel enters at its num slot (`:1422`).
-        let day = ShopFlags {
-            night: false,
-            ..full
-        };
-        let d = resolve_stock(1, &day, &[930, 3107]);
-        let i33 = d.iter().position(|v| *v == 33).unwrap();
-        assert_eq!(d[i33 + 1], 4074);
     }
 
     /// W4-d122 shop 2 — the Arms Dealer (`Chest.cs:1484-1567`, the registry
@@ -5074,7 +4996,7 @@ mod tests {
     /// 0. Exactly three draws (twin equality), and the pre-P2 shape (one
     /// draw returning the narrowed range) could never land this hit.
     #[test]
-    fn the_roll_luck_hit_is_the_outer_zero_of_two_draws() {
+    fn the_roll_luck_hit_is_the_outer_zero_of_two_draws_union_b() {
         let mut rng = UnifiedRandom::new(42);
         assert_eq!(roll_luck(0.9, 4, &mut rng), 0, "the luck hit lands");
         let mut twin = UnifiedRandom::new(42);
@@ -5604,6 +5526,8 @@ mod town5_tests {
         assert!(resolve_stock_moon(3, &shroom, &[], 0).contains(&194));
         // The unknown index stays empty.
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+    }
+
     /// W4-d122 shop 9 — Santa Claus (`Chest.cs:2091-2111`, the registry
     /// `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496`): the six
     /// head rows then the 1873..=1905 decoration walk, EVERY row

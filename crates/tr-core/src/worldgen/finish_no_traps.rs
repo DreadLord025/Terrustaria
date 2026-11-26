@@ -453,7 +453,10 @@ mod tests {
         put(&mut w, 110, 100, 665);
         put(&mut w, 120, 100, 1);
         assert!(!solid_tile_window(&w, 100, 100), "138 is windowed out");
-        assert!(solid_tile_window(&w, 110, 100), "665 is not in the window list");
+        // 665 is NOT in the nine-kind window, but it is also not `tileSolid`
+        // at all (frame-important life-crystal boulder, `Main.cs:7434`): it
+        // never reads solid in the first place.
+        assert!(!solid_tile_window(&w, 110, 100), "665 is not a solid tile");
         assert!(solid_tile_window(&w, 120, 100));
     }
 
@@ -486,8 +489,8 @@ mod tests {
     fn a_statue_near_a_wire_grows_the_l_run() {
         let mut w = air(300, 300);
         put(&mut w, 100, 100, TILE_STATUE);
-        for x in 75..=125 {
-            for y in 75..=125 {
+        for x in 75i32..=125 {
+            for y in 75i32..=125 {
                 if (x - 100).abs() > 1 || (y - 100).abs() > 1 {
                     set_wire(&mut w, x, y);
                 }

@@ -190,7 +190,6 @@ impl Projectile {
     /// `:20435` skip list). W4-g64: `dust`/`dust_ctx` carry the live pool
     /// through the `update_dust` seam (the d13 signature + the two params).
     #[allow(clippy::too_many_arguments)]
-    /// `:20435` skip list).
     pub(crate) fn ai_pets_style124(
         &mut self,
         world: &World,
@@ -427,9 +426,6 @@ impl Projectile {
                     // `:35299-35324` — the wrap is `projFrames * 2`. NO dust
                     // in the C# flight arm (the ground machine below draws
                     // only the Next(150) rest roll).
-                }
-                GLOMMER_PET => {
-                    // `:35299-35324` — the wrap is `projFrames * 2`.
                     let target = self.vel.x * 0.05;
                     self.rot = flight_rotation(self.rot, target);
                     self.frame_counter += 1;
@@ -532,10 +528,6 @@ impl Projectile {
                         // `projectile_ai026_c` helper; the (num904 < 4) &
                         // flag67 conjunction is the C#'s non-short-circuit
                         // `&` — both operands always evaluated).
-                    // `:35462-35565` — the ground-bounce machine.
-                    self.rot = idle_rotation(self.rot);
-                    if self.vel.length() <= 0.01 {
-                        // `:35479-35497` — the 4-air-cells + 1-solid probe.
                         let mut flag66 = true;
                         let num901 = center.x as i32 / 16;
                         let mut num902 = center.y as i32 / 16;
@@ -787,7 +779,6 @@ impl Projectile {
 
 #[cfg(test)]
 mod w4_g64_style124_tests {
-mod w4_d13_style124_tests {
     use super::*;
     use crate::projectile::{STYLE124_PETS, proj_data};
     use tr_core::tile::FLAG_ACTIVE;
@@ -816,8 +807,6 @@ mod w4_d13_style124_tests {
 
     /// A draw-recording `Main.rand` stand-in (the d13 `CensusRng` shape):
     /// the census proves count AND order; every range draw returns its min.
-    /// A draw-recording `Main.rand` stand-in (the `CensusRng` shape): the
-    /// census proves count AND order; every range draw returns its min.
     struct CensusRng {
         ranges: Vec<(i32, i32)>,
         floats: usize,
@@ -844,12 +833,6 @@ mod w4_d13_style124_tests {
     #[test]
     fn w4_g64_the_rowed_124_pets_carry_the_csharp_set_defaults() {
         for kind in [FAIRY_QUEEN_PET, ICE_QUEEN_PET, GLOMMER_PET] {
-    /// The seven rows' `SetDefaults` slice (`Projectile.cs:6977-6989`,
-    /// `:8461-8473`, `:8508-8520`, `:8553-8565`, `:8576-8588`, `:9034-9046`)
-    /// + the frame sheets (`Main.cs:8500/8670/8676/8683-8684/8686/8697`).
-    #[test]
-    fn w4_d13_the_seven_rows_carry_the_csharp_set_defaults() {
-        for kind in STYLE124_PETS {
             let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
             assert_eq!((d.w, d.h), (20.0, 20.0), "kind {kind}");
             assert_eq!(d.ai_style, 124, "kind {kind}");
@@ -865,17 +848,6 @@ mod w4_d13_style124_tests {
         }
         // The full seven-kind ladder set is named (d13's rows complete it).
         assert_eq!(STYLE124_PETS.len(), 7);
-        for (kind, frames) in [
-            (SUSPICIOUS_TENTACLE, 4),
-            (EOC_PET, 20),
-            (TWINS_PET, 36),
-            (FAIRY_QUEEN_PET, 6),
-            (PUMPKING_PET, 16),
-            (ICE_QUEEN_PET, 16),
-            (GLOMMER_PET, 12),
-        ] {
-            assert_eq!(proj_frames(kind), frames, "kind {kind}'s sheet");
-        }
     }
 
     /// `:34974-35006` — the dead-owner kill and the buff-flag keep-alive pin.
@@ -884,9 +856,6 @@ mod w4_d13_style124_tests {
         let w = world();
         let (mut sd, sc) = scratch(&w);
         for kind in [FAIRY_QUEEN_PET, ICE_QUEEN_PET, GLOMMER_PET] {
-    fn w4_d13_the_keep_alive_pins_ride_pet_flags() {
-        let w = world();
-        for kind in STYLE124_PETS {
             let mut pl = player(&w);
             pl.pet_flags[kind as usize] = true;
             let mut p = pet(kind, Vec2::new(pl.x + 30.0, pl.y - 20.0));
@@ -897,11 +866,6 @@ mod w4_d13_style124_tests {
             pl.dead = true;
             p.time_left = 500;
             p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
-            p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
-            assert_eq!(p.time_left, 2, "kind {kind}: the pin");
-            pl.dead = true;
-            p.time_left = 500;
-            p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
             assert!(!p.active, "kind {kind}: the dead-owner kill");
             assert_eq!(p.time_left, 0, "kind {kind}: Kill zeroes");
         }
@@ -915,101 +879,6 @@ mod w4_d13_style124_tests {
     fn w4_g64_the_957_ground_probe_splits_grounded_and_airborne() {
         let mut w = world();
         let (mut sd, sc) = scratch(&w);
-    /// `:35092-35115` — the >1000 px teleport snaps to `player.Center +
-    /// offset`; a near pet takes the 0.1 pull toward the spot.
-    #[test]
-    fn w4_d13_the_far_pet_teleports_home_then_pulls() {
-        let w = world();
-        let mut pl = player(&w);
-        pl.x = 512.0;
-        pl.y = 512.0;
-        let (pcx, pcy) = pl.center();
-        // The 650 spot: facing 1 → (+30, −20) off the centre.
-        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx + 2000.0, pcy));
-        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
-        // The scan gate draws Next(15) → 0, then the window is off-screen
-        // (the PRE-teleport centre is 2000 px away > 1280), so no per-tile
-        // draws follow; the idle tail draws nothing (no ore, no NPC).
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
-        let home = Vec2::new(pcx + 30.0, pcy - 20.0);
-        let center = Vec2::new(p.pos.x + 10.0, p.pos.y + 10.0);
-        assert_eq!(center, home, "the teleport snaps to Center + offset");
-        assert_eq!(p.vel, Vec2::ZERO, "the snap leaves zero delta");
-        // The scan reads the POST-teleport centre (36 px off the owner, on
-        // screen): the gate + the full window, no ore → no point-state draw.
-        assert_eq!(rng.ranges.len(), 1 + 35 * 35);
-        assert_eq!(rng.ranges[0], (0, 15));
-        assert!(rng.ranges[1..].iter().all(|&r| r == (0, 8)));
-        // A near pet (100 px off the spot) takes the 0.1 pull.
-        let mut q = pet(SUSPICIOUS_TENTACLE, home + Vec2::new(100.0, 0.0) - Vec2::new(10.0, 10.0));
-        let mut rng2 = CensusRng { ranges: Vec::new(), floats: 0 };
-        q.ai_pets_style124(&w, &[], Some(&pl), &mut rng2, 1280.0);
-        assert_eq!(q.vel, Vec2::new(-10.0, 0.0), "the 0.1 pull toward the spot");
-    }
-
-    /// `:35571-35609` — the ore scan's RNG census: the Next(15) gate, then
-    /// ONE Next(8) per tile of the 35×35 window; a spelunkable ore inside
-    /// the radius arms `ai[0] = 1` and the point angle.
-    #[test]
-    fn w4_d13_the_650_scan_draws_per_tile_and_points_at_ore() {
-        let mut w = world();
-        let mut pl = player(&w);
-        // Centre the player mid-world so the clamp is a no-op.
-        pl.x = 512.0;
-        pl.y = 512.0;
-        let (pcx, pcy) = pl.center();
-        // The pet sits on the owner (the scan's distance gate passes).
-        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
-        // A copper ore (kind 7, `Main.cs:9421`) two tiles right of centre.
-        let ore_x = (pcx as i32 / 16) + 2;
-        let ore_y = pcy as i32 / 16;
-        let t = w.tile_mut(ore_x, ore_y).unwrap();
-        t.kind = 7;
-        t.flags |= FLAG_ACTIVE;
-        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
-        assert_eq!(rng.ranges[0], (0, 15), "the gate draw");
-        // The window's 35×35 per-tile draws, then the point-state tail's
-        // Next(10) (`:35679` — ai[0] > 0 won the ladder).
-        assert_eq!(rng.ranges.len(), 1 + 35 * 35 + 1, "one Next(8) per window tile + the tail");
-        assert!(rng.ranges[1..1 + 35 * 35].iter().all(|&r| r == (0, 8)));
-        assert_eq!(rng.ranges[1 + 35 * 35], (0, 10), "the point dust gate");
-        assert_eq!(rng.floats, 0, "no float draws on this path");
-        assert_eq!(p.ai[0], 1.0, "the ore arms the point state");
-        let tile_center = Vec2::new(ore_x as f32 * 16.0 + 8.0, ore_y as f32 * 16.0 + 8.0);
-        let center = Vec2::new(pcx, pcy);
-        let want = (tile_center.y - center.y).atan2(tile_center.x - center.x);
-        assert!((p.ai[1] - want).abs() < 1e-6, "the point angle");
-    }
-
-    /// `:35614-35695` — the idle steering tail: no NPCs, no ore, facing 1 →
-    /// the 0-angle target, the 0.05 extension step, the 0.12 lerp amount
-    /// and the `π`-offset re-encode.
-    #[test]
-    fn w4_d13_the_idle_tail_encodes_the_facing_rest_pose() {
-        let w = world();
-        let mut pl = player(&w);
-        pl.x = 512.0;
-        pl.y = 512.0;
-        let (pcx, pcy) = pl.center();
-        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
-        // localAI[0] = π → f = 0; localAI[1] = 0 → num917/num918 start 0.
-        p.local_ai = [std::f32::consts::PI, 0.0, 0.0];
-        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
-        // The scan gate fired (Next(15) → 0) but the window holds no ore;
-        // the idle branch draws nothing further.
-        assert_eq!(rng.ranges.len(), 1 + 35 * 35);
-        assert!((p.local_ai[0] - std::f32::consts::PI).abs() < 1e-5, "0 + 0·2π + π");
-        assert!((p.local_ai[1] - 0.05).abs() < 1e-6, "the 0.05 extension step");
-    }
-
-    /// `:35477-35550` — the 957 ground probe: four air cells above a solid
-    /// floor ground the pet (the rest countdown decrements); a solid cell
-    /// inside the span keeps it airborne (the 300 pin).
-    #[test]
-    fn w4_d13_the_957_ground_probe_splits_grounded_and_airborne() {
-        let mut w = world();
         let pl = player(&w);
         // Park the pet exactly on its home spot so the approach leaves
         // zero velocity (the ground machine only runs at <= 0.01 speed).
@@ -1027,7 +896,6 @@ mod w4_d13_style124_tests {
         p.local_ai[0] = 5.0;
         let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
         p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
         assert_eq!(p.local_ai[0], 4.0, "grounded: the rest countdown");
         assert!(rng.ranges.is_empty(), "the 957 draws nothing before the cycle end");
         // A solid cell inside the air span breaks the probe → the 300 pin.
@@ -1140,44 +1008,6 @@ mod w4_d13_style124_tests {
     #[test]
     fn w4_g64_the_650_scan_sparkles_ride_the_live_pool() {
         let mut w = world();
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
-        assert_eq!(p.local_ai[0], 300.0, "airborne: the 300 pin");
-    }
-
-    /// `Main.cs:34007-34027` — the 650 pointer pose decode: the state tag
-    /// picks the reach (state 1 → 7 px, else 5), the fractional angle and
-    /// the IEEERemainder extension place the sprite, the floor scales it.
-    /// The decode is the AI tail's re-encode inverse (`:35694-35695`).
-    #[test]
-    fn w4_d13_the_pointer_pose_decodes_the_steering_stores() {
-        use std::f32::consts::{PI, TAU};
-        // The idle rest pose the steering tail encodes: angle 0, state 0,
-        // extension 0.05 → localAI[0] = π, localAI[1] = 0.05.
-        let (off, scale) = tentacle_pointer_pose(PI, 0.05, 1.0);
-        assert!((off.x - 0.05 * 5.0).abs() < 1e-5, "f = 0 → +X, reach 5");
-        assert!(off.y.abs() < 1e-5);
-        assert!((scale - 1.0).abs() < 1e-6, "floor(0.05) = 0 → scale 1");
-        // State 1 (the player-velocity target): reach 7.
-        let (off, _) = tentacle_pointer_pose(PI + TAU, 0.5, 1.0);
-        assert!((off.x - 0.5 * 7.0).abs() < 1e-5, "state 1 reaches 7");
-        // The floor ladder: localAI[1] = 10.75 → scale 1 + 10·0.02.
-        let (_, scale) = tentacle_pointer_pose(PI, 10.75, 1.0);
-        assert!((scale - 1.2).abs() < 1e-5, "1 + floor(10.75)·0.02");
-        // The proj.scale multiplier rides the offset.
-        let (off, _) = tentacle_pointer_pose(PI, 0.5, 2.0);
-        assert!((off.x - 0.5 * 5.0 * 2.0).abs() < 1e-5, "the scale multiplies");
-        // A negative-fraction localAI[1] wraps the extension into [0, 1)
-        // (the IEEERemainder + 1 arm): -0.25 → 0.75.
-        let (off, _) = tentacle_pointer_pose(PI, -0.25, 1.0);
-        assert!((off.x - 0.75 * 5.0).abs() < 1e-5, "the negative wrap");
-    }
-
-    /// The full-circle round trip: the AI tail's encode (`:35694-35695`)
-    /// feeds the draw decode — the pointer lands on the steered angle.
-    #[test]
-    fn w4_d13_the_steering_encode_round_trips_through_the_pose() {
-        use std::f32::consts::PI;
-        let w = world();
         let mut pl = player(&w);
         pl.x = 512.0;
         pl.y = 512.0;
@@ -1233,10 +1063,279 @@ mod w4_d13_style124_tests {
         for _ in 0..8 {
             assert_eq!(rng2.next_range(0, 1000), rng3.next_range(0, 1000), "tail");
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_d13_style124_tests {
+    use super::*;
+    use crate::projectile::{STYLE124_PETS, proj_data};
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.facing = 1;
+        p
+    }
+
+    fn pet(kind: u16, pos: Vec2) -> Projectile {
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.w = 20.0;
+        p.h = 20.0;
+        p.pos = pos;
+        p.tile_collide = false;
+        p
+    }
+
+    /// A draw-recording `Main.rand` stand-in (the `CensusRng` shape): the
+    /// census proves count AND order; every range draw returns its min.
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    fn scratch(w: &World) -> (DustPool, SpawnCtx) {
+        crate::projectile::scratch_dust(w)
+    }
+
+    /// The seven rows' `SetDefaults` slice (`Projectile.cs:6977-6989`,
+    /// `:8461-8473`, `:8508-8520`, `:8553-8565`, `:8576-8588`, `:9034-9046`)
+    /// + the frame sheets (`Main.cs:8500/8670/8676/8683-8684/8686/8697`).
+    #[test]
+    fn w4_d13_the_seven_rows_carry_the_csharp_set_defaults() {
+        for kind in STYLE124_PETS {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!((d.w, d.h), (20.0, 20.0), "kind {kind}");
+            assert_eq!(d.ai_style, 124, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "kind {kind}: `timeLeft *= 5`");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert!(d.ignore_water, "kind {kind}");
+            assert!(d.net_important, "kind {kind}");
+            assert!(!d.minion, "kind {kind}: the pets are not minions");
+        }
+        for (kind, frames) in [
+            (SUSPICIOUS_TENTACLE, 4),
+            (EOC_PET, 20),
+            (TWINS_PET, 36),
+            (FAIRY_QUEEN_PET, 6),
+            (PUMPKING_PET, 16),
+            (ICE_QUEEN_PET, 16),
+            (GLOMMER_PET, 12),
+        ] {
+            assert_eq!(proj_frames(kind), frames, "kind {kind}'s sheet");
+        }
+    }
+
+    /// `:34974-35006` — the dead-owner kill and the buff-flag keep-alive pin.
+    #[test]
+    fn w4_d13_the_keep_alive_pins_ride_pet_flags() {
+        let w = world();
+        let (mut sd, sc) = scratch(&w);
+        for kind in STYLE124_PETS {
+            let mut pl = player(&w);
+            pl.pet_flags[kind as usize] = true;
+            let mut p = pet(kind, Vec2::new(pl.x + 30.0, pl.y - 20.0));
+            p.time_left = 500;
+            let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+            p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+            assert_eq!(p.time_left, 2, "kind {kind}: the pin");
+            pl.dead = true;
+            p.time_left = 500;
+            p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+            assert!(!p.active, "kind {kind}: the dead-owner kill");
+            assert_eq!(p.time_left, 0, "kind {kind}: Kill zeroes");
+        }
+    }
+
+    /// `:35092-35115` — the >1000 px teleport snaps to `player.Center +
+    /// offset`; a near pet takes the 0.1 pull toward the spot.
+    #[test]
+    fn w4_d13_the_far_pet_teleports_home_then_pulls() {
+        let w = world();
+        let (mut sd, sc) = scratch(&w);
+        let mut pl = player(&w);
+        pl.x = 512.0;
+        pl.y = 512.0;
+        let (pcx, pcy) = pl.center();
+        // The 650 spot: facing 1 → (+30, −20) off the centre.
+        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx + 2000.0, pcy));
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        // The scan gate draws Next(15) → 0, then the window is off-screen
+        // (the PRE-teleport centre is 2000 px away > 1280), so no per-tile
+        // draws follow; the idle tail draws nothing (no ore, no NPC).
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+        let home = Vec2::new(pcx + 30.0, pcy - 20.0);
+        let center = Vec2::new(p.pos.x + 10.0, p.pos.y + 10.0);
+        assert_eq!(center, home, "the teleport snaps to Center + offset");
+        assert_eq!(p.vel, Vec2::ZERO, "the snap leaves zero delta");
+        // The scan reads the POST-teleport centre (36 px off the owner, on
+        // screen): the gate + the full window, no ore → no point-state draw.
+        assert_eq!(rng.ranges.len(), 1 + 35 * 35);
+        assert_eq!(rng.ranges[0], (0, 15));
+        assert!(rng.ranges[1..].iter().all(|&r| r == (0, 8)));
+        // A near pet (100 px off the spot) takes the 0.1 pull.
+        let mut q = pet(SUSPICIOUS_TENTACLE, home + Vec2::new(100.0, 0.0) - Vec2::new(10.0, 10.0));
+        let mut rng2 = CensusRng { ranges: Vec::new(), floats: 0 };
+        q.ai_pets_style124(&w, &[], Some(&pl), &mut rng2, 1280.0, &mut sd, &sc);
+        assert_eq!(q.vel, Vec2::new(-10.0, 0.0), "the 0.1 pull toward the spot");
+    }
+
+    /// `:35571-35609` — the ore scan's RNG census: the Next(15) gate, then
+    /// ONE Next(8) per tile of the 35×35 window; a spelunkable ore inside
+    /// the radius arms `ai[0] = 1` and the point angle.
+    #[test]
+    fn w4_d13_the_650_scan_draws_per_tile_and_points_at_ore() {
+        let mut w = world();
+        let (mut sd, sc) = scratch(&w);
+        let mut pl = player(&w);
+        // Centre the player mid-world so the clamp is a no-op.
+        pl.x = 512.0;
+        pl.y = 512.0;
+        let (pcx, pcy) = pl.center();
+        // The pet sits on the owner (the scan's distance gate passes).
+        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
+        // A copper ore (kind 7, `Main.cs:9421`) two tiles right of centre.
+        let ore_x = (pcx as i32 / 16) + 2;
+        let ore_y = pcy as i32 / 16;
+        let t = w.tile_mut(ore_x, ore_y).unwrap();
+        t.kind = 7;
+        t.flags |= FLAG_ACTIVE;
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+        assert_eq!(rng.ranges[0], (0, 15), "the gate draw");
+        // The window's 35×35 per-tile draws, then the point-state tail's
+        // Next(10) (`:35679` — ai[0] > 0 won the ladder).
+        assert_eq!(rng.ranges.len(), 1 + 35 * 35 + 1, "one Next(8) per window tile + the tail");
+        assert!(rng.ranges[1..1 + 35 * 35].iter().all(|&r| r == (0, 8)));
+        assert_eq!(rng.ranges[1 + 35 * 35], (0, 10), "the point dust gate");
+        assert_eq!(rng.floats, 0, "no float draws on this path");
+        assert_eq!(p.ai[0], 1.0, "the ore arms the point state");
+        let tile_center = Vec2::new(ore_x as f32 * 16.0 + 8.0, ore_y as f32 * 16.0 + 8.0);
+        let center = Vec2::new(pcx, pcy);
+        let want = (tile_center.y - center.y).atan2(tile_center.x - center.x);
+        assert!((p.ai[1] - want).abs() < 1e-6, "the point angle");
+    }
+
+    /// `:35614-35695` — the idle steering tail: no NPCs, no ore, facing 1 →
+    /// the 0-angle target, the 0.05 extension step, the 0.12 lerp amount
+    /// and the `π`-offset re-encode.
+    #[test]
+    fn w4_d13_the_idle_tail_encodes_the_facing_rest_pose() {
+        let w = world();
+        let (mut sd, sc) = scratch(&w);
+        let mut pl = player(&w);
+        pl.x = 512.0;
+        pl.y = 512.0;
+        let (pcx, pcy) = pl.center();
+        let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
+        // localAI[0] = π → f = 0; localAI[1] = 0 → num917/num918 start 0.
+        p.local_ai = [std::f32::consts::PI, 0.0, 0.0];
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+        // The scan gate fired (Next(15) → 0) but the window holds no ore;
+        // the idle branch draws nothing further.
+        assert_eq!(rng.ranges.len(), 1 + 35 * 35);
+        assert!((p.local_ai[0] - std::f32::consts::PI).abs() < 1e-5, "0 + 0·2π + π");
+        assert!((p.local_ai[1] - 0.05).abs() < 1e-6, "the 0.05 extension step");
+    }
+
+    /// `:35477-35550` — the 957 ground probe: four air cells above a solid
+    /// floor ground the pet (the rest countdown decrements); a solid cell
+    /// inside the span keeps it airborne (the 300 pin).
+    #[test]
+    fn w4_d13_the_957_ground_probe_splits_grounded_and_airborne() {
+        let mut w = world();
+        let (mut sd, sc) = scratch(&w);
+        let pl = player(&w);
+        // Park the pet exactly on its home spot so the approach leaves
+        // zero velocity (the ground machine only runs at <= 0.01 speed).
+        let (mcx, mcy) = pl.mounted_center();
+        let home = Vec2::new(mcx - 40.0, mcy - 40.0); // facing 1, no 895 owned
+        let cx = home.x as i32 / 16;
+        let cy = home.y as i32 / 16;
+        // Floor four cells below the centre row.
+        for x in 0..w.width {
+            let t = w.tile_mut(x, cy + 4).unwrap();
+            t.kind = 1; // dirt
+            t.flags |= FLAG_ACTIVE;
+        }
+        let mut p = pet(GLOMMER_PET, home - Vec2::new(10.0, 10.0));
+        p.local_ai[0] = 5.0;
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+        assert_eq!(p.local_ai[0], 4.0, "grounded: the rest countdown");
+        assert!(rng.ranges.is_empty(), "the 957 draws nothing before the cycle end");
+        // A solid cell inside the air span breaks the probe → the 300 pin.
+        let t = w.tile_mut(cx, cy + 2).unwrap();
+        t.kind = 1;
+        t.flags |= FLAG_ACTIVE;
+        p.local_ai[0] = 5.0;
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
+        assert_eq!(p.local_ai[0], 300.0, "airborne: the 300 pin");
+    }
+
+    /// `Main.cs:34007-34027` — the 650 pointer pose decode: the state tag
+    /// picks the reach (state 1 → 7 px, else 5), the fractional angle and
+    /// the IEEERemainder extension place the sprite, the floor scales it.
+    /// The decode is the AI tail's re-encode inverse (`:35694-35695`).
+    #[test]
+    fn w4_d13_the_pointer_pose_decodes_the_steering_stores() {
+        use std::f32::consts::{PI, TAU};
+        // The idle rest pose the steering tail encodes: angle 0, state 0,
+        // extension 0.05 → localAI[0] = π, localAI[1] = 0.05.
+        let (off, scale) = tentacle_pointer_pose(PI, 0.05, 1.0);
+        assert!((off.x - 0.05 * 5.0).abs() < 1e-5, "f = 0 → +X, reach 5");
+        assert!(off.y.abs() < 1e-5);
+        assert!((scale - 1.0).abs() < 1e-6, "floor(0.05) = 0 → scale 1");
+        // State 1 (the player-velocity target): reach 7.
+        let (off, _) = tentacle_pointer_pose(PI + TAU, 0.5, 1.0);
+        assert!((off.x - 0.5 * 7.0).abs() < 1e-5, "state 1 reaches 7");
+        // The floor ladder: localAI[1] = 10.75 → scale 1 + 10·0.02.
+        let (_, scale) = tentacle_pointer_pose(PI, 10.75, 1.0);
+        assert!((scale - 1.2).abs() < 1e-5, "1 + floor(10.75)·0.02");
+        // The proj.scale multiplier rides the offset.
+        let (off, _) = tentacle_pointer_pose(PI, 0.5, 2.0);
+        assert!((off.x - 0.5 * 5.0 * 2.0).abs() < 1e-5, "the scale multiplies");
+        // A negative-fraction localAI[1] wraps the extension into [0, 1)
+        // (the IEEERemainder + 1 arm): -0.25 → 0.75.
+        let (off, _) = tentacle_pointer_pose(PI, -0.25, 1.0);
+        assert!((off.x - 0.75 * 5.0).abs() < 1e-5, "the negative wrap");
+    }
+
+    /// The full-circle round trip: the AI tail's encode (`:35694-35695`)
+    /// feeds the draw decode — the pointer lands on the steered angle.
+    #[test]
+    fn w4_d13_the_steering_encode_round_trips_through_the_pose() {
+        use std::f32::consts::PI;
+        let w = world();
+        let (mut sd, sc) = scratch(&w);
+        let mut pl = player(&w);
+        pl.x = 512.0;
+        pl.y = 512.0;
+        let (pcx, pcy) = pl.center();
         let mut p = pet(SUSPICIOUS_TENTACLE, Vec2::new(pcx - 10.0, pcy - 10.0));
         p.local_ai = [PI, 0.0, 0.0];
         let mut rng = CensusRng { ranges: Vec::new(), floats: 0 };
-        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0);
+        p.ai_pets_style124(&w, &[], Some(&pl), &mut rng, 1280.0, &mut sd, &sc);
         // The idle tail encoded angle 0 / state 0 / extension 0.05.
         let (off, scale) = tentacle_pointer_pose(p.local_ai[0], p.local_ai[1], p.scale);
         assert!((off.x - 0.05 * 5.0).abs() < 1e-4, "the pointer faces +X");

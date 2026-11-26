@@ -374,7 +374,7 @@ mod tests {
             }
         }
         // The truncating remainder belongs to no section.
-        let small = MapSections::new(199, 149);
+        let mut small = MapSections::new(199, 149);
         assert_eq!((small.width, small.height), (0, 0));
         assert_eq!(small.get_next_map_draw([0.0, 0.0]), None);
     }

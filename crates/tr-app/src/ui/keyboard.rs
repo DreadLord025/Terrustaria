@@ -659,9 +659,6 @@ pub struct Layout {
 pub fn layout(screen: Vec2, show_gamepad_hints: bool, context: Context) -> Layout {
     // `num3` (`:176`) — -5000 for the sign context, 0 otherwise.
     let sign_offset = if context.editing_sign() { -5000.0 } else { 0.0 };
-    let root = [0.0, 0.0, screen.x, screen.y];
-/// and the `+50` shift (`:716-725`).
-pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
     let root = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // `outerLayer1` == `outerLayer2` — the identical initializer (`:180-195`).
     let layer = uistate::resolve(
@@ -961,6 +958,8 @@ pub fn hover_element(l: &Layout, mouse: Vec2) -> Option<u32> {
         return Some(1); // `:1071` via `:324`
     }
     None
+}
+
 /// The bottom row's space/enter/restore widths (`BuildSpaceBarArea`,
 /// `:444-489`): `flag = CanRestore()` (the sign context's
 /// `_cancelCacheSign.Length > 0`, `:504-515`), `x = flag ? 4 : 5`,
@@ -1297,9 +1296,9 @@ pub fn draw(
         );
         // The bottom row's space/enter/restore trio (`BuildSpaceBarArea`,
         // `:444-489`): the widths follow `CanRestore()` + the context.
-        let (space, enter, restore) = bottom_row(request.context, can_restore);
+        let (space_key, enter, restore) = bottom_row(request.context, can_restore);
         // The space bar (`:452-457`): the `UI.SpaceButton` label.
-        let space_rect = key_rect(l.grid_origin, space[0], space[1], space[2]);
+        let space_rect = key_rect(l.grid_origin, space_key[0], space_key[1], space_key[2]);
         let (bg, border) = key_colors(false, in_rect(mouse, space_rect));
         draw_panel_text(
             r,
@@ -1449,7 +1448,7 @@ mod tests {
     fn doc_sweep_only_submit_cancel_hover_sounds() {
         let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
         for grid in [false, true] {
-            let l = layout(SCREEN, grid);
+            let l = layout(SCREEN, grid, Context::Text);
             assert_eq!(hover_element(&l, centre(l.submit)), Some(0));
             assert_eq!(hover_element(&l, centre(l.cancel)), Some(1));
             assert_eq!(hover_element(&l, centre(l.textbox)), None);

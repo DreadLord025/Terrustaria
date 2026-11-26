@@ -921,7 +921,11 @@ mod worldgen_caves {
         let surface = 60;
         let layers = layers_for(surface, h);
         let run = |micro: MicroSeedFlags| {
-            let mut world = flat_world(w, h, surface);
+            // The terrain starts 20 rows above `surface_low` so the sky
+            // bands have solid cells to convert (the runner only replaces
+            // active tiles; a flat surface at `surface_low` leaves the
+            // whole band in air).
+            let mut world = flat_world(w, h, surface - 20);
             world.micro_seeds = micro;
             let mut rng = Rng(0x5151);
             ores_and_shinies(&mut world, &mut rng, &layers, w, h, false);
@@ -935,11 +939,12 @@ mod worldgen_caves {
             "the skipped sky bands must not draw on the noSurface world"
         );
         // The sky window [0, surface_low) carries silver/gold in the classic
-        // world; the noSurface world has none (bands 10-11 are the only
-        // writers above surface_low — the walkers' reach is ≤ ~10 tiles and
-        // surface_low sits 58 rows above the first underground band).
+        // world; the noSurface world has none. The bands run over the top
+        // solid rows too (the runner only converts active tiles), so the
+        // window is the band's own [0, surface_low) — not a row band above
+        // the terrain.
         let sky_kinds = |world: &World| {
-            (0..(layers.surface_low as i32 - 20))
+            (0..(layers.surface_low as i32))
                 .flat_map(|y| (0..w).map(move |x| (x, y)))
                 .filter(|&(x, y)| {
                     world

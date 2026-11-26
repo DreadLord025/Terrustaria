@@ -27,11 +27,11 @@ use tr_core::{UnifiedRandom, World};
 
 /// The `KillTile` / `ReplaceTile` dust loop (`WorldGen.cs:63699-63703`
 /// / `:62570-62574`): `KillTile_GetTileDustAmount` calls of the body.
-/// `gen` is the caller's `frame_rng` snapshot; `t` the pre-kill tile.
+/// `gen_rng` is the caller's `frame_rng` snapshot; `t` the pre-kill tile.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn tile_break_burst(
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -49,7 +49,7 @@ pub(crate) fn tile_break_burst(
             t,
             (disco[0], disco[1], disco[2]),
             rng,
-            gen,
+            gen_rng,
             dust,
             ctx,
             world,
@@ -118,12 +118,12 @@ mod tests {
         w: &World,
         ctx: &SpawnCtx,
         rng: &mut UnifiedRandom,
-        gen: &mut UnifiedRandom,
+        gen_rng: &mut UnifiedRandom,
         dust: &mut DustPool,
         t: &Tile,
     ) -> Option<i32> {
         let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
-            100, 100, t, (0, 0, 0), rng, gen, dust, ctx, w,
+            100, 100, t, (0, 0, 0), rng, gen_rng, dust, ctx, w,
         );
         if idx == DUST_SENTINEL {
             None
@@ -171,7 +171,7 @@ mod tests {
         let w = World::new("t".into(), 200, 200);
         let ctx = dust_ctx(&w);
         let mut rng = UnifiedRandom::new(1);
-        let mut gen = UnifiedRandom::new(1);
+        let mut gen_rng = UnifiedRandom::new(1);
         let mut dust = DustPool::new();
         let cases: &[(Tile, i32)] = &[
             (tile(0, 0, 0), 0),
@@ -333,7 +333,7 @@ mod tests {
             (tile(33, 0, 0), -1),
         ];
         for (t, want) in cases {
-            let got = body(&w, &ctx, &mut rng, &mut gen, &mut dust, t);
+            let got = body(&w, &ctx, &mut rng, &mut gen_rng, &mut dust, t);
             // The 139 arm's spawned type carries the Next(4) roll —
             // pin the family, not the exact byte (the draw census
             // witness below pins the stream).
@@ -349,7 +349,7 @@ mod tests {
             }
             drain(&mut dust);
         }
-        assert_eq!(gen.peek(), UnifiedRandom::new(1).peek());
+        assert_eq!(gen_rng.peek(), UnifiedRandom::new(1).peek());
     }
 
     /// The genRand/Main.rand arms draw exactly the C#'s rolls, in
@@ -364,7 +364,7 @@ mod tests {
         for seed in [1, 54, 99] {
             let mut rng = UnifiedRandom::new(seed);
             let mut rng_p = UnifiedRandom::new(seed);
-            let mut gen = UnifiedRandom::new(seed);
+            let mut gen_rng = UnifiedRandom::new(seed);
             let mut gen_p = UnifiedRandom::new(seed);
             let mut dust = DustPool::new();
             // (tile, oracle arm id)
@@ -391,7 +391,7 @@ mod tests {
                 // The 352 num==5 arm FORCES scale 1.5 (the :69105
                 // post-write) — the default block's scale roll still
                 // draws, so the peek census below is unaffected.
-                let got = body(&w, &ctx, &mut rng, &mut gen, &mut dust, t);
+                let got = body(&w, &ctx, &mut rng, &mut gen_rng, &mut dust, t);
                 let want = match arm {
                     1 => if gen_p.next_max(10) != 0 { 1 } else { 87 },
                     22 => if gen_p.next_max(10) != 0 { 1 } else { 138 },
@@ -462,7 +462,7 @@ mod tests {
                     block(&mut rng_p, want, 16, 16);
                 }
                 assert_eq!(rng.peek(), rng_p.peek(), "main kind {}", t.kind);
-                assert_eq!(gen.peek(), gen_p.peek(), "gen kind {}", t.kind);
+                assert_eq!(gen_rng.peek(), gen_p.peek(), "gen kind {}", t.kind);
                 drain(&mut dust);
             }
         }
@@ -498,13 +498,13 @@ mod tests {
         for (t, ty, arm) in cases {
             let mut rng = UnifiedRandom::new(54);
             let mut rng_p = UnifiedRandom::new(54);
-            let mut gen = UnifiedRandom::new(7);
+            let mut gen_rng = UnifiedRandom::new(7);
             let mut gen_p = UnifiedRandom::new(7);
             let mut dust = DustPool::new();
             for i in 0..40 {
                 tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
                     10, 20, t, (disco[0], disco[1], disco[2]),
-                    &mut rng, &mut gen, &mut dust, &ctx, &w,
+                    &mut rng, &mut gen_rng, &mut dust, &ctx, &w,
                 );
                 match arm {
                     99 => {}
@@ -521,7 +521,7 @@ mod tests {
                     _ => block(&mut rng_p, *ty, 16, 16),
                 }
                 assert_eq!(rng.peek(), rng_p.peek(), "kind {} @{i}", t.kind);
-                assert_eq!(gen.peek(), gen_p.peek(), "kind {} gen @{i}", t.kind);
+                assert_eq!(gen_rng.peek(), gen_p.peek(), "kind {} gen @{i}", t.kind);
                 drain(&mut dust);
             }
         }
@@ -538,11 +538,11 @@ mod tests {
         let ctx = dust_ctx(&w);
         let disco = (10u8, 20, 30);
         let mut rng = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         // 627 disco tile.
         tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
-            10, 20, &tile(627, 0, 0), disco, &mut rng, &mut gen, &mut dust, &ctx, &w,
+            10, 20, &tile(627, 0, 0), disco, &mut rng, &mut gen_rng, &mut dust, &ctx, &w,
         );
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 267);
@@ -551,9 +551,9 @@ mod tests {
         drain(&mut dust);
         // 314 minecart: replay the block to recover scale, then fadeIn.
         let mut rng = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
-            10, 20, &tile(314, 0, 0), disco, &mut rng, &mut gen, &mut dust, &ctx, &w,
+            10, 20, &tile(314, 0, 0), disco, &mut rng, &mut gen_rng, &mut dust, &ctx, &w,
         );
         let mut gen_p = UnifiedRandom::new(7);
         let sx = gen_p.next_range(-2, 3) as f32;
@@ -576,7 +576,7 @@ mod tests {
         // 722 velocity ×0.4.
         let mut rng = UnifiedRandom::new(54);
         tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
-            10, 20, &tile(722, 0, 0), disco, &mut rng, &mut gen, &mut dust, &ctx, &w,
+            10, 20, &tile(722, 0, 0), disco, &mut rng, &mut gen_rng, &mut dust, &ctx, &w,
         );
         let mut rng_p = UnifiedRandom::new(54);
         rng_p.next_max(12);
@@ -590,7 +590,7 @@ mod tests {
         // The torch-float arm: the f32 round-trip keeps the bytes.
         let mut rng = UnifiedRandom::new(54);
         tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(
-            10, 20, &tile(4, 0, 22 * 14), disco, &mut rng, &mut gen, &mut dust, &ctx, &w,
+            10, 20, &tile(4, 0, 22 * 14), disco, &mut rng, &mut gen_rng, &mut dust, &ctx, &w,
         );
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 66);
@@ -608,11 +608,11 @@ mod tests {
         let disco = [0u8; 3];
         let mut rng = UnifiedRandom::new(54);
         let mut rng_p = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         let t = tile(1, 0, 0);
         for i in 0..20 {
-            tile_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, &t, false);
+            tile_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, &t, false);
             for _ in 0..10 {
                 block(&mut rng_p, 1, 16, 16);
             }
@@ -621,7 +621,7 @@ mod tests {
         }
         // The zero-amount kind (654) draws nothing.
         let mut rng = UnifiedRandom::new(54);
-        tile_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, &tile(654, 0, 0), false);
+        tile_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, &tile(654, 0, 0), false);
         assert_eq!(rng.peek(), UnifiedRandom::new(54).peek());
     }
 }

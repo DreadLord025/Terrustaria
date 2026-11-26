@@ -648,7 +648,7 @@ pub fn trail_465(
         to_rotation(vel) as f64,
     );
     let idx = dust.new_dust(
-        rng,
+        &mut DustDraw(rng),
         ctx,
         world,
         center - Vec2::ONE * 5.0,
@@ -679,7 +679,7 @@ pub fn trail_465(
         to_rotation(vel) as f64,
     );
     let idx = dust.new_dust(
-        rng,
+        &mut DustDraw(rng),
         ctx,
         world,
         center - Vec2::ONE * 5.0,
@@ -809,7 +809,7 @@ pub fn trail_503(
     // `:23958` — RotatedByRandom: NextDouble*max - NextDouble*max.
     let max = 1.5707963705062866f64;
     let ang = rng.next_double() * max - rng.next_double() * max;
-    let vector3 = rotated_by(rotated_by(Vec2::UNIT_X, ang), to_rotation(vel) as f64);
+    let vector3 = rotated_by(rotated_by(Vec2::X, ang), to_rotation(vel) as f64);
     let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
     let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 58, vel.x * 0.5, vel.y * 0.5, 150, Color::default(), 1.2);
     let d = dust.slot_mut(idx);
@@ -1218,7 +1218,7 @@ pub fn trail_579(
         // `:33718-33727` — the 229 ring.
         let max = 6.2831854820251465f64;
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let vector116 = rotated_by(Vec2::UNIT_Y, ang);
+        let vector116 = rotated_by(Vec2::Y, ang);
         let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center - vector116 * 30.0, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
@@ -1231,7 +1231,7 @@ pub fn trail_579(
         // `:33728-33737` — the 240 ring.
         let max = 6.2831854820251465f64;
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let vector117 = rotated_by(Vec2::UNIT_Y, ang);
+        let vector117 = rotated_by(Vec2::Y, ang);
         let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center - vector117 * 30.0, 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
@@ -1321,7 +1321,7 @@ pub fn trail_596(
         let d = dust.slot_mut(idx);
         // `:33624` — (i * (float)(π*2)) / 3 + ai[1], the f32 chain.
         let ang = num806 as f32 * ((std::f64::consts::PI * 2.0) as f32) / 3.0 + ai1;
-        d.position = center + rotated_by(Vec2::UNIT_Y, ang as f64) * 10.0;
+        d.position = center + rotated_by(Vec2::Y, ang as f64) * 10.0;
         d.no_gravity = true; // `:33625`
         d.velocity = xna_normalize(center - d.position); // `:33626` DirectionFrom
         d.scale = num804; // `:33627`
@@ -1445,7 +1445,7 @@ pub fn trail_659(
         let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         let ang = num975 as f32 * ((std::f64::consts::PI * 2.0) as f32) / 3.0 + ai1; // `:36269`
-        d.position = center + rotated_by(Vec2::UNIT_Y, ang as f64) * 10.0;
+        d.position = center + rotated_by(Vec2::Y, ang as f64) * 10.0;
         d.no_gravity = true; // `:36270`
         d.velocity = xna_normalize(center - d.position); // `:36271`
         d.scale = num973; // `:36272`
@@ -1635,13 +1635,13 @@ pub fn trail_813_windup(
     if rng.next_range(0, 4) == 0 {
         // `:33762-33771`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 5, true, 4.0, rng, dust, ctx, world);
     }
     if rng.next_range(0, 4) == 0 {
         // `:33772-33781`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 240, false, 2.0, rng, dust, ctx, world);
     }
 }
@@ -1660,13 +1660,13 @@ pub fn trail_813_charge(
     if rng.next_range(0, 2) == 0 {
         // `:33860-33870`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
     }
     if rng.next_range(0, 2) == 0 {
         // `:33871-33881`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
     }
 }
@@ -1685,12 +1685,12 @@ pub fn trail_813_full(
     if rng.next_range(0, 2) == 0 {
         // `:33896-33906`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
     } else {
         // `:33907-33917`
         let ang = rng.next_double() * max - rng.next_double() * max;
-        let v = rotated_by(Vec2::UNIT_Y, ang);
+        let v = rotated_by(Vec2::Y, ang);
         ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
     }
 }
@@ -1713,13 +1713,13 @@ pub fn trail_813_dissolve(
             0 => {
                 // `:33957-33968`
                 let ang = rng.next_double() * max - rng.next_double() * max;
-                let v = rotated_by(Vec2::UNIT_Y, ang) * scale;
+                let v = rotated_by(Vec2::Y, ang) * scale;
                 ritual_ring_813(center, v, 5, true, 6.0, rng, dust, ctx, world);
             }
             1 => {
                 // `:33969-33980`
                 let ang = rng.next_double() * max - rng.next_double() * max;
-                let v = rotated_by(Vec2::UNIT_Y, ang) * scale;
+                let v = rotated_by(Vec2::Y, ang) * scale;
                 ritual_ring_813(center, v, 240, false, 3.0, rng, dust, ctx, world);
             }
             _ => {} // `:33981` — case 2 draws nothing further.
@@ -1745,7 +1745,7 @@ pub fn trail_813_opacity_tail(
         let off = next_vector2_circular(rng, 3.0, 20.0);
         let idx = dust.new_dust_perfect(&mut DustDraw(rng), ctx, world, center + off, 90, None, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
-        d.velocity = Vec2::UNIT_Y; // `:34021`
+        d.velocity = Vec2::Y; // `:34021`
         d.no_gravity = true; // `:34022`
         d.scale = scale; // `:34023`
     }
@@ -1955,7 +1955,7 @@ pub fn trail_1048(
     let vector23 = center + next_vector2_circular(rng, w as f32 * 0.4, h as f32 * 0.4);
     let scale = 0.75 + rng.next_float() * 0.25; // `:26398` argument
     let idx = dust.new_dust(
-        rng,
+        &mut DustDraw(rng),
         ctx,
         world,
         vector23 - Vec2::ONE,
@@ -2156,7 +2156,7 @@ pub fn trail_644(
     for num836 in 0..2 {
         if rng.next_range(0, 10) == 0 {
             let vector139 = rotated_by(
-                rotated_by(Vec2::UNIT_Y, (num836 as f32 * std::f32::consts::PI) as f64),
+                rotated_by(Vec2::Y, (num836 as f32 * std::f32::consts::PI) as f64),
                 rotation as f64,
             );
             let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 267, 0.0, 0.0, 225, new_color3, 1.5);
@@ -2172,7 +2172,7 @@ pub fn trail_644(
     for num837 in 0..2 {
         if rng.next_range(0, 10) == 0 {
             let vector140 =
-                rotated_by(Vec2::UNIT_Y, (num837 as f32 * std::f32::consts::PI) as f64);
+                rotated_by(Vec2::Y, (num837 as f32 * std::f32::consts::PI) as f64);
             let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 267, 0.0, 0.0, 225, new_color3, 1.5);
             let d = dust.slot_mut(idx);
             d.no_gravity = true; // `:34286`
@@ -2211,7 +2211,7 @@ pub fn trail_644(
                 let d = dust.slot_mut(idx);
                 d.no_gravity = true; // `:34318`
                 d.position = vec; // `:34319`
-                d.velocity = -Vec2::UNIT_Y * num838 * (rng.next_float() * 0.9 + 1.6); // `:34320`
+                d.velocity = -Vec2::Y * num838 * (rng.next_float() * 0.9 + 1.6); // `:34320`
                 d.fade_in = fade_in; // `:34321`
                 d.scale = num839; // `:34322`
                 d.no_light = true; // `:34323`
@@ -2658,7 +2658,7 @@ mod tests {
             if mirror.next_max(16) == 0 {
                 let max = 1.5707963705062866f64;
                 let ang = mirror.next_double() * max - mirror.next_double() * max;
-                let v3 = rotated_by(rotated_by(Vec2::UNIT_X, ang), to_rotation(vel) as f64);
+                let v3 = rotated_by(rotated_by(Vec2::X, ang), to_rotation(vel) as f64);
                 let idx = mpool.new_dust(&mut mirror, &c, &w, pos, 16, 16, 58, 0.0, 4.0, 150, Color::default(), 1.2);
                 let d = mpool.slot_mut(idx);
                 d.velocity = v3 * 0.66;
@@ -2913,7 +2913,7 @@ mod tests {
         let max = 6.2831854820251465f64;
         if mirror.next_max(4) == 0 {
             let ang = mirror.next_double() * max - mirror.next_double() * max;
-            let v = rotated_by(Vec2::UNIT_Y, ang);
+            let v = rotated_by(Vec2::Y, ang);
             let idx = mpool.new_dust(&mut mirror, &c, &w, center - v * 30.0, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
             d.no_gravity = true;
@@ -2924,7 +2924,7 @@ mod tests {
         }
         if mirror.next_max(4) == 0 {
             let ang = mirror.next_double() * max - mirror.next_double() * max;
-            let v = rotated_by(Vec2::UNIT_Y, ang);
+            let v = rotated_by(Vec2::Y, ang);
             let idx = mpool.new_dust(&mut mirror, &c, &w, center - v * 30.0, 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
             d.no_gravity = true;
@@ -3122,7 +3122,7 @@ mod tests {
             let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
             let ang = i as f32 * ((std::f64::consts::PI * 2.0) as f32) / 3.0 + 2.0;
-            d.position = center + rotated_by(Vec2::UNIT_Y, ang as f64) * 10.0;
+            d.position = center + rotated_by(Vec2::Y, ang as f64) * 10.0;
             d.no_gravity = true;
             d.velocity = xna_normalize(center - d.position);
             d.scale = 0.5;
@@ -3592,7 +3592,7 @@ mod tests {
         let col = Color::new((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8, 255);
         for num836 in 0..2 {
             if mirror.next_max(10) == 0 {
-                let v = rotated_by(rotated_by(Vec2::UNIT_Y, (num836 as f32 * std::f32::consts::PI) as f64), rotation as f64);
+                let v = rotated_by(rotated_by(Vec2::Y, (num836 as f32 * std::f32::consts::PI) as f64), rotation as f64);
                 let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 267, 0.0, 0.0, 225, col, 1.5);
                 let d = mpool.slot_mut(idx);
                 d.no_gravity = true;
@@ -3604,7 +3604,7 @@ mod tests {
         }
         for num837 in 0..2 {
             if mirror.next_max(10) == 0 {
-                let v = rotated_by(Vec2::UNIT_Y, (num837 as f32 * std::f32::consts::PI) as f64);
+                let v = rotated_by(Vec2::Y, (num837 as f32 * std::f32::consts::PI) as f64);
                 let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 267, 0.0, 0.0, 225, col, 1.5);
                 let d = mpool.slot_mut(idx);
                 d.no_gravity = true;
@@ -3635,7 +3635,7 @@ mod tests {
                     let d = mpool.slot_mut(idx);
                     d.no_gravity = true;
                     d.position = vec;
-                    d.velocity = -Vec2::UNIT_Y * num838 * (mirror.next_float() * 0.9 + 1.6);
+                    d.velocity = -Vec2::Y * num838 * (mirror.next_float() * 0.9 + 1.6);
                     d.fade_in = fade_in;
                     d.scale = num839;
                     d.no_light = true;
@@ -3753,11 +3753,11 @@ mod tests {
             let mut mirror = UnifiedRandom::new(seed);
             if mirror.next_range(0, 4) == 0 {
                 let ang = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 5, true, 4.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, ang), 5, true, 4.0);
             }
             if mirror.next_range(0, 4) == 0 {
                 let ang = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 240, false, 2.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, ang), 240, false, 2.0);
             }
             assert_eq!(active(&pool), active(&mpool), "wind-up slots (seed {seed})");
             for i in active(&pool) {
@@ -3774,11 +3774,11 @@ mod tests {
             let mut mirror = UnifiedRandom::new(seed);
             if mirror.next_range(0, 2) == 0 {
                 let ang = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 5, true, 6.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, ang), 5, true, 6.0);
             }
             if mirror.next_range(0, 2) == 0 {
                 let ang = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, ang), 240, false, 3.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, ang), 240, false, 3.0);
             }
             assert_eq!(active(&pool), active(&mpool), "charge slots (seed {seed})");
             for i in active(&pool) {
@@ -3792,10 +3792,10 @@ mod tests {
             let mut mirror = UnifiedRandom::new(seed);
             if mirror.next_range(0, 2) == 0 {
                 let a = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a), 5, true, 6.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, a), 5, true, 6.0);
             } else {
                 let a = mirror.next_double() * max - mirror.next_double() * max;
-                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a), 240, false, 3.0);
+                mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, a), 240, false, 3.0);
             }
             assert_eq!(active(&pool), active(&mpool), "full slots (seed {seed})");
             for i in active(&pool) {
@@ -3812,11 +3812,11 @@ mod tests {
                 match mirror.next_range(0, 3) {
                     0 => {
                         let a = mirror.next_double() * max - mirror.next_double() * max;
-                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a) * scale, 5, true, 6.0);
+                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, a) * scale, 5, true, 6.0);
                     }
                     1 => {
                         let a = mirror.next_double() * max - mirror.next_double() * max;
-                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::UNIT_Y, a) * scale, 240, false, 3.0);
+                        mirror_ring(&mut mpool, &mut mirror, &c, &w, center, rotated_by(Vec2::Y, a) * scale, 240, false, 3.0);
                     }
                     _ => {}
                 }
@@ -3840,7 +3840,7 @@ mod tests {
                     let off = Vec2::new(unit.x * 3.0 * r, unit.y * 20.0 * r);
                     let idx = mpool.new_dust_perfect(&mut mirror, &c, &w, center + off, 90, None, 0, Color::default(), 1.0);
                     let d = mpool.slot_mut(idx);
-                    d.velocity = Vec2::UNIT_Y;
+                    d.velocity = Vec2::Y;
                     d.no_gravity = true;
                     d.scale = scale;
                 }

@@ -1650,18 +1650,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
-    // The vanilla DitherSnakePass slot (`WorldGen.cs:14753-14755`): after
-    // Slush (`:14697`), before Dungeon (`:14757`) — W4-c30's dual-dungeons
-    // dither snake, conditionally registered: a classic world's gate is
-    // closed (`pass_registration_gate_closed`), no tiles and no draws.
-    // The step name IS the vanilla `GenPassNameID.DualDungeonsDitherSnake`
-    // string (`GenPassNameID.cs:256`) so `pass_rng` mixes the same name the
-    // vanilla pass carries.
-    step!(
-        "Dual Dungeons Dither Snake",
-        "Dual Dungeons Dither Snake",
-        step_dither_snake
-    ),
     // The vanilla Slush slot (`WorldGen.cs:14697`): after Lakes (`:14556`)
     // and before Dungeon (`:14757`) — W4-d102 pass 3. A pure retype sweep
     // (no draws); a no-op on the empty snow rect until d101's Generate Ice
@@ -2417,8 +2405,15 @@ fn step_terrain_fill(
     gv.water_line = water_line;
     gv.lava_line = lava_line;
     // The chest-stocking seam reads it off the World (the `ChestSiteEvent`
-    // `lava_line` field, W4-c33) — publish the drawn value beside the tiers.
+    // `lava_line` field, W4-c33) - publish the drawn value beside the tiers.
     world.lava_line = lava_line;
+    // `TerrainPass` publishes `Main.worldSurface`/`Main.rockLayer` at the
+    // end of the terrain step (`TerrainPass.cs`), and EVERY later pass reads
+    // them (the floating-island column scan, the campsite bands, the honey
+    // patches, …). The world tail used to set them last, leaving the passes
+    // on `World::new`'s `height/4` placeholder — publish them here.
+    world.world_surface = layers.world_surface;
+    world.rock_layer = layers.rock_layer;
     gv.layers = Some(layers);
 }
 
@@ -3443,26 +3438,17 @@ fn step_moss(
 /// scans up from the bottom centre. The name rolls ride `pass_rng("Guide")`.
 fn step_guide(
     world: &mut World,
-    gv: &mut GenVars,
+    _gv: &mut GenVars,
     streams: &mut Streams,
     opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let (spawn_x, spawn_y) = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
-        let x = world.width / 2;
-        let mut y = world.height - 10;
-        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
-            y -= 1;
-        }
-        (x, (y + 1).max(1))
-    } else {
-        let map = gv.map();
-        (
-            map.spawn_center,
-            (map.heights[map.spawn_center as usize] - 6).max(1),
-        )
-    };
+    // The vanilla pass reads `Main.spawnTileX/Y`; the `spawn point` step
+    // (`:19460-19588`) runs just before this one and its result rides
+    // `world.spawn_x/spawn_y`. Reading the compact map formula here instead
+    // would desync the Guide's home from the actual spawn.
+    let (spawn_x, spawn_y) = (world.spawn_x, world.spawn_y);
     starter_npcs::pass_starter_npcs(
         world,
         opts,
@@ -3705,13 +3691,23 @@ fn step_beehives(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    // The larva anchors ride the GenVars ledger (W4-d105 lane 5 #45): the
-    // hive pass publishes them, the `BeeLarvaInBeehives` pass places them.
-    let spans = gv.spans().clone();
+    // The faithful `HiveBiome` + `Beehives` pass (`hive.rs`, W4-c31 — it
+    // explicitly replaces the retired shape-level dome in `structures.rs`).
+    // The larva anchors ride `GenVars` (W4-d105 lane 5 #45): the hive pass
+    // publishes them, the `BeeLarvaInBeehives` pass places them.
+    let world_surface = gv.layers().world_surface;
     let rock_layer = gv.layers().rock_layer;
-    let mut larva = std::mem::take(&mut gv.larva);
-    structures::pass_beehives(world, &spans, rock_layer, &mut streams.srng, &mut larva);
-    gv.larva = larva;
+    let mut anchors = super::hive::LarvaAnchors::default();
+    super::hive::pass_beehives(
+        world,
+        world_surface,
+        rock_layer,
+        &mut anchors,
+        &mut streams.srng,
+    );
+    gv.larva = (0..anchors.num)
+        .map(|i| (anchors.x[i], anchors.y[i]))
+        .collect();
 }
 
 fn step_hell_forts(
@@ -5205,6 +5201,14 @@ fn pass_spawn_point(
             }
             retry = false;
             num2 += 1;
+            // Robustness valve: the C# `Next(-num2, num2 + 1)` widens until a
+            // clean column appears; on a port-terrain seed where no centre-band
+            // column qualifies (a 379/bubble band or an all-air centre) the
+            // loop would spin to i32 overflow. Cap the widening at the world
+            // width and accept the current spawn.
+            if num2 > world.width {
+                break;
+            }
             if (world.spawn_y as f64) > world_surface {
                 retry = true;
             }
@@ -5235,6 +5239,10 @@ fn pass_spawn_point(
                 }
             }
             num12 += 1;
+            // The same robustness valve as the widening loop above.
+            if num12 > world.width {
+                break;
+            }
         }
     }
     // `:19576-19585`: the remix tail — the bottom-centre air cell. The
@@ -5840,7 +5848,8 @@ mod tests {
         assert_eq!(pass_name_id("cave fields"), Some("Tunnels"));
         assert_eq!(pass_name_id("ores and gems"), Some("Shinies"));
         assert_eq!(pass_name_id("evil"), Some("Corruption"));
-        assert_eq!(pass_name_id("granite and marble"), Some("Marble"));
+        assert_eq!(pass_name_id("marble"), Some("Marble"));
+        assert_eq!(pass_name_id("granite"), Some("Granite"));
         assert_eq!(pass_name_id("slopes"), Some("Smooth World"));
         assert_eq!(pass_name_id("trees"), Some("Planting Trees"));
         assert_eq!(pass_name_id("surface flora"), Some("Weeds"));
@@ -5904,7 +5913,7 @@ mod tests {
         // + `larva` (vanilla "Larva", `:20868`) after `muds walls in
         // jungle`.
         // batch-O compose: c29's 1 (66→67) + d105's 9 (66→75) = 76.
-        assert_eq!(names.len(), 76);
+        assert_eq!(names.len(), 120);
         // W4-c30: + `Dual Dungeons Dither Snake` (vanilla `:14755`,
         // gate-closed on a classic world) between `liquids` and `dungeon`.
         // W4-d101 pass 1: + `sand patches` (vanilla "Sand Patches",
@@ -5939,7 +5948,7 @@ mod tests {
         // runner` (vanilla "Dirt Rock Wall Runner", `:15461`) after
         // `pyramids`; + `wood tree walls` (vanilla "Wood Tree Walls",
         // `:15717`) after `living trees`.
-        assert_eq!(names.len(), 85);
+        assert_eq!(names.len(), 120);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -5968,6 +5977,8 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                // Union order: the batch-B 98 + the W4-d101/d102/d103 vanilla
+                // passes folded at the merge (silt/webs/waterfalls/chests/crystals/...).
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
@@ -5983,10 +5994,6 @@ mod tests {
                 "cave fields",
                 "mount caves",
                 "dirt wall backgrounds",
-                // M5-BIOME-2: granite moved after the cave carve (the vanilla
-                // order) тАФ the `GraniteBiome.CanPlace` inactive-origin gate
-                // needs the pre-carved caves. W4-d101 pass 9: the two halves
-                // carry their own vanilla rows now.
                 "marble",
                 "granite",
                 "stone-in-dirt blobs",
@@ -5999,38 +6006,35 @@ mod tests {
                 "wavy caves",
                 "generate ice biome",
                 "dirt to mud",
+                "silt",
                 "ash blobs",
                 "ores and gems",
+                "webs",
                 "evil",
                 "liquids",
-                "dither snake",
-                // W4-c30: the conditional DitherSnakePass slot
-                // (`WorldGen.cs:14755`) — gate-closed on a classic world.
-                "Dual Dungeons Dither Snake",
                 "slush",
+                "dither snake",
                 "dungeon",
                 "constant lava layer",
+                "mountain caves",
                 "beaches",
                 "gravitating sand",
+                "gems",
                 "ocean caves",
                 "shimmer",
-                // W4-c33: the faithful Pyramids anchor loop takes its
-                // vanilla slot (`WorldGen.cs:15360`, after Create Ocean
-                // Caves/Shimmer/Clean Up Dirt).
+                "clean up dirt",
                 "pyramids",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
                 "jungle shrines",
                 "chests",
-                // W4-c33 KEEP-ONE (matrix-88 ┬з2.9): the c33 water-chests
-                // registration dropped тАФ the d103 slot after `surface
-                // chests` below stands.
                 "spider caves",
                 "gem caves",
                 "moss",
                 "altars",
                 "wet jungle",
+                "dirt rock wall runner",
                 "pots",
                 "beehives",
                 "hell forts",
@@ -6056,12 +6060,29 @@ mod tests {
                 "larva",
                 "floating islands",
                 "settle liquids",
-                "floating island houses",
                 "remove water",
                 "oasis",
                 "shell piles",
                 "slopes",
                 "living trees",
+                "waterfalls",
+                "wall variety",
+                "life crystals",
+                "statues",
+                "surface chests",
+                "water chests",
+                "cave walls",
+                "wood tree walls",
+                "floating island houses",
+                "quick cleanup",
+                "hellforge",
+                "spreading grass",
+                "surface ore and stone",
+                "place fallen log",
+                "traps",
+                "piles",
+                "spawn point",
+                "grass wall",
                 "guide",
                 "sunflowers",
                 "trees",
@@ -6113,7 +6134,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mount caves"), pos("cave fields") + 1);
-        assert_eq!(names[pos("mount caves") + 1], "stone-in-dirt blobs");
+        assert_eq!(names[pos("mount caves") + 1], "dirt wall backgrounds");
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -6135,7 +6156,8 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("dirt wall backgrounds"), pos("mount caves") + 1);
-        assert_eq!(names[pos("dirt wall backgrounds") + 1], "stone-in-dirt blobs");
+        assert_eq!(names[pos("dirt wall backgrounds") + 1], "marble");
+        assert_eq!(names[pos("granite") + 1], "stone-in-dirt blobs");
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -6289,8 +6311,9 @@ mod tests {
         assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
         // + surface caves (WORLDGEN-CAVES, the vanilla SurfaceCaves slot
         // `WorldGen.cs:12162`) + wavy caves (M5-SEED-1).
-        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 3);
-        assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 8);
+        assert_eq!(names[pos("dirt to mud") + 1], "silt");
+        assert_eq!(names[pos("silt") + 1], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -6324,7 +6347,8 @@ mod tests {
         assert_eq!(pos("dither snake"), pos("dungeon") - 1);
         assert_eq!(pos("dither snake"), pos("slush") + 1);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
-        assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
+        assert_eq!(names[pos("gravitating sand") + 1], "gems");
+        assert_eq!(names[pos("gems") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -6370,8 +6394,20 @@ mod tests {
         // stays g44's (over the islands ledger, the adjacency witness pins
         // it); d103's after-cave-walls duplicate dropped тАФ the chain goes
         // straight to the Grass Wall + planting family here (d106 R1).
-        assert_eq!(names[pos("cave walls") + 1], "grass wall");
-        assert_eq!(names[pos("grass wall") + 1], "trees");
+        assert_eq!(names[pos("cave walls") + 1], "wood tree walls");
+        assert_eq!(names[pos("wood tree walls") + 1], "floating island houses");
+        assert_eq!(names[pos("floating island houses") + 1], "quick cleanup");
+        assert_eq!(names[pos("quick cleanup") + 1], "hellforge");
+        assert_eq!(names[pos("hellforge") + 1], "spreading grass");
+        assert_eq!(names[pos("spreading grass") + 1], "surface ore and stone");
+        assert_eq!(names[pos("surface ore and stone") + 1], "place fallen log");
+        assert_eq!(names[pos("place fallen log") + 1], "traps");
+        assert_eq!(names[pos("traps") + 1], "piles");
+        assert_eq!(names[pos("piles") + 1], "spawn point");
+        assert_eq!(names[pos("spawn point") + 1], "grass wall");
+        assert_eq!(names[pos("grass wall") + 1], "guide");
+        assert_eq!(names[pos("guide") + 1], "sunflowers");
+        assert_eq!(names[pos("sunflowers") + 1], "trees");
         // W4-d106 R3: `tile cleanup` now sits between `cacti` and
         // `lihzahrd altar` (the vanilla Tile Cleanup slot, `:21520`).
         assert_eq!(names[pos("lihzahrd altar") - 1], "tile cleanup");
@@ -6441,14 +6477,15 @@ mod tests {
     fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("ores and gems") + 1], "webs");
         // + webs (W4-d102, the vanilla Webs slot `WorldGen.cs:13607`).
         assert_eq!(pos("evil"), pos("ores and gems") + 2);
         // W4-c30: the DitherSnakePass slot sits between Lakes (`:14556`,
         // the port's `liquids`) and Dungeon (`:14757`) — `:14755`.
         assert_eq!(names[pos("evil") + 1], "liquids");
-        assert_eq!(pos("Dual Dungeons Dither Snake"), pos("liquids") + 1);
-        assert_eq!(pos("dungeon"), pos("Dual Dungeons Dither Snake") + 1);
+        assert_eq!(names[pos("liquids") + 1], "slush");
+        assert_eq!(pos("dither snake"), pos("liquids") + 2);
+        assert_eq!(pos("dungeon"), pos("dither snake") + 1);
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -7376,7 +7413,23 @@ mod tests {
             micro_flags: dual,
             ..base.clone()
         };
-        assert!((total_weight(&dual_opts) - total_weight(&base) - 1.0).abs() < 1e-9);
+        // The snake pass adds 1.0 (`DitherSnakePass.cs:18`), but the same
+        // `dualDungeons` micro seed also prunes the twelve
+        // `DisablePassesForSpecialSeeds` passes (`WorldGen.cs:22504`), so
+        // the net difference is `1.0 - sum(disabled executed-step weights)`.
+        let dual_disabled: f64 = EXECUTED_PIPELINE
+            .iter()
+            .filter(|s| DUAL_DUNGEON_DISABLED_PASSES.contains(&s.vanilla))
+            .map(|s| {
+                VANILLA_CHAIN
+                    .iter()
+                    .find(|p| p.name == s.vanilla)
+                    .map_or(1.0, |p| p.weight)
+            })
+            .sum();
+        assert!(
+            (total_weight(&dual_opts) - total_weight(&base) - (1.0 - dual_disabled)).abs() < 1e-9
+        );
     }
 
     /// End to end: a `dualDungeons` world paints both snakes (the wall-350
@@ -7444,10 +7497,10 @@ mod tests {
         // boundaries to maxTilesX without a draw (`:8198-8199`).
         let mut w = World::new("t".into(), 4200, 1200);
         let mut rng = Xorshift64::from_seed(7);
-        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        let (tx, ts) = crate::worldgen::bg_rolls::randomize_tree_style(&mut rng, w.width);
         w.tree_x = tx;
         w.tree_style = ts;
-        let roll = super::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
+        let roll = crate::worldgen::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
         w.apply_cave_backgrounds(&roll);
         assert_eq!(w.cave_back_x[1], 4200);
         assert_eq!(w.cave_back_x[2], 4200);
@@ -7460,7 +7513,7 @@ mod tests {
         // Medium (6400): 3 tree zones.
         let mut w = World::new("t".into(), 6400, 1800);
         let mut rng = Xorshift64::from_seed(7);
-        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        let (tx, ts) = crate::worldgen::bg_rolls::randomize_tree_style(&mut rng, w.width);
         w.tree_x = tx;
         w.tree_style = ts;
         assert_eq!(w.tree_x[2], 6400, "medium: treeX[2] stays maxTilesX");
@@ -7469,10 +7522,10 @@ mod tests {
         // Large (8400): 4 zones, every boundary a band, 4 distinct styles.
         let mut w = World::new("t".into(), 8400, 2400);
         let mut rng = Xorshift64::from_seed(7);
-        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        let (tx, ts) = crate::worldgen::bg_rolls::randomize_tree_style(&mut rng, w.width);
         w.tree_x = tx;
         w.tree_style = ts;
-        let roll = super::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
+        let roll = crate::worldgen::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
         w.apply_cave_backgrounds(&roll);
         assert!(w.tree_x[2] < 8400, "large: the 3rd boundary is a band");
         let mut styles: Vec<i32> = w.tree_style.to_vec();
@@ -7484,8 +7537,8 @@ mod tests {
         caves.dedup();
         assert_eq!(caves.len(), 4, "4 distinct cave styles");
         // Determinism: the same seed rolls the same tables.
-        let (ax, ast) = super::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
-        let (bx, bst) = super::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
+        let (ax, ast) = crate::worldgen::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
+        let (bx, bst) = crate::worldgen::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
         assert_eq!(ax, bx);
         assert_eq!(ast, bst);
     }

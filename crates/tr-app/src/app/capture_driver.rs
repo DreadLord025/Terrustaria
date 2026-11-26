@@ -243,6 +243,13 @@ impl App {
             let (_start, _finished) = self.capture.draw_tick(&mut renderer);
             return;
         }
+        // The capture's orb-family `Main.rand` stream + the `NewDust` cull
+        // inputs are read from `&self` BEFORE the disjoint field borrows
+        // below (the C# DrawCapture reads the live statics; the port's draws
+        // hold `&World`, so the frame stream rides a copy written back after
+        // the chunk render — the d54 break-seam convention).
+        let mut capture_orb_rand = self.world.frame_rng.clone();
+        let capture_spawn_ctx = self.spawn_ctx();
         // Disjoint field borrows: the renderer owns gpu/renderer/family +
         // the world state; the capture manager pumps the queue separately.
         let gpu = self.gpu.as_ref().unwrap();
@@ -255,7 +262,6 @@ impl App {
             .capture_light_params
             .unwrap_or_default();
         let style = tr_core::lighting::LightStyle::for_mode(self.light_mode);
-        let mut leaf_spawns = Vec::new();
         let cw = crate::app::capture_render::CaptureWorld {
             world: &self.world,
             lookups: &mut self.lookups,
@@ -278,8 +284,33 @@ impl App {
             tile_anim: &self.tile_anim,
             player_assets: &self.player_assets,
             npc_assets: &self.npc_assets,
-            leaf_spawns: &mut leaf_spawns,
-            clouds: &self.clouds,
+            // W4-g68: the leaf spawns land in the live gore pool, exactly
+            // like the fused frame path.
+            gore: &mut self.gore,
+            main_rand: self.rngs.global(),
+            emit_effects: !self.game_paused && !crate::env::no_wind(),
+            // The C# DrawCapture reads the live `LiquidRenderer` frame
+            // statics; the port's clock stores the two mod-16 states.
+            liquid_frames: (
+                self.liquid_clock.frame_state as i32,
+                self.liquid_clock.waterfall_frame_state as i32,
+            ),
+            rain_cloud_alpha: self.rain.visual_alpha(),
+            critter_cage: &mut self.critter_cage,
+            chests: &self.world_chests,
+            cage_anim: &mut self.cages,
+            liquid_rand: &mut self.liquid_rand,
+            dust: &mut self.dust,
+            spawn_ctx: &capture_spawn_ctx,
+            martian_light: self.martian_light,
+            orb_main_rand: &mut capture_orb_rand,
+            orb_ctx: &capture_spawn_ctx,
+            game_paused: self.game_paused,
+            latest_filter_strength: self.filter_driver.latest_filter_strength,
+            cloud_field: &self.cloud_field,
+            event_skies: &self.event_skies,
+            forest_hills: &self.forest_hills,
+            lantern_sky: &self.lantern_sky,
             counter: self.game_update_count,
             mouse_text_color: self.mouse_text_color,
             // W4-g72 closeout delta 64d §2: the live scene metrics + the
@@ -324,8 +355,6 @@ impl App {
             items: &self.items,
             projectiles: &self.projectiles,
             rain: &self.rain,
-            gore: &self.gore,
-            dust: &mut self.dust,
             scene_state: &self.scene_state,
         };
         let mut gpu_renderer = crate::app::capture_render::GpuCaptureRenderer {
@@ -349,6 +378,9 @@ impl App {
             .active_settings_name()
             .unwrap_or_default();
         let (_start, finished) = self.capture.draw_tick(&mut gpu_renderer);
+        // Write the orb-family stream back (the fused path's
+        // `world.frame_rng = orb_rand`).
+        self.world.frame_rng = capture_orb_rand;
         if finished {
             if let Some((data, w, h)) = pending_output {
                 if !data.is_empty() && w > 0 && h > 0 {

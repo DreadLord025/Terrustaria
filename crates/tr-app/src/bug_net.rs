@@ -1730,6 +1730,9 @@ mod tests {
         for g in gores {
             assert!((11..14).contains(&g.gore_type));
             assert_eq!(g.scale, 0.7);
+        }
+    }
+
     /// W4-d127 chain item 3 — the BIRD catch chain census
     /// (c4/c7 pattern): every style-24 catchable bird's `catch_item`
     /// row matches BOTH the module's `STYLE24_BIRDS` census row and

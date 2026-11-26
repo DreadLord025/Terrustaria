@@ -1988,7 +1988,7 @@ mod tests {
         pool.slot_mut(0).frame.current_row = 7;
         pool.slot_mut(0).frame_counter = 0;
         let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
-        pool.update(&mut rng, &world, &DripCollision { hit: true, wet: false }, 0.0, &mut sound);
+        pool.update(&mut rng, &world, &DripCollision { hit: true, wet: false }, 0.0, &mut sound, None);
         assert_eq!(sound.plays, vec![(108, 208, 1)], "the style pick is the Next(2) argument");
         assert_eq!(sound.pitch_draws, vec![(-30, 31, -7)], "one pitch draw, after the style");
         assert_eq!(rng.idx, 4, "exactly two draws past the spawn pair");
@@ -2007,7 +2007,7 @@ mod tests {
         pool.slot_mut(0).frame.current_row = 7;
         pool.slot_mut(0).frame_counter = 0;
         let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
-        pool.update(&mut rng, &world, &DripCollision { hit: false, wet: true }, 0.0, &mut sound);
+        pool.update(&mut rng, &world, &DripCollision { hit: false, wet: true }, 0.0, &mut sound, None);
         assert_eq!(sound.plays, vec![(108, 208, 2)], "the wet arm's fixed style");
         assert_eq!(sound.pitch_draws, vec![(-30, 31, 12)]);
         assert_eq!(rng.idx, 3, "ONE draw past the spawn pair — no Next(2)");
@@ -2026,7 +2026,7 @@ mod tests {
             pool.slot_mut(0).frame.current_row = 7;
             pool.slot_mut(0).frame_counter = 0;
             let mut sound = RecordingDripSound { plays: Vec::new(), pitch_draws: Vec::new() };
-            pool.update(&mut rng, &world, &DripCollision { hit: true, wet: true }, 0.0, &mut sound);
+            pool.update(&mut rng, &world, &DripCollision { hit: true, wet: true }, 0.0, &mut sound, None);
             assert!(sound.plays.is_empty(), "kind {kind} is flag4-quiet");
             assert_eq!(rng.idx, 2, "kind {kind} draws nothing past the spawn pair");
             assert_eq!(pool.slot(0).frame.current_row, 10);
@@ -2172,8 +2172,7 @@ mod tests {
         // (`Gore.cs:1017`): 2 + 255 ticks to the `alpha >= 255` kill
         // (`:1055-1058`).
         for tick in 0..257 {
-            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
-            pool.update(&mut rng, &world, &collisions, 0.0, None);
+            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound, None);
             if tick < 2 {
                 assert_eq!(pool.slot(0).time_left, 1 - tick as i32);
                 assert_eq!(pool.slot(0).alpha, 0, "the life runs out before the fade");
@@ -2183,8 +2182,7 @@ mod tests {
         }
         assert!(!pool.slot(0).active, "alpha 255 deactivates the gore");
         // The inactive slot is skipped from now on (`Gore.cs:310-313`).
-        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
-        pool.update(&mut rng, &world, &collisions, 0.0, None);
+        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).alpha, 255);
     }
 
@@ -2202,11 +2200,11 @@ mod tests {
         pool.slot_mut(0).sticky = false;
         let collisions = NoCollision;
         for _ in 0..127 {
-            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
+            pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound, None);
         }
         assert!(pool.slot(0).active);
         assert_eq!(pool.slot(0).alpha, 254);
-        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
+        pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound, None);
         assert!(!pool.slot(0).active);
     }
 
@@ -2229,14 +2227,12 @@ mod tests {
         pool.slot_mut(0).alpha = 0;
         pool.slot_mut(0).time_left = 2;
         let collisions = NoCollision;
-        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound);
-        pool.update(&mut rng, &world, &collisions, 2.5, None);
+        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound, None);
         let gore = pool.slot(0);
         assert_eq!(gore.velocity.x, 0.4 * 2.5);
         assert_eq!(gore.time_left, 1);
         assert!(gore.active);
-        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound);
-        pool.update(&mut rng, &world, &collisions, 2.5, None);
+        pool.update(&mut rng, &world, &collisions, 2.5, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).time_left, 0);
         assert!(!pool.slot(0).active, "an empty timeLeft deactivates the cloud");
     }
@@ -2332,7 +2328,7 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
         let wind = 0.5_f32;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, &mut NoGoreSound, None);
         let g = pool.slot(0);
         let theta = std::f32::consts::PI / 180.0;
         assert_eq!(g.velocity.y, theta, "the angle grows one degree per tick");
@@ -2353,7 +2349,7 @@ mod tests {
         world.world_surface = 0.0; // every position is underground
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, &mut NoGoreSound, None);
         let g = pool.slot(0);
         let theta = std::f32::consts::PI / 180.0;
         assert!((g.position.x - (500.0 - theta.sin())).abs() < 1e-4);
@@ -2366,7 +2362,7 @@ mod tests {
         let world = leaf_physics_world();
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
-        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).velocity.y, -1.0, "the rest-phase sentinel");
     }
 
@@ -2388,7 +2384,7 @@ mod tests {
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         let wind = 0.5_f32;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, &mut NoGoreSound, None);
         let g = pool.slot(0);
         assert!((g.velocity.x - wind * 0.94).abs() < 1e-5, "the 0.94 decay");
         assert!((g.position.x - (160.0 + wind * 0.94)).abs() < 1e-4);
@@ -2397,7 +2393,7 @@ mod tests {
         world.world_surface = 0.0;
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         pool.slot_mut(0).position = Vec2::new(160.0, 160.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).velocity.x, 0.0);
     }
 
@@ -2412,7 +2408,7 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).velocity.x, 0.0);
         assert_eq!(pool.slot(0).position.x, 160.0);
     }
@@ -2429,7 +2425,7 @@ mod tests {
         let mut pool = GorePool::new();
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, &mut NoGoreSound, None);
         assert!(!pool.slot(0).active, "the lava arm deactivates at once");
     }
 
@@ -2472,6 +2468,7 @@ mod tests {
             &world,
             &FreeCollision,
             0.5,
+            &mut NoGoreSound,
             Some((&mut dust, &ctx)),
         );
         assert_eq!(rng.idx, 30, "six stream draws per puff, five puffs");
@@ -2686,7 +2683,7 @@ mod tests {
         // C# reads whatever frame the slot carries — a paint-swapped leaf
         // can ride any cell shape).
         pool.slot_mut(0).frame = SpriteFrame::new(1, 1);
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, &mut NoGoreSound, None);
         assert_eq!(
             pool.slot(0).velocity.y,
             -1.0,
@@ -2695,7 +2692,7 @@ mod tests {
         // Without the seam the probe reads tile 10 (dry) and keeps falling.
         let mut bare = GorePool::new();
         spawn_leaf(&mut bare, &world, Vec2::new(170.1, 300.0));
-        bare.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        bare.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, &mut NoGoreSound, None);
         assert!(bare.slot(0).velocity.y > 0.0);
     }
 
@@ -2711,7 +2708,7 @@ mod tests {
         spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
         pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
         pool.slot_mut(0).alpha = 0;
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, &mut NoGoreSound, None);
         let g = pool.slot(0);
         assert_eq!(g.velocity.y, 0.1);
         assert_eq!(g.time_left, 0);
@@ -2729,11 +2726,11 @@ mod tests {
         pool.slot_mut(0).time_left = 1;
         // Keep the leaf falling in open air; the FreeCollision seam never
         // brakes, so the rest switch never fires.
-        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, &mut NoGoreSound, None);
         assert_eq!(pool.slot(0).time_left, 0);
         assert_eq!(pool.slot(0).alpha, 0);
         for tick in 1..=255 {
-            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, &mut NoGoreSound, None);
             if tick < 255 {
                 assert!(pool.slot(0).active);
                 assert_eq!(pool.slot(0).alpha, tick);

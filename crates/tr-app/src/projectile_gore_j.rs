@@ -76,7 +76,7 @@ pub fn kill9_503_gores(
         if is_503 {
             ty = 16;
         }
-        gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
     }
 }
 
@@ -107,7 +107,7 @@ pub fn tombstone_head_gores(
             rng.next_range(-20, 21) as f32 * 0.2,
             rng.next_range(-20, 21) as f32 * 0.2,
         );
-        let idx = gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
         gore.slot_mut(idx).velocity -= p.vel * 0.5;
     }
 }
@@ -127,7 +127,7 @@ pub fn corner_gores(
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
     for (sx, sy) in signs {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity *= 0.4;
         g.velocity.x += sx * magnitude;

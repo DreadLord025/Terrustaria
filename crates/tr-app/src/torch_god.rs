@@ -503,6 +503,7 @@ pub fn drain_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projectile_ai_torch_god::TORCH_DUST;
     use tr_core::tile::FLAG_ACTIVE;
     use tr_core::UnifiedRandom;
 
@@ -882,12 +883,12 @@ mod tests {
         let out = try_recalculating_torch_luck_head(&mut ctx, &mut luck, &w, CENTER, &mut rng);
         assert!(out.is_some(), "the event consumes the tick");
         assert_eq!(luck.lucky_torch_counter, 0);
-        assert_eq!(state.torch_god_cooldown, 50, "no decrement while running");
+        assert_eq!(ctx.state.torch_god_cooldown, 50, "no decrement while running");
         // Idle: the cooldown ticks down, the scan proceeds.
-        state.happy_fun_torch_time = false;
+        ctx.state.happy_fun_torch_time = false;
         let out = try_recalculating_torch_luck_head(&mut ctx, &mut luck, &w, CENTER, &mut rng);
         assert!(out.is_none());
-        assert_eq!(state.torch_god_cooldown, 49);
+        assert_eq!(ctx.state.torch_god_cooldown, 49);
     }
 
     #[test]

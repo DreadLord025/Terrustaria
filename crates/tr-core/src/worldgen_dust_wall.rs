@@ -562,7 +562,11 @@ mod tests {
 
     /// W4-g14 — site 62155: a plain wall (4, stone) resolves num 7 via
     /// the override chain and spawns one type-7 dust; the ladder drew
-    /// NOTHING on gen (no genRand arm matches wall 4).
+    /// NOTHING on gen (no genRand arm matches wall 4). RE-DERIVED: the C#
+    /// call is `Dust.NewDust(new Vector2(i*16, j*16), 16, 16, num)`
+    /// (`WorldGen.cs:62155`), so the spawn is the 16x16 box with its own
+    /// jitter — mirrored against a `new_dust` of the same shape, not pinned
+    /// to the raw cell origin.
     #[test]
     fn w4_g14_wall_plain_spawn_and_no_gen_draws() {
         let w = world();
@@ -576,7 +580,15 @@ mod tests {
         );
         assert_ne!(idx, crate::particles::DUST_SENTINEL);
         assert_eq!(pool.slot(idx).dust_type, 7);
-        assert_eq!(pool.slot(idx).position, Vec2::new(64.0, 80.0));
+        let mut mpool = DustPool::new();
+        let mut m = UnifiedRandom::new(3);
+        let midx = mpool.new_dust(
+            &mut m, &c, &w, Vec2::new(64.0, 80.0), 16, 16, 7,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        assert_eq!(pool.slot(idx).position, mpool.slot(midx).position);
+        assert_eq!(pool.slot(idx).velocity, mpool.slot(midx).velocity);
+        assert_eq!(pool.slot(idx).frame_x, mpool.slot(midx).frame_x);
         streams_agree(&mut gen_rng, &mut gtail); // the ladder drew nothing
     }
 

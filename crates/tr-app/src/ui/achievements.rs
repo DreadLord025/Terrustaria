@@ -528,7 +528,7 @@ pub fn draw_screen(
     draw_title(r, lookups, &panel);
     draw_categories(r, lookups, &panel, categories, mouse);
     draw_back(r, lookups, &panel, mouse);
-    draw_list(r, lookups, &panel, manager, scroll, categories, mouse);
+    draw_list(r, lookups, &panel, manager, categories, scroll, mouse);
     // The `UIScrollbar` panel child (`UIAchievementsMenu.cs:81-87`): appended
     // unconditionally and `AutoHide` defaults false (`UIScrollbar.cs:29`), so
     // `DrawSelf` (`:103-124`) draws even when the list cannot scroll — the
@@ -700,7 +700,11 @@ fn draw_list(
     lookups: &Lookups,
     panel: &[f32; 4],
     manager: &AchievementManager,
-    rows: &[usize],
+    // The batch-M gate: the filter toggles, not the precomputed row list —
+    // the body recomputes `visible_rows(manager, categories)` and the caller
+    // passes `categories` in this slot. The batch-P `rows` binding was a
+    // stale splice (the union's E0425 source).
+    categories: &[bool; 4],
     scroll: f32,
     mouse: Vec2,
 ) {

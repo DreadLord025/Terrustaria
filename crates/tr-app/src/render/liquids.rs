@@ -58,18 +58,8 @@ pub(crate) fn draw_waters(
             liquid_alpha[j]
         };
         quads += draw_liquids(
-            r,
-            lookups,
-            light,
-            style,
-            anim_time,
-            liquid_frames,
-            draws,
-            pass,
-            j,
-            alpha,
-            true,
-            r, world, lookups, atlas, light, style, anim_time, draws, pass, j, alpha, true,
+            r, world, lookups, atlas, light, style, anim_time, liquid_frames, draws, pass,
+            j, alpha, true,
         );
         fading = true;
     }
@@ -91,8 +81,9 @@ pub(crate) fn draw_waters(
         false,
     );
     // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
-    quads += draw_shimmer(r, lookups, anim_time, liquid_frames.0, draws, pass);
-    quads += draw_shimmer(r, world, lookups, atlas, light, style, anim_time, draws, pass);
+    quads += draw_shimmer(
+        r, world, lookups, atlas, light, style, anim_time, liquid_frames.0, draws, pass,
+    );
     quads
 }
 
@@ -997,8 +988,8 @@ mod tests {
         // The pad cell: liquid 255 -> 255/16 - 3 = 15 - 3 = 12.
         put(&mut w, 10, 10, 518, 255);
         let lift = |w: &World| -> i32 {
-            let t = w.tile(10, 10).unwrap();
-            let mut num = t.liquid as i32 / 16 - 3;
+            let liquid = w.tile(10, 10).unwrap().liquid;
+            let mut num = liquid as i32 / 16 - 3;
             if super::solid_tile_probe(w, 10, 9) && num > 8 {
                 num = 8;
             }
@@ -1010,16 +1001,18 @@ mod tests {
         put(&mut w, 10, 9, 1, 0);
         assert_eq!(lift(&w), 8);
         // A platform ceiling (solidTop) does NOT clamp.
-        w.tiles[w.index(10, 9)].kind = 19;
+        let i = w.index(10, 9);
+        w.tiles[i].kind = 19;
         assert_eq!(lift(&w), 12);
         // A shallow pad under the ceiling: 128/16 - 3 = 5, below the
         // clamp threshold — the clamp never lowers.
-        w.tiles[w.index(10, 9)].kind = 1;
-        w.tiles[w.index(10, 10)].liquid = 128;
+        w.tiles[i].kind = 1;
+        let j = w.index(10, 10);
+        w.tiles[j].liquid = 128;
         assert_eq!(lift(&w), 5);
         // An actuated ceiling is not solid (nactive).
-        w.tiles[w.index(10, 9)].flags |= tr_core::tile::FLAG_INACTIVE;
-        w.tiles[w.index(10, 10)].liquid = 255;
+        w.tiles[i].flags |= tr_core::tile::FLAG_INACTIVE;
+        w.tiles[j].liquid = 255;
         assert_eq!(lift(&w), 12);
     }
 
@@ -1030,7 +1023,7 @@ mod tests {
     fn w4_g12_the_redraw_gate_and_anchor_match_the_csharp() {
         let src = include_str!("liquids.rs");
         let body = &src[src.find("pub(crate) fn draw_tile_in_water(").unwrap()..];
-        let body = &body[..body.find("/// Pushes one record's quad")];
+        let body = &body[..body.find("/// Pushes one record's quad").expect("the quad fn")];
         assert!(body.contains("tile.kind != 518"), "the type gate");
         assert!(body.contains("!tile.active()"), "the active gate");
         assert!(body.contains("/ 16 - 3"), "the integer lift");

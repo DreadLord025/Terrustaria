@@ -112,7 +112,7 @@ fn should_tile_survive(app: &mut App, x: i32, y: i32) -> bool {
 /// `Chest.CanDestroyChest`'s item scan over the DISJOINT chest-store field
 /// (the `world_sim/editing.rs` closure precedent — a whole-`App` borrow would
 /// conflict with the `&mut app.world` the edit seams take).
-fn holds_items(chests: &[crate::craft::WorldChest]) -> impl Fn(i32, i32) -> bool + '_ {
+fn holds_items(chests: &[crate::craft::WorldChest]) -> impl Fn(i32, i32) -> bool + Copy + '_ {
     move |x, y| {
         chests
             .iter()
@@ -241,7 +241,7 @@ pub(crate) fn host_tile_edit(app: &mut App, server: &net::Server, id: u32, e: ne
         7 => {
             // `WorldGen.PoundTile(x, y)` (`:1197`) — the half-brick toggle.
             let holds = holds_items(&app.world_chests);
-            if edit::pound_tile(&mut app.world, x, y, false, holds) {
+            if edit::pound_tile(&mut app.world, x, y, false, holds, app.rngs.global()) {
                 app.audio
                     .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                 app.world_key = None;
@@ -267,7 +267,7 @@ pub(crate) fn host_tile_edit(app: &mut App, server: &net::Server, id: u32, e: ne
         14 => {
             // `WorldGen.SlopeTile(x, y, num152)` (`:1225`).
             let holds = holds_items(&app.world_chests);
-            if edit::slope_tile(&mut app.world, x, y, e.value.max(0) as u8, false, holds) {
+            if edit::slope_tile(&mut app.world, x, y, e.value.max(0) as u8, false, holds, app.rngs.global()) {
                 app.audio
                     .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                 app.world_key = None;
@@ -345,7 +345,7 @@ pub(crate) fn host_tile_edit(app: &mut App, server: &net::Server, id: u32, e: ne
                     t.set_slope(e.value.max(0) as u8);
                 }
                 let holds = holds_items(&app.world_chests);
-                if edit::pound_tile(&mut app.world, x, y, false, holds) {
+                if edit::pound_tile(&mut app.world, x, y, false, holds, app.rngs.global()) {
                     app.audio
                         .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                     app.world_key = None;
@@ -460,7 +460,7 @@ pub(crate) fn client_tile_edit(app: &mut App, e: net::TileEdit) {
         }
         7 => {
             let holds = holds_items(&app.world_chests);
-            if edit::pound_tile(&mut app.world, x, y, false, holds) {
+            if edit::pound_tile(&mut app.world, x, y, false, holds, app.rngs.global()) {
                 app.audio
                     .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                 app.world_key = None;
@@ -480,7 +480,7 @@ pub(crate) fn client_tile_edit(app: &mut App, e: net::TileEdit) {
         }
         14 => {
             let holds = holds_items(&app.world_chests);
-            if edit::slope_tile(&mut app.world, x, y, e.value.max(0) as u8, false, holds) {
+            if edit::slope_tile(&mut app.world, x, y, e.value.max(0) as u8, false, holds, app.rngs.global()) {
                 app.audio
                     .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                 app.world_key = None;
@@ -532,7 +532,7 @@ pub(crate) fn client_tile_edit(app: &mut App, e: net::TileEdit) {
                     t.set_slope(e.value.max(0) as u8);
                 }
                 let holds = holds_items(&app.world_chests);
-                if edit::pound_tile(&mut app.world, x, y, false, holds) {
+                if edit::pound_tile(&mut app.world, x, y, false, holds, app.rngs.global()) {
                     app.audio
                         .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
                     app.world_key = None;
@@ -633,7 +633,7 @@ fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
         0 => {
             // `WorldGen.OpenDoor(x, y, num47)` (`:1310`).
             let mut drops = Vec::new();
-            if edit::open_door(&mut app.world, x, y, dir, &mut drops) {
+            if edit::open_door(&mut app.world, x, y, dir, &mut drops, None, app.rngs.global()) {
                 app.audio.play_door_sound(
                     true,
                     x as f32 * TILE_PX,
@@ -648,7 +648,7 @@ fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
             // `WorldGen.CloseDoor(x, y, forced: true)` (`:1313`) — the
             // forced close skips the occupancy gate (the wired caller).
             let mut drops = Vec::new();
-            if edit::close_door(&mut app.world, x, y, true, &|_, _| false, &mut drops) {
+            if edit::close_door(&mut app.world, x, y, true, &|_, _| false, &mut drops, None, app.rngs.global()) {
                 app.audio.play_door_sound(
                     false,
                     x as f32 * TILE_PX,
@@ -672,55 +672,27 @@ fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
             // message handler — `wire_skips: None` (the C#
             // `Main.netMode != 1 && Wiring.running` gate is false here).
             let only = if action == 2 { 1 } else { 0 };
-            let mut drops = Vec::new();
-            let mut cues = Vec::new();
-            {
-                // The entity half of `Collision.EmptyTile(ignoreTiles:
-                // true)` (research/95 §8.1): the REAL player/peer/NPC box
-                // overlap (the `cell_blocked` reader convention) — tr-core
-                // carries no entity store, so the closure injects it; the
-                // field-wise capture keeps the `&mut app.world` borrow free
-                // (the block ends the borrows before the drop spawn).
+            // The entity half of `Collision.EmptyTile(ignoreTiles: true)`
+            // (research/95 §8.1): the REAL player/peer/NPC box overlap (the
+            // `cell_blocked` reader convention) — tr-core carries no entity
+            // store, so the closure injects it.
+            let (res, cue) = {
                 let (player, peers, npcs) = (&app.player, &app.remote_players, &app.npcs);
                 let blocked =
                     |x: i32, y: i32| entity_cell_blocked(player.as_ref(), peers, npcs, x, y);
-                // The close guard rides the FULL `WorldGen.CanKillTile` (the
-                // reader is the player path, not the wiring flood — the f11
-                // injection choice, research/95 §2): the chest-store scan
-                // reads the disjoint `world_chests` field.
-                let chests = &app.world_chests;
-                let can_kill = |w: &tr_core::World, x: i32, y: i32| {
-                    edit::can_kill_tile(w, x, y, |cx, cy| {
-                        chests
-                            .iter()
-                            .any(|c| c.tile == (cx, cy) && c.slots.iter().any(|s| s.count > 0))
-                    })
-                };
-                let _ = edit::shift_trapdoor(
-                    &mut app.world,
-                    x,
-                    y,
-                    dir == 1,
-                    only,
-                    &blocked,
-                    &can_kill,
-                    &mut drops,
-                    None,
-                    &mut cues,
-                );
+                edit::shift_trapdoor(&mut app.world, x, y, dir == 1, only, &blocked)
+            };
+            // The in-body cues (`PlaySound(8/9)` at the adjusted anchor) play
+            // on the bare global stream — the message handler runs outside
+            // every SwapRandom (S1-E-21i).
+            if let Some((cx, cy)) = cue {
+                app.audio
+                    .play_door_sound(true, cx as f32, cy as f32, app.rngs.global());
+            } else if let Some((cx, cy)) = res.refuse_cue {
+                app.audio
+                    .play_door_sound(false, cx as f32, cy as f32, app.rngs.global());
             }
-            // The in-body cues (`PlaySound(8/9)` at the adjusted anchor)
-            // play on the bare global stream — the message handler runs
-            // outside every SwapRandom (S1-E-21i).
-            for (open, px, py) in cues {
-                app.audio.play_door_sound(
-                    open,
-                    px as f32,
-                    py as f32,
-                    app.rngs.global(),
-                );
-            }
-            spawn_object_drops(app, drops);
+            spawn_object_drops(app, res.object_drops);
             app.world_key = None;
         }
         4 | 5 => {
@@ -730,28 +702,17 @@ fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
             // skipped entirely (the closure is never consulted). The
             // canonical W4-c42 body: alternate-0 def decode of kind 388,
             // the padding-free row walk, the radius-4 reframe superset.
-            let mut drops = Vec::new();
-            let mut cues = Vec::new();
-            let _ = edit::shift_tall_gate(
-                &mut app.world,
-                x,
-                y,
-                action == 5,
-                true,
-                &|_, _| false,
-                &mut drops,
-                None,
-                &mut cues,
-            );
-            for (open, px, py) in cues {
-                app.audio.play_door_sound(
-                    open,
-                    px as f32,
-                    py as f32,
-                    app.rngs.global(),
-                );
+            let (res, cue) = {
+                let (player, peers, npcs) = (&app.player, &app.remote_players, &app.npcs);
+                let blocked =
+                    |x: i32, y: i32| entity_cell_blocked(player.as_ref(), peers, npcs, x, y);
+                edit::shift_tall_gate(&mut app.world, x, y, action == 5, true, &blocked)
+            };
+            if let Some((cx, cy)) = cue {
+                app.audio
+                    .play_door_sound(true, cx as f32, cy as f32, app.rngs.global());
             }
-            spawn_object_drops(app, drops);
+            spawn_object_drops(app, res.object_drops);
             app.world_key = None;
         }
         _ => {}

@@ -1385,7 +1385,7 @@ pub(crate) fn ai_digtoise(
             // `:38517` — SoundID.PalDigtoiseJoy at base.Center: the
             // trackable case-42 cue (style 289, no gameplay draw — the
             // audio-only GetRandomPitch rides the sound device's stream).
-            p.wants_sound = Some((42, 289, center.x, center.y, 0.0));
+            p.wants_sound = Some((42, 289, center.x, center.y, 0.0, 1.0));
         }
     } else if flag6 {
         flag = true;
@@ -2241,7 +2241,7 @@ mod tests {
         // The pet faces the player: pet centre right → direction -1 (:38512).
         assert_eq!(p.direction, -1);
         assert_eq!(p.sprite_direction, -1);
-        assert_eq!(p.wants_sound, Some((42, 289, p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5, 0.0)), ":38517");
+        assert_eq!(p.wants_sound, Some((42, 289, p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5, 0.0, 1.0)), ":38517");
         // Drop the petting → the else-if reset returns to idle (:38520-38526).
         pl.petting.is_petting = false;
         p.wants_sound = None;

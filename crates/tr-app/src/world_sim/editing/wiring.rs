@@ -322,7 +322,7 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
 /// `Player.ItemCheck_UseWiringTools`, `Main.cs:17754`), the Dig slot
 /// Stop/re-creates (research/32 D1/D4). The net message 17 the port has
 /// no wire flavour for (the local wire state is the truth).
-fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
+pub(super) fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
     app.audio.play_place_sound(
         (0, 1),
         tx as f32 * TILE_PX,
@@ -344,12 +344,6 @@ fn wire_cut_feedback(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     );
-/// j * 16)` (sound id 0 = "Dig_1") at the tile, and the net message 17 the
-/// port has no wire flavour for (the local wire state is the truth). Shared
-/// with the autoActuator build pass (`auto_actuator.rs`).
-pub(super) fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
-    app.audio
-        .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
 }
 
 #[cfg(test)]

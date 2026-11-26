@@ -113,7 +113,7 @@ pub fn lava_bounce_gore(
 ) {
     if rng.next_max(3) == 0 {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.position.x -= 6.0;
         g.velocity *= 0.4;
@@ -136,7 +136,7 @@ pub fn drill_unit_gore(
         let pos = p.pos + next_vector2_square(rng, 0.0, 1.0) * Vec2::new(p.w, p.h);
         let vy = (0.0 - rng.next_float()) * 16.0;
         let ty = [1007, 1008, 1008][rng.next_max(3) as usize];
-        let idx = gore.new_gore_direct(rng, world, pos, Vec2::new(p.vel.x * 1.5, vy), ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::new(p.vel.x * 1.5, vy), ty, 1.0);
         let g = gore.slot_mut(idx);
         g.time_left = 60;
         g.alpha = 50;
@@ -181,7 +181,7 @@ pub fn tile_collision_burst(
         // `:40295-40297` — site 15: Circular(2,2) velocity, num3+Next(3).
         let vel = next_vector2_circular(rng, 2.0, 2.0);
         let ty = num3 + rng.next_max(3);
-        let idx = gore.new_gore_perfect(rng, world, vector5, vel, ty, 1.0);
+        let idx = gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, vector5, vel, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.y -= rng.next_float();
         g.velocity *= 2.0;
@@ -189,14 +189,14 @@ pub fn tile_collision_burst(
         let jitter = Vec2::new(-4.0 + rng.next_max(5) as f32, -4.0 + rng.next_max(5) as f32);
         let vel = next_vector2_circular(rng, 2.0, 2.0);
         let ty = num3 + rng.next_max(3);
-        let idx = gore.new_gore_perfect(rng, world, vector5 + jitter, vel, ty, 1.0);
+        let idx = gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, vector5 + jitter, vel, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.y -= rng.next_float();
         g.velocity *= 2.0;
         // `:40301-40303` — site 17: the 1146 crystal, +10 on the Y jitter.
         let jitter = Vec2::new(-4.0 + rng.next_max(5) as f32, -4.0 + rng.next_max(5) as f32 + 10.0);
         let vel = next_vector2_circular(rng, 2.0, 2.0);
-        let idx = gore.new_gore_perfect(rng, world, vector5 + jitter, vel, 1146, 1.0);
+        let idx = gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, vector5 + jitter, vel, 1146, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.y -= rng.next_float();
         g.velocity *= 0.5;
@@ -224,7 +224,7 @@ pub fn crystal_destruction_gores(
         let radius = rng.next_float() * 10.0;
         let vector = rotated_by(Vec2::new(radius, 0.0), angle as f64);
         let ty = [1027, 1028, 1029, 1030][rng.next_max(4) as usize];
-        let idx = gore.new_gore_direct(rng, world, c + vector * 3.0, vector, ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, c + vector * 3.0, vector, ty, 1.0);
         let g = gore.slot_mut(idx);
         // `:36332-36341` — the flip chain, in order.
         if g.velocity.y > 0.0 {
@@ -260,7 +260,7 @@ pub fn volcano_gores(
         let radians = rng.next_float_direction() * (std::f32::consts::PI / 4.0) * num4;
         let vel = rotated_by(p.vel, radians as f64) * (4.0 * rng.next_float());
         let ty = 61 + rng.next_max(3);
-        let idx = gore.new_gore_perfect(rng, world, pos, vel, ty, 1.0);
+        let idx = gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, pos, vel, ty, 1.0);
         let g = gore.slot_mut(idx);
         // `:42326` — RotatedBy(num3 = 0): cos 0 = 1, sin 0 = 0, identity.
         g.velocity = rotated_by(g.velocity, 0.0);
@@ -288,7 +288,7 @@ pub fn fire_explosion_gores(
             (p.h * rng.next_max(100) as f32) / 100.0,
         );
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         // `:45306` — RotatedByRandom(PI) = two NextDouble, then NextDouble radius.
         let dir = rotated_by_random(rng, Vec2::new(0.0, 1.0), std::f64::consts::PI);
@@ -317,7 +317,7 @@ pub fn pirate_jump_gore(
     }
     let ty = rng.next_range(580, 583);
     let pos = center(p) + Vec2::new(-p.direction as f32 * 8.0, 0.0);
-    let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity /= 2.0;
     g.velocity.y = g.velocity.y.abs();

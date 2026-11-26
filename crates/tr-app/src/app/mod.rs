@@ -75,8 +75,7 @@ use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
 use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
-use crate::render::sky::{SkyAssets, StarSprite, make_sky_assets, make_stars};
-use crate::render::sky::{CloudSprite, SkyAssets, make_clouds, make_sky_assets};
+use crate::render::sky::{SkyAssets, make_sky_assets};
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
 use crate::ui;
@@ -458,14 +457,6 @@ pub(crate) struct App {
     /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
     /// sights/chats have no equivalent for (they stay empty).
     pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
-    /// W4-f30 — `CreativeItemSacrificesCatalog`'s per-world sacrificed counts
-    /// (`ItemsSacrificedUnlocksTracker`, the Journey research). The live
-    /// sacrifice UI is unported, so the tracker never edits in play yet; the
-    /// `CheckResearchAchievement` call sites (the per-tick armor tail +
-    /// EnterWorld) read it through `check_research_achievement` (the prep
-    /// landed with the f30 tail census). The save rides M6-SAVE's world
-    /// sections when the UI lands.
-    pub(crate) research: crate::research::ResearchTracker,
     /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:17`):
     /// the static latch `CheckResearchAchievement` compares the tracker's
     /// `LastEditId` against to skip unchanged frames.
@@ -1007,12 +998,6 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
-    /// `Player.cursorItemIconID` (`Player.cs:1851`, W4-d21 fold 2) — the
-    /// right-click-interaction cursor icon the hover arms set (the petting
-    /// `TryPetting` `Main.cs:37958`, the money-trough/void-lens arms). 0 =
-    /// no icon (`cursorItemIconEnabled = false`). The icon DRAW is the
-    /// render layer's follow-up; the field carries the sim state.
-    pub(crate) cursor_item_icon_id: u16,
     /// `Player.BlockInteractionWithProjectiles` (`Player.cs:3024`, W4-d21
     /// fold 2) — the static interaction cooldown: the static ctor arms 3
     /// (`:57125`), the gamepad inventory-close re-arms 3 (`:5050`), and
@@ -1199,15 +1184,6 @@ pub(crate) struct App {
     /// determinism stand-in until the d60 wiring reconciles it). The C#
     /// parameterless ctor is clock-seeded (`UnifiedRandom.cs:18-21`); the
     /// port seeds the world seed (the `mine_crack_rng` deviation class).
-    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
-    /// W4-f6 wiring — `TileDrawing._rand` (`TileDrawing.cs:104`/:191): the
-    /// special-tile pass's PRIVATE stream (the pylon crystal's dust gate,
-    /// `:8669-8670`). Deviation: the C# parameterless ctor is clock-seeded;
-    /// the port seeds the world seed (the `mine_crack_rng` determinism
-    /// convention). NOT a `SwapRandom` key. g68 collision keep-one
-    /// (research/198, renamed 67→198 round-1): g68's drip gates (`EmitLiquidDrops` :7609) read the
-    /// SAME C# field on the ONE `Main.TilesRenderer` (`Main.cs:2301/6541`)
-    /// — at merge keep ONE field, both consumers, drips-before-pylons.
     pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     /// W4-f6 wiring — `LiquidRenderer._random` (`LiquidRenderer.cs:132`):
     /// the lava-bubble PRIVATE stream (`InternalPrepareDraw` :558/:562).
@@ -1427,49 +1403,15 @@ pub(crate) struct App {
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
-    /// `Main.martianLight` / `Main.martianLightDir` (`DoUpdate_AnimateTileGlows`,
-    /// `Main.cs:18251-18261`): the Martian Madness glow pulse, 0..1 by 0.015
-    /// per frame. W4-e7 lane 23 — the oscillator lands (the `demon_torch`
-    /// precedent); its reader (`TileDrawing.cs:498`'s `_martianGlow`,
-    /// `drawdata_cases_a::martian_glow`) stays fed 0 until the glow pass +
-    /// the event land (research/102). Init 1f / dir 1 (`Main.cs:66831-66832`).
-    pub(crate) martian_light: f32,
-    pub(crate) martian_light_dir: f32,
-    /// `Main.masterColor` / `Main.masterColorDir` (`DoUpdate_AnimateCursorColors`,
-    /// `Main.cs:18225-18235`): the master-mode text pulse, 0..1 by 0.05 per
-    /// frame. W4-e7 lane 23 — the oscillator lands; its readers (the rarity
-    /// -13 master colour, `Main.cs:20249`/`:20562`, `PopupText.cs:669`,
-    /// `TileDrawing.cs:9555`) stay unported (research/102). Init 1f / dir 1
-    /// (`Main.cs:66833-66834`).
-    pub(crate) master_color: f32,
-    pub(crate) master_color_dir: f32,
     /// `Main.invAlpha` / `Main.invDir` (`Main.cs:1287-1289`): the Interface
     /// Logic 2 pulse (`DrawInterface_24_InterfaceLogic2`, `:45695-45711`) —
     /// the crafting grid's selection-overlay tint `Main.inventoryBack`
     /// (`ItemSlot.cs:2373`). W4-f23 deviation fix: was the midpoint-210
     /// constant.
     pub(crate) inv_pulse: crate::ui::inv_pulse::InvPulse,
-    /// `Main.hideUI` (`Main.cs:2085`): the F11 screenshot-mode toggle
-    /// (`DoUpdate_F11_ToggleUI`, `:18402-18424`). While true the interface
-    /// layer loop stops at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
-    /// `:46175-46183`) and the world-side chat bubbles / combat text skip
-    /// (`:62334`). The port gates the HUD draw + those two passes on it.
-    pub(crate) hide_ui: bool,
-    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press latch — starts true
-    /// (the key starts released), drops while held, re-arms on release.
-    pub(crate) release_ui: bool,
     /// `Player.releaseMapStyle` (`Player.cs:1838`): the Tab map-style
     /// cycle's press latch (`:24951-24964`).
     pub(crate) release_map_style: bool,
-    /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
-    pub(crate) demon_torch: f32,
-    pub(crate) demon_torch_dir: f32,
-    /// `Main.masterColor` / `Main.masterColorDir` (`Main.cs:1235-1237`,
-    /// the ±0.05 cycle `:18225-18235`, reset 1/+1 at `:66833-66834`): the
-    /// master-rarity pulse the reforge popup recolours by
-    /// (`PopupText.cs:667-670`, W4-g57).
-    pub(crate) master_color: f32,
-    pub(crate) master_color_dir: i8,
     /// `Main.martianLight` / `Main.martianLightDir` (`Main.cs:1231-1233`,
     /// the same `DoUpdate_AnimateTileGlows`, `:18251-18261`): the 0.015
     /// bounce that feeds `TileDrawing._martianGlow` (`:498-499`). It ticks
@@ -2136,6 +2078,11 @@ mod frame_key {
             waterfall: 0,
             tile_anim: 0,
             chest_frames,
+            cage_anim: 0,
+            herb_weather: 0,
+            back_gore: 0,
+            moon_lord_strength: 0,
+            wof_key: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -2161,12 +2108,13 @@ mod frame_key {
         assert_eq!(k0, key(crate::chest::chest_frame_key(&chests)), "closed again = k0");
     }
 
-    /// W4-f14 key-coverage witness: the cage animator's frame tables ride
-    /// the cached world range (`draw_tiles` feeds `frame_of` into the cage
-    /// arms' addFrY rewrites), so two frames that differ only in cage
-    /// state must not share a cached range.
+    /// W4-f14 drawdata-cage witness: the drawdata animator's frame tables
+    /// ride the cached world range (`draw_tiles` feeds `frame_of` into the
+    /// cage arms' addFrY rewrites). This is distinct from the simulation
+    /// animator witness above: it pins the drawdata_cages implementation and
+    /// its closed-gate behavior.
     #[test]
-    fn cage_animator_state_changes_the_frame_key() {
+    fn drawdata_cage_animator_state_changes_the_frame_key() {
         let key = |cage_anim: u64| WorldFrameKey {
             cam_tile: [0, 0],
             zoom: 0,
@@ -2185,6 +2133,11 @@ mod frame_key {
             waterfall: 0,
             tile_anim: 0,
             cage_anim,
+            chest_frames: 0,
+            herb_weather: 0,
+            back_gore: 0,
+            moon_lord_strength: 0,
+            wof_key: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -2229,6 +2182,11 @@ mod frame_key {
             tile_anim: 0,
             net_key: 0,
             herb_weather,
+            chest_frames: 0,
+            cage_anim: 0,
+            back_gore: 0,
+            moon_lord_strength: 0,
+            wof_key: 0,
             world_revision: 0,
         };
         // bit 0 = cloudAlpha > 0 (waterleaf), bit 1 = the deathweed moon
@@ -2339,6 +2297,11 @@ mod frame_key {
             tile_anim: 0,
             net_key: 0,
             moon_lord_strength: strength.to_bits(),
+            chest_frames: 0,
+            cage_anim: 0,
+            herb_weather: 0,
+            back_gore: 0,
+            wof_key: 0,
             world_revision: 0,
         };
         assert_ne!(key(1.0), key(0.5), "a changed strength must change the key");
@@ -3038,14 +3001,19 @@ impl App {
             // too (`Main.UpdateAudio_DecideOnNewMusic` reads the live
             // `WorldGen.drunkWorldGen` statics the toggles write).
             Some(FrontScreen::WorldCreationAdvanced(draft)) => {
-                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed) | draft.option_flags()
+                let (flags, micro) =
+                    ui::world_creation::seed_identity(&draft.effective_seed_text());
+                (flags | draft.option_flags(), micro)
             }
             Some(FrontScreen::SecretSeedsList(state)) => {
-                tr_core::seeds::SeedFlags::from_seed_text(&state.draft.seed)
-                    | state.draft.option_flags()
+                let (flags, micro) =
+                    ui::world_creation::seed_identity(&state.draft.effective_seed_text());
+                (flags | state.draft.option_flags(), micro)
             }
-            _ => tr_core::seeds::SeedFlags::default(),
-            _ => Default::default(),
+            _ => (
+                tr_core::seeds::SeedFlags::default(),
+                tr_core::seeds::MicroSeedFlags::default(),
+            ),
         };
         // `Main.menuMode == 3000` (`:12486-12489`): the credits page's
         // JourneysEnd (89) — the legacy menu owns that page.
@@ -3306,14 +3274,17 @@ impl App {
             let Some(p) = self.player.as_mut() else {
                 return false; // no player = no wallet (the C# always has one)
             };
+            // One destructuring borrow of the bank array — four indexed
+            // `as_mut_slice()` calls would re-borrow `p.banks` each time.
+            let [b0, b1, b2, b3] = &mut p.banks;
             let ok = crate::custom_currency::buy_with_currency(
                 price as i64,
                 [
                     self.inventory.as_mut_slice(),
-                    p.banks[0].as_mut_slice(),
-                    p.banks[1].as_mut_slice(),
-                    p.banks[2].as_mut_slice(),
-                    p.banks[3].as_mut_slice(),
+                    b0.as_mut_slice(),
+                    b1.as_mut_slice(),
+                    b2.as_mut_slice(),
+                    b3.as_mut_slice(),
                 ],
             );
             if !ok {
@@ -3902,6 +3873,10 @@ impl App {
     /// W4-g21's (its `nurse_heal` hunk); the portrait hop (`:40177`) is
     /// g58's.
     pub(crate) fn nurse_heal(&mut self) -> bool {
+        // `Main.cs:40105` — `NPCChatText_DoNurseHeal` plays sound 12 FIRST,
+        // before the `healCost > 0` / `BuyItem` gates (the port's collapse
+        // runs the cost gate inside; the cue plays on the button press).
+        crate::chest::play_menu_sound(self, 12);
         let cost = self.nurse_heal_cost();
         if cost <= 0 {
             // `:40157-40175` — nothing to heal. The `Next(3)` draws FIRST,
@@ -3919,13 +3894,6 @@ impl App {
             // "can't afford" lines (`Next(3)` → 52/53/54).
             let roll = self.rngs.global().next_max(3);
             self.npc_chat_text = crate::lang::dialog(52 + roll);
-
-        }        // `Main.cs:40105` — `NPCChatText_DoNurseHeal` plays sound 12 FIRST,
-        // before the `healCost > 0` / `BuyItem` gates (the port's collapse
-        // runs the cost gate inside; the cue plays on the button press).
-        crate::chest::play_menu_sound(self, 12);
-        let cost = self.nurse_heal_cost(nurse_idx);
-        if cost <= 0 || self.coins < cost as u64 {
             return false;
         }
         let Some(player) = self.player.as_mut() else {
@@ -3958,7 +3926,13 @@ impl App {
         // `AchievementsHelper.cs:407-410`): the paid amount rides
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
-        crate::potions::spawn_heal_text_with(self, missing, self.rngs.global());
+        // The helper takes `&mut App` + the caller's stream, so the global
+        // stream is parked for the call and put back (the stream order is
+        // unchanged: the two CombatText jitters still draw in sequence).
+        let mut heal_rng =
+            std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+        crate::potions::spawn_heal_text_with(self, missing, &mut heal_rng);
+        *self.rngs.global() = heal_rng;
         self.npc_chat_text = crate::lang::dialog(line);
         // `SoundEngine.PlaySound(SoundID.Item4)` (`Main.cs:40111`) — the
         // coins cue AFTER `HandleNurseService`, BEFORE `HealEffect`
@@ -4376,7 +4350,7 @@ impl App {
     /// `LoadWorlds` + `UpdatePlayersList`/`UpdateWorldsList`,
     /// `UICharacterSelect.cs:135-157` / `UIWorldSelect.cs:137-166`). The menu
     /// side closes with the settings sync first.
-    pub(crate) fn enter_front(&mut self, front: FrontScreen) {
+    pub(crate) fn enter_front(&mut self, mut front: FrontScreen) {
         match front {
             FrontScreen::CharSelect => {
                 let fakes = crate::env::fake_count("TR_FAKE_CHARS");
@@ -4983,7 +4957,6 @@ impl App {
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (mut world, sections) = load_world(path)?;
-        let (world, sections) = load_world(path)?;
         // W4-f40 DOC-SWEEP: the C# `LoadWorld` runs `WorldGen.clearWorld()`
         // (`WorldFile.cs:1977`) BEFORE `LoadWorldFlags` reads the event temps
         // back (`SetOngoingToTemps`, `:173-176`) — the clear-then-restore
@@ -5203,7 +5176,6 @@ impl App {
         // W4-g70: snapshot the forest styles before `world` moves into the
         // struct literal — the live hill ids seed from them.
         let forest_styles = world.forest_bg_styles;
-        let clouds = make_clouds(&world, &lookups);
         let sky = make_sky_assets(&atlas, &world);
         let stars = crate::star_field::StarField::new(world.seed);
         let player_assets = make_player_assets(&atlas);
@@ -6102,8 +6074,9 @@ impl App {
                 .banner_kill_counts
                 .iter()
                 .enumerate()
-                .filter(|(_, &kills)| kills != 0)
-                .map(|(banner, &kills)| (banner as i32, kills))
+                .filter_map(|(banner, &kills)| {
+                    (kills != 0).then_some((banner as i32, kills))
+                })
                 .collect()
         } else {
             sections
@@ -6411,7 +6384,6 @@ impl App {
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
-            research: crate::research::ResearchTracker::default(),
             last_research_version: 0,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -6660,13 +6632,9 @@ impl App {
             wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
             wires_radial: ui::wires_ui::WiresRadial::default(),
             cursor_item_icon_enabled: false,
-            cursor_item_icon_id: 0,
             cursor_item_icon_text: String::new(),
             cursor_item_icon_push: 0,
             cursor_item_icon_reversed: false,
-            item_icon_cache_pos: Vec2::ZERO,
-            item_icon_cache_kind: 0,
-            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -6776,31 +6744,13 @@ impl App {
             martian_light: 1.0,
             martian_light_dir: 1.0,
             master_color: 1.0,
-            master_color_dir: 1.0,
+            master_color_dir: 1,
             // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
             inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
-            // `Main.hideUI`/`releaseUI`'s static defaults (`Main.cs:2085-2087`:
-            // false / false — the first released-frame pass arms the latch).
-            hide_ui: false,
-            release_ui: false,
             release_map_style: false,
-            // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
-            demon_torch: 1.0,
-            demon_torch_dir: 1.0,
-            // `Main.masterColor = 1f; Main.masterColorDir = 1` (`Main.cs:66833-66834`).
-            master_color: 1.0,
-            master_color_dir: 1,
-            // `Main.martianLight = 1f; Main.martianLightDir = 1`
-            // (`Main.cs:66831-66832`).
-            martian_light: 1.0,
-            martian_light_dir: 1.0,
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,
-            // `Main.masterColor = 1f; Main.masterColorDir = 1`
-            // (Main.Initialize, `Main.cs:66833-66834`).
-            master_color: 1.0,
-            master_color_dir: 1,
             light_rng_seed: world_seed | 1,
             anim_time: 0.0,
             has_liquids,
@@ -8251,9 +8201,9 @@ pub(crate) mod tr_hooks {
             save::save(&path, &w, &save::WorldSide::default()).unwrap();
             paths.push(path);
         }
-        let (world, sections) = load_world(&paths[0]).unwrap();
+        let (mut world, sections) = load_world(&paths[0]).unwrap();
         let (atlas, font_atlas, lookups, stats) = build_atlas_reusing_static(
-            &world,
+            &mut world,
             &content.join("Images"),
             &mut None,
             &mut None,
@@ -8268,6 +8218,7 @@ pub(crate) mod tr_hooks {
             font_atlas,
             lookups,
             stats,
+            None,
         );
         // The CharPlay hydration's landed state (app/flow.rs's read arm).
         app.research.register_sacrifice(8, 100); // Torch, fully
@@ -9009,7 +8960,7 @@ mod s1_e_18_tests {
         assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
         assert!((56..=57).contains(&(55 + roll)), "the blood line drops");
         assert_eq!(*app.rngs.global(), twin, "two draws spent");
-        let cost = app.nurse_heal_cost(0);
+        let cost = app.nurse_heal_cost();
         assert!(cost > 0);
         // The refused heal: the `:40105` tick still plays, no Item4.
         let before = app.audio.played_count();
@@ -9021,7 +8972,7 @@ mod s1_e_18_tests {
         app.coins = cost as u64;
         let mut witness = app.rngs.global().clone();
         witness.next_range(-6, 7); // `LegacySoundPlayer.cs:634`'s default arm
-        assert!(app.nurse_heal(0));
+        assert!(app.nurse_heal());
         assert_eq!(app.audio.played_count(), before + 2, "tick + Item4");
         assert_eq!(*app.rngs.global(), witness, "one pitch draw, in order");
     }
@@ -9412,6 +9363,7 @@ mod s1_p_i44_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 1,
+            value: None,
         }];
         app
     }

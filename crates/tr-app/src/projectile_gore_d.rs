@@ -101,7 +101,7 @@ pub fn ground_explosion_tile_gore(
 ) {
     let ty = 61 + rng.next_max(3);
     let scale = 1.0 - num3 as f32 * 0.15 + num5 * 0.5;
-    let idx = gore.new_gore_direct(rng, world, p.pos, Vec2::ZERO, ty, scale);
+    let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, scale);
     let g = gore.slot_mut(idx);
     g.velocity.y -= 0.1 + num3 as f32 * 0.5 + num5 * num3 as f32;
     g.velocity.y *= rng.next_float();
@@ -122,7 +122,7 @@ pub fn chum_wet_ripples(
     let pos = p.pos + Vec2::new(0.0, 6.0);
     // `:53558-53566` — the 0.5-step loop: 0.0, 0.5 → two iterations.
     for _ in 0..2 {
-        let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, 1201, p.scale * 0.7);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, 1201, p.scale * 0.7);
         let g = gore.slot_mut(idx);
         g.velocity = next_vector2_circular_edge(rng, 10.0, 10.0);
         if g.velocity.y > 0.0 {
@@ -132,7 +132,7 @@ pub fn chum_wet_ripples(
     // `:53567-53575` — the two 1208 splashes.
     for _ in 0..2 {
         let scale = p.scale * 0.7 + rng.next_float() * 0.15;
-        let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, 1208, scale);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, 1208, scale);
         let g = gore.slot_mut(idx);
         g.velocity = next_vector2_circular_edge(rng, 4.0, 4.0);
         if g.velocity.y > 0.0 {
@@ -160,7 +160,7 @@ pub fn chum_idle_gore(
         return false;
     }
     let pos = p.pos + Vec2::new(0.0, 6.0);
-    let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, 1201, p.scale * 0.7);
+    let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, 1201, p.scale * 0.7);
     let g = gore.slot_mut(idx);
     if wet {
         g.velocity = Vec2::new(rng.next_float_direction() * 0.75, rng.next_float());
@@ -181,7 +181,7 @@ pub fn ai026_881_gore(
 ) {
     let ty = if p.kind == 934 { 1261 } else { 1226 };
     let pos = Vec2::new(center(p).x, p.pos.y);
-    gore.new_gore(rng, world, pos, p.vel * 0.5, ty, 1.0);
+    gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, p.vel * 0.5, ty, 1.0);
 }
 
 /// Site 38 — `AI_026`'s 854 frame gore (`Projectile.cs:60856-60861`): the
@@ -194,7 +194,7 @@ pub fn ai026_854_gore(
     world: &World,
 ) {
     let pos = Vec2::new(center(p).x, p.pos.y);
-    gore.new_gore(rng, world, pos, p.vel * 0.5, 1269, 1.0);
+    gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, p.vel * 0.5, 1269, 1.0);
 }
 
 /// Site 39 — `AI_026`'s 875 dust-trail gore (`Projectile.cs:61486-61493`):
@@ -217,7 +217,7 @@ pub fn ai026_875_gore(
         -10.0 + rng.next_range(-20, 20) as f32 * 0.5,
     );
     let scale = 0.5 + rng.next_float();
-    gore.new_gore_perfect(rng, world, center(p) + jitter, p.vel * 0.1, 1225, scale);
+    gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, center(p) + jitter, p.vel * 0.1, 1225, scale);
 }
 
 /// Site 40 — `AI_026`'s 854 leaf gore (`Projectile.cs:61529-61538`): the
@@ -238,7 +238,7 @@ pub fn ai026_854_leaf(
         rng.next_range(-30, 30) as f32 * 0.5,
         rng.next_range(-30, 30) as f32 * 0.5,
     );
-    let idx = gore.new_gore_perfect(rng, world, center(p) + jitter, p.vel * -0.2, 910, 1.0);
+    let idx = gore.new_gore_perfect(&mut crate::projectile::DynGoreRng(rng), world, center(p) + jitter, p.vel * -0.2, 910, 1.0);
     let g = gore.slot_mut(idx);
     g.frame.current_column = 0;
     g.time_left = 1;

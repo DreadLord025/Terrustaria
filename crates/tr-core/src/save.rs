@@ -93,6 +93,11 @@ pub const VERSION: u32 = 18;
 pub struct WorldSide {
     pub chests: Vec<ChestRecord>,
     pub banners: Vec<BannerKill>,
+    /// `BannerSystem.Save`'s `claimableBanners` half (`BannerSystem.cs:180-185`,
+    /// the `version >= 289` load arm `:203-211`) — the claimable-banner pool
+    /// the milestone fills (W4-e24). Sparse like `banners`; a pre-v18 file
+    /// loads none (the pool starts empty, the C#'s pre-289 reset).
+    pub banner_claimable: Vec<BannerClaimable>,
     pub bestiary: Vec<BestiaryKill>,
     pub npcs: Vec<NpcRecord>,
     /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) — seven `i32` metal
@@ -138,6 +143,16 @@ pub struct NpcRecord {
 pub struct BannerKill {
     pub banner: i32,
     pub kills: i32,
+}
+
+/// One banner's claimable count — the C# `BannerSystem.Save`'s
+/// `claimableBanners` half (`ushort` per banner id, `BannerSystem.cs:180-185`);
+/// the port stores the counts sparsely like `BannerKill`, so each record
+/// carries its id (W4-e24).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BannerClaimable {
+    pub banner: i32,
+    pub count: u16,
 }
 
 /// One bestiary entry's kill count — the C# `NPCKillsTracker.Save` shape
@@ -539,6 +554,10 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         u8::from(world.unlocked_slime_yellow_spawn),
         u8::from(world.unlocked_slime_copper_spawn),
     ])?; // [64..71] :1409-1415
+    // v18: the world-identity block (W4-c43) — the `.wld` header's identity
+    // fields (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`), the
+    // same values the retail writer emits; a `.trwld` round trip used to
+    // drop them.
     // [71..115] identity block (c43/f45 claim — the fields already live on
     // World; the .trwld never persisted them before v18).
     w.write_all(&world.generator_version.to_le_bytes())?; // [71..79]
@@ -554,6 +573,15 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&world.dungeon_x.to_le_bytes())?; // [115..119]
     w.write_all(&world.dungeon_y.to_le_bytes())?; // [119..123]
     w.write_all(&world.variants)?; // [123..123 + width*height]
+    // v18: the banner claimable counts (`BannerSystem.Save`'s
+    // `claimableBanners` half, `BannerSystem.cs:180-185`) — a u32 count, then
+    // per banner the id (i32) and the count (u16). The port's sparse map
+    // where the vanilla writes a dense `ushort[293]` array (W4-e24).
+    w.write_all(&(side.banner_claimable.len() as u32).to_le_bytes())?;
+    for c in &side.banner_claimable {
+        w.write_all(&c.banner.to_le_bytes())?;
+        w.write_all(&c.count.to_le_bytes())?;
+    }
     Ok(())
 }
 
@@ -982,6 +1010,9 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.unlocked_slime_red_spawn = r.u8()? != 0; // [68]
         world.unlocked_slime_yellow_spawn = r.u8()? != 0; // [69]
         world.unlocked_slime_copper_spawn = r.u8()? != 0; // [70]
+        // v18: the world-identity block (see the writer's citation) — a pre-v18
+        // file keeps the `World::new` zeros, exactly the values the pre-W4-c43
+        // saves carried.
         world.generator_version = r.u64()?; // [71..79]
         world.unique_id = {
             let mut id = [0u8; 16];
@@ -1004,8 +1035,26 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.variants = r.take(n)?.to_vec();
         world.variants_from_save = true;
     }
+    // v18: the banner claimable counts (`BannerSystem.Load`'s `version >= 289`
+    // claimable half, `BannerSystem.cs:203-211`); a pre-v18 file loads none
+    // (the pool starts empty, the C#'s pre-289 reset). W4-e24.
+    if version >= 18 {
+        side.banner_claimable = read_banner_claimable_v18(&mut r)?;
+    }
     world.revision = 0;
     Ok((world, side))
+}
+
+/// The v18 banner-claimable reader — the exact inverse of the v18 write.
+fn read_banner_claimable_v18(r: &mut Reader<'_>) -> Result<Vec<BannerClaimable>> {
+    let count = r.u32()? as usize;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let banner = r.i32()?;
+        let count = r.u16()?;
+        out.push(BannerClaimable { banner, count });
+    }
+    Ok(out)
 }
 
 /// The v8 banners reader — the exact inverse of the v8 write.
@@ -1537,6 +1586,7 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         }
     }
@@ -1560,7 +1610,9 @@ mod tests {
 
     /// The v18 framing-variants block's size: a dense `width*height` byte
     /// array (W4-d109). End-relative fixtures peel it off before truncating
-    /// the older tails; the version is read from the header.
+    /// the older tails; the version is read from the header. The separate
+    /// BannerSystem claimable trailer that follows it (W4-e24) is peeled by
+    /// the callers that need the exact end ([`back_flags`]/[`back_micro`]).
     fn v18_tail_len(buf: &[u8]) -> usize {
         let version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
         if version < 18 {
@@ -1575,15 +1627,26 @@ mod tests {
         width * height
     }
 
+    /// The v18 claimable trailer's size for an empty pool: the u32 count
+    /// (W4-e24). The tests here all write `WorldSide::default()`, so the count
+    /// is 0 and no `(i32, u16)` records follow.
+    const EMPTY_CLAIMABLE_TRAILER: usize = 4;
+
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
+        let end = buf.len()
+            - EMPTY_V16_TAIL
+            - v18_tail_len(buf)
+            - EMPTY_CLAIMABLE_TRAILER;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
+        let end = buf.len()
+            - EMPTY_V16_TAIL
+            - v18_tail_len(buf)
+            - EMPTY_CLAIMABLE_TRAILER;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -2066,6 +2129,7 @@ mod tests {
             ],
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2098,6 +2162,7 @@ mod tests {
             }],
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2121,6 +2186,7 @@ mod tests {
             }],
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2151,6 +2217,7 @@ mod tests {
             ],
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut a = Vec::new();
@@ -2188,6 +2255,7 @@ mod tests {
                 },
             ],
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2213,6 +2281,7 @@ mod tests {
                 kills: 3,
             }],
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2236,6 +2305,7 @@ mod tests {
                 kills: 3,
             }],
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2262,6 +2332,7 @@ mod tests {
                 },
             ],
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut a = Vec::new();
@@ -2291,6 +2362,7 @@ mod tests {
                     homeless: false,
                     home_x: 6,
                     home_y: 7,
+                    variation_index: 0,
                 },
                 NpcRecord {
                     kind: 17, // the Merchant
@@ -2300,8 +2372,10 @@ mod tests {
                     homeless: true,
                     home_x: -1,
                     home_y: -1,
+                    variation_index: 0,
                 },
             ],
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2331,7 +2405,9 @@ mod tests {
                 homeless: false,
                 home_x: 1,
                 home_y: 1,
+                variation_index: 0,
             }],
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2362,7 +2438,9 @@ mod tests {
                 homeless: false,
                 home_x: 1,
                 home_y: 1,
+                variation_index: 0,
             }],
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut buf = Vec::new();
@@ -2388,6 +2466,7 @@ mod tests {
                     homeless: true,
                     home_x: -1,
                     home_y: -1,
+                    variation_index: 0,
                 },
                 NpcRecord {
                     kind: 17,
@@ -2397,8 +2476,10 @@ mod tests {
                     homeless: false,
                     home_x: 2,
                     home_y: 3,
+                    variation_index: 0,
                 },
             ],
+            banner_claimable: Vec::new(),
             ore_tiers: None,
         };
         let mut a = Vec::new();
@@ -2420,6 +2501,7 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: Some([166, 12, 169, 172, -1, -1, -1]),
         };
         let mut buf = Vec::new();
@@ -2444,6 +2526,7 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: Some([166, 6, 9, 8, 107, -1, -1]),
         };
         let mut buf = Vec::new();
@@ -2464,6 +2547,7 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: Some([7, 6, 9, 8, -1, -1, -1]),
         };
         let mut buf = Vec::new();
@@ -2481,6 +2565,7 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: Vec::new(),
+            banner_claimable: Vec::new(),
             ore_tiers: Some([13, 6, 9, 8, -1, -1, -1]),
         };
         let mut a = Vec::new();
@@ -2607,9 +2692,13 @@ mod tests {
                 assert_eq!(back.wall_frame_number(i), w.wall_frame_number(i));
             }
         }
-        // The block is dense width*height and rides the file's tail.
+        // The block is dense width*height and rides just ahead of the
+        // claimable trailer (an empty u32 count here).
         assert_eq!(v18_tail_len(&buf), 16 * 12);
-        assert_eq!(&buf[buf.len() - 16 * 12..], w.variants.as_slice());
+        assert_eq!(
+            &buf[buf.len() - EMPTY_CLAIMABLE_TRAILER - 16 * 12..buf.len() - EMPTY_CLAIMABLE_TRAILER],
+            w.variants.as_slice()
+        );
     }
 
     /// A pre-v18 file (the v18 block truncated, the version patched to 17) loads

@@ -1735,8 +1735,8 @@ mod tests {
         for (mult, seed) in [(0.5f32, 131u64), (2.0, 137)] {
             let mut pool = DustPool::new();
             let mut mpool = DustPool::new();
-            let mut rng = UnifiedRandom::new(seed);
-            let mut mirror = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut mirror = UnifiedRandom::new(seed as i32);
             king_slime_teleport_ring(
                 900.0, 700.0, 122, 115, 1.5, -2.0, mult,
                 &mut rng, &mut pool, &c, &w,
@@ -1923,8 +1923,8 @@ mod tests {
         for (iters, seed) in [(2i32, 181u64), (1, 183)] {
             let mut pool = DustPool::new();
             let mut mpool = DustPool::new();
-            let mut rng = UnifiedRandom::new(seed);
-            let mut mirror = UnifiedRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut mirror = UnifiedRandom::new(seed as i32);
             squidhead_228_ring(iters, 800.0, 800.0, 60, 60, &mut rng, &mut pool, &c, &w);
             for _ in 0..iters {
                 let idx = mpool.new_dust(

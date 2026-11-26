@@ -58,8 +58,11 @@ pub(crate) fn xna_scale_color(c: [u8; 4], scale: f32) -> [u8; 4] {
 // ---------------------------------------------------------------------------
 //
 // W4-d58 (R2 chest slice): the frame-selection maths MOVED to
-// `tr_render::chest_frames` (`chest_anchor`/`chest_frame_adjust`/
-// `ChestFrameAdjust`) and is WIRED — `render/tiles.rs::draw_tiles` applies
+// `tr_render::chest_frames` — the canonical `pub fn chest_frame_adjust`
+// (`fn chest_frame_adjust` in the S1-G-1e row) plus `chest_anchor` and
+// `ChestFrameAdjust` — and is WIRED; the tr-core chest_draw_rewrite dup was
+// deleted at W4-f16 (keep-one: NO second frame selector is ported here).
+// `render/tiles.rs::draw_tiles` applies
 // it after the drawdata dispatch (the C# `:993` position), keyed on
 // `chest::find_chest` over the anchor with the per-draw `_chestPositions`
 // cache. The i43 sim-side lid animator (`chest::update_chest_frames`) feeds

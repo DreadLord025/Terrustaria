@@ -2686,6 +2686,30 @@ surface rolls) remains unported — g71 owns the surface setBG slots' PERSISTENC
 and draw tables, not that roll; inserting it later shifts the moon draw again
 (the same re-pin pattern). Witnesses WRITTEN NOT RUN (code-only).
 
+**`world_hash` merge-gate re-pin (2026-11-25).** The union pipeline folds the
+23 new vanilla passes (Oasis, Waterfalls, Wall Variety, Life Crystals, Statues,
+Surface/Water Chests, Cave Walls, Wood Tree Walls, Quick Cleanup, Hellforge,
+Spreading Grass, Surface Ore and Stone, Place Fallen Log, Traps, Piles, Spawn
+Point, Grass Wall, Mount/Mountain Caves, Gems, Clean Up Dirt, Dirt Rock Wall
+Runner, Silt, Webs) into the executed chain. They run on the default world and
+move its tile bytes by design, so `DEFAULT_WORLD` is re-pinned `3647283075 ->
+1440283462` (measured on the merged tree; the test's `a == b` half proves the
+two `generate()` calls agree). The classic special-seed gates are untouched —
+this is the deferred re-pin flagged at `world_hash.rs:354`. The `SEED42_512`
+pin is re-measured under the same gate: the 512-wide world skips the
+sub-vanilla width guards (e.g. Oasis) but still runs Wall Variety / Life
+Crystals / Statues / the chest and wall passes, so it moves by the same
+contract and is re-pinned `124297949 -> 2052593210` (deterministic, `a == b`).
+Two sub-vanilla re-roll hangs had to be guarded first: `pass_piles` and the
+traps pass both loop on `while (y) <= ocean_level && (x < beach || x >
+width - beach)`; with `ZONE_MARGIN/beach = 380` that predicate is always true
+on a 512-wide world (`x` range 200..=width-200, `width - 380 = 132`), so the
+loops spin forever. The guards `inland = world.width > beach * 2` (pass_piles)
+and `while world.width > beach * 2` (traps) skip the loop on sub-vanilla widths
+only — normal-width output is unchanged. With both guards the 512 test
+completes in ~26 s. (An interim measurement of 3085106525 predated the traps
+guard and is superseded.)
+
 **The cave-style DRAW chain LIVE (W4-g72 final, `render/bg.rs` + `bg_styles.rs`).**
 The roll→persist→draw chain is closed on the logic side: `draw_background`
 builds `BgStylePickInput` from `World.cave_back_x`/`cave_back_style` (the

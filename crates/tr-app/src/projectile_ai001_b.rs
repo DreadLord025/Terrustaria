@@ -1,5 +1,4 @@
-{
-// balance-open (union shared delimiter)
+
 //! S1-D-5 slice B — `AI_001`'s per-type arms for the higher-id rowed kinds
 //! (`Projectile.cs:54002-57794`). The port ran ONE generic flight
 //! (`Projectile::ai_arrow` → `ai_style1_flight`, projectile.rs:5057) for
@@ -84,7 +83,6 @@ pub(crate) const SLICE_B_KINDS: [u16; 10] = [
     VORTEX_DART,           // 581
     CANNON_EXPLOSIVE,      // 601
     SCUTLIX_LASER,         // 606 (W4-d8 DOC-SWEEP (3): the mount's fired beam)
-    SCUTLIX_LASER,         // 606 (M2-MOUNT-4 — the 449 sibling, same C# block)
     BLOWUP_SMOKE_MOONLORD, // 622
     BALLISTA_SHOT,         // 680
     BETSY_FIREBALL,        // 686
@@ -160,7 +158,7 @@ fn finish_flight(p: &mut Projectile, world: &World) {
             // `PortalHelper.TryPlacingPortal` stays unported.
             if p.kind == CANNON_EXPLOSIVE && p.alpha > 0 {
                 let style = if p.ai[1] != 0.0 { 114 } else { 115 };
-                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             p.active = false;
             p.time_left = 0;
@@ -294,8 +292,6 @@ pub(crate) fn step(
                 // four dust-182 at Center - velocity/2 (skipped bodies)
             }
 
-        }            (150.0f32, 5.0f32)
-            (100.0, 3.0)
             if p.local_ai[0] > cap {
                 p.local_ai[0] = cap;
             }
@@ -806,33 +802,41 @@ mod tests {
         assert_eq!(p.time_left, 600, "the row (`:6539`)");
         p.alpha = 255;
         for _ in 0..30 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         }
         assert_eq!(p.local_ai[0], 150.0, "5×30 = 150, the cap (`:54798`)");
         assert_eq!(p.ai[0], 0.0, "the resting counter (`:56014`)");
         assert_eq!(p.alpha, 0); // 255 − 30×25 clamps
         // The countdown: ai[1] = 1 (the blocked-move latch), −5/tick.
 
-        }    /// M2-MOUNT-4 — 606 (`:54772-54828`): the Scutlix laser rides the same
+        }
+    /// M2-MOUNT-4 — 606 (`:54772-54828`): the Scutlix laser rides the same
     /// group with the 150/5 constants (`:54796-54800`): the +5 ramp caps at
     /// 150 (tick 30: 5×30 = 150), the ai[1] != 0 countdown kills at ≤ 0.
     /// The resting counter (`:56014`) keeps the gravity off. The tile
     /// contact keeps the port's kill-on-tile stand-in (the 449 sibling's
     /// convention — the C# `:18278` bounce latch + `:20435` UpdatePosition
     /// skip are the documented slice-B deviation, ANALYSIS).
+    #[test]
     fn m4_the_scutlix_laser_ramps_150_by_5_and_counts_down() {
+        let w = air();
+        let mut p = shot(SCUTLIX_LASER);
         assert_eq!(p.alpha, 255, "the row's alpha");
         assert_eq!(p.extra_updates, 2, "the row's extraUpdates");
+        p.alpha = 255;
+        for _ in 0..30 {
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
+        }
         assert_eq!(p.local_ai[0], 150.0, "5×30 caps at 150");
         assert_eq!(p.alpha, 0, "255 − 30×25 clamps");
         assert_eq!(p.ai[0], 0.0, "the resting counter");
         p.ai[1] = 1.0;
         for _ in 0..29 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert!(p.active);
         }
         assert_eq!(p.local_ai[0], 5.0); // 150 − 29×5
-        step(&mut p, &w, None); // 5 − 5 = 0 ≤ 0 → Kill
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0)); // 5 − 5 = 0 ≤ 0 → Kill
         assert!(!p.active);
         assert_eq!(p.time_left, 0);
     }
@@ -857,7 +861,7 @@ mod tests {
         // Step until the latch fires (the probe hits tile 103 at x ≥ 1643).
         let mut stuck_at = None;
         for t in 1..=10 {
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             if p.ai[1] == 1.0 {
                 stuck_at = Some(t);
                 break;
@@ -870,7 +874,7 @@ mod tests {
         // The next ticks hold the position (the `:20435` skip) while the
         // ramp counts down.
         let ramp_at_stick = p.local_ai[0];
-        step(&mut p, &w, None);
+        step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
         assert_eq!(p.pos, stuck_pos, "the stuck beam never moves");
         assert_eq!(p.local_ai[0], ramp_at_stick - 5.0, "the countdown runs");
         assert!(t <= 5, "the tile is 3 tiles out");
@@ -930,11 +934,11 @@ mod tests {
             let mut p = shot(CANNON_EXPLOSIVE);
             p.ai[1] = ai1;
             p.alpha = alpha;
-            step(&mut p, &w, None);
+            step(&mut p, &w, None, &mut tr_core::unified_random::UnifiedRandom::new(0));
             assert!(!p.active, "the impact kills");
             assert_eq!(
                 p.wants_sound,
-                style.map(|s| (2, s, 1600.0, 800.0, 0.0)),
+                style.map(|s| (2, s, 1600.0, 800.0, 0.0, 1.0)),
                 "ai1 {ai1} alpha {alpha}"
             );
         }

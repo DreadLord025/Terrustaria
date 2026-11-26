@@ -910,7 +910,7 @@ mod tests {
             assert_eq!(shot.item_type, item, "the rolled roster item");
             assert_eq!((shot.x, shot.y, shot.width, shot.height), (100, 100, 28, 44));
         }
-        assert_eq!(rng.peek(), oracle.peek(), "the 60-draw burst order");
+        assert_eq!(e.rng.peek(), oracle.peek(), "the 60-draw burst order");
         // The 180-tick exit (get-fixed-world keeps firing until then).
         n.ai[1] = 179.0;
         let out = style87_step(&mut n, 476, &mut e);

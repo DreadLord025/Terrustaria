@@ -1103,7 +1103,14 @@ mod tests {
         assert!(room_needs(&scan.house_tiles), "table/chairs/door/torch complete");
         let (bx, by, score) = score_room(&w, &scan, None).expect("the sky room scores");
         assert!(score > 0, "the sky-band room is a valid home: {score}");
-        assert!((51..61).contains(&bx) && (41..48).contains(&by));
+        // The home spot is the SOLID floor row (`:5901-5904`: the candidate
+        // is an active solid tile with three clear cells above), so `by`
+        // lands on row 48 — the interior spans rows 41..=47 and the floor is
+        // 48. The band is the room's own columns.
+        assert!(
+            (51..61).contains(&bx) && (41..=48).contains(&by),
+            "the sky room home spot: ({bx}, {by})"
+        );
         // The same room with the wall stripped fails the ±2 scan — the
         // disc wall is what closes it (the HoleInWallIsTooBig arm).
         let mut bare = w.clone();

@@ -87,7 +87,7 @@ pub fn star_cannon_gores(
 ) {
     let c = center(p);
     for ty in [704, 705] {
-        gore.new_gore(rng, world, c, -old_velocity * 0.2, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, c, -old_velocity * 0.2, ty, 1.0);
     }
 }
 
@@ -103,7 +103,7 @@ pub fn phoenix_gores(
 ) {
     let c = center(p);
     for (ty, mul) in [(584, 0.8), (585, 0.9), (586, 1.0)] {
-        let idx = gore.new_gore(rng, world, c, p.vel * mul, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, c, p.vel * mul, ty, 1.0);
         gore.slot_mut(idx).time_left /= 10;
     }
 }
@@ -126,7 +126,7 @@ pub fn nebula_kill_gores(
             (p.h * rng.next_max(100) as f32) / 100.0,
         );
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.position = center(p) + next_vector2_circular(rng, 25.0, 25.0) - Vec2::splat(20.0);
         g.velocity *= 0.3;
@@ -164,7 +164,7 @@ pub fn confetti_gores_vel(
 ) {
     for _ in 0..count {
         let ty = rng.next_range(276, 283);
-        let idx = gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.x += rng.next_range(-50, 51) as f32 * 0.01;
         g.velocity.y += rng.next_range(-50, 51) as f32 * 0.01;

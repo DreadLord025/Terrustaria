@@ -661,6 +661,8 @@ pub(crate) fn smart_interact_lookup(
     mouse: (f32, f32),
     tile_target: (i32, i32),
 ) {
+    // The enabled probe needs `&App`; hoisted above the `state` borrow.
+    let smart_enabled = crate::world_sim::smart_cursor::enabled(app);
     let state = &mut app.smart_interact;
     // `:17376` — ClearSmartInteract first, every tick.
     state.clear_smart_interact();
@@ -669,7 +671,7 @@ pub(crate) fn smart_interact_lookup(
     // !mouseItem.IsAir`: the port has no gamepad hints, so the gate is the
     // runtime smart-cursor flag + an empty cursor stack.
     let mouse_item_air = app.mouse_item.kind == 0 || app.mouse_item.count == 0;
-    if !crate::world_sim::smart_cursor::enabled(app) || !mouse_item_air {
+    if !smart_enabled || !mouse_item_air {
         state.clear_self_and_prepare();
         return;
     }
@@ -738,8 +740,8 @@ pub(crate) fn smart_interact_lookup(
         snapping,
         app.world.fast_forward_to_dawn,
         app.world.fast_forward_to_dusk,
-        app.world.sundial_cooldown,
-        app.world.moondial_cooldown,
+        i32::from(app.world.sundial_cooldown),
+        i32::from(app.world.moondial_cooldown),
         false, // `Main.netMode == 1` — the port is singleplayer.
         &mut targets,
     );

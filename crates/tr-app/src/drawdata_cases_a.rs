@@ -997,7 +997,7 @@ mod tests {
         let w = World::new("t".into(), 64, 64);
         let mut d = draw_data(564, 0, 0, 18, 0, 3, false);
         assert_eq!(d.add_fr_y, 108); // first switch: 3 * 36
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [255, 0, 0], 0).unwrap();
         assert_eq!(g.src[1], 108); // rect y = fy + pre-clear addFrY
         assert_eq!(d.add_fr_y, 0); // :6112 clear via the delta
         // 638: 75% lerp toward the cell colour, height minus half-brick.
@@ -1264,7 +1264,7 @@ mod tests {
         let w = World::new("t".into(), 64, 64);
         let t = tile_of(711, 0, 0);
         let mut d = draw_data(711, 0, 0, 0, 0, 2, false);
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [255, 0, 0], 0).unwrap();
         assert_eq!(g.src, [0, 76, 16, 20]);
     }
 

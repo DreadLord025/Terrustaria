@@ -42,7 +42,7 @@ pub(crate) struct PublishPacksState {
     pub packs: ResourcePackList,
     /// The `_entryList` row order (`PopulateEntries`, `:146-150`) — store
     /// indices, re-derived by [`Self::populate`].
-    view: Vec<usize>,
+    pub(crate) view: Vec<usize>,
     /// The list's `UIScrollbar.ViewPosition`.
     pub scroll: f32,
     /// `_menuToGoBackTo` (`:29`) — `HandleBackButtonUsage` (`:109-113`)
@@ -715,7 +715,7 @@ fn draw_import_plate(r: &mut SpriteRenderer, lookups: &assets::Lookups, rect: [f
     let Some(sheet) = lookups.ui_inner_panel else { return };
     let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
     let h = sheet.height as f32;
-    let piece = |dx: f32, dw: f32, sx: f32| {
+    let mut piece = |dx: f32, dw: f32, sx: f32| {
         if dw <= 0.0 {
             return;
         }

@@ -224,7 +224,7 @@ pub(crate) fn ai_clouds(
         // `PositionInWorld = base.Center` — the cue rides the centre (the
         // SoundEngine vector overload, `ParticleOrchestrator.cs:2913`).
         let (cx, cy) = slots[i].center();
-        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0));
+        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0, 1.0));
     }
     // `:32580-32584` — the age counter (the hit-counter `ai[1] >= 1`
     // doubles the aging — `Damage_PVE_Inner` `:13218-13221` bumps it).
@@ -683,7 +683,7 @@ pub(crate) fn nail_kill(p: &mut Projectile, rng: &mut dyn DropRng, local_owner: 
         return false;
     }
     // `:76345` — the Item14 cue at base.position.
-    p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+    p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
     // `:76346-76363` — the dust bursts: the bodies skip, the 6 Next(2)
     // gates draw in order.
     for _ in 0..6 {
@@ -870,7 +870,7 @@ pub(crate) fn toxic_bubble_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
     if p.kind != 523 {
         return;
     }
-    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0));
+    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0, 1.0));
     for _ in 0..25 {
         let _ = rng.next_range(-100, 101); // velocity.X
         let _ = rng.next_range(-100, 101); // velocity.Y
@@ -1694,7 +1694,7 @@ pub(crate) fn ai_medusa_head(
     p.vel = Vec2::new(p.direction as f32, 0.0);
     // `:44539-44543` — the cue latch: NPCKilled (4) style 17.
     if flag2 && p.sound_delay == 0 {
-        p.wants_sound = Some((4, 17, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((4, 17, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     p.sound_delay = if flag2 { 4 } else { 0 };
     // `:44544-44611` — the local-owner fire block.
@@ -2051,7 +2051,7 @@ mod tests {
         npcs[0].max_hp = 40;
         ai_clouds(&mut slots, 0, &w, &mut npcs, None, 0, &mut rng);
         let p = &slots[0];
-        assert_eq!(p.wants_sound, Some((2, 16, c0.x, c0.y, 0.0)), "the broadcast cue");
+        assert_eq!(p.wants_sound, Some((2, 16, c0.x, c0.y, 0.0, 1.0)), "the broadcast cue");
         assert_eq!(p.vel, Vec2::ZERO);
         assert!(p.scale > 1.0, "the 1→6 ramp");
         assert_eq!(p.local_ai[1], 15.0, "the cadence re-arm");
@@ -2222,7 +2222,7 @@ mod tests {
         let mut p = proj(514);
         let mut rng = CensusRng::default();
         assert!(nail_kill(&mut p, &mut rng, 0));
-        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0, 1.0)));
         assert_eq!(rng.ranges, vec![(0, 2); 6], "the six dust gates");
         assert_eq!((p.w, p.h), (112.0, 112.0));
         assert_eq!(p.ai[0], 2.0);
@@ -2378,7 +2378,7 @@ mod tests {
         let mut p = proj(523);
         let mut rng = CensusRng::default();
         toxic_bubble_kill(&mut p, &mut rng);
-        assert_eq!(p.wants_sound, Some((2, 54, 1600.0, 800.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 54, 1600.0, 800.0, 0.0, 1.0)));
         assert_eq!(rng.ranges.len(), 75);
         assert_eq!(rng.ranges[0], (-100, 101));
         assert_eq!(rng.ranges[1], (-100, 101));

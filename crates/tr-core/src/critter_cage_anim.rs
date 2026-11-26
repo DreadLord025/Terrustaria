@@ -2261,10 +2261,29 @@ fn step_jellyfish(
 mod tests {
     use super::*;
 
+    /// The C# first index of each `Main.*CageFrame` 2-D table
+    /// (`Main.cs:66925/66928/66929/66949/66965`): scorpion 2, slug 3,
+    /// butterfly 9, dragonfly 7, jellyfish 3; every other table is 1-D.
+    fn table_rows(table: CageAnim) -> i32 {
+        match table {
+            CageAnim::Scorpion => 2,
+            CageAnim::Slug => 3,
+            CageAnim::Butterfly => 9,
+            CageAnim::Dragonfly => 7,
+            CageAnim::Jellyfish => 3,
+            _ => 1,
+        }
+    }
+
     /// W4-g34 witness (WRITTEN NOT RUN — code-only mode): the fresh state
     /// is the vanilla allocation — every table zeroed (`Main.cs:66902-66972`
     /// allocates `new int[...]`, zero-initialised), so a t=0 draw through
     /// `frame_of` reproduces the static cage arms byte-for-byte.
+    ///
+    /// RE-DERIVED (W4-g34 merge): the row loop used to run `0..9` for every
+    /// table, which indexes past the `[3]`/`[7]`/`[3]` first dimensions and
+    /// panicked (`len is 3 but the index is 3`). The row count is the C#
+    /// table's own first index above.
     #[test]
     fn fresh_state_is_the_vanilla_zero_allocation() {
         let a = CritterCageAnimator::new();
@@ -2276,7 +2295,7 @@ mod tests {
             CageAnim::FishBowl, CageAnim::LavaFishBowl, CageAnim::FairyJar,
             CageAnim::Butterfly, CageAnim::Dragonfly, CageAnim::Jellyfish,
         ] {
-            for row in 0..9 {
+            for row in 0..table_rows(table) {
                 for idx in 0..CAGE_FRAMES {
                     assert_eq!(a.frame_of(table, row, idx), 0, "{table:?} {row} {idx}");
                 }
@@ -2367,7 +2386,7 @@ mod tests {
         let mut seen_wrap = false;
         let mut prev = 0;
         for _ in 0..2000 {
-            step_lava_fish_bowl(&mut t);
+            step_lava_fish_bowl(&mut t, &mut r);
             let f = t.frame[0];
             assert!((0..=26).contains(&f), "frame {f} out of band");
             if prev == 26 && f == 0 {
@@ -2744,7 +2763,9 @@ mod tests {
     }
 
     /// g33 port: the scorpion idle-7 pass writes 0 with NO Next(3) chain
-    /// (Main.cs:14890-14893) — the stream shows exactly one gate draw.
+    /// (Main.cs:14890-14893) — the stream shows exactly one gate draw PER
+    /// SLOT (the C# loop is `for (num40 = 0; num40 < Main.cageFrames; ...)`,
+    /// so a tick is N draws, all from the idle arm here).
     #[test]
     fn scorpion_frame7_snaps_to_zero_without_rolls() {
         let mut frame = [0i32; N];
@@ -2755,8 +2776,10 @@ mod tests {
         step_scorpion(&mut frame, &mut counter, &mut r);
         assert_eq!((frame[0], counter[0]), (0, 0));
         let mut r2 = UnifiedRandom::new(1);
-        r2.next_range(30, 3600);
-        assert_eq!(r.next(), r2.next(), "exactly one gate draw on the 7-arm");
+        for _ in 0..N {
+            r2.next_range(30, 3600); // the one gate draw every slot takes
+        }
+        assert_eq!(r.next(), r2.next(), "exactly one gate draw per slot");
     }
 
     /// g33 port: the penguin 10/11 band's `> 3` copy-paste quirk
@@ -3048,7 +3071,8 @@ mod tests {
 
     /// g33 port: the ladybug base Next(10,12) draws UNCONDITIONALLY
     /// (Main.cs:15990) — even for the 8-16 band whose limit is overwritten
-    /// to 5; frame 18 draws base + (160,241).
+    /// to 5; frame 18 draws base + (160,241). One draw per slot: the C# loop
+    /// runs `num40` over every `Main.cageFrames` slot.
     #[test]
     fn ladybug_base_limit_draw_is_unconditional() {
         let mut t = CageTable::default();
@@ -3056,15 +3080,22 @@ mod tests {
         let mut r = UnifiedRandom::new(1);
         step_ladybug(&mut t, &mut r);
         let mut r2 = UnifiedRandom::new(1);
-        r2.next_range(10, 12);
-        assert_eq!(r.next(), r2.next(), "exactly the base Next(10,12)");
+        for _ in 0..N {
+            r2.next_range(10, 12); // base limit for every slot, band or not
+        }
+        assert_eq!(r.next(), r2.next(), "exactly the base Next(10,12) per slot");
         t.frame[0] = 18;
         t.counter[0] = 0;
         let mut r3 = UnifiedRandom::new(1);
         step_ladybug(&mut t, &mut r3);
         let mut r4 = UnifiedRandom::new(1);
+        // Slot 0: the base limit, then the 18-arm's (160,241).
         r4.next_range(10, 12);
         r4.next_range(160, 241);
+        // Slots 1..N: the base limit only.
+        for _ in 1..N {
+            r4.next_range(10, 12);
+        }
         assert_eq!(r3.next(), r4.next());
     }
 
@@ -3133,8 +3164,9 @@ mod tests {
     }
 
     /// g33 port (the stream-shape half g34's lava_fish_bowl_wraps_at_26
-    /// does not cover): the gate draws Next(3) EVERY tick
-    /// (Main.cs:16387-16396) and frame 26 wraps to 0 on a forced pass.
+    /// does not cover): the gate draws Next(3) EVERY tick for EVERY slot
+    /// (`Main.cs:16387-16396`, `num52` walks all `Main.cageFrames`) and
+    /// frame 26 wraps to 0 on a forced pass.
     #[test]
     fn lava_fish_bowl_gate_draws_every_tick() {
         let mut t = CageTable::default();
@@ -3142,8 +3174,10 @@ mod tests {
         step_lava_fish_bowl(&mut t, &mut r);
         assert_eq!(t.counter[0], 1);
         let mut r2 = UnifiedRandom::new(1);
-        r2.next_max(3);
-        assert_eq!(r.next(), r2.next(), "exactly one Next(3) per tick");
+        for _ in 0..N {
+            r2.next_max(3); // one gate draw per slot
+        }
+        assert_eq!(r.next(), r2.next(), "exactly one Next(3) per slot");
         t.frame[0] = 26;
         t.counter[0] = 10; // past any 4+Next(3)
         step_lava_fish_bowl(&mut t, &mut r);
@@ -3152,7 +3186,8 @@ mod tests {
 
     /// g33 port: the butterfly base Next(3,16) draws UNCONDITIONALLY
     /// (Main.cs:16411) — a mode-1 tick below the gate consumes
-    /// gate(3600) + base(3,16) only.
+    /// gate(3600) + base(3,16) only, for EVERY slot (`num54` walks all
+    /// `Main.cageFrames` in each of the nine rows; here row 0).
     #[test]
     fn butterfly_base_speed_draw_is_unconditional() {
         let mut frame = [0i32; N];
@@ -3161,10 +3196,18 @@ mod tests {
         mode[0] = 1;
         let mut r = UnifiedRandom::new(1);
         step_butterfly(&mut frame, &mut counter, &mut mode, &mut r);
+        // The mirror of the draw schedule: every slot rolls the mode gate,
+        // takes the two extra draws only when it fires, then the base
+        // Next(3,16) regardless of the forced mode-1 speed (3).
         let mut r2 = UnifiedRandom::new(1);
-        r2.next_max(3600);
-        r2.next_range(3, 16);
-        assert_eq!(r.next(), r2.next());
+        for _ in 0..N {
+            if r2.next_max(3600) == 0 {
+                r2.next_max(5);
+                r2.next_max(2);
+            }
+            r2.next_range(3, 16);
+        }
+        assert_eq!(r.next(), r2.next(), "gate + one base speed draw per slot");
         assert_eq!(counter[0], 1, "below the 3-tick speed gate");
     }
 

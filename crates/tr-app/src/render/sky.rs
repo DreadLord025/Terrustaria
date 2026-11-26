@@ -135,6 +135,17 @@ pub(crate) fn rain_dim_sky(sky: [f32; 3], cloud_alpha: f32, atmo: f32, remix: bo
     [ch(sky[0]), ch(sky[1]), ch(sky[2])]
 }
 
+/// `Main.ApplyColorOfTheSkiesToTiles`: surface sunlight is the sky colour pulled
+/// 70 % towards its own channel.
+pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
+    let sum = sky[0] + sky[1] + sky[2];
+    [
+        (sum + 7.0 * sky[0]) / 10.0,
+        (sum + 7.0 * sky[1]) / 10.0,
+        (sum + 7.0 * sky[2]) / 10.0,
+    ]
+}
+
 /// `SunGradients` (`GameContent/Drawing/SunGradients.cs:37-197`): the 15-entry
 /// gradient tables are hardcoded colours; only the middle entry
 /// (`gradient[gradient.Length / 2]`, `NextHorizonRenderer.cs:185`) feeds the
@@ -838,7 +849,6 @@ pub(crate) fn draw_sky(
     // kills the field at intensity ≥ 1/1.4), the shimmer dims the star
     // colour. W4-g69 retire sweep (g69d-star-visual).
     graveyard_intensity: f32,
-    shimmer_alpha: f32,
     // `Main.cloudAlpha` RAW (`Main.cs:63051`'s star gate reads
     // `cloudAlpha * atmo`, NOT the storm deck's cloudBGAlpha). W4-g69
     // retire sweep; g70's tip adds the SAME param for the celestial dims —
@@ -857,7 +867,6 @@ pub(crate) fn draw_sky(
     moon_color: [u8; 3],
     // `Main.cloudAlpha` (the raw event alpha, NOT `cloudBGAlpha`) — the
     // celestial dim terms (`Main.cs:62915`/`:62957`) and the star gate.
-    cloud_alpha: f32,
     // `Main.eclipse` (`Main.cs:1209`) — the Sun3 swap + the horizon kill.
     eclipse: bool,
     // `Main.SmoothedMushroomLightInfluence` (`Main.cs:1283`) — the sun's
@@ -875,7 +884,6 @@ pub(crate) fn draw_sky(
     ug_back: &mut super::bg_styles::UgBackState,
     // `Main.shimmerAlpha` — the star dim/recolour (`Main.cs:63047-63050`,
     // `:63087-63110`).
-    shimmer_alpha: f32,
     // W4-c40: the `SkyManager` "Sandstorm" sky (`SandstormSky.cs`) — drawn
     // at the `DrawRemainingDepth` flush slot (`Main.cs:59626`), the same
     // boundary the shallowest ambience entities use. `None` when the sky
@@ -971,55 +979,6 @@ pub(crate) fn draw_sky(
     let view_top = camera.y - screen.y * 0.5;
     let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface) as f32;
 
-    // `DrawStarsInBackground` (`Main.cs:63030-63058`): visibility is driven by
-    // the sky colour alone — `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0`
-    // hides them — so the field fades out across dawn instead of switching off
-    // at a fixed hour. W4-g69 retire sweep (g69d-star-visual): the heads +
-    // gate live in `star_pass_heads` (the RAW cloudAlpha·atmo gate, the remix
-    // `||` arm, the graveyard opacity kill, the shimmer sky dim + the
-    // shimmerAlpha==1 pass skip).
-    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
-    let (star_opacity, star_sky, stars_visible) = star_pass_heads(
-        tint,
-        graveyard_intensity,
-        shimmer_alpha,
-        cloud_alpha,
-        atmo,
-        remix,
-    );
-    if stars_visible {
-        for (i, s) in stars.iter().enumerate() {
-            let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
-                continue;
-            };
-            // `Star.Update`'s 0.6..1 twinkle oscillation (`Star.cs:215-225`),
-            // sine-approximated around the same centre and range.
-            let twinkle = 0.8
-                + 0.2
-                    * (s.phase
-                        + anim_time * 60.0 * s.twinkle_speed * (std::f32::consts::TAU / 0.8))
-                        .sin();
-            // `DrawStar`'s colour chain (`Main.cs:63066-63110`) — the shared
-            // helper (the brightness, the graveyard multiply, the shimmer
-            // i%3 tint + lerp + dim).
-            let Some(rgb) = draw_star_color(star_sky, twinkle, star_opacity, shimmer_alpha, i)
-            else {
-                continue;
-            };
-            if rgb[0] == 0 && rgb[1] == 0 && rgb[2] == 0 {
-                continue;
-            }
-            // `Main.cs:63112-63118`: the design-space position mapped onto the
-            // screen and shifted by `sceneArea.bgTopY` — which DrawStar zeroes
-            // on a skyblock-height world (`worldSurface <= 30`, `:63114-63117`,
-            // W4-g69 retire sweep) — then wrapped into the frame (`:63119-63137`,
-            // the not-falling arm; the falling-star no-wrap arm is the unported
-            // falling-star lane, research/117 §5).
-            let star_bg_top = if world.world_surface <= 30.0 { 0.0 } else { bg_top_y };
-            let mut px = s.x / 1920.0 * screen.x;
-            let mut py = s.y / 1200.0 * screen.y + star_bg_top;
-            if px < 0.0 {
-                px += screen.x;
     // `DrawStarsInBackground` (`Main.cs:63030-63058`) + `DrawStar`
     // (`:63060-63173`), W4-g70 lane 8: the LIVE pool (`crate::star_field`)
     // with the graveyard opacity, the shimmer dim, the fadeIn fade and the
@@ -1152,8 +1111,6 @@ pub(crate) fn draw_sky(
                 [px, py],
                 [st.w * k, st.h * k],
                 st.uv,
-                [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0, 1.0],
-                rot,
                 colorf,
                 s.rotation,
             );
@@ -1362,39 +1319,6 @@ pub(crate) fn draw_sky(
                     [body.x, body.y], size, phase_row(m), mc4, body.rotation,
                 );
             }
-            // `new Rectangle(0, width * moonPhase, width, width)`: one phase row.
-            let phase = world.moon_phase.min(7) as f32;
-            let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
-            let v0 = moon.uv[1] + dv * phase;
-            let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
-            // `Main.cs:62978`: `DrawSunAndMoon` tints with `SetBackColor`'s
-            // `moonColor` — the blood-moon red ramp (`:63495-63519`) while
-            // `BloodMoonActive`, else `Color.White` (`:63917-63920`). The
-            // port keeps its forest night tint for the no-blood-moon arm
-            // (pre-existing deviation, ANALYSIS "The blood-moon sky
-            // residuals (W4-g12)").
-            let c = if world.blood_moon {
-                tr_core::sky::blood_moon_color(clock_time)
-            } else {
-                tr_core::sky::moon_color(clock_time)
-            };
-            let size = [moon.w * body.scale, moon.w * body.scale];
-            push_screen_rot(
-                r,
-                camera,
-                zoom,
-                screen,
-                [body.x, body.y],
-                size,
-                uv,
-                [
-                    c[0] as f32 / 255.0 * cloud_dim,
-                    c[1] as f32 / 255.0 * cloud_dim,
-                    c[2] as f32 / 255.0 * cloud_dim,
-                    cloud_dim,
-                ],
-                body.rotation,
-            );
         }
     }
 
@@ -1414,6 +1338,7 @@ pub(crate) fn draw_sky(
         atmo,
         bg_alpha_front,
         background_enabled,
+        world_surface: world.world_surface,
     };
     draw_surface_bg(
         r,
@@ -1422,7 +1347,25 @@ pub(crate) fn draw_sky(
         screen,
         world,
         sky,
-        clouds,
+        cloud_field,
+        surface_px,
+        sky_color,
+        atmo,
+        map_fullscreen,
+        slime_sky,
+        event_skies,
+        forest_hills,
+        forest_flash,
+        sandstorm_sky,
+        sandstorm_severity,
+        light,
+        cave_parallax,
+        hell_black_box_bottom,
+        metrics,
+        ug_back,
+        shimmer_alpha,
+        lantern_sky,
+        global_time,
         bg_alpha_front,
         bg_alpha_far,
         tint,
@@ -1460,6 +1403,12 @@ pub(crate) fn draw_sky(
             cave_parallax,
             anim_time,
             hell_black_box_bottom,
+            // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`): the
+            // port's `TR_SHOW_INVISIBLE` A/B pin (false in normal play).
+            crate::env::show_invisible(),
+            metrics,
+            ug_back,
+            shimmer_alpha,
         );
     }
 }
@@ -1480,7 +1429,27 @@ pub(crate) fn draw_surface_bg(
     screen: Vec2,
     world: &World,
     sky: &SkyAssets,
-    clouds: &[CloudSprite],
+    // Union: the full W4 g39/f39/c39/f40/c40/g69/g70/g72 surface-bg body
+    // needs the draw-sky inputs the extraction splice dropped.
+    cloud_field: &crate::cloud::CloudField,
+    surface_px: f32,
+    sky_color: [f32; 3],
+    atmo: f32,
+    map_fullscreen: bool,
+    slime_sky: Option<&crate::slime_sky::SlimeSky>,
+    event_skies: &crate::event_skies::EventSkies,
+    forest_hills: &[[i32; 2]; 4],
+    forest_flash: [f32; 4],
+    sandstorm_sky: Option<&crate::render::sandstorm_sky::SandstormSky>,
+    sandstorm_severity: f32,
+    light: &LightMap,
+    cave_parallax: f32,
+    hell_black_box_bottom: &mut f32,
+    metrics: &tr_core::scene::SceneMetrics,
+    ug_back: &mut super::bg_styles::UgBackState,
+    shimmer_alpha: f32,
+    lantern_sky: &crate::render::lantern_sky::LanternSky,
+    global_time: f32,
     bg_alpha_front: &[f32; 16],
     bg_alpha_far: &[f32; 16],
     tint: [f32; 3],
@@ -1496,6 +1465,7 @@ pub(crate) fn draw_surface_bg(
 ) {
     let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
     let view_top = camera.y - screen.y * 0.5;
+    let origin = camera - screen * 0.5 / zoom;
     // `Main.bgAlphaFrontLayer`/`bgAlphaFarBackLayer`: each biome layer is drawn with
     // `ColorOfSurfaceBackgroundsBase * alpha`, so two biomes blend while the style
     // cross-fades (`backgroundLayerTransitionSpeed = 0.05`). Index tables:
@@ -1524,32 +1494,6 @@ pub(crate) fn draw_surface_bg(
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && bg_block;
-    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`) is the caller's
-    // `amb_last` (reset at the top of the surface background pass,
-    // `Main.cs:59344`). Every `draw_range_min` below ports one `DrawToDepth`
-    // call of `Main.cs:59700-60290`; a call whose boundary is above the
-    // tracker no-ops, exactly like the original's stale-parallax call
-    // (`Main.cs:59890`).
-    //
-    // DRAW_TO_DEPTH boundary table (`.code-foundations/build/2026-11-03-
-    // M1.4-BG-19-ambient-skies-boundary-table.md`):
-    //   6.667 = 1/0.15 (Step1, `Main.cs:59812`) — before the far mountains
-    //   5.0   (`Main.cs:59878`) — between the far and near mountain rows
-    //   1/parallax[i] per front-tree row (`Main.cs:61304+`, biome fns)
-    //   1.0   (`Main.cs:60186`) — after the Mushroom chain (the last front row)
-    //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
-    //   backdrop
-    let mut amb_last = f32::INFINITY;
-    let amb_ctx = crate::ambience::SkyDrawCtx {
-        camera,
-        zoom,
-        screen,
-        color_of_the_skies: sky_color,
-        atmo,
-        bg_alpha_front,
-        background_enabled,
-        world_surface: world.world_surface,
-    };
     // W4-f40: the `LanternSky` rides the SAME `SkyManager` depth tracker as
     // the ambience — every `DrawToDepth(minDepth)` boundary draws its
     // `[minDepth, last)` band (`LanternSky.cs:169-187`'s own cull). The
@@ -1690,7 +1634,7 @@ pub(crate) fn draw_surface_bg(
     // `SkyManager.DrawDepthRange` walks every active sky; the band is
     // (min, last] BEFORE the tracker moves — the activation order draws
     // Ambience first, Slime second).
-    let band_max = amb_last;
+    let band_max = *amb_last;
     crate::ambience::draw_range_min(
         r,
         ambience,
@@ -1794,8 +1738,8 @@ pub(crate) fn draw_surface_bg(
     // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
-    let band_max = amb_last;
-    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    let band_max = *amb_last;
+    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, amb_last);
     // W4-c39: the party balloons' mid band rides the same boundary.
     draw_party_band(r, 5.0, &mut party_last);
     if let Some(ss) = slime_sky {
@@ -1816,11 +1760,6 @@ pub(crate) fn draw_surface_bg(
         // leaves it; the pass adds its own `-50 + 200`.
         let closer_bg_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0
-    crate::ambience::draw_range_min(r, ambience, lookups, amb_ctx, 5.0, amb_last);
-    draw_lantern_band(r, 5.0, &mut lantern_last);
-    if bg_block {
-        let closer_top = if background_enabled {
-            magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
         } else {
             magic * 1200.0 + 1190.0 + sc_adj
         };
@@ -1995,15 +1934,13 @@ pub(crate) fn draw_surface_bg(
         entities: ambience,
         lookups,
         ctx: &amb_ctx,
-        last: &mut amb_last,
+        last: amb_last,
         // W4-c39: the party sky's band state threads the front-row chain
         // (the f40 `lantern_sky`/`lantern_last` shape).
         event_skies,
         party_last: &mut party_last,
         party_surface_px: surface_px,
         slime_sky,
-        ctx: amb_ctx,
-        last: amb_last,
         lantern_sky,
         lantern_last: &mut lantern_last,
         global_time,
@@ -2403,8 +2340,8 @@ pub(crate) fn draw_surface_bg(
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
-    let band_max = amb_last;
-    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    let band_max = *amb_last;
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, amb_last);
     // W4-c39: the party sky's remainder (the nearest balloons, below the
     // last front-row boundary) flush here too (`Main.cs:59626`).
     draw_party_band(r, f32::NEG_INFINITY, &mut party_last);
@@ -2432,8 +2369,8 @@ pub(crate) fn draw_surface_bg(
     // value at the flush is the C#'s `_lastDepth` (the port's `amb_last`
     // BEFORE the ambience flush consumes it); `float.MinValue` is the C#
     // minDepth.
-    let sky_flush_max = amb_last;
-    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    let sky_flush_max = *amb_last;
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, amb_last);
     if let Some(sky) = sandstorm_sky {
         sky.draw(
             r,

@@ -259,7 +259,7 @@ impl LanternSky {
         // `:165`: the underground / opacity gate (the menu gate is the
         // phase's own — module docs). `Main.screenPosition.Y` is the
         // unscaled view top-left (`camera.y - screen.y*0.5`).
-        if camera.y - screen.y * 0.5 > world_surface * 16.0 || self.opacity <= 0.0 {
+        if (camera.y - screen.y * 0.5) as f64 > world_surface * 16.0 || self.opacity <= 0.0 {
             return;
         }
         let Some(sheet) = lookups.lantern_sky else {

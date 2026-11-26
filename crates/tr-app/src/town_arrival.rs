@@ -240,24 +240,19 @@ pub(crate) struct ArrivalContext<'a> {
 pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
     let w = ctx.world;
     match kind {
-        // `num6 < 1` — the Guide is the unconditional one (`:65800-65803`).
+        // `num6 < 1` — the Guide is the unconditional one (`:65802`).
         NpcKind::Guide => true,
         // W4-f45: the `unlocked*Spawn` overrides short-circuit the gates
         // (`NPC.SpawnAllowed_*`, `NPC.cs:7069/7094/7119/7160/7177`).
-        NpcKind::Merchant => {
-            w.unlocked_merchant_spawn || spawn_allowed_merchant(ctx.inventory)
-        }
+        NpcKind::Merchant => w.unlocked_merchant_spawn || spawn_allowed_merchant(ctx.inventory),
         // `flag3 && num3 < 1 && num2 > 0`: the Nurse needs a resident
-        // Merchant as well as the life gate (`:65808-65811`).
-        NpcKind::Nurse => spawn_allowed_nurse(ctx.max_hp),
-        NpcKind::ArmsDealer => spawn_allowed_arms_dealer(ctx.inventory),
         // Merchant as well as the life gate (`:65810`).
         NpcKind::Nurse => w.unlocked_nurse_spawn || spawn_allowed_nurse(ctx.max_hp),
         NpcKind::ArmsDealer => {
             w.unlocked_arms_dealer_spawn || spawn_allowed_arms_dealer(ctx.inventory)
         }
         // `num4 < 1` and any of the first three bosses (or the infected
-        // seed) (`:65816-65819`).
+        // seed) (`:65814`).
         NpcKind::Dryad => w.downed_eoc || w.downed_eow || w.downed_skeletron,
         // `flag5 && num2 > 0` — the Demolitionist also wants a Merchant.
         NpcKind::Demolitionist => {
@@ -272,41 +267,30 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
         NpcKind::Stylist => w.saved_stylist,
         NpcKind::TaxCollector => w.saved_tax_collector,
         NpcKind::Golfer => w.saved_golfer,
+        // W4-f45: `unlockedDyeTraderSpawn` OR the gate (`NPC.SpawnAllowed_DyeTrader`).
+        // W4-d119 phase 2b adds the four-resident term (`Main.cs:65860-65863`).
         NpcKind::DyeTrader => {
-            // `flag4 && num16 < 1 && num40 >= 4` (`Main.cs:65860-65863`) —
-            // the four-resident term the landed core dropped (W4-d119
-            // phase 2b, the f43 census's "known LANDED gap").
-            spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes) && ctx.residents >= 4
-        }
-        // `num40 >= 8` residents (`:65880-65883`).
             w.unlocked_dye_trader_spawn
-                || spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes)
+                || (spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes)
+                    && ctx.residents >= 4)
         }
         // `num40 >= 8` residents (`:65929`).
         NpcKind::Painter => ctx.residents >= 8,
         // `flag7 = (rand.Next(40) == 0) && num40 >= 20`, with
-        // `unlockedPartyGirlSpawn` forcing the flag true (`:65785-65794`).
+        // `unlockedPartyGirlSpawn` forcing the flag true (`:65785-65799`).
         NpcKind::PartyGirl => {
             (ctx.party_roll && ctx.residents >= 20) || w.unlocked_party_girl
         }
-        // `((vampireSeed && !infectedSeed) || bestiary >= 0.1f) && num27 < 1`
-        // (`Main.cs:65896-65899`) — the bestiary term wired (W4-d119 phase
-        // 2b); the vampire-seed lead stays constants-off (special-seed lane).
+        // W4-d119 phase 2b: `(vampireSeed && !infectedSeed) || bestiary >= 0.1`
+        // (`Main.cs:65896-65899`) — the bestiary term wired.
         NpcKind::Zoologist => ctx.bestiary_completion >= 0.1,
-        // `flag9`: every other town type resident (`:65944-65955`); the port
-        // ships the unlock flag, the roster term needs the full type set.
-        NpcKind::Princess => w.unlocked_princess,
-        NpcKind::Zoologist => false,
-        // W4-f43b — flag9's full form (`Main.cs:65944-65952`): ALL 24
-        // roster types resident, OR the tenth-anniversary override (unless
-        // getGoodWorld), OR the debug unlock. The roster walks the live
-        // residents by vanilla id (`princess_flag9`'s injected count).
-        NpcKind::Princess => ctx.princess_flag9,
-        // W4-f39: the tenth-anniversary world (not getGood) forces flag9
-        // true (`Main.cs:65945-65948`), so the Princess arrives without the
-        // full roster there.
+        // W4-f43b — flag9's full form (`Main.cs:65944-65952`): ALL 24 roster
+        // types resident, OR the tenth-anniversary override (unless
+        // getGoodWorld), OR the debug unlock. W4-f39 supplies the anniversary
+        // term; the base `unlocked_princess` stands.
         NpcKind::Princess => {
             w.unlocked_princess
+                || ctx.princess_flag9
                 || (w.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
                     && !w.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY))
         }

@@ -2639,6 +2639,7 @@ mod report_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::s1_e_14_tests::{info_npc, ScriptRng};
 
     fn info<'a>(rng: &'a mut dyn DropRng) -> DropAttemptInfo<'a> {
         DropAttemptInfo {
@@ -3286,7 +3287,7 @@ mod tests {
     fn soul_of_whatever_gate_matches_the_csharp() {
         // A fresh passing-shape info per check (the rng borrow is exclusive,
         // so each check owns its own stream — the gate draws nothing).
-        let good = |rng: &mut dyn DropRng| {
+        fn good<'a>(rng: &'a mut dyn DropRng) -> DropAttemptInfo<'a> {
             let mut i = info(rng);
             i.flags.hard_mode = true;
             i.flags.soul_depth_ok = true;
@@ -3294,7 +3295,7 @@ mod tests {
             i.npc.life_max = 50;
             i.npc.value = 100.0;
             i
-        };
+        }
         let mut rng = crate::tile_light::FastRandom::new(1);
         assert!(
             soul_of_whatever_can_drop(&good(&mut rng)),
@@ -3368,14 +3369,14 @@ mod s1_e_14_tests {
     /// A scripted rng for the draw-order pins: each call pops the next
     /// scripted value and records the requested `(min, max)` range, so the
     /// tests pin both the draw ORDER and the requested bounds.
-    struct ScriptRng {
+    pub(super) struct ScriptRng {
         floats: std::collections::VecDeque<f32>,
         values: std::collections::VecDeque<i32>,
-        ranges: Vec<(i32, i32)>,
+        pub(super) ranges: Vec<(i32, i32)>,
     }
 
     impl ScriptRng {
-        fn new(floats: &[f32], values: &[i32]) -> Self {
+        pub(super) fn new(floats: &[f32], values: &[i32]) -> Self {
             Self {
                 floats: floats.iter().copied().collect(),
                 values: values.iter().copied().collect(),
@@ -3402,7 +3403,7 @@ mod s1_e_14_tests {
         }
     }
 
-    fn info_npc<'a>(rng: &'a mut dyn DropRng, npc: LootNpc<'a>) -> DropAttemptInfo<'a> {
+    pub(super) fn info_npc<'a>(rng: &'a mut dyn DropRng, npc: LootNpc<'a>) -> DropAttemptInfo<'a> {
         DropAttemptInfo {
             rng,
             luck: 0.0,

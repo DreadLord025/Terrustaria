@@ -454,9 +454,6 @@ pub(crate) fn spawn_shimmered_item(
     app.items.push(drop);
     if app.items.len() > 300 {
         app.items.remove(0);
-
-        }
-        }/// `Recipe.AddCustomShimmerResult`'s five call sites (`Recipe.cs:2193-2194`,
     }
 }
 

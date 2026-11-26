@@ -96,7 +96,7 @@ pub(crate) fn snowing(
     let mut i = 0.0f32;
     while i < num3 {
         // `:13057-13060` — the live-count cap BREAKS the loop.
-        if !(env.snow_dust as f32
+        if !((env.snow_dust as f32)
             < num2 as f32 * (env.gfx_quality / 2.0 + 0.5) + num2 as f32 * 0.1)
         {
             break;
@@ -573,7 +573,7 @@ mod tests {
                 let num3 = 1.0 + 50.0 * e.cloud_alpha;
                 let mut i = 0.0f32;
                 while i < num3 {
-                    if !(e.snow_dust as f32
+                    if !((e.snow_dust as f32)
                         < num2 as f32 * (e.gfx_quality / 2.0 + 0.5) + num2 as f32 * 0.1)
                     {
                         break;

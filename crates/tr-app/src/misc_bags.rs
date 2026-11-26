@@ -122,9 +122,11 @@ pub fn open_herb_bag<R: PrefixRandom + ?Sized>(rng: &mut R, out: &mut Vec<BagGra
 /// `Player.OpenCanofWorms(int sourceItemType)` (`Player.cs:9443-9455`):
 /// 5-8 worms, a 3/10 enchanted-nightcrawler tail, a 1/20 gold-worm pet.
 pub fn open_can_of_worms<R: PrefixRandom + ?Sized>(rng: &mut R, out: &mut Vec<BagGrant>) {
-    quick_spawn(rng, out, 2002, range(rng, 5, 9)); // `:9446`
+    let worms = range(rng, 5, 9);
+    quick_spawn(rng, out, 2002, worms); // `:9446`
     if rng.next_max(10) < 3 {
-        quick_spawn(rng, out, 3191, range(rng, 1, 3)); // `:9447-9450`
+        let crawlers = range(rng, 1, 3);
+        quick_spawn(rng, out, 3191, crawlers); // `:9447-9450`
     }
     if rng.next_max(20) == 0 {
         quick_spawn(rng, out, 2895, 1); // `:9451-9454`
@@ -564,9 +566,11 @@ mod tests {
             open_can_of_worms(&mut rng, &mut out);
             let mut r2 = UnifiedRandom::new(seed);
             let mut want = Vec::new();
-            spawn_replay(&mut r2, &mut want, 2002, r2.next_range(5, 9));
+            let sr_stack = r2.next_range(5, 9);
+            spawn_replay(&mut r2, &mut want, 2002, sr_stack);
             if r2.next_max(10) < 3 {
-                spawn_replay(&mut r2, &mut want, 3191, r2.next_range(1, 3));
+                let sr_stack = r2.next_range(1, 3);
+                spawn_replay(&mut r2, &mut want, 3191, sr_stack);
             }
             if r2.next_max(20) == 0 {
                 spawn_replay(&mut r2, &mut want, 2895, 1);

@@ -340,6 +340,12 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // every style; this row refuses so the cascade/record paths (which
         // pass frame 0) drop nothing rather than the wrong gem.
         178 => None,
+        // The grass blocks drop the MUD/dirt block, NOT the seed item that
+        // places them (`KillTile_GetItemDrops`, W4-g42 tail D2): the mushroom
+        // grass 70 → Mud 176 (`case 70`, `:64702-64704`); the jungle grasses
+        // 60/661/662 → Mud 176 (`case 59/60/661/662`, `:64936-64941`). The
+        // `by_tile` fallback would leak the seed items 194/195/2171/369.
+        70 | 60 | 661 | 662 => Some(176),
         // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
         // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
         // dropped — the `by_tile` fallback would leak the Journey-mode item

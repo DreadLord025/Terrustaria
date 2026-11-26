@@ -139,7 +139,7 @@ pub(crate) fn count_savings(banks: [&[ItemSlot]; 4]) -> ([i64; 4], i64) {
 /// `EMPTY_SLOT`). When the price is not fully covered, RESTORE the whole
 /// cache (`ItemCacheRestore`, `CustomCurrencySystem.cs:257-263`) and
 /// return false — nothing moves on a failed buy.
-fn try_purchasing(price: i64, inventories: [&mut [ItemSlot]; 5]) -> bool {
+fn try_purchasing(price: i64, mut inventories: [&mut [ItemSlot]; 5]) -> bool {
     let mut num = price;
     if num == 0 {
         return true; // `:73` — a zero price covers before the walk
@@ -216,7 +216,14 @@ mod tests {
     }
 
     fn mut_views(w: &mut [Vec<ItemSlot>; 5]) -> [&mut [ItemSlot]; 5] {
-        std::array::from_fn(|i| w[i].as_mut_slice())
+        let [a, b, c, d, e] = w;
+        [
+            a.as_mut_slice(),
+            b.as_mut_slice(),
+            c.as_mut_slice(),
+            d.as_mut_slice(),
+            e.as_mut_slice(),
+        ]
     }
 
     /// The census pins: the currency item is 3817 (NOT the 3822 crystal),

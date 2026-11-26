@@ -245,12 +245,10 @@ impl CoinEntry {
 /// `CoinSlot.cs:230-238` — keyed by the currency's ITEM id, 3817).
 #[derive(Clone, Debug, Default)]
 pub struct CoinSlotState {
-    savings_entries: Vec<CoinEntry>,
     chest_entries: Vec<CoinEntry>,
     inventory_entries: Vec<CoinEntry>,
     /// `CoinSlot.Savings` (`CoinSlot.cs:341`, `new CoinEntry[4]`): the shop
     /// savings pile's four coin cells (copper..platinum).
-    savings_entries: Vec<CoinEntry>,
     savings_entries: Vec<CoinEntry>,
     /// `CoinSlot.Custom` (`CoinSlot.cs:344`, `Dictionary<int, CoinEntryRef>`):
     /// one entry per custom-currency item id, created on first draw.
@@ -264,13 +262,6 @@ impl CoinSlotState {
             savings_entries: vec![CoinEntry::default(); 4],
             chest_entries: vec![CoinEntry::default(); 200],
             inventory_entries: vec![CoinEntry::default(); 59],
-            savings_entries: vec![CoinEntry::default(); 4],
-        }
-    }
-
-    /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:358-372`) — the vanilla runs
-    /// it per frame after the interface layers draw (`Main.cs:44936`). The
-    /// Savings array steps first (`:359-361`).
             custom_entries: std::collections::HashMap::new(),
         }
     }
@@ -310,17 +301,6 @@ impl CoinSlotState {
             .entry(currency_item)
             .or_default()
             .update_state(currency_item, count, SAVINGS_COIN_JUMP_SCALE)
-    }
-
-    /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`): the savings row's
-    /// draw state — type `71 + slot`, the `SavingsCoinJumpScale` (10, the
-    /// same value as the item-slot scale but a distinct static).
-    pub fn update_savings(&mut self, slot: usize, count: u32) -> CoinDrawState {
-        self.savings_entries[slot].update_state(
-            (71 + slot) as u16,
-            count,
-            SAVINGS_COIN_JUMP_SCALE,
-        )
     }
 
     /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`):

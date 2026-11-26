@@ -1322,7 +1322,6 @@ mod tests {
             &mut FastRandom::new(7),
             0,
             true,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_ne!(pool.slots()[slot].pos, before, "the slime moves now");
         assert!(pool.slots()[slot].vel.x > 0.0, "it walks toward the owner");

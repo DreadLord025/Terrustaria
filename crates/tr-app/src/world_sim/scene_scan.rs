@@ -402,43 +402,6 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         *zoom,
         app.gfx_quality.max_dust_to_draw,
     );
-    // `Main.snowing()` (`Main.cs:17238`, body `:13032-13116`): the ambient
-    // snowfall spawns right BEFORE `Sandstorm.EmitDust` in the C# — the port
-    // runs both in this slot (the spawn order between the two dust families
-    // only matters for the shared pool's slot scan). The budget reads the
-    // previous tick's `Main.snowDust` (`pool.snow_dust`, the shared tick's
-    // count). W4-d130.
-    let snow_inputs = crate::snow::SnowInputs {
-        // `Main.gamePaused` (`Main.cs:13040`) — g11's env field folded: the
-        // check is snowing's own first disjunct, the cluster gate redundant.
-        game_paused: app.game_paused,
-        scaled_position: *camera - screen * 0.5 / *zoom,
-        scaled_size: screen / *zoom,
-        cloud_alpha: rain.cloud_alpha(),
-        raining: rain.is_raining(),
-        wind_speed_current: wind.speed_current,
-        player_vy,
-        gfx_quality: app.gfx_quality.quality,
-        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the
-        // `npcsFoundForCheckActive[668]` read — `UpdateFoundActiveNPCs`
-        // (`NPC.cs:7229-7239`) sets it for any ACTIVE npc of type 668 (no
-        // near-screen filter despite the name; the port's `hp > 0` is the
-        // active flag, g11's census wording).
-        deerclops_near: npcs
-            .iter()
-            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Deerclops),
-        remix_world: wind.remix_world,
-    };
-    let snow_dust = app.dust.snow_dust;
-    let snow_metrics = app.scene_metrics.clone();
-    // F1 (g11 research/83-addendum, adjudicated): the bare-`Main.rand`
-    // stand-in — `:17238` precedes every `SwapRandom` (they all live inside
-    // `DoUpdateInWorld`, `Main.cs:17280`→`:17732`), so the draws ride the
-    // shared global stream, not a private snow splitmix.
-    crate::snow::snowing(
-        &snow_metrics,
-        &snow_inputs,
-        snow_dust,
     // W4-g11 — `Main.snowing()` (`Main.cs:17238`, the bare `Main.rand` slot
     // BEFORE the `DoUpdateInWorld` swap at `:17732`; `:17247`'s
     // `Sandstorm.EmitDust` follows it). The port's per-frame scene update is
@@ -690,32 +653,6 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     // `Main.tileColor` = the sky tint applied to tiles
-    // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
-    // the frame applies (`frame/draw.rs`'s `rain_dim` — W4-g69 doc-sweep: the
-    // same `1 - cloudAlpha * 0.9 * atmo` byte-truncated formula,
-    // `Main.cs:63546-63552`). Only the Noir formula reads it (no M1
-    // activation path).
-    let quantised = (world.time / 60.0).floor() * 60.0;
-    let c = crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
-    let rain_alpha = rain.raw_alpha();
-    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
-    let mut c = crate::render::sky::rain_dim_sky(
-        c,
-        rain_alpha,
-        atmo,
-        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
-    );
-    // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
-    // light-map sky colour takes, so the filters see the tinted tileColor.
-    crate::render::sky::modify_horizon_light(
-        &mut c,
-        world.moon_phase,
-        world.day_time,
-        (world.time / 60.0).floor() * 60.0,
-        atmo,
-        rain_alpha,
-    );
-    let tile_color = crate::render::sky::tile_color(c);
     // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`). W4-g70 lane 8:
     // the same byte-space chain the draw pass runs — the scene inputs come
     // from the stored (last-scan) metrics, exactly like `Main.Draw` reads
@@ -826,15 +763,9 @@ mod tests {
     // W4-d129 census witnesses (written-not-run, code-only lane): the scan
     // window census, the RNG-free property, the aura frame edges, the banner
     // decode convention pin and the dungeon-zone gate.
-    #[path = "scene_scan_w4_d129.rs"]
+    #[path = "../../scene_scan_w4_d129.rs"]
     mod scene_scan_w4_d129;
 
-    // W4-d129 census witnesses (written-not-run, code-only lane): the scan
-    // window census, the RNG-free property, the aura frame edges, the banner
-    // decode convention pin and the dungeon-zone gate. The banner pin rides
-    // the W4-f31 reconciliation (the C# num3 / NPCtoBanner index space).
-    #[path = "scene_scan_w4_d129.rs"]
-    mod scene_scan_w4_d129;
 
     /// A ground world with one aura tile set at `(x, y)`.
     fn aura_world(kind: u16, frame_x: i16, frame_y: i16) -> World {

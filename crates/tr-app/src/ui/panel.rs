@@ -320,8 +320,27 @@ pub fn draw_scrollbar(
 /// (`UIBestiaryEntryInfoPage.cs:47`); the crafting/creation bars are Cyan.
 /// The handle is `ScrollbarInner` either way (`:67`).
 pub fn draw_scrollbar_themed(
-    // `Color.White * 0.85f` when not dragging/hovering (`UIScrollbar.cs:122`).
-    draw_scrollbar_handle_alpha(r, lookups, rect, view, max_view, pos, auto_hide, 0.85);
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    pos: f32,
+    auto_hide: bool,
+    track: Option<SheetRect>,
+) {
+    if auto_hide && !scrollbar_can_scroll(view, max_view) {
+        return;
+    }
+    let (bar, handle) = scrollbar_rects_at(rect, view, max_view, pos);
+    if let Some(sheet) = track {
+        draw_scrollbar_bar(r, lookups, &sheet, bar, [1.0; 4]);
+    }
+    if let Some(sheet) = lookups.ui_scrollbar_inner {
+        // `Color.White * 0.85f` when not dragging/hovering (`UIScrollbar.cs:122`).
+        let c = color::tint(color::mul([255, 255, 255, 255], 0.85));
+        draw_scrollbar_bar(r, lookups, &sheet, handle, c);
+    }
 }
 
 /// [`draw_scrollbar`] with the handle's live alpha — `Color.White *
@@ -337,14 +356,13 @@ pub fn draw_scrollbar_handle_alpha(
     max_view: f32,
     pos: f32,
     auto_hide: bool,
-    track: Option<SheetRect>,
     handle_alpha: f32,
 ) {
     if auto_hide && !scrollbar_can_scroll(view, max_view) {
         return;
     }
     let (bar, handle) = scrollbar_rects_at(rect, view, max_view, pos);
-    if let Some(sheet) = track {
+    if let Some(sheet) = lookups.ui_scrollbar {
         draw_scrollbar_bar(r, lookups, &sheet, bar, [1.0; 4]);
     }
     if let Some(sheet) = lookups.ui_scrollbar_inner {

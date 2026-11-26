@@ -892,7 +892,15 @@ mod tests {
         let walls = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
         assert!(count(226) > 800, "the temple brick ({})", count(226));
         assert!(count(237) == 6, "the altar tiles ({})", count(237));
-        assert_eq!(count(10), 3, "the Lihzahrd door ({})", count(10));
+        // Tile 10 is also the wooden cabin door: the underground houses place
+        // their own 3-tall doors (wall 0). Scope the count to the temple's
+        // unsafe wall 87 — exactly the 3-tile Lihzahrd entrance.
+        let temple_doors = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 10 && t.wall == 87)
+            .count();
+        assert_eq!(temple_doors, 3, "the Lihzahrd door ({temple_doors})");
         assert!(count(232) >= 5, "the spikes ({})", count(232));
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
     }
@@ -1231,8 +1239,9 @@ mod tests {
             .count();
         assert!(gems > 20, "the exposed gems ({gems})");
         // The styles spread across the weighted bands (the amethyst 0 is
-        // the most common, the diamond 5 the rarest).
-        let mut styles = [0u32; 6];
+        // the most common, the diamond 5 the rarest) plus style 6, the
+        // marble/granite patch arm (`:20761` places `style = 6`).
+        let mut styles = [0u32; 7];
         for t in &w.tiles {
             if t.active() && t.kind == 178 {
                 styles[(t.frame_x / 18) as usize] += 1;
@@ -1356,8 +1365,12 @@ mod tests {
                 .count()
         };
         // The brick ring only (the carved interior does not count): ~25-32
-        // tiles per shrine shell.
-        assert!(count(119) > 150, "the shrine brick ({})", count(119));
+        // tiles per shrine shell. The hut material is a per-world Reset pick
+        // (`GenVars.jungle_hut`: 119/120/158/175/45) — seed 91 rolls 120, so
+        // count the whole family, not just 119.
+        const SHRINE_HUTS: [u16; 5] = [119, 120, 158, 175, 45];
+        let shrines: usize = SHRINE_HUTS.iter().map(|&k| count(k)).sum();
+        assert!(shrines > 150, "the shrine brick ({shrines})");
         assert!(count(4) > 3, "the shrine torches ({})", count(4));
         assert!(count(21) >= 4, "the chests ({})", count(21) / 4);
         assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);

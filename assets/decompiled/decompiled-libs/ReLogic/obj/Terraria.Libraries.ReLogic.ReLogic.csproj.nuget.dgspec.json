@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {}
+    "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {}
   },
   "projects": {
-    "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {
+    "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
+        "projectUniqueName": "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
         "projectName": "ReLogic",
-        "projectPath": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
+        "projectPath": "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
         "packagesPath": "C:\\Users\\DreadLord\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\obj\\",
+        "outputPath": "C:\\Users\\DreadLord\\Desktop\\TR-TRAIN\\assets\\decompiled\\decompiled-libs\\ReLogic\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DreadLord\\AppData\\Roaming\\NuGet\\NuGet.Config"

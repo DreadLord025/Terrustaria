@@ -1,5 +1,3 @@
-{
-// balance-open (union shared delimiter)
 //! The aiStyle-8 caster family — `NPC.AI()`'s `if (this.aiStyle == 8)` block
 //! (`NPC.cs:20817-21376`). Despite the task slug ("bat/flyer family"), the C#'s
 //! aiStyle 8 is the **teleporting caster** machine — the bats (49/51/60) ride
@@ -154,7 +152,6 @@ fn dungeon_wall_gated(kind: NpcKind) -> bool {
             // (`NPC.cs:18960`; the keep-one absorbed its d43 gate).
             | NpcKind::LibrarianSkeleton
     )
-    matches!(kind, NpcKind::DarkCaster | NpcKind::LibrarianSkeleton)
 }
 
 /// `Collision.SolidTiles(startX, endX, startY, endY)`
@@ -708,10 +705,17 @@ pub fn ai_style_8_step(
                 || npc.ai[0] == 200.0
                 || npc.ai[0] == 250.0
                 || npc.ai[0] == 300.0)
-    // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms. The
-    // Djinn's and the Rune Wizard's are ported; the dungeon casters
-    // (281-286) are the d38 branch's claim.
-    if npc.kind == NpcKind::RuneWizard {
+        {
+            npc.ai[1] = 30.0;
+            npc.net_update = true;
+        }
+        if npc.ai[0] >= 450.0 {
+            npc.ai[0] = 700.0;
+        }
+    } else if npc.kind == NpcKind::RuneWizard {
+        // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms. The
+        // Djinn's and the Rune Wizard's are ported; the dungeon casters
+        // (281-286) are the d38 branch's claim.
         // `:21023-21030` — the six 75-spaced triggers wind the 30-tick
         // windup (W4-g5).
         if flag5
@@ -725,10 +729,6 @@ pub fn ai_style_8_step(
             npc.ai[1] = 30.0;
             npc.net_update = true;
         }
-        if npc.ai[0] >= 450.0 {
-            npc.ai[0] = 700.0;
-        }
-    }
     } else if npc.kind == NpcKind::DesertDjinn {
         // `:21031-21038` — the single 180 trigger winds the 181-tick volley.
         if flag5 && npc.ai[0] == 180.0 {
@@ -783,7 +783,6 @@ pub fn ai_style_8_step(
             npc.ai[1] = 30.0;
             npc.net_update = true;
         }
-    }
     }
     // `:21075-21078` — the 285/286 early wrap (W4-d38): past 400 the
     // counter jumps to 650 (the diabolist teleports sooner).
@@ -923,6 +922,7 @@ pub fn ai_style_8_step(
                             ));
                             break;
                         }
+                    }
                 // `:21122` — single-player/host only (the port's fold).
                 let (scx, scy) = npc.center();
                 let (pcx, pcy) = player.center();
@@ -1205,7 +1205,6 @@ pub fn ai_style_8_step(
         npc.vy = 0.0;
     }
     shot
-}
 }
 
 /// `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55841`): the target's
@@ -1508,6 +1507,7 @@ mod tests {
         let mut curses = 0;
         for _ in 0..400 {
             let before = n.ai[0];
+            let before_windup = n.ai[1];
             let s = step_solo(&mut n, &w, &p, &mut rng);
             assert!(s.is_none(), "the Djinn's volley stays skipped");
             assert!(n.ai[0] < 650.0, "the wrap keeps the counter under 650");
@@ -1765,6 +1765,40 @@ mod tests {
     /// stream state (the five-probe convention's exact-replay form).
     #[test]
     fn w4_g5_the_tim_arrival_tick_draws_100_burst_scales_plus_the_ambient() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[2] = 60.0;
+        n.ai[3] = 120.0;
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        ai_style_8_step(&mut n, &w, &p, &mut rng, &mut dust, &ctx);
+        // The Tim's two arrival bursts: 50 Next(1, 3) scale arguments +
+        // the default block per dust, then one ambient Next(5).
+        for _burst in 0..2 {
+            for _i in 0..50 {
+                probe.next_range(1, 3);
+                burst_block(&mut probe, 27, bw, bh);
+            }
+        }
+        let _ambient = probe.next_max(5);
+        assert_eq!(rng.peek(), probe.peek(), "the 101-draw arrival census");
+        assert_eq!(n.ai[2], 0.0);
+        assert_eq!(n.ai[3], 0.0);
+    }
+
     /// W4-d52 — one `NewDust` default block on an empty pool under the
     /// 50 % band (`Dust.cs:153-193`): the two position rolls, the
     /// velocity pair, the frame `Next(3)`, the scale roll; the type-6
@@ -2189,7 +2223,15 @@ mod tests {
         assert!(spot.is_none());
         assert_eq!(rng, before, "the >125-tile bail consumes no draws");
     }
-}
+
+    /// W4-d52 — the caster teleport burst (2 x 50 type-27 dust) ordered
+    /// against the C# draw stream; ai[2]/ai[3] zero after the machine.
+    #[test]
+    fn w4_d52_the_caster_teleport_burst_mirrors_the_pool() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::DarkCaster, 100.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        n.hp = n.max_hp;
         n.ai[2] = 60.0;
         n.ai[3] = 120.0;
         let (bw, bh) = n.size();
@@ -2328,4 +2370,5 @@ mod tests {
             }
         }
     }
+}
 }

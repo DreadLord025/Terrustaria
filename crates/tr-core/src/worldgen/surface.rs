@@ -986,6 +986,22 @@ pub(crate) fn pass_place_fallen_log(
     }
 }
 
+/// The g38 C1 / d104 pass-33 seam name (`anchors.txt`): the composed
+/// `pass_place_fallen_log` above carries the verbatim pass body — the
+/// width/2100 count roll, the 30000/5000 retry ladder, the +/-400 band,
+/// the biome/headroom vetoes, the grass triplet, PlaceTile 488 via
+/// Place3x2 and the 1-in-2 logX/logY record. This delegate keeps the
+/// historic name live without a second copy of the mechanics or RNG draws.
+pub(crate) fn place_fallen_log(
+    world: &mut World,
+    world_surface: f64,
+    not_the_bees: bool,
+    log_anchor: &mut Option<(i32, i32)>,
+    rng: &mut Rng,
+) {
+    pass_place_fallen_log(world, world_surface, not_the_bees, log_anchor, rng);
+}
+
 // --- Spawn Point (W4-d104 pass 36) -------------------------------------------
 
 /// `WorldGen.SolidTile3` (`WorldGen.cs:70465-70483`): the skyblock
@@ -2702,7 +2718,8 @@ mod grass_wall_tests {
         // exposer while the target scan still finds wall-2 candidates.
         for x in 55..width - 55 {
             if x % 3 != 0 {
-                world.tiles[world.index(x, 49)].wall = super::super::WALL_DIRT;
+                let __bi = world.index(x, 49);
+                world.tiles[__bi].wall = super::super::WALL_DIRT;
             }
         }
         world
@@ -2717,13 +2734,15 @@ mod grass_wall_tests {
         let mut w = World::new("gw".into(), 60, 60);
         // A dirt-wall pocket: (30,30) and (31,30) carry wall 2, air.
         for (x, y) in [(30, 30), (31, 30), (30, 31)] {
-            w.tiles[w.index(x, y)].wall = super::super::WALL_DIRT;
+            let __bi = w.index(x, y);
+            w.tiles[__bi].wall = super::super::WALL_DIRT;
         }
         // A solid grass cell beside the pocket and a protected wood wall.
         let i = w.index(29, 30);
         w.tiles[i].kind = TILE_GRASS;
         w.tiles[i].flags |= FLAG_ACTIVE;
-        w.tiles[w.index(32, 30)].wall = 4; // Wood тАФ CannotBeReplacedByWallSpread.
+        let __bi = w.index(32, 30);
+        w.tiles[__bi].wall = 4; // Wood тАФ CannotBeReplacedByWallSpread.
         spread_wall(&mut w, 30, 30, WALL_GRASS_UNSAFE);
         assert_eq!(w.tile(30, 30).unwrap().wall, WALL_GRASS_UNSAFE);
         assert_eq!(w.tile(31, 30).unwrap().wall, WALL_GRASS_UNSAFE);
@@ -2742,14 +2761,17 @@ mod grass_wall_tests {
     fn r1_count_dirt_tiles_counts_and_saturates() {
         let mut w = World::new("gw".into(), 60, 60);
         for (x, y) in [(30, 30), (31, 30), (30, 31)] {
-            w.tiles[w.index(x, y)].wall = super::super::WALL_DIRT;
+            let __bi = w.index(x, y);
+            w.tiles[__bi].wall = super::super::WALL_DIRT;
         }
         assert_eq!(count_dirt_tiles(&w, 30, 30, MAX_TILE_COUNT), 3);
         // A crimstone wall (83) in reach saturates the census.
-        w.tiles[w.index(32, 30)].wall = 83;
+        let __bi = w.index(32, 30);
+        w.tiles[__bi].wall = 83;
         assert_eq!(count_dirt_tiles(&w, 30, 30, MAX_TILE_COUNT), MAX_TILE_COUNT);
         // An ice tile (161) saturates too.
-        w.tiles[w.index(32, 30)].wall = 0;
+        let __bi = w.index(32, 30);
+        w.tiles[__bi].wall = 0;
         let i = w.index(32, 30);
         w.tiles[i].kind = super::super::TILE_ICE;
         w.tiles[i].flags |= FLAG_ACTIVE;
@@ -4193,6 +4215,10 @@ mod dye_tests {
             flags: FLAG_ACTIVE,
             ..Default::default()
         };
+        // The world's ground row (200) is solid — clear it so the hanging
+        // arm sees the required air below the pad.
+        let i = w.index(204, 200);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
         g38_place_dye(&mut w, 204, 199, 7);
         assert_eq!(w.tile(204, 199).unwrap().frame_x, 238);
         // An active non-flora above cell refuses a floor style.
@@ -4257,10 +4283,12 @@ mod dye_tests {
     /// draws.
     #[test]
     fn w4_g38_c8_pass_plants_and_gates() {
-        // 400├Ч400 clears the size guards; worldSurface 150 puts the
-        // plantDye y band [100, 200) across the grass row 160.
+        // 400×400 clears the size guards; the grass row is 160, so the
+        // surface line sits just below it (161) — the `plantDye` surface arm
+        // is `y < worldSurface`, and the drawn y must land ON the grass row
+        // for the plant to take the cell above it.
         let mut w = grass_world(400, 400, 160);
-        pass_dye_plants(&mut w, 150.0, 220.0, false, &mut Rng(4));
+        pass_dye_plants(&mut w, 161.0, 220.0, false, &mut Rng(4));
         let dye = w.tiles.iter().filter(|t| t.active() && t.kind == 227).count();
         assert!(dye > 0, "the 400-wide world plants dye");
         // The skyblock gate now rides the pipeline adapter. Repointed

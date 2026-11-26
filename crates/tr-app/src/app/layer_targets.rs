@@ -55,6 +55,36 @@ pub(crate) struct LayerFrame<'a> {
     pub party_is_up: bool,
     pub show_invisible_blocks: bool,
     pub tile_anim: &'a tr_core::drawdata_anim::TileAnimator,
+    /// `LiquidRenderer._animationFrame` / `_waterfallAnimationFrame`
+    /// (`LiquidRenderer.cs:844-845`) — the frame's liquid texture clock.
+    pub liquid_frames: (i32, i32),
+    /// `Main.cloudAlpha` (`rain.visual_alpha()`) — the case-83 herb sheet
+    /// swap's waterleaf gate.
+    pub rain_cloud_alpha: f32,
+    /// `Main.critterCage` (`Main.cs:1445`) — the tile pass clears/sets it.
+    pub critter_cage: &'a mut bool,
+    /// `Main.chest[]` (`Main.cs:66994`) — the chest lid-frame input.
+    pub chests: &'a [crate::chest::WorldChest],
+    /// `Main.*CageFrame` animator (`Main.cs:66902-66972`).
+    pub cage_anim: &'a mut tr_core::drawdata_cages::CritterCageAnimator,
+    /// `LiquidRenderer._random` (`LiquidRenderer.cs:132`) — the lava-bubble
+    /// drain's private stream (NOT a swap key).
+    pub liquid_rand: &'a mut tr_core::UnifiedRandom,
+    /// `Main.dust` — the orb-family emit slice's pool.
+    pub dust: &'a mut tr_core::particles::DustPool,
+    /// `Dust.NewDust`'s cull inputs (`App::spawn_ctx`).
+    pub spawn_ctx: &'a tr_core::particles::SpawnCtx,
+    /// `Main.martianLight` (`Main.cs:1231`) — the `_martianGlow` feed.
+    pub martian_light: f32,
+    /// `MoonLordScreenShaderData.LatestFilterStrength`.
+    pub latest_filter_strength: f32,
+    /// `world.frame_rng` snapshot the orb-family's `NewDust` rolls ride
+    /// (the fused path clones/restores it around the pass).
+    pub orb_main_rand: &'a mut tr_core::UnifiedRandom,
+    /// The orb-family's `Dust.NewDust` cull inputs (same `spawn_ctx`).
+    pub orb_ctx: &'a tr_core::particles::SpawnCtx,
+    /// `Main.gamePaused` (`Main.cs:38427`).
+    pub game_paused: bool,
     /// The frame's world camera (the view centre) + zoom + backbuffer size.
     pub camera: Vec2,
     pub zoom: f32,
@@ -76,7 +106,14 @@ pub(crate) struct LayerFrame<'a> {
     pub items: &'a [crate::item::ItemDrop],
     pub remote: &'a [crate::net::PlayerNet],
     pub edit_target: Option<(i32, i32)>,
-    pub leaf_spawns: &'a mut Vec<crate::render::foliage::LeafSpawn>,
+    /// W4-g68: the `EmitTreeLeaves` spawns go straight into the gore pool
+    /// (`Main.gore`) — the retired 400-cap `LeafSpawn` Vec channel is gone.
+    /// `main_rand` is the bare `Main.rand` stand-in the `NewGore*` internals
+    /// roll on; the tile-draw emission runs outside every SwapRandom block.
+    pub gore: &'a mut tr_core::gore::GorePool,
+    pub main_rand: &'a mut tr_core::UnifiedRandom,
+    /// `TileDrawing._isActiveAndNotPaused` (`TileDrawing.cs:469`).
+    pub emit_effects: bool,
     /// `Main.SceneMetrics` — the g72e 14-arg `draw_background`'s style-pick
     /// input (W4-g72 closeout delta 64d §2). `show_invisible_blocks` above
     /// is the TILE-pass flag; the bg call reads `env::show_invisible()`
@@ -412,8 +449,9 @@ fn render_one_layer(
                 water_style = n.min(14);
             }
             stats.liquids += crate::render::liquids::draw_waters(
-                renderer, frame.lookups, frame.light, frame.style, frame.anim_time,
-                &draws, pass, water_style, frame.liquid_alpha,
+                renderer, frame.world, frame.lookups, frame.atlas, frame.light,
+                frame.style, frame.anim_time, frame.liquid_frames, &draws, pass,
+                water_style, frame.liquid_alpha,
             );
             renderer.render_world_only(
                 gpu, view, layer_cam.to_array(), cam.zoom, frame.anim_time, None,
@@ -476,6 +514,7 @@ fn draw_tile_pass(
         frame.style,
         frame.entity_lights,
         frame.anim_time,
+        frame.liquid_frames,
         frame.waterfall,
         frame.player,
         frame.player_assets,
@@ -487,18 +526,33 @@ fn draw_tile_pass(
         frame.remote,
         frame.edit_target,
         frame.liquid_alpha,
+        frame.metrics.active_fountain_color,
         frame.sparkle_seed,
         frame.wind,
         frame.grass_wind_counter,
         frame.tree_wind_counter,
         frame.sunflower_wind_counter,
-        frame.leaf_spawns,
+        frame.gore,
+        frame.main_rand,
+        frame.emit_effects,
         frame.vine_wind_counter,
         frame.wiring,
         frame.party_is_up,
         frame.show_invisible_blocks,
+        frame.rain_cloud_alpha,
         frame.tile_anim,
+        frame.critter_cage,
+        frame.chests,
         filter,
+        frame.cage_anim,
+        frame.liquid_rand,
+        frame.dust,
+        frame.spawn_ctx,
+        frame.martian_light,
+        frame.orb_main_rand,
+        frame.orb_ctx,
+        frame.game_paused,
+        frame.latest_filter_strength,
     )
 }
 

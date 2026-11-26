@@ -366,10 +366,24 @@ impl LightMap {
         let ry0 = (y0 - AREA_PADDING - CACHE_MARGIN).max(0);
         let rx1 = (x1 + AREA_PADDING + CACHE_MARGIN).min(world.width - 1);
         let ry1 = (y1 + AREA_PADDING + CACHE_MARGIN).min(world.height - 1);
-        self.valid_x0 = rx0 + AREA_PADDING;
-        self.valid_y0 = ry0 + AREA_PADDING;
-        self.valid_x1 = (rx1 - AREA_PADDING).max(self.valid_x0 - 1);
-        self.valid_y1 = (ry1 - AREA_PADDING).max(self.valid_y0 - 1);
+        // The valid visible rect is the computed one shrunk by AREA_PADDING on
+        // every side — the blurred border ring must never be drawn. A side that
+        // hit the WORLD EDGE needs no context beyond it: the clamp already
+        // computed everything that exists there, so the visible rect may run
+        // all the way out to the edge (a same-rect call near the border used to
+        // miss the D2 key forever and recompute every frame).
+        self.valid_x0 = if rx0 == 0 { 0 } else { rx0 + AREA_PADDING };
+        self.valid_y0 = if ry0 == 0 { 0 } else { ry0 + AREA_PADDING };
+        self.valid_x1 = if rx1 == world.width - 1 {
+            world.width - 1
+        } else {
+            (rx1 - AREA_PADDING).max(self.valid_x0 - 1)
+        };
+        self.valid_y1 = if ry1 == world.height - 1 {
+            world.height - 1
+        } else {
+            (ry1 - AREA_PADDING).max(self.valid_y0 - 1)
+        };
         let w = (rx1 - rx0 + 1).max(0);
         let h = (ry1 - ry0 + 1).max(0);
         let n = (w * h).max(0) as usize;

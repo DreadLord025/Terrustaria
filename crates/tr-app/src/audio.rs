@@ -1,4 +1,4 @@
-//! Audio: original PCM SFX via `SoundEffectReader`, MS-ADPCM music from XACT banks.
+﻿//! Audio: original PCM SFX via `SoundEffectReader`, MS-ADPCM music from XACT banks.
 //!
 //! The music engine mirrors `Main.UpdateAudio` + `LegacyAudioSystem.UpdateCommonTrack`
 //! (`Main.cs:11017`, `LegacyAudioSystem.cs:292`): a per-track `musicFade` ramp of
@@ -1384,24 +1384,6 @@ pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
     SFX_CUES.iter().any(|(n, _)| *n == cue)
 }
 
-/// `SoundID.MenuAccept` (`SoundID.cs:1068`/:1710,
-/// `CreateTrackable("menu_accept")` — one variation, volume 1, no pitch
-/// variance, `SoundType.Sound`, uncapped): the tracked style the quit-path
-/// witnesses register their pool entry through (the W4-g24 doc-sweep seam,
-/// kept by the W4-g73 quit-stop keep-one; g24's `WorldGen.SecretSeed.Enable`
-/// caller rides the g24 branch, so the default build has no production
-/// reader here — the allow keeps it warning-clean until that merge).
-#[allow(dead_code)]
-pub fn menu_accept_style() -> crate::tracked_sound::TrackedStyle {
-    crate::tracked_sound::TrackedStyle {
-        cue: "menu_accept",
-        variations: 1,
-        volume: 1.0,
-        pitch_variance: 0.0,
-        sound_type: crate::tracked_sound::SoundType::Sound,
-        max_tracked_instances: 0,
-    }
-}
 
 /// S1-E-21 wave C — resolve an NPC hit/death cue name to its
 /// `LegacySoundStyle` row (`crate::soundid::SOUND_STYLES`): the legacy
@@ -1444,9 +1426,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PROJ_CUSTOM_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PLAYER_VOICE_CUES.contains(&cue)).then_some(42)
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || TRACKED_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PROJ_CUSTOM_CUES.contains(&cue) || PLAYER_VOICE_CUES.contains(&cue) || TRACKED_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -1597,12 +1577,6 @@ pub struct Audio {
     /// ONE `Next(-30, 31) * 0.01` pitch (`:1356`). The gore pool's drip
     /// collision is the caller (`Gore.cs:953`/`:965`).
     drip_slots: [Option<rodio::Sink>; 3],
-    /// `SoundInstanceItem[]` (`LegacySoundPlayer.cs`'s item array,
-    /// `SoundID.ItemCount` long): case 2's per-style slot — the 53/55/159
-    /// playing guards (`:559-562`/`:583-586`) read it, the default arm
-    /// stops the old instance (`:590-593`), the no-stop list detaches
-    /// (`:595-605`). A map over the styles the bank can name.
-    item_slots: HashMap<usize, rodio::Sink>,
     /// `SoundInstanceTink[3]` (`LegacySoundPlayer.cs:927-931`): case 21
     /// picks `Next(3)`, stops the slot's old instance, re-creates.
     tink_slots: [Option<rodio::Sink>; 3],
@@ -1768,7 +1742,6 @@ impl Audio {
             moonlord_cry_slot: None,
             dig_slots: [None, None, None],
             drip_slots: [None, None, None],
-            item_slots: HashMap::new(),
             tink_slots: [None, None, None],
             player_hit_slots: [None, None, None],
             coin_slots: [None, None, None, None, None],
@@ -2118,7 +2091,6 @@ impl Audio {
         y: f32,
         pitch_offset: f32,
         call_volume_scale: f32,
-        volume_scale: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
@@ -2131,7 +2103,7 @@ impl Audio {
         // — the style volume rides INSIDE `play_item_style`'s case gain
         // (W4-e7 keep-one: passing it here too would double it against the
         // `gain *= volume_scale` tail, `LegacySoundPlayer.cs:1411`).
-        self.play_item_style(style_index, x, y, pitch_offset, 1.0, rng)
+        self.play_item_style(style_index, x, y, pitch_offset, call_volume_scale, rng)
     }
 
     /// M2-MOUNT-4 (W4-c14) — the Santank ability cues (`Mount.cs:3300`
@@ -2177,32 +2149,21 @@ impl Audio {
     ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // The attenuation gate first — the C# walks the position/volume
-        // checks (`:369-436`) before the type switch draws anything. The
-        // caller's `volumeScale` rides `:1411` AFTER the gate, so folding it
-        // into the probe's scale cannot change a refusal (the gate never
-        // reads the scale).
+        // checks (`:369-436`) before the type switch draws anything.
         if sound::play_sound(
             u32::from(style.sound_id),
             x,
             y,
             self.listener,
             volume_scale,
-            style.volume * volume_scale,
         )
         .is_none()
         {
             return None;
         }
         let (cue, mut gain, pitch) = if style.sound_id == 42 {
-
-        }        let (cue, cue_volume, pitch) = if style.sound_id == 42 {
-        let (cue, volume_scale, pitch, slot_style) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
-            // only the caller's offset, clamped at `:1410`. The trackable
-            // instance table (`TrackableSoundInstances[num]`, `:1380`) is
-            // overwritten with NO Stop — the old voice plays out; the port
-            // keeps the fire-and-forget shape for the pinned trackables
-            // (the D3 pin's single-variation families, no guard reads them).
+            // only the caller's offset, clamped at `:1410`.
             let base = style.trackable.expect("trackable style carries an asset");
             let cue = if style.variations == 1 {
                 base.to_string()
@@ -2225,16 +2186,8 @@ impl Audio {
             if sound::item_case2_playing_guard(style.style, playing) {
                 return None;
             }
-            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0), None)
-        } else {
-            debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
-            // The 53/55/159 playing guards read the FINAL style — for the
-            // guarded styles the remap never fires, so the input style is
-            // the slot (`:559-562`/`:583-586`).
-            let playing = self.item_playing(style.style);
             let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
             let (num, tweak, pitch) = sound::item_use_case2(style.style, self.music_pitch, &mut roll);
-            let (num, tweak, pitch) = sound::item_use_case2(style.style, playing, &mut roll)?;
             let cue = format!("Item_{num}");
             (
                 cue,
@@ -2243,27 +2196,17 @@ impl Audio {
                 // the mount int-overload's is 0.2).
                 volume_scale * tweak,
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
-                Some(num),
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
-        // in SFX_CUES/ITEM_CUSTOM_CUES/PROJ_CUSTOM_CUES — an unregistered
-        // name is a bank gap).
-        // in SFX_CUES/ITEM_CUSTOM_CUES/PLAYER_VOICE_CUES — an unregistered
-        // name is a bank gap). W4-e10: the player-voice trackables join the
-        // resolution chain (the hurt/death style arms ride this façade).
+        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
         let name = SFX_CUES
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
-            .chain(PROJ_CUSTOM_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        // `LegacySoundPlayer.cs:1411` — the call's volumeScale multiplies the
-        // instance volume AFTER the case tweak (the gate above read the
-        // unscaled `style.volume`).
-        self.emit(name, x, y, volume_scale * call_volume_scale, pitch);
         // `soundEffectInstance.Volume *= volumeScale` (`LegacySoundPlayer.cs:1411`,
         // W4-e7) — the caller's scale multiplies the case gain (the tweak is
         // already folded into `gain` above; the 1.0 façade wrapper keeps every
@@ -2284,24 +2227,6 @@ impl Audio {
             }
             if let Some(sink) = sink {
                 self.item_slots.insert(idx, sink);
-        }
-
-        }            .chain(PLAYER_VOICE_CUES.iter().copied())
-        // `:1411` — `soundEffectInstance.Volume *= volumeScale`: the caller's
-        // scale multiplies the case's own volume AFTER the tweaks.
-        self.emit(name, x, y, cue_volume * volume_scale, pitch);
-        let sink = self.emit(name, x, y, volume_scale, pitch);
-        if let (Some(num), Some(sink)) = (slot_style, sink) {
-            // `:589-607` — the default arm stops the slot's old instance,
-            // the `:595-605` list replaces it without a Stop (detach).
-            // Headless (no sink) the slot stays empty — the fresh-instance
-            // table convention of the other slot families.
-            if let Some(old) = self.item_slots.insert(num as usize, sink) {
-                if sound::item_case2_pool(num) {
-                    old.stop();
-                } else {
-                    old.detach();
-                }
             }
         }
         Some(name)
@@ -2432,6 +2357,7 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit(cue, -1.0, -1.0, style.volume, pitch.clamp(-1.0, 1.0));
         Some(cue)
+    }
     /// `SoundInstanceItem[num].State == Playing` — the case-2 guard input
     /// (`LegacySoundPlayer.cs:559-562`/`:583-586`), read live off the slot.
     fn item_playing(&self, style: i32) -> bool {
@@ -2587,6 +2513,8 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // `:1410-1411` — Clamp(pitch + pitchOffset), Volume *= volumeScale(1).
         let _ = self.emit(cue, x, y, tweak, pitch_offset.clamp(-1.0, 1.0));
+        Some(cue)
+    }
     /// W4-c13 — one type-1 slime voice-override hit play
     /// (`NPC.StrikeNPC`'s `switch ((int)this.ai[1])`, `NPC.cs:81490-81549`):
     /// the `SoundID.*Hurt` style façade (`SoundEngine.cs:93-99`) — the
@@ -3280,7 +3208,17 @@ impl Audio {
         let style = crate::soundid::SOUND_STYLES
             .iter()
             .find(|s| s.sound_id == 42 && s.trackable == Some(base))?;
-            }
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
     /// W4-g15 lane 5 — the Heroicis-set spawn cue
     /// (`ParticleOrchestrator.Spawn_HeroicisSetSpawnSound`,
     /// `ParticleOrchestrator.cs:897-900`: `SoundEngine.PlaySound(SoundID.
@@ -3302,8 +3240,6 @@ impl Audio {
             return None;
         }
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
-        Some(cue)
         self.emit("rainbow_boulder", x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some("rainbow_boulder")
     }
@@ -3356,7 +3292,7 @@ impl Audio {
         } else {
             // Case 18 (`:865-869`): Volume/Pan only — no pitch, no draws;
             // the slot is overwritten WITHOUT a Stop (`:866`).
-            ("Coins", 0.0)
+            ("Coins", 0.0f32)
         };
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let sink = self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
@@ -3564,9 +3500,9 @@ impl Audio {
         };
         let style = npc_sound_style(cue, if sound_id == 3 { "NPC_Hit_" } else { "NPC_Killed_" }, sound_id as u8)?;
         if sound_id == 3 {
-            self.npc_hit_play(cue, style, 0.0, x, y, rng)
+            self.npc_hit_play(cue, style, 0.0, 1.0, x, y, rng)
         } else {
-            self.npc_death_play(cue, style, 0.0, x, y, rng)
+            self.npc_death_play(cue, style, 0.0, 1.0, x, y, rng)
         }
     }
 
@@ -3940,7 +3876,8 @@ impl Audio {
                 return None;
             }
             return self.play_use_sound(idx as u16, x, y, pitch_offset, rng);
-        // S1-E-21h d76 — the whip tip's NPC-family cues (`AI_165_Whip`
+        }
+        // S1-E-21h d76 - the whip tip's NPC-family cues (`AI_165_Whip`
         // `Projectile.cs:47720`/`:47724`): the Crimson Whip's NPCHit9 (id 3)
         // and the Corrupt Whip's NPCDeath1 (id 4) ride their own case-3/4
         // façades, resolved through the same `npc_sound_style` helper the
@@ -3964,7 +3901,7 @@ impl Audio {
             };
 
         }
-        }        self.play_proj_sound_scaled((id, style), x, y, pitch_offset, 1.0, rng)
+        self.play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng)
     }
 
     /// S1-E-21h d77 — the `volumeScale`-carrying peer of
@@ -3990,32 +3927,6 @@ impl Audio {
     /// the int match below — f1 keeps it here (its drain special-cases
     /// only id 0), and at scale 1.0 both shapes play identically.
     pub fn play_proj_sound_scaled(
-    /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
-    /// `WorldGen.KillWall_PlaySounds` table `WorldGen.cs:60423-60441`,
-    /// played from `KillWall` `:60385` BEFORE the dust and the drop).
-    ///
-    /// All four arms are the int overload (`SoundEngine.cs:102-108` — NO
-    /// `GetRandomPitch` draw) except the NPCHit25 style arm:
-    /// - 13 (Shatter, `LegacySoundPlayer.cs:783-792`): no draws, no pitch.
-    /// - 6 (Grass, `:706-716`): one `Main.rand.Next(-30, 31) * 0.01` (`:714`).
-    /// - 3 style 25 (`SoundID.NPCHit25`, `SoundID.cs:1281`): wave C's style
-    ///   façade — the audio-only `GetRandomPitch` NextFloat, the ×0.5 volume
-    ///   arm and the one `Next(-10, 11)` pitch draw (`:670`).
-    /// - 4 (the death arms, `WorldGen.cs:66486`/:66517/:66526 + `CheckPot`
-    ///   `:56861`): the INT overload — no NextFloat, the case-4 pitch draw
-    ///   only ([`Audio::play_npc_death_int`]).
-    /// - 0 (Dig, `:440-452`): wave B's case-0 path — the `Next(3)` variation
-    ///   pick + the `Next(-10, 11) * 0.01` pitch.
-    ///
-    /// The gameplay draws ride the caller's stream (the hammer break runs
-    /// in `Player.PickWall` `Player.cs:45949` under the `Main.cs:17754`
-    /// `UpdatePlayers` swap; the explosion walk `Projectile.cs:78745` under
-    /// `:17775` `UpdateProjectiles`; the net replay `MessageBuffer.cs:1177`
-    /// on the bare stream) and only AFTER the attenuation gate passed
-    /// (`:369-436` precedes the switch). Returns the cue played; `None`
-    /// when the gate refused. The instance stop/re-create pools are the
-    /// standing D4 deviation.
-    pub fn play_wall_break_sound(
         &mut self,
         (id, style): (u16, i32),
         x: f32,
@@ -4024,12 +3935,6 @@ impl Audio {
         volume_scale: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
-        // S1-E-21h d75 part 2 — id 42 joins the drain's families: the
-        // bobber's sonar bite cue (`SoundID.SonarPotion`, style 311,
-        // `Projectile.cs:20751`/:20765) rides wave A's trackable façade —
-        // the `GetRandomPitch` NextFloat on the audio-only stream, case 42
-        // draws nothing from the pass stream.
-        if id != 2 && id != 42 {
         // DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE): the id-0/13/4 match
         // below — d77's drain routes 0/13/6/4/29 BEFORE this call
         // (`world_sim/projectiles.rs:468-485`, unchanged at the moved tip
@@ -4064,16 +3969,16 @@ impl Audio {
         // rows ride d3's pushed tip; the cues are inert until the merge.
         if id == 3 && style == 29 {
             return self.play_npc_hit_int(29, x, y, rng);
+        }
         if id == 42 && style == 274 {
             return self.play_npc_hit_sound("rainbow_boulder", x, y, rng);
         }
         if id != 2 {
-        }
             return None;
         }
         let idx = crate::soundid::SOUND_STYLES
             .iter()
-            .position(|s| s.sound_id == id as u8 && s.style == style)?;
+            .position(|s| s.sound_id == 2 && s.style == style)?;
         self.play_use_sound_scaled(idx as u16, x, y, pitch_offset, volume_scale, rng)
     }
 
@@ -4148,8 +4053,6 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Shatter", x, y, volume_scale, 0.0);
         Some("Shatter")
-            .position(|s| s.sound_id == 2 && s.style == style)?;
-        self.play_use_sound_scaled(idx as u16, x, y, pitch_offset, volume_scale, rng)
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -5008,10 +4911,6 @@ pub struct MusicEnv {
     pub windy_music: bool,
     // — the W4-f39 closeout inputs (the event tracks the census found
     // missing from the ladder) —
-    /// `flag24 = Main.slimeRain` (`:12200`) — the SlimeRain track 48
-    /// (`:12654`), gated `!ZoneGraveyard && (!bloodMoon || dayTime)`
-    /// and the scene centre above the surface band.
-    pub slime_rain: bool,
     /// `Main.pumpkinMoon` — the surface-gated tail override (`:12982`,
     /// track 30). NOT an else-if arm: it runs AFTER the whole ladder,
     /// even over the boss pick.
@@ -5904,6 +5803,74 @@ pub fn music_box_track(box_id: i32) -> Option<u32> {
         .map(|(_, track)| *track)
 }
 
+/// A headless system (no sinks) - `decide_new_music` only touches the
+/// fade table and the picked ids.
+#[allow(dead_code)]
+fn system() -> MusicSystem {
+    MusicSystem::new(None)
+}
+
+#[allow(dead_code)]
+fn env(day: bool) -> MusicEnv {
+    MusicEnv {
+        music_volume: 1.0,
+        day,
+        cloud_alpha: 0.0,
+        zone_rain: false,
+        zone_snow: false,
+        surface_atmospherics: false,
+        wind_speed: 0.0,
+        shimmer_alpha: 0.0,
+        atmo: 1.0,
+        ambient_volume: 1.0,
+        underground: false,
+        rain: false,
+        boss_music: None,
+        clock: 27000.0,
+        eclipse: false,
+        in_torch_god_minigame: false,
+        slime_rain: false,
+        shimmer: false,
+        town_npcs: 0,
+        shadow_candle: false,
+        sandstorm: false,
+        underworld: false,
+        blood_moon: false,
+        windy_music: false,
+        pumpkin_moon: false,
+        snow_moon: false,
+        remix_world: false,
+        moon_tail_band: false,
+        music_box: -1,
+        music_box_silence: false,
+        space_band: false,
+        temple_wall: false,
+        dungeon: false,
+        mushroom_bg: false,
+        corrupt: false,
+        crimson: false,
+        blood_leads_evil: false,
+        meteor: false,
+        graveyard: false,
+        underground_desert: false,
+        desert: false,
+        jungle: false,
+        snow: false,
+        hallow: false,
+        storm: false,
+        ocean: false,
+        center_y: 0.0,
+        surface_band_px: 1000.0,
+        rock_band_px: 2000.0,
+        jungle_deep_band_px: 1500.0,
+        quiet_sky: true,
+        menu: false,
+        menu_flags: Default::default(),
+        menu_micro_flags: Default::default(),
+        menu_credits: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6003,7 +5970,9 @@ mod tests {
     /// non-4 arm) and draws nothing. WRITTEN NOT RUN (code-only).
     fn w4_g21_the_destroyer_roar_default_style_is_one() {
         use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
         let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(audio.play_roar(1, 0.0, 0.0), Some("Roar_1"));
         assert_eq!(crate::sound::roar_case15(1, false), Some((1, 1.0)));
         assert_eq!(rng.peek(), peek, "the default-style roar is draw-free");
@@ -6344,7 +6313,6 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
-            slime_rain: false,
             pumpkin_moon: false,
             snow_moon: false,
             remix_world: false,
@@ -7251,16 +7219,19 @@ mod tests {
         // advances it (the C#'s `LegacySoundStyle.Random`, unobservable seed).
         let second = audio.play_issue_report_notify();
         assert!(second.is_some());
+    }
 
-        }    /// M2-MOUNT-4 (W4-c14) — the Santank ability cues' RNG/volume contract
+    /// M2-MOUNT-4 (W4-c14) - the Santank ability cues' RNG/volume contract
     /// (`Mount.cs:3300` Item89 / `:3311` Item11): the INT overload
     /// (`SoundEngine.cs:102`) consumes NO `GetRandomPitch` NextFloat (the
     /// audio-only stream stays untouched), the attenuation gate precedes
     /// the ONE case-2 `Next(-6, 7)` pitch draw (`LegacySoundPlayer.cs:632`),
     /// and the 0.2 volumeScale rides `:1411` after the tweak (both styles
     /// have tweak 1.0 and volume 1.0, so the final gain is 0.2× the gate's).
+    #[test]
     fn m4_the_santank_cues_draw_one_pitch_roll_and_no_style_random() {
         use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
         // The bank join: Item_89 was the gap (88/90 present, 89 absent).
         assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_89"));
         assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_11"));
@@ -7296,6 +7267,7 @@ mod tests {
             audio.sound_style_random.peek(),
             fresh.peek(),
             "the int overload never draws the style stream"
+        );
     }
 
     /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)
@@ -7501,7 +7473,7 @@ mod tests {
         let mut audio = Audio::new(None);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        let cue = audio.play_proj_sound((42, 289), 0.0, 0.0, 0.0, &mut rng);
+        let cue = audio.play_proj_sound((42, 289), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("pal_digtoise_joy"));
         assert_eq!(rng.peek(), peek, "the trackable draws no gameplay roll");
         assert!(PROJ_CUSTOM_CUES.contains(&"pal_digtoise_joy"));
@@ -7509,7 +7481,7 @@ mod tests {
         // The unlanded trackables keep the documented skip.
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
     }
 
@@ -7550,12 +7522,24 @@ mod tests {
         );
         assert_eq!(rng.peek(), witness.peek(), "the case-4 pitch draw");
         // The muted whip play draws nothing.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+    }
 
-        }    /// S1-E-21h d75 part 2 — the Shatter play (`Projectile.cs:25943`,
+    /// S1-E-21h d75 part 2 - the Shatter play (`Projectile.cs:25943`,
     /// `PlaySound(13, x, y, 0, 0.35f)`): case 13 draws NOTHING
     /// (`LegacySoundPlayer.cs:783-792`), the gate precedes the play, the
     /// muted/inaudible plays refuse draw-free.
+    #[test]
     fn s1_e_21h_d75_p2_the_shatter_play_is_draw_free() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(audio.play_shatter_sound(0.0, 0.0, 0.35), Some("Shatter"));
         assert_eq!(rng.peek(), peek, "case 13 consumes no gameplay draw");
@@ -7568,15 +7552,1483 @@ mod tests {
         assert_eq!(audio.play_shatter_sound(5000.0, 0.0, 0.35), None);
     }
 
-    /// S1-E-21h d75 part 2 — the sonar trackable joins the drain's families:
+    /// S1-E-21h d75 part 2 - the sonar trackable joins the drain's families:
     /// `(42, 311)` resolves to the pinned `sonar_potion` asset through wave
-    /// A's façade — the `GetRandomPitch` NextFloat is audio-only, case 42
+    /// A's facade - the `GetRandomPitch` NextFloat is audio-only, case 42
     /// draws nothing from the gameplay stream; the muted play refuses.
+    #[test]
     fn s1_e_21h_d75_p2_the_sonar_trackable_rides_the_proj_drain() {
-            audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, &mut rng),
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("sonar_potion")
+        );
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
         assert!(ITEM_CUSTOM_CUES.contains(&"sonar_potion"), "the bank carries it");
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // The portal pair's bank gaps closed.
+        for style in [114, 115] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, 1.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+    }
+
+    /// S1-E-21h f1 - the fourth batch's bank gaps resolve (45/51/54/94/96/
+    /// 110/167) and the int-id families route to their landed facades: the
+    /// id-0 Dig thud (case 0's `Next(3)` variation + `Next(-10,11)` pitch),
+    /// the id-13 Shatter (no draws) and the id-4 NPCDeath style-6 (case 4's
+    /// one `Next(-10,11)` pitch). Written, NOT run - code-only mode.
+    #[test]
+    fn s1_e_21h_f1_the_bank_gaps_and_int_id_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
+        for style in [45, 51, 54, 94, 96, 110, 167] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, 1.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+    }
+
+    /// S1-E-21h d75 part 4 — the RainbowBoulder trackable joins the bank:
+    /// d3's `rainbow_check_bounce` (`Projectile.cs:20104`) queues
+    /// `(42, 274)`; the drain's id-42 façade resolves the pinned
+    /// `rainbow_boulder` asset (`SoundID.cs:1709`, one variation, volume
+    /// 1.0, variance 0). Case 42 draws NOTHING from the gameplay stream;
+    /// the muted play refuses draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_rainbow_boulder_trackable_rides_the_proj_drain() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("rainbow_boulder")
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+        assert!(
+            ITEM_CUSTOM_CUES.contains(&"rainbow_boulder"),
+            "the bank carries it"
+        );
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d75 part 4 — the star chime's case-37 contract
+    /// (`LegacySoundPlayer.cs:1326-1336`): TWO gameplay draws — the
+    /// `Next(57, 59)` slot pick FIRST, then the `Next(-40, 41)` pitch;
+    /// the Style×0.05 volume rides the façade (style 6 → ×0.30); the
+    /// int overload draws no GetRandomPitch. Muted refuses draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_star_chime_draws_slot_then_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        let want = if slot == 57 { "Item_57" } else { "Item_58" };
+        assert_eq!(audio.play_star_chime(6, 0.0, 0.0, &mut rng), Some(want));
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, slot first");
+        assert!(SFX_CUES.contains(&("Item_57", 2)) && SFX_CUES.contains(&("Item_58", 2)));
+        // Muted: the gate refuses before any draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_star_chime(10, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d75 part 4 — the FoxparksFlame façade pins the NAMED
+    /// (2, 34) row at volume 0.15 (`SoundID.cs:1725`), not the plain
+    /// Item34 (volume 1.0) the generic tuple lookup finds first. The
+    /// style play draws one audio-only GetRandomPitch + one case-2
+    /// gameplay pitch (`Next(-6, 7)`) after the gate; muted refuses
+    /// draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_foxparks_flame_pins_the_named_quiet_row() {
+        use tr_core::unified_random::UnifiedRandom;
+        let row = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "FoxparksFlame")
+            .expect("the named row");
+        assert_eq!((row.sound_id, row.style), (2, 34));
+        assert_eq!(row.volume, 0.15, "the WithVolume(0.15f) arm");
+        // id 0 — the Dig thud: case 0 draws the variation pick THEN the
+        // pitch (`LegacySoundPlayer.cs:442`/`:450`), two gameplay draws.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_proj_sound((0, 0), 0.0, 0.0, 0.0, 1.0, &mut rng);
+        assert_eq!(cue, Some(match variation { 0 => "Dig_0", 1 => "Dig_1", _ => "Dig_2" }));
+        assert_eq!(rng.peek(), witness.peek(), "the Dig thud's two case-0 draws");
+        // id 13 — the Shatter: case 13 draws NOTHING (`:783-792`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((13, 0), 0.0, 0.0, 0.0, 1.0, &mut rng), Some("Shatter"));
+        assert_eq!(rng.peek(), peek, "the Shatter is draw-free");
+        // id 4 style 6 — the NPCDeath play: case 4's one pitch draw
+        // (`:693`), no GetRandomPitch (the int overload).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_proj_sound((4, 6), 0.0, 0.0, 0.0, 1.0, &mut rng), Some("NPC_Killed_6"));
+        assert_eq!(rng.peek(), witness.peek(), "the NPCDeath style-6 pitch draw");
+        // Muted: every int-id route refuses before its case draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (id, style) in [(0u16, 0i32), (13, 0), (4, 6)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the muted id-{id} play is draw-free");
+        }
+    }
+
+    /// S1-E-21h f1 fifth batch — the rocket families' Item62 bank gap
+    /// resolves (`Kill_Bombs_DoUsualKillCode` `Projectile.cs:77737`-`:78146`),
+    /// and the style plays its one case-2 `Next(-6, 7)` pitch draw on the
+    /// caller's stream only when audible. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_b5_the_rocket_item62_bank_gap_resolves() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), Some("Item_34"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate refuses before any draw.
+        let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng);
+        assert_eq!(cue, Some("Item_62"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one case-2 pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == cue.unwrap()));
+        // Muted: the gate refuses before the case-2 switch — no draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d77 deferred-arm wave — the queue's `volumeScale` term
+    /// (`SoundEngine.cs:93`'s fourth argument): the DD2 Goblin Bomb's
+    /// `Kill()` cue (`Projectile.cs:71906`) plays the case-2 style-14 asset
+    /// at `type.Volume = 0.5` (`SoundID.cs:1596`'s `.WithVolume(0.5f)`).
+    /// The scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
+    /// case-2 tweaks — the RNG census and the refusal shape stay the
+    /// stock-scale play's. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_goblin_bomb_scale_rides_after_the_gate_draw_free_census() {
+        use tr_core::unified_random::UnifiedRandom;
+        // A muted case-2 play refuses before the switch.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted Item62 play is draw-free");
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's NPCDeath
+    /// style-7 play (`Projectile.cs:72571`, `PlaySound(4, pos, 7)` — the
+    /// int overload, NO `GetRandomPitch` draw) routes to the new
+    /// `NPC_Killed_7` bank row and plays case 4's ONE `Next(-10, 11)` pitch
+    /// draw after the gate (`sound.rs` `npc_killed_case4`, the style-6
+    /// precedent). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_jellyfish_npcdeath7_routes_and_draws() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank row exists: name → id 4 (the NPC_Killed family).
+        assert!(
+            SFX_CUES.contains(&("NPC_Killed_7", 4)),
+            "the NPC_Killed_7 bank row (the Sounds/NPC_Killed_7.xnb asset ships)"
+        );
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Killed_7"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one case-4 pitch draw, no NextFloat");
+        // Muted: the gate refuses before the case-4 draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted NPCDeath7 play is draw-free");
+    }
+
+    /// S1-E-21h f1 final phase — the queue's sixth term (`volumeScale`,
+    /// `SoundEngine.cs:93`'s fourth argument) adopted from d77's pushed
+    /// seam (`9d35874a`). The DD2 Goblin Bomb's `Kill()` cue
+    /// (`Projectile.cs:71906`) plays the case-2 style-14 asset at
+    /// `type.Volume = 0.5` (`SoundID.cs:1596`'s `.WithVolume(0.5f)`); the
+    /// scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
+    /// case-2 tweaks — the RNG census and the refusal shape stay the
+    /// stock-scale play's. f1's int-overload arms (0/13/4) keep their
+    /// routes at any scale (every f1 int site passes 1.0). Written, NOT
+    /// run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_volume_scale_rides_after_the_gate_draw_free_census() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The 0.5-scale play draws the SAME one Next(-6, 7) as the stock
+        // play (the scale is not an RNG input) and resolves Item_14.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng);
+        assert_eq!(cue, Some("Item_14"), "the goblin bomb is the Item14 asset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate refuses BEFORE the switch regardless of scale.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the muted scaled play is draw-free");
+        // The style row itself keeps the C#'s 0.5 (`WithVolume`) — the
+        // queue's term reproduces the call-site scale, not the row's.
+        let row = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "DD2_GoblinBomb")
+            .expect("the style row exists");
+        assert_eq!((row.sound_id, row.style), (2, 14));
+        assert_eq!(row.volume, 0.5, "SoundID.cs:1596 WithVolume(0.5f)");
+        // The Phantasmal Eye's case-29 slot-103 moan resolves through the
+        // fighter-moan seam: one Next(-10, 11) pitch draw after the gate,
+        // the ×0.4 arm (`LegacySoundPlayer.cs:1025-1028`), bank row present.
+        assert_eq!(rng.peek(), peek, "the muted 0.5-scale play is draw-free");
+        // The int arms keep their façades under the scaled peer (f1's
+        // drain shape): the id-4 cry still draws its ONE case-4 pitch.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_fighter_moan(29, 103, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Zombie_103"), "the eye's death moan slot");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "Zombie_103" && *t == 29));
+    }
+
+    /// S1-E-21h d77 re-probe wave — the id-4 int façade gains style 7 (the
+    /// Stardust Jellyfish's `Kill()` cry, `Projectile.cs:72571`): one
+    /// `Next(-10, 11)` pitch draw after the gate (the case-4 contract), the
+    /// `NPC_Killed_7` bank row present, the muted play draw-free. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade() {
+        use tr_core::unified_random::UnifiedRandom;
+        assert!(SFX_CUES.contains(&("NPC_Killed_7", 4)));
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound_scaled((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Killed_7")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the int arm ignores the scale");
+    }
+
+    /// S1-E-21h f1 FINAL phase — the second owed wave's façade routes:
+    /// the 1054 SpiderBoulder's NPCHit29 (`Projectile.cs:74867`, the int
+    /// overload — NO NextFloat, case 3's 20..54 ×0.5 arm + ONE
+    /// `Next(-10, 11)` pitch after the gate, `LegacySoundPlayer.cs:646-
+    /// 672`), the 1047 RainbowBoulder's case-42 trackable (`:71194`,
+    /// `SoundID.cs:1709` — one variation, NO gameplay draw) and the 655
+    /// BeeHive's default-Style NPCDeath1 (`:75082`, case 4's one pitch).
+    /// Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_second_owed_wave_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank rows exist.
+        assert!(SFX_CUES.contains(&("NPC_Hit_29", 3)));
+        assert!(SFX_CUES.contains(&("Item_89", 2)));
+        assert!(NPC_CUSTOM_CUES.contains(&"rainbow_boulder"));
+        // NPCHit29: exactly one case-3 pitch draw, no NextFloat.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_npc_death_int(7, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Killed_7"), "the jellyfish's style-7 cry");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "NPC_Killed_7" && *t == 4));
+        // Muted: the gate refuses BEFORE the draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
+        assert_eq!(
+            audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Hit_29")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-3 pitch, no NextFloat");
+        // RainbowBoulder: the case-42 trackable draws NOTHING.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("rainbow_boulder")
+        );
+        assert_eq!(rng.peek(), peek, "the trackable play is draw-free");
+        // NPCDeath1 (the BeeHive's default Style): one case-4 pitch.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Killed_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-4 pitch");
+        // Item89 (the 1037/1049 cue): the case-2 one-draw contract.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_proj_sound((2, 89), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("Item_89")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 pitch");
+        // Muted: every route refuses before its draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (id, style) in [(3u16, 29i32), (42, 274), (4, 1), (2, 89)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "({id},{style}) muted is draw-free");
+        }
+    }
+
+    /// S1-E-21 wave C — the NPC death play's RNG contract
+    /// (`LegacySoundPlayer.cs:673-695`): one `Next(-10, 11)` pitch draw
+    /// (`:693`) after the gate; the muted play draws nothing.
+    #[test]
+    fn s1_e_21c_the_npc_death_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_npc_death_sound("NPC_Killed_2", 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_2")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_death_sound("NPC_Killed_2", 0.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek);
+        // The Deerclops' death trackable: no gameplay draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_death_sound("deerclops_death", 0.0, 0.0, &mut rng),
+            Some("deerclops_death")
+        );
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21 wave C — the per-type cue selection rides the generated
+    /// style table: the legacy asset name maps to `NPCHitN`/`NPCDeathN`
+    /// (`SoundID.cs`), the trackable pins map back through the `trackable`
+    /// field, and the case-3/4 volume arms reach the played style.
+    #[test]
+    fn s1_e_21c_the_hit_and_death_cues_resolve_their_style_rows() {
+        let hit1 = npc_sound_style("NPC_Hit_1", "NPC_Hit_", 3).unwrap();
+        assert_eq!((hit1.sound_id, hit1.style), (3, 1));
+        let hit57 = npc_sound_style("NPC_Hit_57", "NPC_Hit_", 3).unwrap();
+        assert_eq!((hit57.sound_id, hit57.style), (3, 57));
+        let death10 = npc_sound_style("NPC_Killed_10", "NPC_Killed_", 4).unwrap();
+        assert_eq!((death10.sound_id, death10.style), (4, 10));
+        // The trackables: the `_0` pin maps back to its style; the
+        // Deerclops' hit carries the 0.3 style volume (`SoundID.cs`'s
+        // `WithVolume(0.3f)`).
+        let gob = npc_sound_style("dd2_goblin_hurt_0", "NPC_Hit_", 3).unwrap();
+        assert_eq!((gob.sound_id, gob.variations), (42, 6));
+        let deer = npc_sound_style("deerclops_hit_0", "NPC_Hit_", 3).unwrap();
+        assert_eq!(deer.sound_id, 42);
+        assert!((deer.volume - 0.3).abs() < 1e-6);
+        let deer_death = npc_sound_style("deerclops_death", "NPC_Killed_", 4).unwrap();
+        assert_eq!((deer_death.sound_id, deer_death.variations), (42, 1));
+        // The two bank-gap closures: the Headless Horseman's rows.
+        assert!(sfx_cue_registered("NPC_Hit_12"));
+        assert!(sfx_cue_registered("NPC_Killed_18"));
+        // An unknown name resolves to nothing (a bank gap, never a guess).
+        assert!(npc_sound_style("NPC_Hit_999", "NPC_Hit_", 3).is_none());
+    }
+
+    /// S1-E-21 wave B — the tile-place play's RNG contract: the case-0
+    /// `Main.rand.Next(3)` variation pick + `Next(-10, 11) * 0.01` pitch
+    /// (`LegacySoundPlayer.cs:442-450`) ride the caller's stream (the
+    /// `UpdatePlayers` swap at the placement sites) in that order; the
+    /// Coins case (`:865-869`) draws NOTHING; a muted play draws nothing
+    /// (the C# returns at `:433-436` before the switch).
+    #[test]
+    fn s1_e_21b_the_dig_variation_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _pitch = witness.next_range(-10, 11) as f32 * 0.01;
+        let cue = audio.play_place_sound((0, 1), 0.0, 0.0, &mut rng);
+        let want = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        assert_eq!(cue, Some(want), "the Next(3) pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // Coins (case 18) draws nothing — no pitch, no variation.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let cue = audio.play_place_sound((18, 1), 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Coins"));
+        assert_eq!(rng.peek(), peek, "the Coins play consumes no draw");
+        // The style arms (127 → Item30, 314 → Item52) ride wave A's case-2
+        // path: one Next(-6, 7) pitch draw after the gate, plus the
+        // GetRandomPitch NextFloat on the audio-only stream.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_place_sound((2, 30), 0.0, 0.0, &mut rng),
+            Some("Item_30")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 gameplay draw");
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_place_sound((2, 52), 0.0, 0.0, &mut rng),
+            Some("Item_52")
+        );
+        assert_eq!(rng.peek(), witness.peek());
+        // Muted (soundVolume 0): every arm draws NOTHING from the gameplay
+        // stream — the gate precedes the switch (`:433-436`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for cue_id in [(0u16, 1u16), (18, 1), (2, 30), (2, 52)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_place_sound(cue_id, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "{cue_id:?}: the muted play is draw-free");
+        }
+        // Every placement cue resolves to a registered bank asset.
+        for name in ["Dig_0", "Dig_1", "Dig_2", "Coins", "Item_30", "Item_52"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21 wave D — the fast-run footstep's RNG contract: case 17's
+    /// `Main.rand.Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:862`)
+    /// rides the caller's stream (the `UpdatePlayers` swap) and runs only
+    /// after the attenuation gate passed; the int overload draws no
+    /// `GetRandomPitch` NextFloat (`SoundEngine.cs:102-108`). The Moon Lord
+    /// legs' Item-24 arm rides wave A's style façade instead.
+    #[test]
+    fn s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Audible: exactly one Next(-10, 11) gameplay draw, nothing else.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        assert_eq!(audio.play_step_sound((17, -1), 0.0, 0.0, &mut rng), Some("Run"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 10, "the window is -10..=10");
+        // Muted (soundVolume 0): the gate precedes the switch — no draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_step_sound((17, -1), 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+        // The Moon Lord legs' arm (type 2 style 24): wave A's façade — one
+        // case-2 Next(-6, 7) pitch draw on the gameplay stream after the
+        // gate (`Item_24` has no volume/pitch special arm).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_step_sound((2, 24), 0.0, 0.0, &mut rng),
+            Some("Item_24")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 gameplay draw");
+        // Both footstep cues resolve to registered bank assets.
+        assert_eq!(sound_type("Run"), 17);
+        for name in ["Run", "Item_24"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21e — the fighter moans' RNG contract: the moan arms' rolls ride
+    /// the caller's stream (`UpdateNPCs`, `Main.cs:17767`), and each legacy
+    /// case's slot/pitch draws run AFTER the attenuation gate on the SAME
+    /// stream (`LegacySoundPlayer.cs:369-436`'s prologue precedes the
+    /// switch). Case 14 draws one slot and no pitch (`:793-824`), case 26 a
+    /// slot + a pitch (`:969-978`), case 29 one pitch behind the playing
+    /// guard (`:1008-1050`); a muted or out-of-range play consumes nothing.
+    #[test]
+    fn s1_e_21e_the_moan_draws_ride_the_passed_stream_after_the_gate() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 14 default (`:817`): exactly one Next(3) slot draw, NO pitch.
+        // Seed 7 draws 1 → Zombie_1.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(0, 3);
+        assert_eq!(
+            audio.play_fighter_moan(14, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        // Case 14 style 542 (`:796-803`): slot 7 pinned, ZERO draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_fighter_moan(14, 542, 0.0, 0.0, &mut rng),
+            Some("Zombie_7")
+        );
+        assert_eq!(rng.peek(), peek, "the pinned slot draws nothing");
+        // Case 14 styles 489/586 (`:805-813`): the Next(21, 24) slot arm,
+        // still no pitch. Seed 7 draws 22 → Zombie_22.
+        for style in [489, 586] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _slot = witness.next_range(21, 24);
+            assert_eq!(
+                audio.play_fighter_moan(14, style, 0.0, 0.0, &mut rng),
+                Some("Zombie_22")
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        }
+        // Case 26 (`:969-978`): Next(3, 5) + one Next(-10, 11) pitch. Seed 7
+        // draws 3 then 8 → Zombie_3.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(3, 5);
+        let _pitch = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_fighter_moan(26, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_3")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "slot + pitch");
+        // Case 29 (`:1008-1050`): the Style IS the slot, one pitch draw.
+        // Seed 7 draws -2; the moan styles 6/7/8 keep mult 1.0.
+        for style in [6, 7, 8] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _pitch = witness.next_range(-10, 11);
+            assert_eq!(
+                audio.play_fighter_moan(29, style, 0.0, 0.0, &mut rng),
+                Some(match style {
+                    6 => "Zombie_6",
+                    7 => "Zombie_7",
+                    _ => "Zombie_8",
+                })
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one pitch draw");
+        }
+        // Muted (soundVolume 0): cases 14/26/29 are NOT ambient-scaling
+        // (`LegacySoundPlayer.cs:1444-1457`) — the gate precedes the switch
+        // and the play is draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (14, 542), (14, 489), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_fighter_moan(case, style, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "case {case}: the muted play is draw-free");
+        }
+        // Out of range (distance >= SOUND_ATTENUATION_DISTANCE): the gate
+        // refuses before any draw, volume back at 1.
+        let mut l = audio.listener;
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(
+                audio.play_fighter_moan(case, style, 3000.0, 0.0, &mut rng),
+                None
+            );
+            assert_eq!(rng.peek(), peek, "case {case}: the far play is draw-free");
+        }
+        // Every moan asset resolves to a registered bank row.
+        for name in [
+            "Zombie_0",
+            "Zombie_1",
+            "Zombie_2",
+            "Zombie_3",
+            "Zombie_4",
+            "Zombie_5",
+            "Zombie_6",
+            "Zombie_7",
+            "Zombie_8",
+            "Zombie_21",
+            "Zombie_22",
+            "Zombie_23",
+            "Zombie_109",
+        ] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// W4-f2 — the IdleSounds case-29 bank rows (styles 24-87,
+    /// `NPC.cs:90081-90205`): every slot registers at legacy id 29, the
+    /// play resolves the slot's own asset with ONE pitch draw on the
+    /// passed stream (the case-29 contract), and the ×0.5 band rides the
+    /// volume (the headless play returns the asset name).
+    #[test]
+    fn w4_f2_the_idle_case29_bank_rows_play_with_one_pitch_draw() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        for style in 24i32..=87 {
+            let name = format!("Zombie_{style}");
+            assert!(
+                SFX_CUES.iter().any(|(n, t)| *n == name && *t == 29),
+                "{name} registers at legacy id 29"
+            );
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _pitch = witness.next_range(-10, 11);
+            let played = audio.play_fighter_moan(29, style, 0.0, 0.0, &mut rng);
+            assert_eq!(played.map(|s| s.to_string()), Some(name.clone()));
+            assert_eq!(rng.peek(), witness.peek(), "style {style}: one pitch draw");
+        }
+    }
+
+    /// W4-f2 reconcile (e9 union, research/94 §3/§5) — the Vile Spit's
+    /// int style-9 cry (`NPC.cs:21480`) and the Ghost's NPCDeath55 façade
+    /// (`:24693`): both resolve to registered bank rows, the int peer
+    /// draws ONE case-4 pitch with no NextFloat, the façade adds the
+    /// audio-only NextFloat; muted plays draw nothing.
+    #[test]
+    fn w4_e9_the_spit_and_ghost_death_rows_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        assert!(sfx_cue_registered("NPC_Killed_9"));
+        assert!(sfx_cue_registered("NPC_Killed_55"));
+        // The int overload (style 9): one Next(-10, 11), no NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(9, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_9")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The style façade (NPCDeath55): the same draw + the NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(55, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_55")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat");
+        // Muted: both peers draw nothing (the gate precedes the switch).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(9, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(55, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — the tail bank
+    /// rows: Medusa's int style-17 gaze (`NPC.cs:56403`), the balloon
+    /// pops' NPCDeath63 façade (`:43726`/`:47951`/`:48062`), the Queen
+    /// Slime's case-65 moan bank (`:45759` → `LegacySoundPlayer.cs:1382-
+    /// 1402`, ONE `Next(115, 118)` slot draw, no pitch), the four Item
+    /// cues (`Item167/170/172/150` — case 2's one `Next(-6, 7)` each) and
+    /// the Pal/StatueMimic trackables (case 42 — the façade NextFloat on
+    /// the audio-only stream, NO gameplay draw, the laugh's `_0` pin).
+    #[test]
+    fn w4_f2_the_tail_bank_rows_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        for name in [
+            "NPC_Killed_17",
+            "NPC_Killed_63",
+            "Zombie_115",
+            "Zombie_116",
+            "Zombie_117",
+            "Item_167",
+            "Item_170",
+            "Item_172",
+            "Item_150",
+        ] {
+            assert!(sfx_cue_registered(name), "{name} in the bank");
+        }
+        for name in [
+            "pal_cattiva_pain",
+            "pal_foxparks_pain",
+            "pal_cattiva_joy",
+            "pal_foxparks_joy",
+            "statuemimic_scare",
+            "statuemimic_jump",
+            "statuemimic_laugh_0",
+        ] {
+            assert!(NPC_CUSTOM_CUES.contains(&name), "{name} in the custom list");
+        }
+        // Medusa's gaze: the int overload, one case-4 pitch, no NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(17, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_17")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The balloon pop: the façade adds the audio-only NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(63, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_63")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat");
+        // The Queen Slime moan: ONE slot draw Next(115, 118), no pitch.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(115, 118);
+        let style_before = audio.sound_style_random.clone();
+        let expected: &'static str = match slot {
+            115 => "Zombie_115",
+            116 => "Zombie_116",
+            _ => "Zombie_117",
+        };
+        let played = audio
+            .play_queen_slime_moan(0.0, 0.0, &mut rng)
+            .expect("the gate passes");
+        assert_eq!(played, expected);
+        assert_eq!(rng.peek(), witness.peek(), "the slot pick is the only draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The four Item cues: the façade + case 2's one Next(-6, 7).
+        let mut witness2 = UnifiedRandom::new(7);
+        let _ = witness2.next_range(-6, 7);
+        for style in [167, 170, 172, 150] {
+            let mut rng = UnifiedRandom::new(7);
+            let expected: &'static str = match style {
+                167 => "Item_167",
+                170 => "Item_170",
+                172 => "Item_172",
+                _ => "Item_150",
+            };
+            let played = audio
+                .play_npc_item_cue(style, 0.0, 0.0, &mut rng)
+                .expect("the bank row resolves");
+            assert_eq!(played, expected);
+            assert_eq!(rng.peek(), witness2.peek(), "style {style}: one pitch");
+        }
+        // The trackables: NO gameplay draw; the façade NextFloat rides
+        // the audio-only stream; the laugh pins `_0`.
+        for cue in [
+            "pal_cattiva_pain",
+            "pal_foxparks_joy",
+            "statuemimic_scare",
+            "statuemimic_laugh_0",
+        ] {
+            let style_before = audio.sound_style_random.clone();
+            assert_eq!(audio.play_npc_trackable(cue, 0.0, 0.0), Some(cue));
+            assert_ne!(audio.sound_style_random, style_before, "{cue}: the NextFloat");
+        }
+        // Unregistered names refuse (the bank-gap guard); eow_dig is a
+        // registered NPC custom cue but has its own play (play_eow_dig).
+        assert_eq!(audio.play_npc_trackable("eow_dig", 0.0, 0.0), Some("eow_dig"));
+        assert_eq!(audio.play_npc_trackable("not_a_cue", 0.0, 0.0), None);
+        // Muted: every tail play draws nothing on either stream.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(audio.play_npc_death_int(17, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(63, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_queen_slime_moan(0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_item_cue(167, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_trackable("pal_cattiva_pain", 0.0, 0.0), None);
+        assert_eq!(rng.peek(), peek, "no gameplay draws while muted");
+        // The façade NextFloats are consumed BEFORE the gate
+        // (`SoundEngine.cs:99`) — the audio-only stream still advances on
+        // the façade peers; the int peers (17/65) never draw it.
+        assert_ne!(audio.sound_style_random, style_before);
+    }
+
+    /// S1-E-21i — the wall-break play's RNG contract
+    /// (`WorldGen.cs:60423-60441`'s four arms): Shatter (13) draws NOTHING,
+    /// Grass (6) draws one `Next(-30, 31)`, NPCHit25 draws one
+    /// `Next(-10, 11)` (wave C's façade), Dig (0) draws the `Next(3)`
+    /// variation + one `Next(-10, 11)` (wave B's case 0) — each on the
+    /// caller's stream, only after the attenuation gate passed.
+    #[test]
+    fn s1_e_21i_the_wall_break_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Shatter: no gameplay draw, no pitch (`LegacySoundPlayer.cs:783-792`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_wall_break_sound((13, 1), 0.0, 0.0, &mut rng),
+            Some("Shatter")
+        );
+        assert_eq!(rng.peek(), peek, "case 13 consumes no gameplay draw");
+        // Grass: exactly one Next(-30, 31) (`:714`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-30, 31);
+        assert_eq!(
+            audio.play_wall_break_sound((6, 1), 0.0, 0.0, &mut rng),
+            Some("Grass")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 30, "the window is -30..=30");
+        // NPCHit25: wave C's case-3 façade — one Next(-10, 11) (`:670`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_wall_break_sound((3, 25), 0.0, 0.0, &mut rng),
+            Some("NPC_Hit_25")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Dig: wave B's case-0 path — Next(3) + Next(-10, 11) (`:442`/:450).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_wall_break_sound((0, 1), 0.0, 0.0, &mut rng);
+        let want = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        assert_eq!(cue, Some(want), "the variation pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // Muted (soundVolume 0): every arm is draw-free — the gate
+        // (`:369-436`) precedes the switch.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for cue_id in [(13u16, 1u16), (6, 1), (3, 25), (0, 1)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_wall_break_sound(cue_id, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "{cue_id:?}: the muted play is draw-free");
+        }
+        // Out of attenuation range: also draw-free (`:390-397`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_wall_break_sound((6, 1), 5000.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek);
+        // The wall cues resolve to registered bank assets.
+        assert_eq!(sound_type("Mech_0"), 28);
+        for name in ["Shatter", "Grass", "NPC_Hit_25", "Dig_0", "Mech_0"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21i — the door play's RNG contract: cases 8/9
+    /// (`LegacySoundPlayer.cs:736`/`:747`) draw exactly one
+    /// `Next(-20, 21) * 0.01` on the caller's stream after the gate; the
+    /// int overload draws no `GetRandomPitch` NextFloat; a muted or
+    /// out-of-range play draws nothing.
+    #[test]
+    fn s1_e_21i_the_door_pitch_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        for open in [true, false] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let roll = witness.next_range(-20, 21);
+            let want = if open { "Door_Opened" } else { "Door_Closed" };
+            assert_eq!(audio.play_door_sound(open, 0.0, 0.0, &mut rng), Some(want));
+            assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+            assert!(roll.abs() <= 20, "the window is -20..=20");
+        }
+        // Muted: both arms draw-free.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for open in [true, false] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_door_sound(open, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the muted door play is draw-free");
+        }
+        // Out of range: draw-free too.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_door_sound(true, 5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21i — the switch-click play's RNG contract: case 28
+    /// (`LegacySoundPlayer.cs:997-1007`) draws exactly one
+    /// `Next(-10, 11) * 0.01` (`:1005`) on the caller's stream after the
+    /// gate; the playing guard (`:998-1001`) refuses BEFORE the draw; a
+    /// muted or out-of-range play draws nothing. Headless (no output
+    /// device) the slot never plays, so the guard never trips — the
+    /// engine's fresh-instance behaviour.
+    #[test]
+    fn s1_e_21i_the_switch_click_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 10, "the window is -10..=10");
+        // A second click still plays headless — the sink is empty (the
+        // C#'s guard reads a Playing instance; none exists without a
+        // device), so another draw rides the stream.
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let _ = witness.next_range(-10, 11);
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(rng.peek(), witness.peek(), "two clicks, two draws");
+        // Muted: draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted click is draw-free");
+        // Out of range: draw-free.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_switch_click(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// The front-end ladder (`Main.cs:12455-12532`'s `if (Main.gameMenu)`
+    /// arm): the title tracks are picked without any world state, and the
+    /// menu arm returns before every world branch — a boss nearby or a
+    /// rain storm cannot bleed into it (BUG-01).
+    #[test]
+    fn the_menu_ladder_picks_the_title_track() {
+        use tr_core::seeds::SeedFlags;
+        // No seed flags: the tail's `default:` → the title track 51.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the plain title track");
+        // The vanilla order: the world-dev flags first, then the specials.
+        for (bit, want) in [
+            (SeedFlags::DRUNK, 60),
+            (SeedFlags::REMIX, 8),
+            (SeedFlags::TENTH_ANNIVERSARY, 11),
+        ] {
+            let mut m = system();
+            let mut e = env(false);
+            e.menu = true;
+            e.menu_flags = SeedFlags::from(bit);
+            m.decide_new_music(e);
+            assert_eq!(m.new_music, want, "flag {bit}");
+        }
+        // Drunk + remix outranks the drunk default (`:12470`), and the
+        // not-the-bees 86 is nested *inside* the drunk arm (`:12488`) — it
+        // never fires on its own.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::from(SeedFlags::REMIX);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 70, "drunk + remix");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::from(SeedFlags::NOT_THE_BEES);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 86, "drunk + not the bees");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::NOT_THE_BEES);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "not the bees alone is not drunk");
+        // The menu arm returns: the world state it is fed is irrelevant.
+        let mut m = system();
+        let mut e = env(true);
+        e.menu = true;
+        e.boss_music = Some(93);
+        e.rain = true;
+        e.blood_moon = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the menu arm is exclusive");
+    }
+
+    /// W4-g22 MENU-FINAL witness — the three ported menu-track arms: the
+    /// shimmer-ocean drunk title 72 (`Main.cs:12465-12468`, the property
+    /// `:2686-2696`), the vampire drunk title 75 (`:12469-12472`,
+    /// `WorldGen.cs:555-558`), the credits JourneysEnd 89 (`:12486-12489`)
+    /// — plus the ladder order between them and the title track's
+    /// no-cross-fade jump (`:12217` + `:12521-12524`).
+    #[test]
+    fn menu_final_the_missing_title_arms_land() {
+        use tr_core::seeds::{MicroSeedFlags, SeedFlags};
+        // Drunk + anniversary without remix/everything/bees = the property
+        // holds -> 72, ahead of the plain drunk 60.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 72, "the shimmer-ocean title");
+        // Every property gate cuts it back: remix wins with 70 first,
+        // everything/bees drop to the plain drunk 60, no anniversary too.
+        for (extra, want) in [
+            (SeedFlags::REMIX, 70),
+            (SeedFlags::ZENITH, 60),
+            (SeedFlags::NOT_THE_BEES, 86),
+        ] {
+            let mut m = system();
+            let mut e = env(false);
+            e.menu = true;
+            e.menu_flags =
+                SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY | extra);
+            m.decide_new_music(e);
+            assert_eq!(m.new_music, want, "gate {extra}");
+        }
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 60, "drunk alone is not shimmer-ocean");
+        // The vampirism micro seed plays 75 inside the drunk arm only.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 75, "the vampire title");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "vampirism alone is not drunk");
+        // The shimmer-ocean arm outranks the vampire arm (C# else-if order).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY);
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 72, "shimmer-ocean before vampire");
+        // Credits: 89 outside the seed arms, AFTER remix's 8, BEFORE the
+        // anniversary's 11 (the `:12486` else-if position).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 89, "the credits track");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::REMIX);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 8, "remix outranks the credits");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::TENTH_ANNIVERSARY);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 89, "the credits outrank the anniversary");
+        // The plain title jumps its fade (musicNoCrossFade[51], `:12217`).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51);
+        assert_eq!(m.music_fade[51], 1.0, "no cross-fade on the title");
+        // The other picks do NOT jump (only 51 is in the no-fade set).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        m.decide_new_music(e);
+        assert_eq!(m.music_fade[60], 0.0, "the drunk title ramps normally");
+    }
+
+    /// The front-end tick keeps the volume gate: `musicVolume == 0` silences
+    /// the menu track the same way as the world ones (`Main.cs:12461`).
+    #[test]
+    fn the_menu_track_honours_the_zero_volume_gate() {
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.music_volume = 0.0;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 0);
+    }
+
+    /// S1-E-21f — the player hurt/death/drown plays' RNG contract: case 1
+    /// draws exactly ONE `Next(3)` slot pick on the passed stream
+    /// (`LegacySoundPlayer.cs:505`), cases 5/23 draw NOTHING; a muted gate
+    /// refuses before any draw. The int overload draws no GetRandomPitch.
+    #[test]
+    fn s1_e_21f_the_hurt_death_drown_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 1: one Next(0, 3) — the Player_Hit_<n> slot pick.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_hurt_sound(0.0, &mut rng);
+        let want = match slot {
+            0 => "Player_Hit_0",
+            1 => "Player_Hit_1",
+            _ => "Player_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 5 (death) and case 23 (drown): Volume/Pan only — no draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_death_sound(0.0, 0.0), Some("Player_Killed"));
+        assert_eq!(audio.play_drown_sound(), Some("Drown"));
+        assert_eq!(rng.peek(), peek, "the draw-free cases consume nothing");
+        // Muted: the gate precedes the switch — every play is draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_hurt_sound(0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted hurt is draw-free");
+        assert_eq!(audio.play_death_sound(0.0, 0.0), None);
+        assert_eq!(audio.play_drown_sound(), None);
+        // The bank rows resolve (the case-38 coin family included).
+        assert_eq!(sound_type("Player_Hit_1"), 1);
+        assert_eq!(sound_type("Player_Hit_2"), 1);
+        assert_eq!(sound_type("Drown"), 23);
+        assert_eq!(sound_type("Coin_0"), 38, "the id-18 alias is retired");
+        for n in 0..5 {
+            let name = format!("Coin_{n}");
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
+    }
+
+    /// W4-e10 — the player-voice plays' RNG contract: case 20 (female hurt)
+    /// draws exactly ONE `Next(3)` slot pick (`LegacySoundPlayer.cs:913`),
+    /// the chicken-rare pick draws ONE `Next(5)` (`Player.cs:38602`) then the
+    /// style façade draws NO gameplay roll (the trackable case 42), the
+    /// mount/armor NPC int arms draw ONE `Next(-10, 11)` pitch (case 3/4);
+    /// a muted gate refuses before any draw. The style façade's
+    /// `GetRandomPitch` NextFloat rides the audio-only stream, never the
+    /// passed gameplay stream.
+    #[test]
+    fn w4_e10_the_voice_plays_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 20: one Next(0, 3) — the Female_Hit_<n> slot pick.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hurt_sound(0.0, &mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // The chicken-rare pick: one Next(0, 5), then the trackable façade
+        // draws nothing on the gameplay stream.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let rare = witness.next_range(0, 5) == 0;
+        let roll = rng.next_range(0, 5);
+        let name = if roll == 0 { "ChickenHurtRare" } else { "ChickenHurt" };
+        audio.play_voice_style(name, -1.0, -1.0, 0.0, &mut rng);
+        assert_eq!(rare, roll == 0);
+        assert_eq!(rng.peek(), witness.peek(), "the façade draws no gameplay roll");
+        // The mount/armor NPC int arms: one Next(-10, 11) pitch (case 3).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        witness.next_range(-10, 11);
+        audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "case 3 draws one pitch");
+        // Muted: the gate precedes every draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hurt_sound(0.0, &mut rng), None);
+        assert_eq!(audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted voice plays are draw-free");
+        // The bank rows resolve.
+        assert_eq!(sound_type("Female_Hit_1"), 20);
+        assert_eq!(sound_type("NPC_Hit_47"), 3);
+        assert_eq!(sound_type("Item_35"), 2);
+        assert_eq!(sound_type("player_hit_chicken"), 42);
+        assert_eq!(sound_type("dst_male_hit_0"), 42);
+    }
+
+    /// W4-g22 — the female-hurt play (case 20, the menuMode 2 gender
+    /// toggle's male->female preview `Main.cs:49045`): ONE `Next(3)` slot
+    /// pick on the passed stream (`LegacySoundPlayer.cs:913`), NO pitch
+    /// draw; the muted gate refuses before any draw. The int overload draws
+    /// no GetRandomPitch. Written, not run (code-only mode).
+    #[test]
+    fn g22_the_female_hit_draws_one_next3_and_no_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hit_sound(&mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate precedes the switch — draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hit_sound(&mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted female hit is draw-free");
+        // The bank rows resolve to the legacy id 20.
+        for n in 0..3 {
+            let name = format!("Female_Hit_{n}");
+            assert_eq!(sound_type(&name), 20);
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21f — the double-jump and splash plays: case 16 draws one
+    /// `Next(-10, 11)` pitch after the gate; case 19's playing guard is
+    /// modelled by the splash slots (headless: always fresh), one pitch per
+    /// play; an out-of-range play draws nothing.
+    #[test]
+    fn s1_e_21f_the_jump_and_splash_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 16: one Next(-10, 11) (`:851`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_double_jump_sound(0.0, 0.0, &mut rng),
+            Some("Double_Jump")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 19: one pitch per style; the shimmer styles play their slot.
+        for (style, cue, window) in [
+            (0, "Splash_0", (-10, 11)),
+            (1, "Splash_1", (-10, 11)),
+            (2, "Splash_2", (-10, 11)),
+            (3, "Splash_3", (-10, 11)),
+            (4, "Splash_4", (-20, 1)),
+            (5, "Splash_5", (-20, 1)),
+        ] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _ = witness.next_range(window.0, window.1);
+            assert_eq!(
+                audio.play_splash_sound(style, 0.0, 0.0, &mut rng),
+                Some(cue),
+                "style {style}"
+            );
+            assert_eq!(rng.peek(), witness.peek(), "style {style}: one draw");
+        }
+        // An unknown style plays nothing and draws nothing.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_splash_sound(6, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // Out of attenuation range: draw-free (`:390-397`).
+        let fns: [fn(&mut Audio, &mut UnifiedRandom) -> bool; 2] = [
+            |a, r| a.play_double_jump_sound(5000.0, 0.0, r).is_none(),
+            |a, r| a.play_splash_sound(0, 5000.0, 0.0, r).is_none(),
+        ];
+        for f in fns {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert!(f(&mut audio, &mut rng));
+            assert_eq!(rng.peek(), peek, "the out-of-range play is draw-free");
+        }
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Splash_5"));
+    }
+
+    /// S1-E-21f — the pickup chimes: case 7 draws ONE ±0.10 pitch; case 38
+    /// draws TWO — `Next(5)` slot then `Next(-40, 41) * 0.002` pitch. The
+    /// unpositioned chime ignores distance; the positioned coin ping does
+    /// not. Muted plays draw nothing.
+    #[test]
+    fn s1_e_21f_the_pickup_chime_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 7 (Grab): one Next(-10, 11) (`:725`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_pickup_sound(false, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 38 (coin): Next(5) then Next(-40, 41) (`:1343`/:1347).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 5);
+        let _ = witness.next_range(-40, 41);
+        let cue = audio.play_pickup_sound(true, &mut rng);
+        assert_eq!(cue, Some(match slot {
+            0 => "Coin_0",
+            1 => "Coin_1",
+            2 => "Coin_2",
+            3 => "Coin_3",
+            _ => "Coin_4",
+        }));
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // The positioned revenge ping: same two draws, distance-gated.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(0, 5);
+        let _ = witness.next_range(-40, 41);
+        assert!(audio.play_coin_ping(0.0, 0.0, &mut rng).is_some());
+        assert_eq!(rng.peek(), witness.peek());
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_coin_ping(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the out-of-range ping is draw-free");
+        // Muted: both chimes draw-free (the unpositioned flag arm still
+        // checks the volume slider, `:369-371`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for coin in [false, true] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_pickup_sound(coin, &mut rng), None);
+            assert_eq!(rng.peek(), peek);
+        }
+    }
+
+    /// S1-P-i43 — the chest eat-animation chime (`Chest.cs:3628-3631`,
+    /// `PlaySound(7, chest centre)`): POSITIONED case 7 — one
+    /// `Next(-10, 11)` pitch draw on the caller's bare stream when the
+    /// attenuation passes, none when it refuses (the Lead's faithful-cue
+    /// decision applied to the lid animator's dormant chime).
+    #[test]
+    fn s1_p_i43_the_chest_eat_chime_draws_one_case7_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // In range (the listener sits at the origin): one draw.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Out of range: the gate refuses, no draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the out-of-range chime is draw-free");
+        // Muted: draw-free too.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+}
+
+
     /// W4-d79 — the minecart cues' case-2 contract: the landing/bumper/rolling
     /// plays (`DelegateMethods.cs:248-256`, `Player.cs:19870`/:19928) are
     /// `SoundID.Item53/55/56` STYLE façades — the GetRandomPitch NextFloat on
@@ -7624,6 +9076,7 @@ mod tests {
         );
     }
 
+
     /// W4-d79 — the case-7 Grab play (`LegacySoundPlayer.cs:717-727`): ONE
     /// `Next(-10, 11) * 0.01` pitch draw (`:725`) on the caller's stream after
     /// the gate, the Grab single-voice Stop/re-create (`:718-722`). The
@@ -7644,9 +9097,10 @@ mod tests {
         audio.set_listener(l);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        assert_eq!(audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
-        assert_eq!(rng.peek(), peek);
+        assert_eq!(audio.play_grab_sound(-1.0, -1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted Grab is draw-free");
     }
+
 
     /// S1-E-21h d76 DOC-SWEEP — the volumeScale term rides the queue→drain
     /// path without touching the RNG contract: the Corrupt Whip's ×0.6 tip
@@ -7685,29 +9139,6 @@ mod tests {
         }
         // The scaled play still gates on attenuation BEFORE any draw: an
         // out-of-range ×0.6 play is draw-free.
-
-        }        assert_eq!(audio.play_proj_sound((42, 311), 0.0, 0.0, 0.0, &mut rng), None);
-        // The portal pair's bank gaps closed.
-        for style in [114, 115] {
-    /// S1-E-21h f1 — the fourth batch's bank gaps resolve (45/51/54/94/96/
-    /// 110/167) and the int-id families route to their landed façades: the
-    /// id-0 Dig thud (case 0's `Next(3)` variation + `Next(-10,11)` pitch),
-    /// the id-13 Shatter (no draws) and the id-4 NPCDeath style-6 (case 4's
-    /// one `Next(-10,11)` pitch). Written, NOT run — code-only mode.
-    fn s1_e_21h_f1_the_bank_gaps_and_int_id_routes_resolve() {
-        for style in [45, 51, 54, 94, 96, 110, 167] {
-            let mut rng = UnifiedRandom::new(3);
-            let cue = audio
-                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
-                .unwrap_or_else(|| panic!("style {style} resolves"));
-            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
-    /// S1-E-21h d75 part 4 — the RainbowBoulder trackable joins the bank:
-    /// d3's `rainbow_check_bounce` (`Projectile.cs:20104`) queues
-    /// `(42, 274)`; the drain's id-42 façade resolves the pinned
-    /// `rainbow_boulder` asset (`SoundID.cs:1709`, one variation, volume
-    /// 1.0, variance 0). Case 42 draws NOTHING from the gameplay stream;
-    /// the muted play refuses draw-free.
-    fn s1_e_21h_d75_p4_the_rainbow_boulder_trackable_rides_the_proj_drain() {
         let mut audio = Audio::new(None);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
@@ -7716,20 +9147,57 @@ mod tests {
             None
         );
         assert_eq!(rng.peek(), peek, "the scaled inaudible play is draw-free");
-            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, &mut rng),
+    }
+
+    /// S1-E-21h f1 — the fourth batch's bank gaps resolve (45/51/54/94/96/
+    /// 110/167) and the int-id families route to their landed façades: the
+    /// id-0 Dig thud (case 0's `Next(3)` variation + `Next(-10,11)` pitch),
+    /// the id-13 Shatter (no draws) and the id-4 NPCDeath style-6 (case 4's
+    /// one `Next(-10,11)` pitch). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_the_bank_gaps_and_int_id_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
+        for style in [45, 51, 54, 94, 96, 110, 167] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, 1.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+    }
+
+
+    /// S1-E-21h d75 part 4 — the RainbowBoulder trackable joins the bank:
+    /// d3's `rainbow_check_bounce` (`Projectile.cs:20104`) queues
+    /// `(42, 274)`; the drain's id-42 façade resolves the pinned
+    /// `rainbow_boulder` asset (`SoundID.cs:1709`, one variation, volume
+    /// 1.0, variance 0). Case 42 draws NOTHING from the gameplay stream;
+    /// the muted play refuses draw-free.
+    #[test]
+    fn s1_e_21h_d75_p4_the_rainbow_boulder_trackable_rides_the_proj_drain() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("rainbow_boulder")
+        );
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
         assert!(
             ITEM_CUSTOM_CUES.contains(&"rainbow_boulder"),
             "the bank carries it"
+        );
         let mut l = audio.listener;
         l.sound_volume = 0.0;
         audio.set_listener(l);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        assert_eq!(audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
     }
+
 
     /// S1-E-21h d75 part 4 — the star chime's case-37 contract
     /// (`LegacySoundPlayer.cs:1326-1336`): TWO gameplay draws — the
@@ -7740,6 +9208,7 @@ mod tests {
     fn s1_e_21h_d75_p4_the_star_chime_draws_slot_then_pitch() {
         use tr_core::unified_random::UnifiedRandom;
         let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
         let mut witness = UnifiedRandom::new(7);
         let slot = witness.next_range(57, 59);
         let _ = witness.next_range(-40, 41);
@@ -7748,14 +9217,25 @@ mod tests {
         assert_eq!(rng.peek(), witness.peek(), "exactly two draws, slot first");
         assert!(SFX_CUES.contains(&("Item_57", 2)) && SFX_CUES.contains(&("Item_58", 2)));
         // Muted: the gate refuses before any draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(audio.play_star_chime(10, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+
     /// S1-E-21h d75 part 4 — the FoxparksFlame façade pins the NAMED
     /// (2, 34) row at volume 0.15 (`SoundID.cs:1725`), not the plain
     /// Item34 (volume 1.0) the generic tuple lookup finds first. The
     /// style play draws one audio-only GetRandomPitch + one case-2
     /// gameplay pitch (`Next(-6, 7)`) after the gate; muted refuses
     /// draw-free.
+    #[test]
     fn s1_e_21h_d75_p4_the_foxparks_flame_pins_the_named_quiet_row() {
+        use tr_core::unified_random::UnifiedRandom;
         let row = crate::soundid::SOUND_STYLES
             .iter()
             .find(|s| s.name == "FoxparksFlame")
@@ -7764,39 +9244,71 @@ mod tests {
         assert_eq!(row.volume, 0.15, "the WithVolume(0.15f) arm");
         // id 0 — the Dig thud: case 0 draws the variation pick THEN the
         // pitch (`LegacySoundPlayer.cs:442`/`:450`), two gameplay draws.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
         let variation = witness.next_range(0, 3);
         let _ = witness.next_range(-10, 11);
-        let cue = audio.play_proj_sound((0, 0), 0.0, 0.0, 0.0, &mut rng);
+        let cue = audio.play_proj_sound((0, 0), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some(match variation { 0 => "Dig_0", 1 => "Dig_1", _ => "Dig_2" }));
         assert_eq!(rng.peek(), witness.peek(), "the Dig thud's two case-0 draws");
         // id 13 — the Shatter: case 13 draws NOTHING (`:783-792`).
-        assert_eq!(audio.play_proj_sound((13, 0), 0.0, 0.0, 0.0, &mut rng), Some("Shatter"));
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((13, 0), 0.0, 0.0, 0.0, 1.0, &mut rng), Some("Shatter"));
         assert_eq!(rng.peek(), peek, "the Shatter is draw-free");
         // id 4 style 6 — the NPCDeath play: case 4's one pitch draw
         // (`:693`), no GetRandomPitch (the int overload).
-        assert_eq!(audio.play_proj_sound((4, 6), 0.0, 0.0, 0.0, &mut rng), Some("NPC_Killed_6"));
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_proj_sound((4, 6), 0.0, 0.0, 0.0, 1.0, &mut rng), Some("NPC_Killed_6"));
         assert_eq!(rng.peek(), witness.peek(), "the NPCDeath style-6 pitch draw");
         // Muted: every int-id route refuses before its case draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
         for (id, style) in [(0u16, 0i32), (13, 0), (4, 6)] {
             let mut rng = UnifiedRandom::new(7);
             let peek = rng.peek();
-            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, &mut rng), None);
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
             assert_eq!(rng.peek(), peek, "the muted id-{id} play is draw-free");
         }
+    }
+
+
     /// S1-E-21h f1 fifth batch — the rocket families' Item62 bank gap
     /// resolves (`Kill_Bombs_DoUsualKillCode` `Projectile.cs:77737`-`:78146`),
     /// and the style plays its one case-2 `Next(-6, 7)` pitch draw on the
     /// caller's stream only when audible. Written, NOT run — code-only mode.
+    #[test]
     fn s1_e_21h_f1_b5_the_rocket_item62_bank_gap_resolves() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
         let _ = witness.next_range(-6, 7);
         assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), Some("Item_34"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
-        let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, &mut rng);
+        // Muted: the gate refuses before any draw.
+        let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("Item_62"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one case-2 pitch draw");
-        assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == cue.unwrap()));
         // Muted: the gate refuses before the case-2 switch — no draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+
     /// S1-E-21h d77 deferred-arm wave — the queue's `volumeScale` term
     /// (`SoundEngine.cs:93`'s fourth argument): the DD2 Goblin Bomb's
     /// `Kill()` cue (`Projectile.cs:71906`) plays the case-2 style-14 asset
@@ -7804,45 +9316,90 @@ mod tests {
     /// The scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
     /// case-2 tweaks — the RNG census and the refusal shape stay the
     /// stock-scale play's. WRITTEN NOT RUN (code-only).
+    #[test]
     fn s1_e_21h_d77_the_goblin_bomb_scale_rides_after_the_gate_draw_free_census() {
-        assert_eq!(audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, &mut rng), None);
+        use tr_core::unified_random::UnifiedRandom;
+        // A muted case-2 play refuses before the switch.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted Item62 play is draw-free");
+    }
+
+
     /// S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's NPCDeath
     /// style-7 play (`Projectile.cs:72571`, `PlaySound(4, pos, 7)` — the
     /// int overload, NO `GetRandomPitch` draw) routes to the new
     /// `NPC_Killed_7` bank row and plays case 4's ONE `Next(-10, 11)` pitch
     /// draw after the gate (`sound.rs` `npc_killed_case4`, the style-6
     /// precedent). Written, NOT run — code-only mode.
+    #[test]
     fn s1_e_21h_f1_owed_the_jellyfish_npcdeath7_routes_and_draws() {
+        use tr_core::unified_random::UnifiedRandom;
         // The bank row exists: name → id 4 (the NPC_Killed family).
+        assert!(
             SFX_CUES.contains(&("NPC_Killed_7", 4)),
             "the NPC_Killed_7 bank row (the Sounds/NPC_Killed_7.xnb asset ships)"
-        let cue = audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, &mut rng);
+        );
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("NPC_Killed_7"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one case-4 pitch draw, no NextFloat");
         // Muted: the gate refuses before the case-4 draw.
-        assert_eq!(audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, &mut rng), None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted NPCDeath7 play is draw-free");
+    }
+
+
     /// S1-E-21h f1 final phase — the queue's sixth term (`volumeScale`,
     /// `SoundEngine.cs:93`'s fourth argument) adopted from d77's pushed
     /// seam (`9d35874a`). The DD2 Goblin Bomb's `Kill()` cue
     /// (`Projectile.cs:71906`) plays the case-2 style-14 asset at
     /// `type.Volume = 0.5` (`SoundID.cs:1596`'s `.WithVolume(0.5f)`); the
     /// scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
+    /// case-2 tweaks — the RNG census and the refusal shape stay the
     /// stock-scale play's. f1's int-overload arms (0/13/4) keep their
     /// routes at any scale (every f1 int site passes 1.0). Written, NOT
     /// run — code-only mode.
+    #[test]
     fn s1_e_21h_f1_final_the_volume_scale_rides_after_the_gate_draw_free_census() {
+        use tr_core::unified_random::UnifiedRandom;
         // The 0.5-scale play draws the SAME one Next(-6, 7) as the stock
         // play (the scale is not an RNG input) and resolves Item_14.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
         let cue = audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng);
         assert_eq!(cue, Some("Item_14"), "the goblin bomb is the Item14 asset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
         // Muted: the gate refuses BEFORE the switch regardless of scale.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(
             audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng),
+            None
+        );
         assert_eq!(rng.peek(), peek, "the muted scaled play is draw-free");
         // The style row itself keeps the C#'s 0.5 (`WithVolume`) — the
         // queue's term reproduces the call-site scale, not the row's.
+        let row = crate::soundid::SOUND_STYLES
+            .iter()
             .find(|s| s.name == "DD2_GoblinBomb")
             .expect("the style row exists");
         assert_eq!((row.sound_id, row.style), (2, 14));
@@ -7853,19 +9410,38 @@ mod tests {
         assert_eq!(rng.peek(), peek, "the muted 0.5-scale play is draw-free");
         // The int arms keep their façades under the scaled peer (f1's
         // drain shape): the id-4 cry still draws its ONE case-4 pitch.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
         let cue = audio.play_fighter_moan(29, 103, 0.0, 0.0, &mut rng);
         assert_eq!(cue, Some("Zombie_103"), "the eye's death moan slot");
         assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
         assert!(SFX_CUES.iter().any(|(n, t)| *n == "Zombie_103" && *t == 29));
+    }
+
+
     /// S1-E-21h d77 re-probe wave — the id-4 int façade gains style 7 (the
     /// Stardust Jellyfish's `Kill()` cry, `Projectile.cs:72571`): one
     /// `Next(-10, 11)` pitch draw after the gate (the case-4 contract), the
     /// `NPC_Killed_7` bank row present, the muted play draw-free. WRITTEN
     /// NOT RUN (code-only).
+    #[test]
     fn s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade() {
+        use tr_core::unified_random::UnifiedRandom;
+        assert!(SFX_CUES.contains(&("NPC_Killed_7", 4)));
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
             audio.play_proj_sound_scaled((4, 7), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("NPC_Killed_7")
+        );
         assert_eq!(rng.peek(), witness.peek(), "the int arm ignores the scale");
+    }
+
+
     /// S1-E-21h f1 FINAL phase — the second owed wave's façade routes:
     /// the 1054 SpiderBoulder's NPCHit29 (`Projectile.cs:74867`, the int
     /// overload — NO NextFloat, case 3's 20..54 ×0.5 arm + ONE
@@ -7874,37 +9450,77 @@ mod tests {
     /// `SoundID.cs:1709` — one variation, NO gameplay draw) and the 655
     /// BeeHive's default-Style NPCDeath1 (`:75082`, case 4's one pitch).
     /// Written, NOT run — code-only mode.
+    #[test]
     fn s1_e_21h_f1_final_the_second_owed_wave_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
         // The bank rows exist.
         assert!(SFX_CUES.contains(&("NPC_Hit_29", 3)));
         assert!(SFX_CUES.contains(&("Item_89", 2)));
         assert!(NPC_CUSTOM_CUES.contains(&"rainbow_boulder"));
         // NPCHit29: exactly one case-3 pitch draw, no NextFloat.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
         let cue = audio.play_npc_death_int(7, 0.0, 0.0, &mut rng);
         assert_eq!(cue, Some("NPC_Killed_7"), "the jellyfish's style-7 cry");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
         assert!(SFX_CUES.iter().any(|(n, t)| *n == "NPC_Killed_7" && *t == 4));
         // Muted: the gate refuses BEFORE the draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
-            audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, &mut rng),
+        assert_eq!(
+            audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("NPC_Hit_29")
+        );
         assert_eq!(rng.peek(), witness.peek(), "one case-3 pitch, no NextFloat");
         // RainbowBoulder: the case-42 trackable draws NOTHING.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((42, 274), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("rainbow_boulder")
+        );
         assert_eq!(rng.peek(), peek, "the trackable play is draw-free");
         // NPCDeath1 (the BeeHive's default Style): one case-4 pitch.
-            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, &mut rng),
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("NPC_Killed_1")
+        );
         assert_eq!(rng.peek(), witness.peek(), "one case-4 pitch");
         // Item89 (the 1037/1049 cue): the case-2 one-draw contract.
-            audio.play_proj_sound((2, 89), 0.0, 0.0, 0.0, &mut rng),
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_proj_sound((2, 89), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("Item_89")
+        );
         assert_eq!(rng.peek(), witness.peek(), "one case-2 pitch");
         // Muted: every route refuses before its draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
         for (id, style) in [(3u16, 29i32), (42, 274), (4, 1), (2, 89)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
             assert_eq!(rng.peek(), peek, "({id},{style}) muted is draw-free");
-        assert_eq!(audio.play_grab_sound(-1.0, -1.0, &mut rng), None);
-        assert_eq!(rng.peek(), peek, "the muted Grab is draw-free");
+        }
     }
+
 
     /// W4-d79 — the draw-free single-voice cues (cases 10/11/12/18/22,
     /// `LegacySoundPlayer.cs:750-782`/:865-870/:937-946): the attenuation gate
@@ -8808,13 +10424,13 @@ mod tests {
         let mut m = system();
         let mut e = env(false);
         e.menu = true;
-        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::REMIX.into();
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::from(SeedFlags::REMIX);
         m.decide_new_music(e);
         assert_eq!(m.new_music, 70, "drunk + remix");
         let mut m = system();
         let mut e = env(false);
         e.menu = true;
-        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::NOT_THE_BEES.into();
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK) | SeedFlags::from(SeedFlags::NOT_THE_BEES);
         m.decide_new_music(e);
         assert_eq!(m.new_music, 86, "drunk + not the bees");
         let mut m = system();
@@ -9262,7 +10878,6 @@ mod tests {
         assert_eq!(audio.play_star_hit_pair(&mut rng), None);
         assert_eq!(rng.peek(), peek, "the silent pair is draw-free");
     }
-}
 
 /// `Main.cs:11543-11553`: the rain cue's weather factor `num11` —
 /// `cloudAlpha / 9 * 10 * 0.5 + 0.5`, the shimmer mute, the 1-cap, then
@@ -9296,15 +10911,6 @@ fn ambience_wind_factor(env: &MusicEnv) -> f32 {
     if env.shimmer_alpha > 0.0 {
         num7 *= 1.0 - env.shimmer_alpha;
     }
-    let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
-    Some(v)
-
-// balance-close (union shared delimiter)
-})
-}
-
-// balance-close (union shared delimiter)
-}}}}}}}}}))
     (num7.min(1.0)) * 0.9 * env.atmo.powi(4)
 }
 

@@ -660,8 +660,13 @@ mod tests {
         // `:61947-61961`: +0.01 toward a positive target, −0.02 to zero.
         assert!((smooth_mushroom_influence(0.0, 160) - 0.01).abs() < 1e-6);
         assert!((smooth_mushroom_influence(0.5, 0) - 0.48).abs() < 1e-6);
-        // The clamp at 1 (`:61966-61969`): target 160/160 = 1 from 0.999.
-        assert_eq!(smooth_mushroom_influence(0.999, 160), 1.0);
+        // `:61947-61956`: the two `if`s are NOT else-if, so a step that
+        // crosses the target is taken back in the same tick — target 1.0
+        // from 0.999 adds then subtracts (`+0.01` → 1.009, `-0.01` →
+        // 0.9990001 in f32), never landing ON 1.0.
+        assert!((smooth_mushroom_influence(0.999, 160) - 0.999).abs() < 1e-6);
+        // The clamp at 1 (`:61966-61969`) still caps a value above it.
+        assert_eq!(smooth_mushroom_influence(1.2, 160), 1.0);
         // Below zero clamps (`:61962-61965`).
         assert_eq!(smooth_mushroom_influence(0.01, 0), 0.0);
     }

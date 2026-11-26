@@ -1045,7 +1045,7 @@ mod tests {
             .expect("the row spawns");
         let mut latched = None;
         for _ in 0..20 {
-            pool.update(&mut w2, &mut npcs, Some((center.x, center.y)), None, None, inputs, crate::projectile::FlailInputs::default(), &mut rng, 0, true, &mut tr_core::UnifiedRandom::new(0));
+            pool.update(&mut w2, &mut npcs, Some((center.x, center.y)), None, None, inputs, crate::projectile::FlailInputs::default(), &mut rng, 0, true);
             if pool.slots()[slot].ai[0] == 2.0 {
                 latched = Some(pool.slots()[slot].grapple_center);
                 break;
@@ -1082,7 +1082,6 @@ mod hook_multi_tests {
             &mut rng,
             0,
             true,
-            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 

@@ -100,7 +100,7 @@ fn lerp_bytes(a: [u8; 4], b: [u8; 4], t: f32) -> [u8; 4] {
 /// One path cell's mask X (`Main.cs:31662-31899`): the source-rect column
 /// the C# picks for the cell's role. `role` is (start, middle, end) ×
 /// (vertical, horizontal, corner); the corner forms ADD the two sides.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mask {
     /// `(0,0,16,16)` — the same-cell case (`:31662`).
     Same,

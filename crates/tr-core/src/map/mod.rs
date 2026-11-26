@@ -507,6 +507,15 @@ mod tests {
         t
     }
 
+    /// A lit torch (`TileID.Torch`: kind 4, frame 0) — a deterministic light
+    /// source for the reveal tests. `reveal_world` is deliberately below the
+    /// surface (no sky seed), so the light map would be all-zero without one.
+    fn add_torch(world: &mut World, x: i32, y: i32) {
+        let t = world.tile_mut(x, y).unwrap();
+        t.kind = 4;
+        t.flags |= FLAG_ACTIVE;
+    }
+
     #[test]
     fn stone_tile_maps_to_its_lookup() {
         let mut world = World::new("test".into(), 20, 20);
@@ -664,11 +673,14 @@ mod tests {
 
     use crate::lighting::{LightMap, LightParams};
 
-    /// A 20x400 world whose whole column is below the surface (so
+    /// A 64x400 world whose whole column is below the surface (so
     /// `create_map_tile` never forces light 255, `MapHelper.cs:1064`) but still
-    /// above the underworld (`height - 200`).
+    /// above the underworld (`height - 200`). The width must exceed
+    /// `2 * NON_VISIBLE_PADDING` (36) so the blur's horizontal sweeps span the
+    /// interior — a 20-wide map only sweeps the two edge cells (S1-G-10's fixed
+    /// 18-cell padding), which would not spread a central light source.
     fn reveal_world() -> World {
-        let mut w = World::new("t".into(), 20, 400);
+        let mut w = World::new("t".into(), 64, 400);
         w.world_surface = 0.0;
         w.rock_layer = 200.0;
         w
@@ -705,7 +717,8 @@ mod tests {
 
     #[test]
     fn reveal_rect_only_touches_lit_tiles() {
-        let world = reveal_world();
+        let mut world = reveal_world();
+        add_torch(&mut world, 8, 8); // a light source inside the reveal rect
         let mut map = blank_map(&world);
         let light = LightMap::compute(&world, 5, 5, 10, 10, &LightParams::default());
         let changed = reveal_rect(&world, &mut map, &light, 0, 0, 16, 16);
@@ -738,7 +751,12 @@ mod tests {
     /// passed light (`GetBackgroundType`'s dirt arm, no sky override).
     #[test]
     fn reveal_rect_is_half_open_x_outer() {
-        let world = reveal_world();
+        let mut world = reveal_world();
+        // A torch in the window's bottom-right interior so the light map is
+        // non-zero there (the world is below the surface, so no sky seed) and
+        // its immediate glow lights the exclusive x1/y1 edges for the
+        // half-open checks.
+        add_torch(&mut world, 5, 4);
         let mut map = blank_map(&world);
         // The compute pads by AREA_PADDING + CACHE_MARGIN, so the light map
         // carries non-zero light well past the window's exclusive edges.

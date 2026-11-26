@@ -458,11 +458,6 @@ impl App {
             }
             None
         }
-        slot_at_mouse_fields(
-            self.mouse_pos,
-            self.inventory_open,
-            &self.hotbar_scales,
-        )
     }
 
     /// The shop grid's cell under the cursor — `Main.DrawInventory`'s shop
@@ -1663,7 +1658,7 @@ impl App {
         let hovered = rects
             .iter()
             .position(|r| ui::in_rect(self.mouse_pos, *r))
-            .map_or(-1i64, |i| i as i64);
+            .map_or(-1i32, |i| i as i32);
         // `:157-160` — the hover-change tick (no gamepad in the port, so the
         // `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
@@ -2560,7 +2555,7 @@ impl App {
     /// a banner's hover box runs `WorldGen.kickOut(num)` (`WorldGen.cs:4869-4879`)
     /// and plays `SoundEngine.PlaySound(12)` (`:40828`). The banner boxes are
     /// rebuilt each draw (`house_banners`); the press is consumed.
-    fn handle_house_banner_clicks(&mut self) {
+    pub(crate) fn handle_house_banner_clicks(&mut self) {
         if !self.ui_right_press || self.equip_page != 1 || self.house_banners.is_empty() {
             return;
         }
@@ -3118,7 +3113,7 @@ impl App {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
                         self.audio.play_menu("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-                        if let Some(p) = self.player.as_mut() {
+                        let hostile = if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
                             p.hostile
                         } else {
@@ -3649,7 +3644,11 @@ impl App {
         // slot's right edge (`flag3`, `:41284`), gated on `mouseItem.IsAir`.
         if left && self.inventory_open && self.equip_page == ui::inventory::EQUIP_PAGE_MISC {
             let (sw, sh) = self.screen_size();
-            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            let base_y = ui::inventory::equip_page_base_y(
+                sh,
+                self.main_m_h(),
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+            );
             let tick = self
                 .lookups
                 .ui_tick_on
@@ -3684,7 +3683,11 @@ impl App {
         // sit right of the armour column, so they are probed before the slots.
         if left && self.inventory_open && self.equip_page == 0 {
             let (sw, sh) = self.screen_size();
-            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            let base_y = ui::inventory::equip_page_base_y(
+                sh,
+                self.main_m_h(),
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+            );
             if let Some(i) =
                 ui::loadout::button_hit(sw, base_y, [self.mouse_pos.x, self.mouse_pos.y])
             {
@@ -4384,6 +4387,7 @@ impl App {
                 self.main_m_h(),
                 self.equip_page,
                 cell,
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
             ) {
                 if self.equip_cell(ctx, idx).count > 0
                     && ui::loadout::can_loadout_share_at(ctx)
@@ -4594,7 +4598,12 @@ impl App {
             ],
             None => [1.0; 4],
         };
-        crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        let glow = crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1586`, `chest !=
+        // -1` true — a world chest is open): arm the chest glow pair.
+        for (slot, hue) in glow {
+            self.slot_glow.set_glow(slot, hue, true);
+        }
         // `ItemSorting.cs:1669-1678` — the withSync `32` per changed slot
         // (netMode 1 + a world chest open; the helper gates both).
         self.send_chest_item_diff(idx as i32, &before);
@@ -4652,9 +4661,14 @@ impl App {
                 in_range.push((idx, locked, (cx, cy)));
             }
         }
+        // The per-slot slices come from ONE `iter_mut` walk (the indices are
+        // distinct, so the borrows are disjoint); the `in_range` raster order
+        // is kept for the transfer itself.
+        let wanted: std::collections::HashMap<usize, (bool, (f32, f32))> =
+            in_range.into_iter().map(|(i, l, p)| (i, (l, p))).collect();
         let mut chests: Vec<(&mut [crate::item::ItemSlot], bool, (f32, f32), i32)> = Vec::new();
-        for (idx, locked, pos) in in_range {
-            if let Some(wc) = self.world_chests.get_mut(idx) {
+        for (idx, wc) in self.world_chests.iter_mut().enumerate() {
+            if let Some(&(locked, pos)) = wanted.get(&idx) {
                 chests.push((&mut wc.slots[..], locked, pos, idx as i32));
             }
         }
@@ -4739,10 +4753,14 @@ impl App {
         *self.rngs.global() = rng;
         // The item transfer into the in-range banks (no void vault source).
         let Some(p) = self.player.as_mut() else { return };
-        let banks: Vec<&mut [crate::item::ItemSlot]> = found
-            .iter()
-            .map(|&bi| &mut p.banks[bi][..])
-            .collect();
+        // One `iter_mut` walk yields the four disjoint bank slices; the
+        // `found` raster order is kept for the transfer.
+        let mut slots: [Option<&mut [crate::item::ItemSlot]>; 4] = [None, None, None, None];
+        for (i, b) in p.banks.iter_mut().enumerate() {
+            slots[i] = Some(&mut b[..]);
+        }
+        let banks: Vec<&mut [crate::item::ItemSlot]> =
+            found.iter().filter_map(|&bi| slots[bi].take()).collect();
         crate::quick_stack::quick_stack_to_nearby_banks(&mut self.inventory, &fav, banks);
     }
 
@@ -4772,7 +4790,12 @@ impl App {
             None => [1.0; 4],
         };
         let favs = self.favorite_slots.clone();
-        let fav = move |i: usize| favs.contains(&i);
+        // The overflow tail still reads the full `favs` list, so the sort
+        // closure gets its own copy instead of moving the original.
+        let fav = {
+            let favs = favs.clone();
+            move |i: usize| favs.contains(&i)
+        };
         let overflow = crate::item_sorting::sort_inventory(
             &mut self.inventory,
             &mut self.equip.coins,
@@ -4811,12 +4834,6 @@ impl App {
             *self.rngs.global() = rng;
         }
         self.audio.play("Menu_Tick"); // `PlaySound(12)` (`:41887`)
-        let glow = crate::item_sorting::sort_chest(&mut wc.slots, mult);
-        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1586`, `chest !=
-        // -1` true — a world chest is open): arm the chest glow pair.
-        for (slot, hue) in glow {
-            self.slot_glow.set_glow(slot, hue, true);
-        }
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -5432,13 +5449,13 @@ mod tests {
         let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
         let list = ui::achievements::list_rect(&panel);
         app.mouse_pos = Vec2::new(list[0] + 100.0, list[1] + 100.0);
-        app.scroll_achievements(-1.0); // one detent down
+        app.scroll_achievements(-1); // one detent down
         assert_eq!(app.achievements_scroll, 120.0);
-        app.scroll_achievements(1.0); // and back up
+        app.scroll_achievements(1); // and back up
         assert_eq!(app.achievements_scroll, 0.0);
         // Off the list AND the bar: the wheel is not the list's.
         app.mouse_pos = Vec2::new(5.0, 5.0);
-        app.scroll_achievements(-1.0);
+        app.scroll_achievements(-1);
         assert_eq!(app.achievements_scroll, 0.0);
     }
 
@@ -7921,7 +7938,11 @@ mod tests {
         let mut app = inv_app();
         app.equip_page = ui::inventory::EQUIP_PAGE_MISC;
         let (sw, sh) = app.screen_size();
-        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let base_y = ui::inventory::equip_page_base_y(
+            sh,
+            app.main_m_h(),
+            ui::inventory::ExtraAccessoryShow::of(app.player.as_ref()),
+        );
         let tick = (16.0, 16.0);
         // The pet tick (row 0).
         let pet = ui::inventory::misc_tick_pos(sw, base_y, 0);
@@ -9970,7 +9991,7 @@ mod w4_f35_boss_bag_open_tests {
             .collect();
         assert!(!grants.is_empty(), "the crate granted: {grants:?}");
         // The same-seed replay: two identical Apps open identically.
-        let (a, b) = open_twin(2334);
+        let (mut a, mut b) = open_twin(2334);
         assert_eq!(a.inventory, b.inventory);
         assert_eq!(a.items.len(), b.items.len());
         assert_eq!(*a.rngs.global(), *b.rngs.global());
@@ -9991,7 +10012,7 @@ mod w4_f35_boss_bag_open_tests {
                 .map(|s| s.kind)
                 .collect();
             assert!(!grants.is_empty(), "kind {kind} granted: {grants:?}");
-            let (a, b) = open_twin(kind);
+            let (mut a, mut b) = open_twin(kind);
             assert_eq!(a.inventory, b.inventory, "kind {kind} twin");
             assert_eq!(*a.rngs.global(), *b.rngs.global(), "kind {kind} stream");
         }
@@ -10012,7 +10033,7 @@ mod w4_f35_boss_bag_open_tests {
                 .map(|s| s.kind)
                 .collect();
             assert!(!grants.is_empty(), "kind {kind} granted: {grants:?}");
-            let (a, b) = open_twin(kind);
+            let (mut a, mut b) = open_twin(kind);
             assert_eq!(a.inventory, b.inventory, "kind {kind} twin");
             assert_eq!(*a.rngs.global(), *b.rngs.global(), "kind {kind} stream");
         }
@@ -10076,7 +10097,7 @@ mod w4_f35_boss_bag_open_tests {
         twin.handle_inventory_clicks();
         assert_eq!(app.inventory, twin.inventory, "the keyed twin");
         assert_eq!(*app.rngs.global(), *twin.rngs.global(), "the keyed twin stream");
-        let (a, b) = open_twin(3085);
+        let (mut a, mut b) = open_twin(3085);
         assert_eq!(a.inventory[5].count, 2, "the keyless twin refused");
         assert_eq!(*a.rngs.global(), *b.rngs.global(), "the refusal drew nothing");
     }
@@ -10098,7 +10119,7 @@ mod w4_f35_boss_bag_open_tests {
         assert_eq!(app2.inventory[5].count, 1, "the box opened");
         assert_eq!(app2.inventory[9].kind, 329, "the key stays");
         assert_eq!(app2.inventory[9].count, 1, "NOT consumed");
-        let (a, b) = open_twin(4879);
+        let (mut a, mut b) = open_twin(4879);
         assert_eq!(a.inventory, b.inventory);
         assert_eq!(*a.rngs.global(), *b.rngs.global());
     }

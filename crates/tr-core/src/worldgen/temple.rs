@@ -2504,14 +2504,21 @@ fn mayan_trap_horizontal(
     // W4-g83: the trap-site kill's framing dispatch threads the worldgen
     // genRand stand-in (`world.frame_rng`), not the pass's xorshift stream.
     crate::edit::kill_tile(world, num11, num12, true, gen_rng);
-    let num19 = if has_wire(world, x2, num3, 0) {
-        0
-    } else if has_wire(world, x2, num3, 1) {
-        1
-    } else if has_wire(world, x2, num3, 2) {
-        2
-    } else {
-        rng.range(0, 3)
+    let num19 = {
+        // `:8518` — the colour draw is UNCONDITIONAL; the wire flags only
+        // OVERRIDE its result below (the stream advances even when the
+        // plate cell already carries a wire).
+        let mut wire = rng.range(0, 3);
+        if has_wire(world, x2, num3, 0) {
+            wire = 0;
+        }
+        if has_wire(world, x2, num3, 1) {
+            wire = 1;
+        }
+        if has_wire(world, x2, num3, 2) {
+            wire = 2;
+        }
+        wire
     };
     let num20 = (num11 - x2).abs();
     let style2 = if num20 < 10 && rng.range(0, 3) != 0 { 2 } else { 1 };
@@ -3805,7 +3812,7 @@ mod tests {
                 world.wires.set(120, 149, crate::wiring::WireColor::Red, true);
             }
             let mut rng = Rng(1);
-            let placed = mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng);
+            let placed = mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng, &mut crate::UnifiedRandom::new(0));
             (placed, rng.0, world)
         };
         let (pa, sa, wa) = run(true);
@@ -3842,14 +3849,14 @@ mod tests {
         let before = world.tiles.clone();
         let mut rng = Rng(0x5EED);
         let state = rng.0;
-        assert!(mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng));
+        assert!(mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng, &mut crate::UnifiedRandom::new(0)));
         assert_eq!(rng.0, state, "no draw");
         assert_eq!(world.tiles, before, "no write");
         // The classic control spends the direction draw at least.
         let mut classic = World::new("t".into(), 300, 600);
         pocket(&mut classic, 101, 140, 140, 150);
         let mut crng = Rng(0x5EED);
-        let _ = mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng);
+        let _ = mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng, &mut crate::UnifiedRandom::new(0));
         assert_ne!(crng.0, state, "the classic arm draws");
     }
 
@@ -3880,7 +3887,7 @@ mod tests {
         let mut classic = rig();
         let mut crng = Rng(1);
         assert!(
-            !mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng),
+            !mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng, &mut crate::UnifiedRandom::new(0)),
             "the classic arm refuses at the :8496 spike check"
         );
         let mut dual = rig();
@@ -3889,7 +3896,7 @@ mod tests {
         );
         let mut drng = Rng(1);
         assert!(
-            !mayan_trap(&mut dual, 120, 145, 300, 200.0, true, &mut drng),
+            !mayan_trap(&mut dual, 120, 145, 300, 200.0, true, &mut drng, &mut crate::UnifiedRandom::new(0)),
             "the dual arm rejects both spike walls (num17 = 232)"
         );
         // The stream-position difference: dual spent 2 draws, classic 3.
@@ -3908,7 +3915,7 @@ mod tests {
         );
         let mut srng = Rng(1);
         let state = srng.0;
-        assert!(!mayan_trap(&mut short, 120, 145, 0, 200.0, true, &mut srng));
+        assert!(!mayan_trap(&mut short, 120, 145, 0, 200.0, true, &mut srng, &mut crate::UnifiedRandom::new(0)));
         assert_ne!(srng.0, state, "the direction draw precedes the abort");
         // a == b: the dual refusal replays byte-identically.
         let mut dual2 = rig();
@@ -3916,7 +3923,7 @@ mod tests {
             crate::seeds::MicroSeedFlags::DUAL_DUNGEONS,
         );
         let mut drng2 = Rng(1);
-        let _ = mayan_trap(&mut dual2, 120, 145, 300, 200.0, true, &mut drng2);
+        let _ = mayan_trap(&mut dual2, 120, 145, 300, 200.0, true, &mut drng2, &mut crate::UnifiedRandom::new(0));
         assert_eq!(dual.tiles, dual2.tiles, "a == b tiles");
         assert_eq!(drng.0, drng2.0, "a == b stream");
     }

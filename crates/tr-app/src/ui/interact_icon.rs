@@ -158,7 +158,8 @@ pub(crate) fn draw(
         if let Some((_, iw, ih)) = slot::item_icon_rect(lookups, draw_kind) {
             let center = icon_center(mouse, iw, ih, cursor_scale);
             let icon = ItemSlot { kind: draw_kind, ..held };
-            slot::draw_item_icon(r, lookups, &icon, center, cursor_scale, [1.0; 4], 9999.0);
+            // The cursor icon's fade half is unported (white tint, no fade).
+            slot::draw_item_icon(r, lookups, &icon, center, cursor_scale, [1.0; 4], 9999.0, 1.0);
         }
         // `:45093-45100` — the ammo preview, only while the drawn kind IS
         // the held kind (the icon-ID override would skip it): the paint

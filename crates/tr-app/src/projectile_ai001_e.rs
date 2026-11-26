@@ -103,7 +103,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i3
             // identical either order, the slice-A `latch_ai1` note).
             if p.ai[1] == 0.0 {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             // `:54916-54920` — `alpha -= 40`, clamp 0. The c11 row seeds
             // alpha 0 (the C# arm `:5056-5063` writes NO alpha — the
@@ -144,7 +144,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i3
             // drain — the slice-A `latch_ai1` convention).
             if p.ai[1] == 0.0 {
                 p.ai[1] = 1.0;
-                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             // `:55635-55649` — the per-type alpha switch's case 576/577:
             // `localAI[1]++`; while `> 2f`, `alpha -= 15` clamp 0. The
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(p.ai[1], 1.0, "the one-shot latch (`:54913`)");
         assert_eq!(
             p.wants_sound,
-            Some((2, 12, 160.0, 160.0, 0.0)),
+            Some((2, 12, 160.0, 160.0, 0.0, 1.0)),
             "the Item12 cue at base.position (`:54914`)"
         );
         p.wants_sound = None; // the drain consumed it (the pass tail)
@@ -464,7 +464,7 @@ mod tests {
         assert_eq!(p.ai[1], 1.0, "the one-shot latch (`:55363`)");
         assert_eq!(
             p.wants_sound,
-            Some((2, 12, 160.0, 160.0, 0.0)),
+            Some((2, 12, 160.0, 160.0, 0.0, 1.0)),
             "the Item12 cue at base.position (`:55364`)"
         );
         p.wants_sound = None; // the drain consumed it (the pass tail)
@@ -501,7 +501,7 @@ mod tests {
     /// machine advances 9 times → frame 9 mod 3 = 0, spriteDirection 1,
     /// rot = atan2(0, 4) = 0. NO tracked-sound state (the fold).
     #[test]
-    fn w4_f20e_the_monk_shot_fades_frames_and_counts_to_twenty-nine() {
+    fn w4_f20e_the_monk_shot_fades_frames_and_counts_to_twenty_nine() {
         let w = world();
         let mut p = shot(4.0, 0.0);
         for _ in 0..29 {

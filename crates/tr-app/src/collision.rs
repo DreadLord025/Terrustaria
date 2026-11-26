@@ -2978,23 +2978,24 @@ mod tests {
         let mut w = world();
         // A full stone block at (10, 10) = [160,176]×[160,176].
         put(&mut w, 10, 10, 1);
+        let ti = w.index(10, 10);
         assert!(is_world_point_solid(&w, 168.0, 168.0, true));
         assert!(is_world_point_solid(&w, 160.0, 160.0, true), "closed edges");
         assert!(!is_world_point_solid(&w, 159.9, 168.0, true));
         // The half brick: only the bottom 8 px (`:1459-1464`).
-        w.tiles[w.index(10, 10)].flags |= FLAG_HALF_BRICK;
+        w.tiles[ti].flags |= FLAG_HALF_BRICK;
         assert!(!is_world_point_solid(&w, 168.0, 164.0, true), "the top half is open");
         assert!(is_world_point_solid(&w, 168.0, 172.0, true));
-        w.tiles[w.index(10, 10)].flags &= !FLAG_HALF_BRICK;
+        w.tiles[ti].flags &= !FLAG_HALF_BRICK;
         // Slope 1 (blockType 2): num3 >= num2 — the lower-left triangle.
-        w.tiles[w.index(10, 10)].set_slope(1);
+        w.tiles[ti].set_slope(1);
         assert!(is_world_point_solid(&w, 162.0, 170.0, true), "y%16 ≥ x%16");
         assert!(!is_world_point_solid(&w, 170.0, 162.0, true));
-        w.tiles[w.index(10, 10)].set_slope(0);
+        w.tiles[ti].set_slope(0);
         // Actuated tiles are walk-through (`:1442`).
-        w.tiles[w.index(10, 10)].flags |= FLAG_INACTIVE;
+        w.tiles[ti].flags |= FLAG_INACTIVE;
         assert!(!is_world_point_solid(&w, 168.0, 168.0, true));
-        w.tiles[w.index(10, 10)].flags &= !FLAG_INACTIVE;
+        w.tiles[ti].flags &= !FLAG_INACTIVE;
         // The platform exclusion (`:1446`): kind 19 platform + the 380
         // planter box refuse under treatPlatformsAsNonSolid, count solid
         // without it.

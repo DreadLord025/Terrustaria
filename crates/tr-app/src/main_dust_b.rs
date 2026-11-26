@@ -738,7 +738,7 @@ mod tests {
             }
             assert_eq!(d.velocity, want);
             assert_eq!(d.scale, mp.slot(mi).scale, "the Next(1,3) scale argument");
-            assert_eq!(sc, sarg, "the two mirrors agree on the scale roll");
+            assert_eq!(sc as f32, sarg, "the two mirrors agree on the scale roll");
         }
     }
 

@@ -1,4 +1,4 @@
-//! The wiring tick (plan stage A4): the `Wiring.UpdateMech` cooldown queue,
+﻿//! The wiring tick (plan stage A4): the `Wiring.UpdateMech` cooldown queue,
 //! the teleport events' entity half (`Wiring.Teleport`, `Wiring.cs:3120-3178`)
 //! and — since M7-WIRE-2 — the device effects' app half: the statue spawns,
 //! the trap emissions and the device shots.
@@ -183,6 +183,8 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     let mut extractinator_requests = Vec::new();
     // THROW_A_PARTY (25) rides after the fixed step: the `98` broadcast needs
     // `&mut App`, which the wiring closure holds across its body.
+    // The §8.2 door echoes defer past the step (the send-half needs `&mut App`).
+    let mut door_echoes: Vec<(u8, i32, i32, i32)> = Vec::new();
     let mut party_credits = 0;
     // W4-g11 — the pad teleports' effect replays (`Wiring.cs:3154`/`:3170`):
     // the movement cores ran inline (the C# order — the player first, then
@@ -195,7 +197,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     app.wiring_step.tick(dt.min(0.25), |_| {
         // The §8.1 stamp: the timer re-trips inside `update` can shift
         // trapdoors/gates — the entity gate reads the live boxes.
-        stamp_wiring_entity_boxes(app);
+        // The parts form: the whole-`app` helper would capture `*app`
+        // against the `wiring_step` borrow.
+        let boxes = collect_entity_boxes(app.player.as_ref(), &app.npcs, &app.remote_players);
+        app.wiring.set_entity_boxes(boxes);
         // `BirthdayParty.PartyIsUp` at the `HitWireSingle` site
         // (`Wiring.cs:2304`): the statue style-9 arm reads the live party
         // state — mirror the app's `WorldEvents` book in before the step.
@@ -297,6 +302,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         wet_count: 0,
                         splash_due: None,
                         repulsion_brake: false,
+                        repulsed: false,
                         pending_splash: None,
                         prefix: 0,
                         pos: Vec2::new(x as f32, y as f32),
@@ -309,7 +315,6 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         being_grabbed: false,
                         on_conveyor: false,
                         age_ticks: 0,
-                        enemy_grab_delay_time: 0,
                         instanced: false,
                     });
                 }
@@ -350,39 +355,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         key: crate::app::RngKey::UpdateWorldGen,
                     });
                 }
-                // The boulder statue's projectile 99 (`Wiring.cs:2002-2010`:
-                // `NewProjectile(..., 99, 70, 10f)` at the anchor, velocity
-                // (0, 0)) rides the shared device-shot seam — collected here
-                // and spawned after the step (the closure holds only disjoint
-                // field borrows). It spawns once the boulder family (aiStyle
-                // 25) carries a `proj_data` row, and drops with the ANALYSIS
-                // note until then (the not-yet-ported-family path).
-                // Batch-H (research/365 §4, 367 §2 flag 7): the −15.5 half-box
-                // lift is applied HERE — `NewProjectile` converts the centre
-                // anchor to top-left (`Projectile.cs:10876-10877`, the 31×31
-                // boulder box `:1835-1836`), while `spawn_with_data_ai` takes
-                // top-left. d3's direct-spawn arm is the keep-one when d3
-                // lands (NOT in this batch); until then e21's seam carries
-                // the same faithful conversion. Do NOT widen
-                // `spawn_device_kind` — the blast/trap families share it.
-                tr_core::wiring::StatueSpawn::Boulder { x, y } => {
-                    device_shots.push(tr_core::wiring::DeviceShot {
-                        kind: 99,
-                        x: x as f32 - 15.5,
-                        y: y as f32 - 15.5,
-                        vx: 0.0,
-                        vy: 0.0,
-                        damage: 70,
-                        knock_back: 10.0,
-                        ai0: 0.0,
-                        ai1: 0.0,
-                    });
                 // W4-d3 — the boulder statue's projectile 99 (`Wiring.cs:2002-
                 // 2010`): `NewProjectile((num89+1)*16, num90*16+28, 0, 0, 99,
                 // 70, 10, myPlayer)`. The core emits the centre point; the
                 // pool's `spawn_with_data` takes the top-left, so the 31×31
                 // box subtracts its half (`NewProjectile` `Projectile.cs:
-                // 10876-10877`). The aiStyle-25 arm now owns the roll.
+                // 10876-10877`). The aiStyle-25 arm owns the roll. The merge
+                // keep-one: e21's device-shot seam carried the same −15.5
+                // half-box lift but rode `spawn_device_kind`/`spawn_with_data_ai`,
+                // whose top-left convention left the anchor latent-buggy (the
+                // C# `NewProjectile` centre needs d3's direct arm). Do NOT
+                // widen `spawn_device_kind` — the blast/trap families share it.
                 tr_core::wiring::StatueSpawn::Boulder { x, y } => {
                     app.projectiles.spawn_with_data(
                         crate::projectile::BOULDER,
@@ -557,7 +540,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // at the site that produced it. The apply/relay dispatch is g48's
         // `net_apply.rs` (its own lane's union).
         for (n, x, y, d) in app.wiring.take_door_echoes() {
-            app.send_door_toggle(n, x, y, d);
+            door_echoes.push((n as u8, x, y, d));
         }
     });
     // W4-g11 — the pad teleports' effect replays: the player's pair first,
@@ -570,6 +553,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     }
     for req in npc_teleports {
         crate::main_dust::npc_teleport(app, req);
+    }
+    for (n, x, y, d) in door_echoes {
+        app.send_door_toggle(n, x, y, d);
     }
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
@@ -887,7 +873,8 @@ fn try_move_coins_in_chest(
         cursor += 1;
     }
     // `:2733-2740`: clear every existing coin.
-    for s in slots.iter_mut().take(max_items.min(slots.len())) {
+    let take = max_items.min(slots.len());
+    for s in slots.iter_mut().take(take) {
         if crate::registry::is_coin(s.kind) {
             *s = crate::item::EMPTY_SLOT;
         }
@@ -966,7 +953,8 @@ fn try_put_item_in_chest(
     let mut left = drop.count;
     // `:2686-2692`: the stack-merge pass over the chest's slots. A partial
     // merge returns true with a remainder (the C# `num > 0`, `:2797`).
-    for slot in slots.iter_mut().take(max_items.min(slots.len())) {
+    let take = max_items.min(slots.len());
+    for slot in slots.iter_mut().take(take) {
         if try_adding_to_stack(drop.kind, drop.prefix, &mut left, slot) {
             return (true, left, false);
         }
@@ -1219,8 +1207,21 @@ fn spawn_device_kind(
     ai1: f32,
 ) -> Option<usize> {
     if crate::projectile::proj_data(kind).is_some() {
-        app.projectiles
-            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1)
+        let slot = app
+            .projectiles
+            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
+        // W4-d13 — the geyser (654) is a trap that hurts the player: the C#
+        // row sets friendly AND hostile (`Projectile.cs:7033-7034`); the
+        // port's `!friendly` hostile proxy needs friendly=false so the
+        // aiStyle-126 column's contact damage reaches the player (the
+        // `damage_player` gate). The row shape carries neither flag (the
+        // data-row deviation census).
+        if kind == crate::projectile::GEYSER_TRAP {
+            if let Some(s) = slot {
+                app.projectiles.slots_mut()[s].friendly = false;
+            }
+        }
+        slot
     } else {
         None
     }
@@ -1422,146 +1423,6 @@ pub(crate) fn replay_wired_cannon_shot(
     spawn_device_kind(app, kind, vx_pos, vy_pos, vx, vy, damage, knock_back, ai0, ai1);
 }
 
-/// `Player.CanDoWireStuffHere` (`Player.cs:46921-46943`), the world-resolved
-/// form the mass-wire core predicate takes — the same gate as
-/// `world_sim/editing/wiring.rs::can_do_wire_stuff_here` (the wall-350
-/// refusal, the wall-87 temple gate while the Golem lives; the
-/// dual-dungeons seed arm has no ported seed). CONSTANTS-COPY of W4-c42's
-/// fold-133 fix-family 6 (`origin/task/W4-c42-wiring-device-arms`
-/// `world_sim/wiring.rs`, the 79b81ae77 lineage) — keep-one at the union.
-fn can_do_wire_stuff_here_world(world: &tr_core::world::World, x: i32, y: i32) -> bool {
-    let Some(t) = world.tile(x, y) else {
-        return false;
-    };
-    if t.wall == 350 {
-        return false;
-    }
-    if !world.downed_golem && t.wall == 87 {
-        return false;
-    }
-    true
-}
-
-/// `Player.ConsumeItem(type)` (`Player.cs:9269-9308`, forward order, no void
-/// bag): one item off the FIRST matching carry cell; a drained cell turns
-/// to air (`SetDefaults(0)`). The C# scans `inventory[0..58]` (the 50 carry
-/// slots + the 4 coin + 4 ammo slots ride indices 50-57); the port keeps
-/// them split (`App.inventory` / `App.equip.coins` / `App.equip.ammo`), so
-/// the scan chains them in the C#'s index order. CONSTANTS-COPY of W4-c42's
-/// fold-133 fix-family 6 — keep-one at the union.
-fn consume_one(
-    inventory: &mut [crate::item::ItemSlot],
-    equip: &mut crate::inv::EquipSlots,
-    kind: u16,
-) -> bool {
-    let cells = inventory
-        .iter_mut()
-        .chain(equip.coins.iter_mut())
-        .chain(equip.ammo.iter_mut());
-    for slot in cells {
-        if slot.count > 0 && slot.kind == kind {
-            slot.count -= 1;
-            if slot.count == 0 {
-                *slot = crate::item::EMPTY_SLOT;
-            }
-            return true;
-        }
-    }
-    false
-}
-
-/// `Wiring.MassWireOperation` (`Wiring.cs:419-453`), CONSTANTS-COPY of
-/// W4-c42's fold-133 fix-family 6 app half
-/// (`origin/task/W4-c42-wiring-device-arms` `world_sim/wiring.rs:1042`,
-/// the 79b81ae77 lineage) — keep-one at the union merge. The 58-slot stock
-/// census (530 wire / 849 actuator), the core's L-shaped rectangle walk
-/// (`mass_wire_operation_inner`), then the bill. `Main.netMode == 2` sends
-/// the two msg-110 bills (`:441-442`) — that leg is the W4-g50 host arm's
-/// (`netglue.rs` case 109): this copy keeps c42's single-player
-/// `ConsumeItem` loops (`:445-452`, the i51 netMode-0 fold) for the use
-/// path. The cut half's cached `Kill*` drops (`Item.DropCache`,
-/// `:3325-3326`) spawn at `master.Center` with zero spread on the caller's
-/// stage stream — the use path rides `UpdatePlayers`.
-// The 3625 use arm is c42's editing lane (not on this base); the g50 host
-// arm runs its own sender-stock variant (`netglue::host_mass_wire_operation`).
-// This copy stays for the union keep-one — allow the interim dead code.
-#[allow(dead_code)]
-pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32), mode: u8) {
-    // `:423-433` — the stock census over the 58 carry slots.
-    let mut wire_count: i32 = 0;
-    let mut actuator_count: i32 = 0;
-    for slot in app
-        .inventory
-        .iter()
-        .chain(app.equip.coins.iter())
-        .chain(app.equip.ammo.iter())
-    {
-        if slot.kind == 530 {
-            wire_count += slot.count as i32;
-        }
-        if slot.kind == 849 {
-            actuator_count += slot.count as i32;
-        }
-    }
-    let (num, num2) = (wire_count, actuator_count);
-    // `:436` — `master.Center` is the drop point, `master.direction == 1`
-    // the walk direction.
-    let drop_point = app.player.as_ref().map_or((0.0, 0.0), |p| p.center());
-    let dir = app.player.as_ref().is_some_and(|p| p.facing == 1);
-    let mut cut_cache = (0i32, 0i32);
-    tr_core::wiring::mass_wire_operation_inner(
-        &mut app.world,
-        ps,
-        pe,
-        dir,
-        mode,
-        &mut wire_count,
-        &mut actuator_count,
-        &can_do_wire_stuff_here_world,
-        &mut cut_cache,
-    );
-    // `:437-452` — the bill: `num - wireCount` wires, `num2 - actuatorCount`
-    // actuators, each a `ConsumeItem` call (a no-op when the stock ran dry).
-    for _ in 0..(num - wire_count) {
-        consume_one(&mut app.inventory, &mut app.equip, 530);
-    }
-    for _ in 0..(num2 - actuator_count) {
-        consume_one(&mut app.inventory, &mut app.equip, 849);
-    }
-    // `Item.DropCache(reason, dropPoint, Vector2.Zero, 530/849)`
-    // (`:3325-3326`): the cached kills drop in `maxStack` chunks
-    // (`Item.cs:466-475`). The port's `spawn_item_drop_px` carries the
-    // `Item.NewItem` velocity rolls (the zero-spread C# call still draws
-    // them) on the use path's `UpdatePlayers` stream.
-    for (kind, total) in [(530u16, cut_cache.0), (849u16, cut_cache.1)] {
-        let mut left = total;
-        while left > 0 {
-            let chunk = left.min(crate::registry::max_stack(kind) as i32);
-            left -= chunk;
-            crate::world_sim::items::spawn_item_drop_px(
-                &mut app.items,
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                kind,
-                chunk as u32,
-                Vec2::new(drop_point.0, drop_point.1),
-            );
-        let slot = app
-            .projectiles
-            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
-        // W4-d13 — the geyser (654) is a trap that hurts the player: the C#
-        // row sets friendly AND hostile (`Projectile.cs:7033-7034`); the
-        // port's `!friendly` hostile proxy needs friendly=false so the
-        // aiStyle-126 column's contact damage reaches the player (the
-        // `damage_player` gate). The row shape carries neither flag (the
-        // data-row deviation census).
-        if kind == crate::projectile::GEYSER_TRAP {
-            if let Some(s) = slot {
-                app.projectiles.slots_mut()[s].friendly = false;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1735,6 +1596,8 @@ mod tests {
         assert!(!probe(&mut app, 2, 2), "the player box overlaps cell (2,2) — refused");
         assert!(probe(&mut app, 4, 2), "x=64 is past the box's right edge — free");
         assert!(probe(&mut app, 1, 2), "the cell [16,32] touches x=32 — free");
+    }
+
     /// R-12-5 driver 4 (written, NOT run): the e21 pump/settle compose —
     /// `XferWater`'s `SquareTileFrame` wakes (`Wiring.cs:512`/`:516`/`:521`
     /// → `WorldGen.cs:81344-81346` `AddWater`) feed the teleported liquid
@@ -2020,6 +1883,7 @@ mod tests {
                 wet_count: 0,
                 splash_due: None,
                 repulsion_brake: false,
+                repulsed: false,
                 pending_splash: None,
                 prefix: 0,
                 pos: Vec2::new(160.0, 320.0),
@@ -2032,7 +1896,6 @@ mod tests {
                 being_grabbed: false,
                 on_conveyor: false,
                 age_ticks: 0,
-                enemy_grab_delay_time: 0,
                 instanced: false,
             });
         }
@@ -2262,7 +2125,7 @@ mod tests {
         let events = app.wiring.take_teleport_events();
         assert_eq!(events.len(), 1, "both pads registered → one teleport");
         app.wiring.push_teleport_event_for_test(events[0]);
-        update_wiring(app, 1.0 / 60.0);
+        update_wiring(&mut app, 1.0 / 60.0);
         // The pad delta: (30-10)*16 = 320 x, (24-20)*16 = 64 y.
         let p = app.player.as_ref().unwrap();
         assert_eq!((p.x, p.y), (490.0, 342.0));
@@ -2886,6 +2749,8 @@ mod tests {
         trip_and_tick(&mut app);
         let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
         assert_eq!(slots[0].count, 1, "after the cooldown the roll runs again");
+    }
+
     /// W4-d13 — the geyser device-shot chain end to end (`Wiring.cs:3084-
     /// 3120` → the 654 row `Projectile.cs:7024-7037`): the trip fires the
     /// column with the C#'s 20 dmg / 2 knockback / ±8 velocity, the spawn
@@ -2957,6 +2822,8 @@ mod tests {
     /// msg-110 round trip).
     #[test]
     fn w4_f11_the_mass_operation_bills_the_placed_channels() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
         let mut app = flow_app(None, vec![], vec![]);
         app.world = tr_core::world::World::new("t".into(), 40, 40);
         app.player = Some(crate::player::Player::spawn(&app.world));

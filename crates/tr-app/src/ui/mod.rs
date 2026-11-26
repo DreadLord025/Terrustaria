@@ -37,7 +37,6 @@ pub mod debug_items;
 pub mod debug_commands;
 pub mod debug_loadouts;
 pub mod elements;
-pub mod elements;
 pub(crate) mod glow;
 pub(crate) mod hair_window;
 pub mod ingame_options;
@@ -47,7 +46,6 @@ pub mod inv_pulse;
 pub mod inventory;
 pub mod item_collection;
 pub(crate) mod interact_icon;
-pub mod inventory;
 pub mod journey;
 pub mod loadout;
 pub mod keybinding_rows;
@@ -65,7 +63,6 @@ pub mod progress;
 pub mod resource_packs;
 pub(crate) mod reforge;
 pub mod resources;
-pub(crate) mod savings;
 pub(crate) mod resource_pack_info;
 pub mod save_list;
 pub mod search_bar;
@@ -76,9 +73,6 @@ pub mod slot;
 pub mod snap;
 pub mod state_stack;
 pub mod sortable;
-pub mod sortable;
-pub mod snap;
-pub mod state_stack;
 pub mod state_root;
 pub mod text;
 pub(crate) mod text_wrap;
@@ -101,8 +95,6 @@ pub mod world_select;
 pub mod wires_ui;
 pub mod workshop_publish_info;
 pub mod world_hover;
-pub(crate) mod world_load;
-pub mod world_select;
 pub mod worldgen_debug;
 pub mod worldgen_debug_elements;
 pub mod worldgen_pass_icons;
@@ -827,8 +819,9 @@ pub fn draw_hud(
     reforge: Option<(&crate::item::ItemSlot, u64, f32, bool)>,
     // W4-d122: the coin cells' animation machine (`CoinSlot.Savings[4]` +
     // the `Custom` dictionary) the savings draws feed (`DrawMoney`'s
-    // fromSavings arm / `DrawSavingsMoney`'s `UpdateCustom`).
-    coin_slot: &mut coin_slot::CoinSlotState,
+    // fromSavings arm / `DrawSavingsMoney`'s `UpdateCustom`). It rides the
+    // `chest_panel` state (the ONE `App.coin_slot`) — a second `&mut` param
+    // would alias the same field.
     // `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`): the
     // savings currency latch — read by BOTH DrawSavings call sites
     // (`:3707-3711`), stamped by this pass's hovers (`MouseHover`,
@@ -965,14 +958,6 @@ pub fn draw_hud(
     portrait_frame_counter: i32,
     portrait_preference: u8,
     portrait_lycanthrope: bool,
-    // `CoinSlot.Savings` (`CoinSlot.cs:341`): the shop savings pile's coin
-    // cells (`ItemSlot.DrawSavings`, `Main.cs:41791`, W4-g58 D5). The
-    // banks ride the `player` already passed above.
-    coin_slot: &mut coin_slot::CoinSlotState,
-    // W4-g12 doc-sweep: the CoinSlot machine (S1-H-9) — the savings
-    // pile's `UpdateSavings` rows animate through it (`ItemSlot.cs:3739`
-    // → `DrawMoney` → `CoinSlot.UpdateSavings`).
-    coin_state: &mut coin_slot::CoinSlotState,
     // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
     // "Purify" button shows while the cola is held + the Dryad is the talk
     // NPC (the caller folds `CanDryadPlayStardewAnimation`).
@@ -987,10 +972,10 @@ pub fn draw_hud(
     hide_ui: bool,
     // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
     // (`Main.cs:45037-45115`): the held-tool cursor icon + the 10-frame
-    // cache linger. `icon_enabled` is `Player.cursorItemIconEnabled`,
-    // `icon_cache` the `(kind, time)` pair the verification left.
+    // cache linger. `icon_enabled` is `Player.cursorItemIconEnabled`; the
+    // union's duplicate `_icon_cache_linger` alias was folded into the
+    // canonical `icon_cache` above (the same `(kind, time)` pair, `:45063`).
     icon_enabled: bool,
-    icon_cache: (u16, i32),
     // W4-g86 research/244 phase 1 — the layer-40 ID override's state:
     // `Player.cursorItemIconID/Text/Push/Reversed` (`Player.cs:1852-1858`).
     // `(id, push, reversed, text)` — the C# field order of the draw reads
@@ -999,6 +984,14 @@ pub fn draw_hud(
     // The layer-40 head gate's `Main.HoveringOverAnNPC || mouseInterface`
     // (`Main.cs:45039`): the port's resolved NPC-hover / over-UI pair.
     icon_suppressed: bool,
+    // W4-g50 (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`): the 91-synced
+    // emote bubbles anchor on the local player's slot, the peer snapshots and
+    // the projectile pool. The union dropped these three bindings from the
+    // signature while keeping both `emotes::draw` call sites — restored here
+    // so every anchor resolves (the g50 task's own names).
+    emote_local_id: u32,
+    emote_remote_players: &std::collections::HashMap<u32, crate::net::PlayerNet>,
+    emote_projectiles: &crate::projectile::ProjectilePool,
 ) {
     // `DrawInterface`'s head (`Main.cs:63334-63339`): the player chat
     // overheads draw under `UIScaleMatrix` before the combat text — the
@@ -1009,7 +1002,10 @@ pub fn draw_hud(
         // The two layer-1_1 passes, then the layer-8 stop: nothing else of
         // the interface draws (resources 25, inventory 27, hotbar 30, mouse
         // text 33, cursor 36 all sit after the check).
-        emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+        emotes::draw(
+            r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse,
+            emote_local_id, emote_remote_players, npcs, emote_projectiles,
+        );
         npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
         return;
     }
@@ -1130,30 +1126,24 @@ pub fn draw_hud(
     // the same panel — the read display, the Edit/Save interaction and
     // the edit caret.
     if (talk_npc.is_some() || sign_open) && !chest_editing {
-    // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
-    // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
-    // `:276-283`; the sign half is unported).
-    if talk_npc.is_some() {
-        // The Dryad's status button (`DryadPurification`, W4-g49) draws only
-        // while the talk NPC is the Dryad.
-        let dryad_status = npc_chat::dryad_status_active(npcs, talk_npc);
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, dryad_status);
-        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`) rides
-        // the caller's `happiness_button` gate (the App resolves it).
+        // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
+        // dialogue panel while `talkNPC >= 0` OR a sign is open
+        // (`CanHoldConversation`, `:276-283`). The union spliced three
+        // per-feature copies of this call (dryad-status / sign / happiness);
+        // the g58/JFL/f22/p49 union's single `draw_panel` takes ALL of their
+        // gates, so one call carries every mechanic.
         npc_chat::draw_panel(
             r,
             lookups,
             screen,
             npc_chat_text,
+            happiness_button,
             pulse,
             mouse_pos,
             sign_open,
             edit_sign,
             sign_blinker,
-        );
-            happiness_button,
-            pulse,
-            mouse_pos,
+            stardew_button,
         );
         // `NPCChatPanel.cs:79` — `Main.DrawNPCPortrait(color,
         // rectangle.TopLeft())` right after the text, before the buttons
@@ -1162,7 +1152,13 @@ pub fn draw_hud(
         // OUTSIDE the 500-wide box at x−62). The Detailed arm ports;
         // CloseUp/FullBodyRetro/Disabled gate inside (`chat_portrait`).
         if let Some(n) = talk_npc.and_then(|i| npcs.get(i)) {
-            let panel = npc_chat::panel_rect(lookups, screen, npc_chat_text, happiness_button);
+            // The live interaction count: CloseChat + the Happiness button.
+            let panel = npc_chat::panel_rect(
+                lookups,
+                screen,
+                npc_chat_text,
+                1 + usize::from(happiness_button),
+            );
             chat_portrait::draw_portrait(
                 r,
                 lookups,
@@ -1173,7 +1169,6 @@ pub fn draw_hud(
                 portrait_lycanthrope,
             );
         }
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, stardew_button);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -1269,7 +1264,11 @@ pub fn draw_hud(
         let loadout_hover = if equip_page == 0 {
             loadout::button_hit(
                 screen.x,
-                inventory::equip_page_base_y(screen.y, m_h),
+                inventory::equip_page_base_y(
+                    screen.y,
+                    m_h,
+                    inventory::ExtraAccessoryShow::of(player),
+                ),
                 [mouse_pos.x, mouse_pos.y],
             )
             .map_or(-1, |i| i as i32)
@@ -1322,7 +1321,7 @@ pub fn draw_hud(
             &shared_dye,
             equip_share_flags,
             pulse,
-            coin_slot,
+            chest_panel.coin_slot,
             mouse_item_is_dye,
         );
         // The buttons' hover-edge ticks (`DoStatefulTickSound`, `Main.cs:3244`)
@@ -1368,15 +1367,6 @@ pub fn draw_hud(
         // panel draws at (`ui::chest`). The ported stock resolves to ≤39
         // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
         // end draws air.
-        if let Some((stock, mood, _discount)) = shop {
-            // The happiness chrome (`:41790-41797`, W4-g58): the "Shop"
-            // label + the DrawSavings coin pile (`:41791`, D5) + the
-            // NPCHappiness icon band + the P0 percent. The pile reads the
-            // player's four banks (`Player.bank/bank2/bank3/bank4`).
-            let banks: Option<[&[ItemSlot]; 4]> =
-                player.map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
-            let savings = banks.as_ref().map(|b| (coin_slot, b));
-            shop_happiness::draw(r, lookups, mood, pulse, savings);
         // `Main.cs:41788-41818`): the happiness chrome (the Shop label +
         // the DrawSavings pile + the icon + the P0 percent, `:41790-
         // 41797`) then the 10×4 context-15 slot grid at (73, invBottom=
@@ -1390,7 +1380,7 @@ pub fn draw_hud(
             let banks: Option<[&[ItemSlot]; 4]> = player
                 .map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
             let savings_state = match banks.as_ref() {
-                Some(b) => Some((&mut *coin_slot, b, *custom_currency_for_savings)),
+                Some(b) => Some((&mut *chest_panel.coin_slot, b, *custom_currency_for_savings)),
                 None => None,
             };
             shop_happiness::draw(r, lookups, mood, pulse, savings_state);
@@ -1399,7 +1389,7 @@ pub fn draw_hud(
             // the draw's own (`inventory::shop_slot_at`), so the hover
             // and the click cannot drift.
             let shop_cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
-            let shop_hover = inventory::shop_slot_at(mouse_pos, shop_cell)
+            shop_hover = inventory::shop_slot_at(mouse_pos, shop_cell)
                 .and_then(|idx| stock.get(idx));
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
@@ -1453,11 +1443,30 @@ pub fn draw_hud(
         // at the literal coordinates — neither rides `Main.mH` (only the
         // equipment column's `num20` does, `Main.cs:41146`) — so the labels
         // align with the click hit boxes (`ui::inventory::reforge_*_hit`).
-        if let Some((slot, cost, cooldown)) = reforge {
+        if let Some((slot, cost, cooldown, _)) = reforge {
             text::hud_text(r, lookups, 50.0, 250.0, 0.85, [1.0; 4], "Reforge");
             if slot.count > 0 {
                 let def = &crate::itemdata::ITEMS[slot.kind as usize];
                 text::hud_text(
+                    r,
+                    lookups,
+                    76.0,
+                    274.0,
+                    0.85,
+                    [1.0; 4],
+                    &format!("{} x{}", def.name, slot.count),
+                );
+            } else {
+                text::hud_text(r, lookups, 76.0, 274.0, 0.85, [0.8; 4], "place an item here");
+            }
+            let label = if cooldown > 0.0 {
+                "cooling down".to_string()
+            } else {
+                format!("Reforge - {} copper", cost)
+            };
+            let ready = cooldown == 0.0;
+            let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
+            text::hud_text(r, lookups, 120.0, 316.0, 0.85, tint, &label);
             // W4-g12 doc-sweep: `ItemSlot.DrawSavings(sb, 504f,
             // this.invBottom)` (`Main.cs:41791`) — the savings coin pile
             // beside the shop grid, vertical, before the happiness
@@ -1469,7 +1478,7 @@ pub fn draw_hud(
                 savings::draw_savings(
                     r,
                     lookups,
-                    coin_slot,
+                    chest_panel.coin_slot,
                     &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
                     504.0,
                     258.0,
@@ -1508,7 +1517,7 @@ pub fn draw_hud(
                     savings::draw_savings(
                         r,
                         lookups,
-                        coin_slot,
+                        chest_panel.coin_slot,
                         &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
                         180.0,
                         258.0,
@@ -1539,7 +1548,28 @@ pub fn draw_hud(
         // never shows both — `Player.cs:33087-33090` closes the shop on a
         // chest open).
         if shop.is_none() {
-            chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
+            // A temporary PanelState of reborrows: `chest_panel` must stay
+            // alive for the audio cue in the acc-toggle block below (the
+            // union's earlier whole-struct move).
+            let panel = chest::PanelState {
+                chest: chest_panel.chest,
+                origin: chest_panel.origin,
+                tile: chest_panel.tile,
+                slots: chest_panel.slots,
+                crafting_open: chest_panel.crafting_open,
+                editing: chest_panel.editing,
+                name: chest_panel.name,
+                max_items: chest_panel.max_items,
+                edit_text: chest_panel.edit_text,
+                blinker: &mut *chest_panel.blinker,
+                scroll_row: &mut *chest_panel.scroll_row,
+                button_scales: &mut *chest_panel.button_scales,
+                button_hovered: &mut *chest_panel.button_hovered,
+                glow: chest_panel.glow,
+                audio: &mut *chest_panel.audio,
+                coin_slot: &mut *chest_panel.coin_slot,
+            };
+            chest::draw(r, lookups, panel, pulse, mouse_pos);
         }
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
@@ -1700,6 +1730,11 @@ pub fn draw_hud(
                     i == selected,
                     scale,
                     [1.0; 4],
+                    pulse,
+                    None,
+                    i as i32,
+                    mouse_item_is_air,
+                    mouse_item_is_dye,
                 );
                 x += advance;
             }
@@ -1714,29 +1749,6 @@ pub fn draw_hud(
                 let t = pulse.text;
                 text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], &label);
             }
-        let mut x = 20.0;
-        for i in 0..HOTBAR {
-            let scale = hotbar_scales[i].clamp(0.75, 1.0);
-            let (y, advance, _) = slot::closed_hotbar_metrics(scale);
-            slot::draw_slot(
-                r,
-                lookups,
-                &inventory[i],
-                x,
-                y,
-                13,
-                i as i32,
-                i == selected,
-                scale,
-                [1.0; 4],
-                pulse,
-                None,
-                i as i32,
-                mouse_item_is_air,
-                mouse_item_is_dye,
-            );
-            x += advance;
-        }
     }
     // `Main.cs:41704`: `Main.CreativeMenu.Draw` runs at `DrawInventory`'s
     // tail (the port draws it after the inventory/hotbar block; the crafting
@@ -1946,7 +1958,10 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &crate::lang::text("GameUI.SortInventory"), screen, pulse);
                 None
             }
-            other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
+            other => other.and_then(|h| {
+                hover_item_for(equip, inventory, h, bank.map(|b| b.0))
+                    .map(|item| (hover_context(h), item))
+            }),
         }
     } else {
         // W4-c46 final — `GUIHotbarDrawInner`'s ghost early-return
@@ -1957,18 +1972,10 @@ pub fn draw_hud(
             None
         } else {
             tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-                .map(|i| &inventory[i])
+                // The closed hotbar draws context 13 (`GUIHotbarDrawInner`) —
+                // outside the sacrifice row's whitelist (`Main.cs:21318`).
+                .map(|i| (13, &inventory[i]))
         }
-            other => other.and_then(|h| {
-                hover_item_for(equip, inventory, h, bank.map(|b| b.0))
-                    .map(|item| (hover_context(h), item))
-            }),
-        }
-    } else {
-        tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-            // The closed hotbar draws context 13 (`GUIHotbarDrawInner`) —
-            // outside the sacrifice row's whitelist (`Main.cs:21318`).
-            .map(|i| (13, &inventory[i]))
     };
     // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     // held item's own crit, which the tooltip's crit row subtracts
@@ -2109,8 +2116,8 @@ pub fn draw_hud(
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
     );
-    if let Some(text) = pvp_hover_text.filter(|_| !mouse_npc.carried()) {
-        tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
+    if let Some(text) = pvp_hover_text.as_deref().filter(|_| !mouse_npc.carried()) {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
@@ -2214,93 +2221,6 @@ pub fn draw_hud(
             ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
         );
     }
-}
-
-/// The hovered panel's `ItemSlot.Draw` context (`ItemSlot.MouseHover`,
-/// `ItemSlot.cs:3184`) — the Journey sacrifice row's whitelist gate reads it
-/// (`Main.cs:21318`). The contexts are the port's draw-site numbers
-/// (`ui/slot.rs`'s covered set): grid/hotbar 0, coins 1, ammo 2, bank 4,
-/// trash 6, armour 8/10, vanity 9/11, dye 12, misc equips 16-20, misc dyes
-/// 33. The button/tick hovers never reach here (their tooltip arms return
-/// before the item pick).
-fn hover_context(hit: inventory::HoverRef) -> i32 {
-    use inventory::HoverRef as H;
-    match hit {
-        H::Grid(_) => 0,
-        H::Coin(_) => 1,
-        H::Ammo(_) => 2,
-        H::Bank(_) => 4,
-        H::Trash => 6,
-        H::Armor(i) => {
-            // The draw-site picks (`inventory.rs:716`/`:767`, `Main.cs:
-            // 41409-41414`/`:41482-41485`): head/body/legs 0..2 → 8, the
-            // accessories 3..9 → 10; vanity 10..12 → 9, 13..19 → 11. None
-            // of 8..11 is whitelisted by the sacrifice row (`:21318`).
-            match i {
-                0..=2 => 8,
-                3..=9 => 10,
-                10..=12 => 9,
-                _ => 11,
-            }
-        }
-        H::Dye(_) => 12,
-        H::MiscEquip(i) => 16 + i as i32,
-        H::MiscDye(_) => 33,
-        H::BankButton(_) | H::HideAccessory(_) => -1,
-    }
-}
-
-/// `Player.HasItem(905)` (`Player.cs:55894-55904`): the Coin Gun scan over
-/// the full 58 carry slots — the grid PLUS the coin/ammo rows
-/// (`inv::INV_SLOTS` = 50 + 4 + 4). The C# keeps all 58 in one array; the
-/// port splits them, so the scan walks the three (`research/128 §4.4` —
-/// the old `.take(58)` over the 50-slot grid slice never reached 50-57).
-fn has_coin_gun(inventory: &[ItemSlot; INV], equip: &inv::EquipSlots) -> bool {
-    let carries = |s: &ItemSlot| s.count > 0 && s.kind == 905;
-    inventory.iter().any(carries)
-        || equip.coins.iter().any(carries)
-        || equip.ammo.iter().any(carries)
-}
-
-/// W4-f28 — the shop price row's session inputs (`draw_hud`'s
-/// `shop_tooltip` param): `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`)
-/// and the `Main.shopSellbackHelper` memo (`Main.cs:1775`).
-pub struct ShopTooltipState<'a> {
-    pub shift_in_use: bool,
-    pub sellback: &'a crate::shop::SellbackHelper,
-    // S1-W4-g81 residuals + W4-g86 research/244 phase 1 —
-    // `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`): the
-    // cursor-side item icon. Layer 40 draws AFTER the cursor (36) /
-    // debug (37) / carried head (38) / mouse-over (39) — the layer list
-    // `:44889-44913` — so the block rides after `cursor::draw` above (the
-    // e19-draw_override compose-note: the icon overlays whatever cursor is
-    // on screen, override or normal). The wiring/mining tools' latch
-    // (`Player.cs:46756-46760`/`:45620-45624`) arms `icon_enabled` in reach;
-    // the cache linger draws the last kind for 10 frames after the tool
-    // leaves reach (`:45063`'s `_itemIconCacheTime > 0 && mouseItem.type < 1`).
-    // The icon rides `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999
-    // (no clamp), centred on `mouse + (10 + Push, 10 + Push) +
-    // hitbox.Size()*cursorScale/2` (`:45089-45092`).
-    //
-    // The ID-override arm (g81's declared gap, NOW PORTED — `:45057-45060`):
-    // `cursorItemIconID != 0` REPLACES the held kind (the tile-hover decode /
-    // the ItemCheck head's bait/solution id). The override forces
-    // `currentColor = White, color = default` (`:45074-45078`), Push offsets
-    // the icon (`:45089`), Reversed flips it (`:45083-45086`), Text draws
-    // `MouseText(Text, 0, 0)` (`:45102-45105`). The `!flag` linger path swaps
-    // the cached kind with the live ID around the draw (`:45067-45071`/
-    // `:45111-45114`) — the swap-back leaves the field unchanged, so the
-    // port draws the cached kind directly.
-    //
-    // DEFERRED halves (documented, no feed exists on this branch): the
-    // UsingBiomeTorches 8/966 swap (`:45045-45056` — needs the player's
-    // zones at draw, the light-feed precedent computes it sim-side), the
-    // TryGetAmmo sub-icon (`:45093-45100`/`:45117-45144` — FindPaintOrCoating
-    // + the FlexibleTileWand system), the painted-held overlay
-    // (`:45106-45110` — the port's ItemSlot carries no per-item color),
-    // ItemSlot.GetItemLight (`:45081`) and the held-slot GetAlpha/GetColor
-    // (`:45072-45073` — the port draws the icon plain white, the g81
-    // stand-in kept).
     if !icon_suppressed {
         let (icon_id, icon_push, icon_reversed, icon_text) = icon_override;
         let held_kind = inventory[selected.min(INV - 1)].kind;
@@ -2350,6 +2270,98 @@ pub struct ShopTooltipState<'a> {
         }
     }
 }
+
+}
+}
+/// The hovered panel's `ItemSlot.Draw` context (`ItemSlot.MouseHover`,
+/// `ItemSlot.cs:3184`) — the Journey sacrifice row's whitelist gate reads it
+/// (`Main.cs:21318`). The contexts are the port's draw-site numbers
+/// (`ui/slot.rs`'s covered set): grid/hotbar 0, coins 1, ammo 2, bank 4,
+/// trash 6, armour 8/10, vanity 9/11, dye 12, misc equips 16-20, misc dyes
+/// 33. The button/tick hovers never reach here (their tooltip arms return
+/// before the item pick).
+fn hover_context(hit: inventory::HoverRef) -> i32 {
+    use inventory::HoverRef as H;
+    match hit {
+        H::Grid(_) => 0,
+        H::Coin(_) => 1,
+        H::Ammo(_) => 2,
+        H::Bank(_) => 4,
+        H::Trash => 6,
+        H::Armor(i) => {
+            // The draw-site picks (`inventory.rs:716`/`:767`, `Main.cs:
+            // 41409-41414`/`:41482-41485`): head/body/legs 0..2 → 8, the
+            // accessories 3..9 → 10; vanity 10..12 → 9, 13..19 → 11. None
+            // of 8..11 is whitelisted by the sacrifice row (`:21318`).
+            match i {
+                0..=2 => 8,
+                3..=9 => 10,
+                10..=12 => 9,
+                _ => 11,
+            }
+        }
+        H::Dye(_) => 12,
+        H::MiscEquip(i) => 16 + i as i32,
+        H::MiscDye(_) => 33,
+        H::BankButton(_) | H::HideAccessory(_) => -1,
+        // The button/tick refs carry no item (their tooltip arms return
+        // before the item pick, so this arm is a shape guard only).
+        _ => -1,
+    }
+}
+
+/// `Player.HasItem(905)` (`Player.cs:55894-55904`): the Coin Gun scan over
+/// the full 58 carry slots — the grid PLUS the coin/ammo rows
+/// (`inv::INV_SLOTS` = 50 + 4 + 4). The C# keeps all 58 in one array; the
+/// port splits them, so the scan walks the three (`research/128 §4.4` —
+/// the old `.take(58)` over the 50-slot grid slice never reached 50-57).
+fn has_coin_gun(inventory: &[ItemSlot; INV], equip: &inv::EquipSlots) -> bool {
+    let carries = |s: &ItemSlot| s.count > 0 && s.kind == 905;
+    inventory.iter().any(carries)
+        || equip.coins.iter().any(carries)
+        || equip.ammo.iter().any(carries)
+}
+
+/// W4-f28 — the shop price row's session inputs (`draw_hud`'s
+/// `shop_tooltip` param): `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`)
+/// and the `Main.shopSellbackHelper` memo (`Main.cs:1775`).
+pub struct ShopTooltipState<'a> {
+    pub shift_in_use: bool,
+    pub sellback: &'a crate::shop::SellbackHelper,
+}
+    // S1-W4-g81 residuals + W4-g86 research/244 phase 1 —
+    // `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`): the
+    // cursor-side item icon. Layer 40 draws AFTER the cursor (36) /
+    // debug (37) / carried head (38) / mouse-over (39) — the layer list
+    // `:44889-44913` — so the block rides after `cursor::draw` above (the
+    // e19-draw_override compose-note: the icon overlays whatever cursor is
+    // on screen, override or normal). The wiring/mining tools' latch
+    // (`Player.cs:46756-46760`/`:45620-45624`) arms `icon_enabled` in reach;
+    // the cache linger draws the last kind for 10 frames after the tool
+    // leaves reach (`:45063`'s `_itemIconCacheTime > 0 && mouseItem.type < 1`).
+    // The icon rides `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999
+    // (no clamp), centred on `mouse + (10 + Push, 10 + Push) +
+    // hitbox.Size()*cursorScale/2` (`:45089-45092`).
+    //
+    // The ID-override arm (g81's declared gap, NOW PORTED — `:45057-45060`):
+    // `cursorItemIconID != 0` REPLACES the held kind (the tile-hover decode /
+    // the ItemCheck head's bait/solution id). The override forces
+    // `currentColor = White, color = default` (`:45074-45078`), Push offsets
+    // the icon (`:45089`), Reversed flips it (`:45083-45086`), Text draws
+    // `MouseText(Text, 0, 0)` (`:45102-45105`). The `!flag` linger path swaps
+    // the cached kind with the live ID around the draw (`:45067-45071`/
+    // `:45111-45114`) — the swap-back leaves the field unchanged, so the
+    // port draws the cached kind directly.
+    //
+    // DEFERRED halves (documented, no feed exists on this branch): the
+    // UsingBiomeTorches 8/966 swap (`:45045-45056` — needs the player's
+    // zones at draw, the light-feed precedent computes it sim-side), the
+    // TryGetAmmo sub-icon (`:45093-45100`/`:45117-45144` — FindPaintOrCoating
+    // + the FlexibleTileWand system), the painted-held overlay
+    // (`:45106-45110` — the port's ItemSlot carries no per-item color),
+    // ItemSlot.GetItemLight (`:45081`) and the held-slot GetAlpha/GetColor
+    // (`:45072-45073` — the port draws the icon plain white, the g81
+    // stand-in kept).
 
 /// `DrawInterface_40_InteractItemIcon`'s icon-kind selection
 /// (`Main.cs:45057-45092`, W4-g86 research/244 phase 1): the ID override
@@ -2769,6 +2781,7 @@ mod tests {
         assert_eq!(invasion_bar_alpha(50, 0.4), Some(0.4));
         assert_eq!(invasion_bar_alpha(0, 1.0), Some(1.0), "a zero-point bar still draws");
     }
+}
 }
 
 /// `RemadeChatMonitor.DrawChat`'s row anchor (`RemadeChatMonitor.cs:83`):

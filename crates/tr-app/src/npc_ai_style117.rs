@@ -1274,7 +1274,7 @@ mod tests {
             oracle.next_double();
             oracle.next_double();
         }
-        assert_eq!(rng.peek(), oracle.peek(), "the volley draw order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the volley draw order");
         assert_eq!(out.shots.len(), count as usize);
         assert!(out
             .shots
@@ -1349,7 +1349,7 @@ mod tests {
             nautilus_count: 3,
             ticker: 7,
         };
-        let before = rng.peek();
+        let before = env.rng.peek();
         let out = style117_step(&mut n, &mut env);
         // The head drip + the state-3 dust still draw; the CALL itself
         // adds nothing (the cap). Pin via a twin with count 0 minus

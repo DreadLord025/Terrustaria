@@ -1,5 +1,3 @@
-{
-// balance-open (union shared delimiter)
 //! NPC buff storage and the DoT tick — the `NPC.buffType[20]` / `buffTime[20]`
 //! engine (`NPC.AddBuff`, `NPC.DelBuff`), the per-tick buff block of
 //! `UpdateNPC` (set flags → clear expired → apply DOTs) and the roster's
@@ -390,20 +388,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::DD2EterniaCrystal
         | NpcKind::DD2Bartender
         | NpcKind::DD2GoblinT1
-        NpcKind::FlyingDutchman
-        | NpcKind::FlyingDutchmanCannon
         | NpcKind::DD2GoblinT2
         | NpcKind::DD2GoblinT3
         | NpcKind::DD2GoblinBomberT1
         | NpcKind::DD2GoblinBomberT2
         | NpcKind::DD2GoblinBomberT3
-        | NpcKind::DD2JavelinT1
-        | NpcKind::DD2JavelinT2
-        | NpcKind::DD2JavelinT3
-        | NpcKind::DD2SkeletonT1
-        | NpcKind::DD2SkeletonT3
-        | NpcKind::DD2DarkMage
-        | NpcKind::DD2WitherBeast
         | NpcKind::DD2WyvernT1
         | NpcKind::DD2WyvernT2
         | NpcKind::DD2WyvernT3
@@ -452,7 +441,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // Dutchman pair 491/492 has no rows.
         NpcKind::FlyingDutchman
         | NpcKind::FlyingDutchmanCannon
-        | NpcKind::DD2OgreT3
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
@@ -474,11 +462,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarSroller
         | NpcKind::SolarSelenian
         | NpcKind::DD2LanePortal
-        | NpcKind::VortexTower
-        | NpcKind::StardustCellBig
-        | NpcKind::VortexTower
-        | NpcKind::StardustCellSmall
-        | NpcKind::StardustJellyfishBig
         | NpcKind::NebulaBeast
         | NpcKind::VortexRifleman
         | NpcKind::VortexSoldier => &[],
@@ -1039,7 +1022,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Cyborg
         // W4-d125: 636 (`NPCID.cs:9749-9755`) and 661 (`:9923-9929`)
         // both carry `SpecificallyImmuneTo = { 31 }` — Confused.
-        NpcKind::EmpressOfLight | NpcKind::PrismaticLacewing => &[31],
+        | NpcKind::EmpressOfLight | NpcKind::PrismaticLacewing => &[31],
         // W4-g5 — the two casters' `SpecificallyImmuneTo` rows: {20, 31}
         // (`NPCID.cs:7119-7125` the RuneWizard, `:10060-10066` the
         // LibrarianSkeleton).
@@ -1113,7 +1096,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // DebuffImmunitySets) — the null-row else-branch, no immunity.
         | NpcKind::CultistDragonBody2
         | NpcKind::CultistDragonBody3
-        NpcKind::CultistDragonHead
+        | NpcKind::CultistDragonHead
         | NpcKind::CultistDragonBody1
         | NpcKind::CultistDragonBody4
         | NpcKind::CultistDragonTail => &[],
@@ -1254,7 +1237,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `DebuffImmunitySets` row (the null-row else-branch, no immunity).
         NpcKind::Grasshopper
         | NpcKind::ChatteringTeethBomb
-        NpcKind::ArmedZombie => &[],
+        | NpcKind::ArmedZombie => &[],
         // The Shimmerfly 677 (W4-c9's kind, rowed by W4-g62): the
         // `DebuffImmunitySets` row `{ 677, SpecificallyImmuneTo: [31] }`
         // (`NPCID.cs:10015-10021`) — the poisoned-debuff immunity.
@@ -1349,7 +1332,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Crimera => &[31],
         NpcKind::MossHornet
         | NpcKind::Moth => &[20, 31],
-        => &[31],
         // W4-d120 - all five carry `SpecificallyImmuneTo {31}` (the
         // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
         // 142/160/178/209/579).
@@ -1372,6 +1354,16 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::LightMummy
         | NpcKind::WalkingAntlion
         | NpcKind::FlyingAntlion => &[],
+        // The merge-dropped rows (`NPCID.cs:6467` PinkJellyfish 64, `:7133`
+        // Herpling 174, `:7154` Derpling 177, `:7183` FloatyGross 182,
+        // `:7220` LostGirl 195, `:9113`/`:9120` SquirrelRed/Gold 538/539).
+        NpcKind::PinkJellyfish
+        | NpcKind::Herpling
+        | NpcKind::Derpling
+        | NpcKind::LostGirl
+        | NpcKind::SquirrelRed
+        | NpcKind::SquirrelGold => &[31],
+        NpcKind::FloatyGross => &[20, 31],
     }
 }
 
@@ -1452,23 +1444,15 @@ pub fn whip_immune(kind: NpcKind) -> bool {
             | NpcKind::FlyingDutchman
             | NpcKind::DungeonGuardian
             | NpcKind::BlazingWheel
+            // W4-d41 — the BlazingWheel 72's `ImmuneToWhips` row
+            // (`NPCID.cs:6524-6529`) — the wheel is on the ported roster.
             | NpcKind::DD2LanePortal
             | NpcKind::FairyCritterPink
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue
-            | NpcKind::DD2LanePortal
-            // W4-d41 — the BlazingWheel 72's `ImmuneToWhips` row
-            // (`NPCID.cs:6524-6529`) — the wheel is on the ported roster.
-            | NpcKind::BlazingWheel
             | NpcKind::BoundTownSlimePurple
             | NpcKind::BoundTownSlimeYellow
     )
-
-        }    // MERGE-SIDE (367 s1): the union keeps d34's DungeonGuardian row;
-    // d42's fairy critters 583-585 drop with the d33-owned dups (d33's
-    // kept impl re-adds their `ImmuneToWhips` rows at the small-lanes
-    // splice, `NPCID.cs:9420+`).
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::DungeonGuardian)
 }
 
 impl NpcBuffs {

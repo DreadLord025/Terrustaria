@@ -49,10 +49,11 @@ fn row(kind: NpcKind) -> (f32, f32, bool) {
         NpcKind::Mouse | NpcKind::GoldMouse => (2.0, 1.0, false),
         // The bunnies: the default cap 1 / accel 0.07, the TownCritter boost.
         // W4-c9 merge: the GoldBunny 443 + the GoldFrog 445 (flag10's land
-        // row is the default pair, `:53865-53866`).
-        NpcKind::BunnySlimed | NpcKind::BunnyXmas | NpcKind::GoldBunny | NpcKind::GoldFrog => {
-            (1.0, 0.07, true)
-        }
+        // row is the default pair, `:53865-53866`). The GoldBunny row stays
+        // spelled out (the c9 canonical arm) — same mechanics as the sibling
+        // bunnies, no second implementation.
+        NpcKind::GoldBunny => (1.0, 0.07, true),
+        NpcKind::BunnySlimed | NpcKind::BunnyXmas | NpcKind::GoldFrog => (1.0, 0.07, true),
         _ => unreachable!("the catchable critters only"),
     }
 }

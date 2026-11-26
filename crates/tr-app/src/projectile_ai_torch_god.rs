@@ -134,7 +134,7 @@ pub fn ai_184_bad_torch_luck(
     // it at the pass tail on the same stream).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
-        p.wants_sound = Some((2, 8, p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5, 0.0));
+        p.wants_sound = Some((2, 8, p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5, 0.0, 1.0));
     }
     // `:42798-42805` — the distance budget: while ai[1] > 0 it drains by
     // the speed (can overshoot negative); once <= 0 the tile collide arms.
@@ -289,7 +289,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(1);
         ai_184_bad_torch_luck(&mut p, None, 0, &mut rng);
         assert_eq!(p.local_ai[0], 1.0);
-        assert_eq!(p.wants_sound, Some((2, 8, 107.0, 112.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 8, 107.0, 112.0, 0.0, 1.0)));
         p.wants_sound = None;
         ai_184_bad_torch_luck(&mut p, None, 0, &mut rng);
         assert_eq!(p.wants_sound, None, "the latch holds");

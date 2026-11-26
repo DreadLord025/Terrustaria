@@ -112,24 +112,18 @@ impl PettingInfo {
     /// The projectile constructor (`PlayerPettingInfo.cs:32-41`, W4-d21
     /// fold 2): `isPetting = false`, `proj = whoAmI`, `type = proj.type`,
     /// the offset + small flag ride (the NPC/mount lanes keep their own ctors).
+    /// d21's K1 half, spliced S1 at the batch-L merge (the 13-DROP/10-KEEP
+    /// compose contract, d21 ANALYSIS "Fold-2 keep-one adjudication"):
+    /// the Pal-projectile petting path (foxsparks/digtoise/cattiva) keys
+    /// on the projectile slot + type; the `get_petting_info` proj ladder
+    /// (`projectile_ai_201_210.rs`, d21's lane) builds this — it passes the
+    /// `u16` projectile type, so the cast to `kind` happens here.
     pub fn from_projectile(who_am_i: i32, kind: u16, offset: (f32, f32), small: bool) -> Self {
         Self {
             is_petting: false,
             npc: -1,
             proj: who_am_i,
             kind: kind as i32,
-    /// The PROJECTILE constructor (`PlayerPettingInfo.cs:32-41`) — d21's
-    /// K1 half, spliced S1 at the batch-L merge (the 13-DROP/10-KEEP
-    /// compose contract, d21 ANALYSIS "Fold-2 keep-one adjudication"):
-    /// the Pal-projectile petting path (foxsparks/digtoise/cattiva) keys
-    /// on the projectile slot + type; the `get_petting_info` proj ladder
-    /// (`projectile_ai_201_210.rs`, d21's lane) builds this.
-    pub fn from_projectile(slot: i32, proj_type: i32, offset: (f32, f32), small: bool) -> Self {
-        Self {
-            is_petting: false,
-            npc: -1,
-            proj: slot,
-            kind: proj_type,
             mount: false,
             offset_from_pet: offset,
             is_pet_small: small,
@@ -221,37 +215,6 @@ impl Player {
         self.petting.is_petting = false;
     }
 
-    /// `Player.ChangeDir` (`Player.cs:42091-42116`) — d21's K4 half,
-    /// spliced S2 at the batch-L merge (the compose contract): the
-    /// pulley-2 reposition (the tile-centre snap + the SolidCollision
-    /// refusal) + the composite-arm/itemRotation MIRRORS the bare
-    /// `facing = num` assign missed. `PetAnimal:33390` calls THIS.
-    /// Deviations (recorded): the `Main.cameraX` compensation is the
-    /// camera lane's (the caller's smooth follow re-derives it); the
-    /// `itemLocation.X` mirror is draw-derived per frame in the port
-    /// (`render/player_layers.rs::item_location`) — no persistent field
-    /// to flip, the mirror re-derives from the new facing.
-    pub fn change_dir(&mut self, world: &World, dir: i32) {
-        if dir == self.facing {
-            return;
-        }
-        // `:42096-42110` — the pulley-2 reposition.
-        if self.pulley && self.pulley_dir == 2 {
-            let num =
-                ((self.x + self.width / 2.0) as i32) / 16 * 16 + 8 - self.width as i32 / 2;
-            let num = num as f32;
-            if Self::solid_collision(world, num, self.y, self.width, self.height) {
-                return;
-            }
-            self.pulley_dir = 1;
-            self.x = num;
-        }
-        // `:42111-42115` — the facing + the mirrors.
-        self.facing = dir;
-        self.composite_back.rotation *= -1.0;
-        self.composite_front.rotation *= -1.0;
-        self.item_rotation *= -1.0;
-    }
 
     /// `Player.PetAnimal` (`Player.cs:33358-33399`): the target gate, the
     /// floor-snapped bottom (`(target.Bottom + offset).Floor()`), the
@@ -758,6 +721,7 @@ mod tests {
             &mut tr_core::UnifiedRandom::default(),
             &npcs,
             Some(0),
+            true,
         );
         assert!(p.petting.is_petting, "the calm tick keeps the petting");
         // A jump press stops it (controlJump, `:33486`).
@@ -769,6 +733,7 @@ mod tests {
             &mut tr_core::UnifiedRandom::default(),
             &npcs,
             Some(0),
+            true,
         );
         assert!(!p.petting.is_petting, "the jump press stops the petting");
     }

@@ -45,7 +45,7 @@ pub(crate) fn drain_wall_dust(app: &mut App, b: WallDust) {
     d.velocity *= 0.1;
     d.scale *= 1.2;
     d.no_gravity = true;
-    if b.rat {
+    if b.rat_mount {
         d.scale *= 0.5;
     }
 }
@@ -554,6 +554,7 @@ mod tests {
             vx: 3.0,
             vy: -5.01,
             jump: 11,
+            sandstorm_gore_gate: false,
         }
     }
 
@@ -778,6 +779,7 @@ mod tests {
         let b = FloorDust {
             falling: true,
             kind: 53,
+            frame_x: 0,
             frame_y: 0,
             paint: 0,
             x: 300.0,
@@ -841,6 +843,7 @@ mod tests {
         let mut b = FloorDust {
             falling: false,
             kind: 147, // snow -> type 76, no skip roll
+            frame_x: 0,
             frame_y: 0,
             paint: 0,
             x: 300.0,
@@ -1026,7 +1029,7 @@ mod tests {
                 width: 20.0,
                 height: 42.0,
                 slide_dir,
-                rat,
+                rat_mount: rat,
             };
             drain_wall_dust(&mut app, b);
             let slots = live(&app);

@@ -232,11 +232,6 @@ pub fn write(w: &mut Writer, world: &World) {
     // round trip keeps it.
     w.boolean(world.force_halloween_for_today); // forceHalloweenForToday
     w.boolean(world.force_xmas_for_today); // forceXMasForToday
-    // WorldFile.cs:1386-1391: the forced seasonal events (unowned — the f39
-    // season lane), the four pre-hardmode ore tiers (`World.ore_tiers`,
-    // `:1388-1391`) and the pet licenses (W4-f45, the f43 lane).
-    w.boolean(false); // forceHalloweenForToday
-    w.boolean(false); // forceXMasForToday
     w.i32(world.ore_tiers.copper); // Copper
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
@@ -244,63 +239,34 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.bought_cat); // boughtCat (W4-g87 + W4-f45, `:1392`; the f43 license lane)
     w.boolean(world.bought_dog); // boughtDog (W4-g87 + W4-f45, `:1393`)
     w.boolean(world.bought_bunny); // boughtBunny (W4-g87 + W4-f45, `:1394`)
-    // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
-    // `downedDeerclops` are owned, the Empress has no port state.
-    w.boolean(false); // downedEmpressOfLight — unowned
-    w.boolean(false); // boughtCat
-    w.boolean(false); // boughtDog
-    w.boolean(false); // boughtBunny
-    // WorldFile.cs:1392-1397: the three post-1.4 bosses; all owned since
+    // WorldFile.cs:1395-1397: the three post-1.4 bosses; all owned since
     // W4-d125 (the Empress's case-636 death flag, `NPC.cs:79351-79353`).
-    // `downedDeerclops` are owned; W4-f45 claims `downedEmpressOfLight` too
-    // (the HallowBoss kind is unported, so the file round-trips the latch).
+    // W4-f45 claims `downedEmpressOfLight` too (the HallowBoss kind is
+    // unported, so the file round-trips the latch).
     w.boolean(world.downed_empress_of_light); // downedEmpressOfLight
     w.boolean(world.downed_queen_slime); // downedQueenSlime
     w.boolean(world.downed_deerclops);
-    // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
+    // WorldFile.cs:1398-1415: the unlocked town-NPC spawns — set on the NPC's
     // arrival (`WorldGen.cs:5577-5604`), read at the spawn gates
-    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). The party
-    // girl, the princess and all eight slime unlocks have World state
-    // (W4-f43b: the six-flag widening for the town-slime arrival arms); the
-    // other unlocks are unowned.
+    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). All are
+    // owned now (W4-f43b/W4-f45); the merge union had stacked four timeline
+    // halves here, writing 22 extra bytes — this is the C# order, once each.
     w.boolean(world.unlocked_slime_blue_spawn); // unlockedSlimeBlueSpawn
-    w.boolean(false); // unlockedMerchantSpawn
-    w.boolean(false); // unlockedDemolitionistSpawn
-    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess) and the
-    // `SpawnAllowed_*` overrides (`NPC.cs:7069/7094/7119/7160/7177`). W4-f45
-    // claims the six arrival unlocks + the King Slime's slime-blue unlock;
-    // the party girl, princess and rainbow/red slimes were already owned.
-    w.boolean(world.unlocked_slime_blue_spawn); // unlockedSlimeBlueSpawn (W4-f45)
-    w.boolean(world.unlocked_merchant_spawn); // unlockedMerchantSpawn (W4-f45)
-    w.boolean(world.unlocked_demolitionist_spawn); // unlockedDemolitionistSpawn (W4-f45)
+    w.boolean(world.unlocked_merchant_spawn); // unlockedMerchantSpawn
+    w.boolean(world.unlocked_demolitionist_spawn); // unlockedDemolitionistSpawn
     w.boolean(world.unlocked_party_girl); // unlockedPartyGirlSpawn
-    w.boolean(world.unlocked_dye_trader_spawn); // unlockedDyeTraderSpawn (W4-f45)
-    w.boolean(world.unlocked_truffle_spawn); // unlockedTruffleSpawn (W4-f45)
-    w.boolean(world.unlocked_arms_dealer_spawn); // unlockedArmsDealerSpawn (W4-f45)
-    w.boolean(world.unlocked_nurse_spawn); // unlockedNurseSpawn (W4-f45)
+    w.boolean(world.unlocked_dye_trader_spawn); // unlockedDyeTraderSpawn
+    w.boolean(world.unlocked_truffle_spawn); // unlockedTruffleSpawn
+    w.boolean(world.unlocked_arms_dealer_spawn); // unlockedArmsDealerSpawn
+    w.boolean(world.unlocked_nurse_spawn); // unlockedNurseSpawn
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (`:1407`, W4-g89e)
-    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`, W4-g90 lane 7)
-    w.boolean(false); // unlockedSlimeGreenSpawn
-    w.boolean(world.unlocked_slime_old_spawn); // unlockedSlimeOldSpawn
-    w.boolean(false); // unlockedSlimePurpleSpawn
-    w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
-    w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
-    w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (W4-g15 lane 5)
-    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed
-    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed
-    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn
-    w.boolean(world.unlocked_slime_purple_spawn); // unlockedSlimePurpleSpawn
-    w.boolean(world.unlocked_slime_yellow_spawn); // unlockedSlimeYellowSpawn
-    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn
-    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (W4-f45, `:1407`; g89b co-claim)
-    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`; g89b co-claim)
-    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn (W4-f45, `:1409`)
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (`:1407`)
+    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`)
+    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn (`:1409`)
     w.boolean(world.unlocked_slime_old_spawn); // unlockedSlimeOldSpawn (`:1410`)
     w.boolean(world.unlocked_slime_purple_spawn); // unlockedSlimePurpleSpawn (`:1411`)
-    w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
-    w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
+    w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn (`:1412`)
+    w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn (`:1413`)
     w.boolean(world.unlocked_slime_yellow_spawn); // unlockedSlimeYellowSpawn (`:1414`)
     w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (`:1415`)
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
@@ -762,8 +728,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
-        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-d125)
-        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-f45)
+        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-d125 + W4-f45)
         world.downed_queen_slime = r.bool()?; // downedQueenSlime
     }
     if version >= 240 {
@@ -771,9 +736,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     }
     if version >= 250 {
         // WorldFile.cs:2386-2389 — W4-f43b: owned for the blue slime's
-        // arrival gate (`Main.cs:65912-65915`).
+        // arrival gate (`Main.cs:65912-65915`); W4-f45 keeps the same single
+        // byte (the merge union had doubled it).
         world.unlocked_slime_blue_spawn = r.bool()?; // unlockedSlimeBlueSpawn
-        world.unlocked_slime_blue_spawn = r.bool()?; // unlockedSlimeBlueSpawn (W4-f45)
     }
     if version >= 251 {
         // WorldFile.cs:2396-2403 — the eight unlocks in write order; W4-f45
@@ -787,43 +752,17 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_nurse_spawn = r.bool()?; // unlockedNurseSpawn
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
+    // WorldFile.cs:2416-2440 — the vol-two/satchel pair and the seven slime
+    // unlocks, one byte each in the C# order. The merge union had stacked the
+    // W4-g89e / W4-g90 / W4-f43b / W4-f45 halves on top of each other,
+    // over-reading 15 bytes; this is the exact C# walk.
     if version >= 259 {
         world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
     }
     if version >= 260 {
         world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed
-        // WorldFile.cs:2416-2423 — the vol-two flag reads into World state
-        // (W4-g89e); below 259 the C# resets it false (the ctor default).
-        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
-        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (W4-g90 lane 7)
-    }
-    if version >= 260 {
-        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (W4-g90 lane 7)
     }
     if version >= 261 {
-        r.skip(1)?; // unlockedSlimeGreenSpawn
-        world.unlocked_slime_old_spawn = r.bool()?; // unlockedSlimeOldSpawn
-        r.skip(1)?; // unlockedSlimePurpleSpawn
-        world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
-        world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(1)?; // unlockedSlimeYellow
-        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn (W4-g15 lane 5)
-        r.skip(1)?; // unlockedSlimeYellowSpawn
-        // WorldFile.cs:2432-2440 — W4-f43b: all seven slime bytes owned (the
-        // rainbow/red pair were S1-P-i35's; the other five complete the
-        // town-slime arrival gates, `Main.cs:65916-65943`).
-        world.unlocked_slime_green_spawn = r.bool()?; // unlockedSlimeGreenSpawn
-        world.unlocked_slime_purple_spawn = r.bool()?; // unlockedSlimePurpleSpawn
-        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed (W4-f45, `:2418`)
-    }
-    if version >= 260 {
-        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (`:2426`)
-    }
-    if version >= 261 {
-        // W4-f45: the five remaining slime-colour unlocks land beside the
-        // rainbow/red pair (`:2434-2440`). The town-slime kinds are unported,
-        // so the latches round-trip (the green arrival setter rides the f43
-        // town-slime lane; the doom party clears green, `Main.cs:17940`).
         world.unlocked_slime_green_spawn = r.bool()?; // unlockedSlimeGreenSpawn
         world.unlocked_slime_old_spawn = r.bool()?; // unlockedSlimeOldSpawn
         world.unlocked_slime_purple_spawn = r.bool()?; // unlockedSlimePurpleSpawn

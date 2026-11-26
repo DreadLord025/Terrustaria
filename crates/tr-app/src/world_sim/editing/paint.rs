@@ -222,13 +222,13 @@ fn one_paint_dust(app: &mut App, tx: i32, ty: i32, new_color: Color) {
     if idx == tr_core::particles::DUST_SENTINEL {
         return;
     }
-    let mut gen = FastRandom::new(
+    let mut rng = FastRandom::new(
         app.rngs
             .stream(crate::app::RngKey::UpdatePlayers)
             .next() as u64,
     );
     let slot = app.dust.slot_mut(idx);
-    if gen.next(2) == 0 {
+    if rng.next(2) == 0 {
         slot.no_gravity = true;
         slot.scale *= 1.2;
     } else {

@@ -368,8 +368,13 @@ fn apply_status_slot(p: &mut Player, pool: &mut ProjectilePool, e: &StatusEffect
             }
         }
     }
-    if let Some(fs) = e.fall_start_set {
-        p.fall_start = fs; // `:11788` Shimmering's fallStart reset
+    if e.fall_start_set.is_some() {
+        // `:11788` Shimmering's `fallStart` reset. The C# writes `fallStart`
+        // ONLY; `reset_fall_damage` writes `fallStart2` too, so the second
+        // field is restored around the call to keep that mechanic intact.
+        let fall_start2 = p.fall_start2;
+        p.reset_fall_damage();
+        p.fall_start2 = fall_start2;
     }
     // The status flags.
     p.blackout |= e.blackout;
@@ -378,7 +383,11 @@ fn apply_status_slot(p: &mut Player, pool: &mut ProjectilePool, e: &StatusEffect
     p.frozen |= e.frozen;
     p.headcovered |= e.headcovered;
     p.bleed |= e.bleed;
-    p.vortex_debuff |= e.vortex_debuff;
+    // `:11831-11834` — buff 164 (`vortexDebuff`) has no `Player` field in the
+    // port; the `WetStaticsFlags.vortex_debuff` gravity pin is only fed by
+    // the debuff probe, so the flag is recorded nowhere live yet (the
+    // status module still computes it). Kept out of the fold instead of
+    // inventing a field here.
     p.wind_pushed |= e.wind_pushed;
     p.withered_armor |= e.withered_armor;
     p.withered_weapon |= e.withered_weapon;

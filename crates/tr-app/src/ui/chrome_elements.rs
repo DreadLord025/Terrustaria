@@ -77,7 +77,7 @@ impl HeaderText {
 /// same never-hit override as the horizontal one (`:30-33`). `EdgeWidth`
 /// (`:14`) is a public field the class itself never reads — dead, kept for
 /// the API's sake.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VerticalSeparator {
     /// `Color` (`:12`), White from the ctor (`:18`).
     pub color: [u8; 4],

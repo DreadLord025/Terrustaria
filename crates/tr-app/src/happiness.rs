@@ -78,6 +78,7 @@ pub struct BiomePreference {
 
 /// The row shorthand (`Populate_BiomePreferences`' `{ level, biome }`
 /// initializer pairs — `PersonalityDatabasePopulator.cs:27-147`).
+#[allow(dead_code)]
 const fn bp(level: AffectionLevel, biome: BiomeKind) -> BiomePreference {
     BiomePreference { level, biome }
 }
@@ -94,31 +95,31 @@ use BiomeKind::{Desert, Forest, Hallow, Jungle, Mushroom, Ocean, Snow, Undergrou
 /// the judge is in — the first-match convention is wrong).
 pub fn biome_preferences_by_id(id: u16) -> &'static [BiomePreference] {
     match id {
-        22 => &[bp(L, Forest), bp(D, Ocean)],      // `:27-31` the Guide
-        17 => &[bp(L, Forest), bp(D, Desert)],     // `:32-36` the Merchant
-        588 => &[bp(L, Forest), bp(D, Underground)], // `:37-41` the Golfer
-        633 => &[bp(L, Forest), bp(D, Desert)],    // `:42-46` the Zoologist
-        441 => &[bp(L, Snow), bp(D, Hallow)],      // `:47-51` the Tax Collector
-        124 => &[bp(L, Snow), bp(D, Underground)], // `:52-56` the Mechanic
-        209 => &[bp(L, Snow), bp(D, Jungle)],      // `:57-61` the Cyborg
-        142 => &[bp(V, Snow), bp(H, Desert)],      // `:62-66` Santa Claus
-        207 => &[bp(L, Desert), bp(D, Forest)],    // `:67-71` the Dye Trader
-        19 => &[bp(L, Desert), bp(D, Snow)],       // `:72-76` the Arms Dealer
-        178 => &[bp(L, Desert), bp(D, Jungle)],    // `:77-81` the Steampunker
-        20 => &[bp(L, Jungle), bp(D, Desert)],     // `:82-86` the Dryad
-        228 => &[bp(L, Jungle), bp(D, Hallow)],    // `:87-91` the Witch Doctor
-        227 => &[bp(L, Jungle), bp(D, Forest)],    // `:92-96` the Painter
-        369 => &[bp(L, Ocean), bp(D, Desert)],     // `:97-101` the Angler
-        229 => &[bp(L, Ocean), bp(D, Underground)], // `:102-106` the Pirate
-        353 => &[bp(L, Ocean), bp(D, Snow)],       // `:107-111` the Stylist
-        38 => &[bp(L, Underground), bp(D, Ocean)], // `:112-116` the Demolitionist
-        107 => &[bp(L, Underground), bp(D, Jungle)], // `:117-121` the Tinkerer
-        54 => &[bp(L, Underground), bp(D, Hallow)], // `:122-126` the Clothier
-        108 => &[bp(L, Hallow), bp(D, Ocean)],     // `:127-131` the Wizard
-        18 => &[bp(L, Hallow), bp(D, Snow)],       // `:132-136` the Nurse
-        208 => &[bp(L, Hallow), bp(D, Underground)], // `:137-141` the Party Girl
-        550 => &[bp(L, Hallow), bp(D, Snow)],      // `:142-146` the Tavernkeep
-        160 => &[bp(L, Mushroom)],                 // `:147` the Truffle
+        22 => &[BiomePreference { level: L, biome: Forest }, BiomePreference { level: D, biome: Ocean }],      // `:27-31` the Guide
+        17 => &[BiomePreference { level: L, biome: Forest }, BiomePreference { level: D, biome: Desert }],     // `:32-36` the Merchant
+        588 => &[BiomePreference { level: L, biome: Forest }, BiomePreference { level: D, biome: Underground }], // `:37-41` the Golfer
+        633 => &[BiomePreference { level: L, biome: Forest }, BiomePreference { level: D, biome: Desert }],    // `:42-46` the Zoologist
+        441 => &[BiomePreference { level: L, biome: Snow }, BiomePreference { level: D, biome: Hallow }],      // `:47-51` the Tax Collector
+        124 => &[BiomePreference { level: L, biome: Snow }, BiomePreference { level: D, biome: Underground }], // `:52-56` the Mechanic
+        209 => &[BiomePreference { level: L, biome: Snow }, BiomePreference { level: D, biome: Jungle }],      // `:57-61` the Cyborg
+        142 => &[BiomePreference { level: V, biome: Snow }, BiomePreference { level: H, biome: Desert }],      // `:62-66` Santa Claus
+        207 => &[BiomePreference { level: L, biome: Desert }, BiomePreference { level: D, biome: Forest }],    // `:67-71` the Dye Trader
+        19 => &[BiomePreference { level: L, biome: Desert }, BiomePreference { level: D, biome: Snow }],       // `:72-76` the Arms Dealer
+        178 => &[BiomePreference { level: L, biome: Desert }, BiomePreference { level: D, biome: Jungle }],    // `:77-81` the Steampunker
+        20 => &[BiomePreference { level: L, biome: Jungle }, BiomePreference { level: D, biome: Desert }],     // `:82-86` the Dryad
+        228 => &[BiomePreference { level: L, biome: Jungle }, BiomePreference { level: D, biome: Hallow }],    // `:87-91` the Witch Doctor
+        227 => &[BiomePreference { level: L, biome: Jungle }, BiomePreference { level: D, biome: Forest }],    // `:92-96` the Painter
+        369 => &[BiomePreference { level: L, biome: Ocean }, BiomePreference { level: D, biome: Desert }],     // `:97-101` the Angler
+        229 => &[BiomePreference { level: L, biome: Ocean }, BiomePreference { level: D, biome: Underground }], // `:102-106` the Pirate
+        353 => &[BiomePreference { level: L, biome: Ocean }, BiomePreference { level: D, biome: Snow }],       // `:107-111` the Stylist
+        38 => &[BiomePreference { level: L, biome: Underground }, BiomePreference { level: D, biome: Ocean }], // `:112-116` the Demolitionist
+        107 => &[BiomePreference { level: L, biome: Underground }, BiomePreference { level: D, biome: Jungle }], // `:117-121` the Tinkerer
+        54 => &[BiomePreference { level: L, biome: Underground }, BiomePreference { level: D, biome: Hallow }], // `:122-126` the Clothier
+        108 => &[BiomePreference { level: L, biome: Hallow }, BiomePreference { level: D, biome: Ocean }],     // `:127-131` the Wizard
+        18 => &[BiomePreference { level: L, biome: Hallow }, BiomePreference { level: D, biome: Snow }],       // `:132-136` the Nurse
+        208 => &[BiomePreference { level: L, biome: Hallow }, BiomePreference { level: D, biome: Underground }], // `:137-141` the Party Girl
+        550 => &[BiomePreference { level: L, biome: Hallow }, BiomePreference { level: D, biome: Snow }],      // `:142-146` the Tavernkeep
+        160 => &[BiomePreference { level: L, biome: Mushroom }],                 // `:147` the Truffle
         // The Princess (663) has NO `Register` row — her affection rides the
         // `AllPersonalitiesModifier` random-love picks alone
         // (`AllPersonalitiesModifier.cs:15-36`).

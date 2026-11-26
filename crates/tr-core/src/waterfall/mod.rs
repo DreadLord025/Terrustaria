@@ -1161,17 +1161,20 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let screen = screen_at(0.0, 0.0);
-        let (dim, _, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
-        let (bright, _, _) =
+        let (mtc190, _, _) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        let (mtc255, _, _) =
             mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
-        assert_eq!(dim.len(), bright.len());
-        assert!(!dim.is_empty());
-        let n_dim = (0.55 + (270.0 - 190.0) / 900.0) * 0.4;
-        let n_bright = (0.55 + (270.0 - 255.0) / 900.0) * 0.4;
-        assert!((dim[0].rgb[0] - n_dim).abs() < 1e-6);
-        assert!((bright[0].rgb[0] - n_bright).abs() < 1e-6);
-        assert!(bright[0].rgb[0] > dim[0].rgb[0]);
-        for l in dim.iter().chain(bright.iter()) {
+        assert_eq!(mtc190.len(), mtc255.len());
+        assert!(!mtc190.is_empty());
+        let n_190 = (0.55 + (270.0 - 190.0) / 900.0) * 0.4;
+        let n_255 = (0.55 + (270.0 - 255.0) / 900.0) * 0.4;
+        assert!((mtc190[0].rgb[0] - n_190).abs() < 1e-6);
+        assert!((mtc255[0].rgb[0] - n_255).abs() < 1e-6);
+        // `(270 - mouseTextColor)` DECREASES as the pulse rises: the glow is
+        // brightest at the LOW end of the pulse (MTc 190 > 255).
+        assert!(mtc190[0].rgb[0] > mtc255[0].rgb[0]);
+        for l in mtc190.iter().chain(mtc255.iter()) {
             assert!((l.rgb[1] - l.rgb[0] * 0.3).abs() < 1e-6);
             assert!((l.rgb[2] - l.rgb[0] * 0.1).abs() < 1e-6);
         }
@@ -1180,8 +1183,8 @@ mod tests {
         // down to the world edge.
         let mut cells = vec![(10, 10), (9, 10)];
         cells.extend((11..60).map(|y| (9, y)));
-        assert_eq!(dim.len(), cells.len());
-        for (cell, l) in cells.iter().zip(dim.iter()) {
+        assert_eq!(mtc190.len(), cells.len());
+        for (cell, l) in cells.iter().zip(mtc190.iter()) {
             assert_eq!((l.x, l.y), *cell);
         }
     }
@@ -1294,13 +1297,17 @@ mod tests {
         // The fade tail: k = 99 fades 0.8 -> 0.08, alpha (int)(255*0.08) = 20.
         let last = honey_quads.last().unwrap();
         assert!((last.color[3] - 20.0 / 255.0).abs() < 1e-6);
-        // The lit leg: a torch at (16,10) lights the head cell from 6 tiles
-        // away. Sunlight off (sky 0) keeps the head dim — below lava's 190
-        // floor — so the tint proves StylizeColor has no case 14 lift. The
-        // expected value replays the port's exact chain (shade -> byte/255
-        // -> *255*alpha -> (int)).
+        // The lit leg: a torch 6 tiles STRAIGHT ABOVE the head. (The fixture
+        // sits at the world's left edge, and the blur's fixed 18-tile
+        // `NonVisiblePadding` makes the left/up halves of the border band
+        // sweep-only — a torch to the RIGHT of the head would not reach it,
+        // exactly as the C# `LightMap.Blur` behaves at a map edge.) Sunlight
+        // off (sky 0) keeps the head dim — below lava's 190 floor — so the
+        // tint proves StylizeColor has no case 14 lift. The expected value
+        // replays the port's exact chain (shade -> byte/255 -> *255*alpha ->
+        // (int)).
         let torch = stone(4);
-        put(&mut w, 16, 10, torch);
+        put(&mut w, 10, 4, torch);
         let params = crate::lighting::LightParams {
             sky: [0.0; 3],
             ..Default::default()
@@ -1827,10 +1834,12 @@ mod tests {
         assert!(out.iter().all(|d| d.texture == 22));
         // Even column 10: num23 = snowFrameForeground + 3 = 4 → x = 4*18.
         assert_eq!(sand[0].source, [4 * 18, 0, 16, 16]);
-        // Head colour: unlit RGB 0, alpha 255 (row 11 is above worldSurface,
-        // no wall → GetAlpha's undamped 1.0); the fade tail (j > 42, below
-        // the surface) is dimmer — both the 0.6 damp and the num27 fade.
-        assert_eq!(sand[0].color[3], 1.0);
+        // Head colour: unlit RGB 0, alpha = the rain arm's 0.6 tint
+        // (`color * num25`, `WaterfallManager.cs:463` — the rain/sand arms
+        // never run `GetAlpha`; that 0.6 is the sprite tint, NOT the wall
+        // damp). The fade tail (`j > num22 - 8`) scales it further:
+        // `num25 *= (num22 - j) / 8`.
+        assert_eq!(sand[0].color[3], 0.6);
         assert!(sand.last().unwrap().color[3] < sand[0].color[3]);
         // `:524` stopAtStep = 0 → the `:381` cull skips the fall in the NEXT
         // PASS of the same Draw() (Draw()'s `:1121-1124` entry reset restores
@@ -2147,15 +2156,16 @@ mod tests {
         assert!((disco.color[0] - 153.0 / 255.0).abs() < 1e-6);
         assert_eq!(disco.color[1], 0.0);
         assert_eq!(disco.color[2], 0.0);
-        // AddLight case 2 (`:1084`): DiscoR/255 * 0.2. FOLD CORRECTION: the
-        // C# `AddLight` runs at the TOP of the step (`:548`), BEFORE the
-        // `:663-677` conversion — so the converted cell (9, 11) lights with
-        // its OLD type 0 (black, no source); the disco light lands on the
-        // NEXT step's cell (9, 12), the ball's own cell (kind 160 is not
-        // solid, the walk continues through it). `d118f7ba`'s draft asserted
-        // (9, 11) — corrected here against the statement order.
+        // AddLight case 2 (`:1084`): DiscoR/255 * 0.2. The C# `AddLight` runs
+        // at the TOP of the step (`:548`), BEFORE the `:663-677` conversion —
+        // so the converted cell (9, 11) DRAWS type 2 but lights with its OLD
+        // type 0 (no source). The ball's kind 160 IS solid
+        // (`Main.tileSolid[160] = true`, `Main.cs:7447`), so the solid
+        // `tile5` turns the walk's lean LEFT: the next step is (8, 11), whose
+        // AddLight is the first to see num12 = 2, and the latched colour
+        // lands there (column 8 then continues down).
         assert!(
-            lights.iter().any(|l| l.x == 9 && l.y == 12
+            lights.iter().any(|l| l.x == 8 && l.y == 11
                 && (l.rgb[0] - 0.2).abs() < 1e-6 && l.rgb[1] == 0.0 && l.rgb[2] == 0.0),
             "the disco cell lights with the latched colour"
         );

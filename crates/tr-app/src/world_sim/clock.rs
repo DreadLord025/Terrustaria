@@ -251,18 +251,6 @@ pub(crate) fn advance_time_with_events(
         let partyable: Vec<bool> = app
             .npcs
             .iter()
-            .map(|n| {
-                n.hp > 0
-                    && n.kind.is_town_npc()
-                    // `CanNPCParty`'s exclusions (`:55-64`): the bound NPCs
-                    // — the old man (37) and the skeleton merchant (453)
-                    // have no ported kinds, so the tax collector (441) is
-                    // the only exclusion the port's roster carries.
-                    && n.kind != crate::npc::NpcKind::TaxCollector
-                    // `CanNPCParty`'s `IsTownPet` refusal (`:66-69`) —
-                    // W4-g10 lane 3: the town pets never celebrate.
-                    && !n.kind.is_town_pet()
-            })
             .map(crate::world_events::can_npc_party)
             .collect();
         let party_up = crate::world_events::check_morning_party(
@@ -435,20 +423,20 @@ mod tests {
         w.time = 32399.0;
         w.crimson = false;
         let mut rng = UnifiedRandom::new(1);
-        advance_time(&mut w, 5.0, &mut rng, false);
+        advance_time(&mut w, 5.0, &mut rng, false, (6, 1));
         assert!(w.day_time, "the dawn boundary ran");
         assert!(w.crimson, "the drunk dawn flipped corruption -> crimson");
         // The next dawn flips back.
         w.day_time = false;
         w.time = 32399.0;
-        advance_time(&mut w, 5.0, &mut rng, false);
+        advance_time(&mut w, 5.0, &mut rng, false, (6, 1));
         assert!(!w.crimson, "the second dawn flips back");
         // A classic world keeps its flavour across the same boundary.
         let mut c = World::new("t".into(), 40, 40);
         c.day_time = false;
         c.time = 32399.0;
         c.crimson = true;
-        advance_time(&mut c, 5.0, &mut rng, false);
+        advance_time(&mut c, 5.0, &mut rng, false, (6, 1));
         assert!(c.day_time);
         assert!(c.crimson, "no flip without the drunk seed");
     }
@@ -467,7 +455,7 @@ mod tests {
         // The roll in the 1-in-9 window with a 120+ player (past the
         // NightSetup prefix — W4-d15 final).
         let mut rng = stream_with_dusk_roll(|r| r < 1.0 / 9.0);
-        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
+        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true, (6, 1));
         assert!(blood);
         assert!(!eclipse);
         assert!(w.blood_moon);
@@ -809,6 +797,8 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(!app.world.day_time, "the dusk crossed");
         assert!(!app.world_events.free_cake, "StartNight clears the gift");
+    }
+
     /// W4-f38 — the party broadcasts: the dawn `Game.BirthdayParty_{n}`
     /// start row over the celebrants' `GetGivenOrTypeNetName`
     /// (`BirthdayParty.cs:127-139`), the dusk `Lang.misc[99]` farewell
@@ -857,6 +847,7 @@ mod tests {
             &mut app.world_events,
             party_girl,
             &partyable,
+            false,
             &mut |lo, _hi| seq.next().unwrap_or(lo),
         );
         assert!(party_up, "the pinned sequence lands a genuine party");
@@ -962,6 +953,8 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(app.world.day_time, "dawn ran");
         assert!(app.world_events.free_cake, "StartDay keeps the latch");
+    }
+
     /// W4-f37 doc-sweep — `Player.CollectTaxes`'s anniversary pair
     /// W4-f37 doc-sweep - `Player.CollectTaxes`'s anniversary pair
     /// (`Player.cs:24133-24137`): on `Main.tenthAnniversaryWorld` BOTH the
@@ -1002,27 +995,7 @@ mod tests {
         assert_eq!(w.tax_money, crate::world_sim::npcs::TAX_CAP);
     }
 
-    /// W4-d120 - `Main.cs:65222`: every dusk clears `NPC.freeCake`, so the
-    /// Party Girl's cake gift only lives for the party day it was earned on
-    /// (`BirthdayParty.cs:106` sets it at dawn). The dawn boundary must NOT
-    /// clear it — the morning party sets it on that same tick.
-    #[test]
-    fn dusk_clears_the_free_cake_latch() {
-        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
-        app.world.day_time = true;
-        app.world.time = 53999.0;
-        app.world_events.free_cake = true;
-        advance_time_with_events(&mut app, 5.0, false);
-        assert!(!app.world.day_time, "dusk ran");
-        assert!(!app.world_events.free_cake, "`Main.cs:65222` clears the latch");
-        // The dawn side leaves it alone (the morning party may set it).
-        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
-        app.world.day_time = false;
-        app.world.time = 32399.0;
-        app.world_events.free_cake = true;
-        advance_time_with_events(&mut app, 5.0, false);
-        assert!(app.world.day_time, "dawn ran");
-        assert!(app.world_events.free_cake, "StartDay keeps the latch");
+
     // ---- W4-f39: the season/date gates at the dawn boundary (pinned dates) ----
 
     /// A night world one tick below the dawn boundary, ready to cross.
@@ -1133,6 +1106,8 @@ mod tests {
         advance_time(&mut seeded, 5.0, &mut b, false, (6, 1));
         assert_eq!(a, b, "the season re-derivation draws nothing");
         assert!(seeded.halloween && !plain.halloween, "only the state differs");
+    }
+
     /// W4-d15 final phase: the dusk boundary runs `Star.NightSetup`
     /// (`Main.cs:65223`) BEFORE the blood-moon roll (`:65336`) — the
     /// twin replays the NightSetup draws then the boundary's
@@ -1144,7 +1119,7 @@ mod tests {
         w.day_time = true;
         w.time = 53999.0;
         let mut rng = UnifiedRandom::new(42);
-        advance_time(&mut w, 1.0, &mut rng, false);
+        advance_time(&mut w, 1.0, &mut rng, false, (6, 1));
         assert!(!w.day_time, "dusk ran");
         // The twin: NightSetup's 1-3 draws, then the blood-moon roll.
         let mut twin = UnifiedRandom::new(42);
@@ -1157,7 +1132,7 @@ mod tests {
         // NightSetup — the value persists through the day).
         let boost = w.starfall_boost;
         w.time = 32399.0;
-        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(7), false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(7), false, (6, 1));
         assert!(w.day_time);
         assert_eq!(w.starfall_boost, boost, "StartDay leaves the boost");
     }

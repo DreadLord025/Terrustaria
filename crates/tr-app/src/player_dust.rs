@@ -1238,54 +1238,52 @@ pub(crate) fn drain_floor_dust(app: &mut App, b: FloorDust) {
 /// The wings-4 arm's `wingFrame` machine + `Item13` cadence (`:27149-27191`) are
 /// cited seams (the port's `WingFrame` owns the frame machine).
 pub(crate) fn drain_wing_glide(app: &mut App, b: WingGlideDust) {
-    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
     // `:27040`: wings 10 — `Next(3) == 0`, one type-76 puff.
-    if b.wings == 10 && rng.next_max(3) == 0 {
+    if b.wings == 10 && glide_draw(app, 3) == 0 {
         glide_puff(app, &b, 4, -40, -15.0, 30, 30, 76, 50, 0.6, Color::default(), GlidePost::Fade03);
     }
     // `:27054`: wings 34 — the always-animated gate (vy != 0 on the glide) +
     // `Next(3) == 0`, one type-261 puff.
-    if b.wings == 34 && b.vy != 0.0 && rng.next_max(3) == 0 {
+    if b.wings == 34 && b.vy != 0.0 && glide_draw(app, 3) == 0 {
         glide_puff(app, &b, 4, -40, -15.0, 30, 30, 261, 50, 0.6, Color::default(), GlidePost::Fade03);
     }
     // `:27069`: wings 51 — `Next(5) == 0`, one type-261 puff, colour (230,130,55).
-    if b.wings == 51 && rng.next_max(5) == 0 {
+    if b.wings == 51 && glide_draw(app, 5) == 0 {
         glide_puff(app, &b, 4, -40, -15.0, 30, 30, 261, 50, 0.6, Color::new(230, 130, 55, 255), GlidePost::Fade03);
     }
     // `:27092`: wings 9 — `Next(3) == 0`, one type-6 puff (offset 8/-40).
-    if b.wings == 9 && rng.next_max(3) == 0 {
+    if b.wings == 9 && glide_draw(app, 3) == 0 {
         glide_puff(app, &b, 8, -40, -15.0, 30, 30, 6, 200, 2.0, Color::default(), GlidePost::NoGrav03);
     }
     // `:27105`: wings 29 — `Next(3) == 0`, one type-6 puff + the `Next(10)` fade.
-    if b.wings == 29 && rng.next_max(3) == 0 {
+    if b.wings == 29 && glide_draw(app, 3) == 0 {
         let idx = glide_spawn(app, &b, 8, -40, -15.0, 30, 30, 6, 100, 2.4, Color::default());
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let fade = glide_draw(app, 10) == 0;
         let d = app.dust.slot_mut(idx);
         d.no_gravity = true;
         d.velocity *= 0.3;
-        if rng.next_max(10) == 0 {
+        if fade {
             d.fade_in = 2.0;
         }
     }
     // `:27122-27148`: wings 6 (the `Next(10)` gate) / else wings 5 (the `Next(6)`
     // gate) — the else-if pair.
     if b.wings == 6 {
-        if rng.next_max(10) == 0 {
+        if glide_draw(app, 10) == 0 {
             glide_puff(app, &b, 4, -40, -12.0, 30, 20, 55, 200, 1.0, Color::default(), GlidePost::Plain03);
         }
-    } else if b.wings == 5 && rng.next_max(6) == 0 {
+    } else if b.wings == 5 && glide_draw(app, 6) == 0 {
         glide_puff(app, &b, 6, -30, 0.0, 18, b.height as i32, 58, 255, 1.2, Color::default(), GlidePost::Plain03);
     }
     // `:27149`: wings 4 — the rocket-boots glide puff (the wingFrame machine +
     // Item13 cadence are cited seams). The `Next(2)` position pick draws always.
     if b.wings == 4 {
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         let mut x3 = b.x + b.width * 0.5 + 16.0;
         if b.facing > 0 {
             x3 = b.x + b.width * 0.5 - 26.0;
         }
         let mut y3 = b.y + b.height - 18.0;
-        if rng.next_max(2) == 1 {
+        if glide_draw(app, 2) == 1 {
             x3 = b.x + b.width * 0.5 + 8.0;
             if b.facing > 0 {
                 x3 = b.x + b.width * 0.5 - 20.0;
@@ -1301,28 +1299,40 @@ pub(crate) fn drain_wing_glide(app: &mut App, b: WingGlideDust) {
     // `:27240`: wings 26 — one type-217 puff + the `Next(2)` second puff.
     if b.wings == 26 {
         glide_217(app, &b, 6, -30, 217, 18, b.height as i32, 100, 1.4);
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        if rng.next_max(2) == 0 {
+        if glide_draw(app, 2) == 0 {
             glide_217(app, &b, -24, 12, 217, 12, (b.height / 2.0) as i32, 100, 1.4);
         }
     }
     // `:27274`: wings 37 — the colour `NextFloat` + the `SelectRandom(31,31,31)`
     // roll, one type-31 puff + the `Next(3)` second puff.
     if b.wings == 37 {
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        let t = rng.next_float();
+        let t = glide_draw_float(app);
         // `Color.Lerp(Black, White, t)` — the XNA byte multiply rounds (`(byte)(v*t+0.5)`).
         let c = (255.0 * t + 0.5) as u8;
         let color = Color::new(c, c, c, 255);
-        let _ty = [31, 31, 31][rng.next_max(3) as usize]; // the SelectRandom roll
+        let _ty = [31, 31, 31][glide_draw(app, 3) as usize]; // the SelectRandom roll
         glide_217(app, &b, 6, -30, 31, 24, b.height as i32, 100, 0.7);
         let _ = color; // the type-55 colour arm is dead (the type is always 31)
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        if rng.next_max(3) == 0 {
-            let _ty2 = [31, 31, 31][rng.next_max(3) as usize];
+        if glide_draw(app, 3) == 0 {
+            let _ty2 = [31, 31, 31][glide_draw(app, 3) as usize];
             glide_217(app, &b, -24, 12, 31, 12, (b.height / 2.0) as i32, 140, 0.7);
         }
     }
+}
+
+/// One `UpdatePlayers` draw for the wing-glide gates (`Main.rand`), taken
+/// without holding the stream borrow across an `app` mutation.
+fn glide_draw(app: &mut App, n: i32) -> i32 {
+    app.rngs
+        .stream(crate::app::RngKey::UpdatePlayers)
+        .next_max(n)
+}
+
+/// One `UpdatePlayers` float draw (the wings-37 colour lerp).
+fn glide_draw_float(app: &mut App) -> f32 {
+    app.rngs
+        .stream(crate::app::RngKey::UpdatePlayers)
+        .next_float()
 }
 
 /// The wing-glide post-arm shapes.
@@ -2662,6 +2672,7 @@ mod tests {
             vx: 3.0,
             vy: 2.0,
             facing: 1,
+            always_animated: false,
         }
     }
 

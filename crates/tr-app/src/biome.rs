@@ -554,6 +554,8 @@ mod bg_transition_tests {
         assert_eq!(desert_preferred_style(false, false, false, 0, 0, 0), 2);
         // The corrupt arm outranks crimson when both would fire.
         assert_eq!(desert_preferred_style(true, true, true, 500, 300, 100), 5);
+    }
+
     /// S1-G-13 consumers: the `DrawCapture` biome background-index override
     /// (`Main.cs:56675-56680`) — fresh zeroed arrays +
     /// `UpdateBGVisibility_*(bgIndex, 1f)` land EXACTLY one front slot at 1
@@ -573,7 +575,7 @@ mod bg_transition_tests {
         ] {
             let mut front = [0.0; 16];
             let mut far = [0.0; 16];
-            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 1.0);
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, &NO_DESERT, 1.0);
             assert_eq!(front[style as usize], 1.0, "front style {style}");
             assert_eq!(
                 front.iter().filter(|a| **a != 0.0).count(),

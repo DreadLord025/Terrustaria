@@ -902,12 +902,14 @@ fn run_layer(
 /// `ItemSorting.Sort` (`ItemSorting.cs:1492-1597`): the whole engine — stack
 /// merge, then every layer in `SetupSortingPriorities` order, then the items are
 /// written back into the lowest free slots in layer order. `ignore` slots are
-/// skipped (`params int[] ignoreSlots`, `:1502`/`:1554`). `with_feedback` is
-/// accepted for parity but ignored — it only drives `ItemSlot.SetGlow`
-/// (`:1584-1587`), which the port has no equivalent for; the resulting order is
-/// identical (see the module doc).
-pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) {
-    sort_fav(inv, ignore, with_feedback, mult, &|_| false);
+/// skipped (`params int[] ignoreSlots`, `:1502`/`:1554`). W4-g56: `with_feedback`
+/// now drives the `ItemSlot.SetGlow` ramp (`:1584-1587`) — the returned
+/// `(slot, hue)` pairs are the per-written-back-slot glow the caller applies to
+/// `App.slot_glow` (the chest flag is the caller's open-container state,
+/// `Main.player[myPlayer].chest != -1`). With `with_feedback` false the vec is
+/// empty and the resulting order is identical (the module doc's pre-glow pin).
+pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) -> Vec<(usize, f32)> {
+    sort_fav(inv, ignore, with_feedback, mult, &|_| false)
 }
 
 /// [`sort`] with a per-slot favorite predicate — the player-inventory sort
@@ -920,15 +922,7 @@ pub fn sort_fav(
     with_feedback: bool,
     mult: [f32; 4],
     fav: &dyn Fn(usize) -> bool,
-) {
-    let _ = with_feedback;
-/// skipped (`params int[] ignoreSlots`, `:1502`/`:1554`). W4-g56: `with_feedback`
-/// now drives the `ItemSlot.SetGlow` ramp (`:1584-1587`) — the returned
-/// `(slot, hue)` pairs are the per-written-back-slot glow the caller applies to
-/// `App.slot_glow` (the chest flag is the caller's open-container state,
-/// `Main.player[myPlayer].chest != -1`). With `with_feedback` false the vec is
-/// empty and the resulting order is identical (the module doc's pre-glow pin).
-pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) -> Vec<(usize, f32)> {
+) -> Vec<(usize, f32)> {
     let layers = sort_order(mult[0], mult[1], mult[2], mult[3]);
 
     // `_sort_itemsToSort`: non-ignored slots holding a real, non-favorited item

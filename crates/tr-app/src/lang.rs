@@ -669,6 +669,8 @@ mod s1_l12b_tests {
         // A plain row and an unknown key both pass (no tokens).
         assert!(conditions_met("ItemName.DirtBlock"));
         assert!(conditions_met("No.Such.Key"));
+    }
+
     /// W4-g49 `57`'s display consumer — `Lang.GetDryadWorldStatusDialog`
     /// (`Lang.cs:251-293`): the eight status arms + the balance verdict.
     #[test]
@@ -978,7 +980,14 @@ pub fn inter(i: usize) -> String {
 /// falling back to the bundled English name for ids the resources do not
 /// cover (the manager answers a missing key with the key itself).
 pub fn item_name(id: u16) -> String {
-    let key = format!("ItemName.{}", crate::itemdata::NAMES[id as usize]);
+    // `Lang.GetItemName` (`Lang.cs:198-209`) bounds the cache by
+    // `ItemID.Count`: an out-of-range id answers `LocalizedText.Empty`
+    // (`NAMES` holds exactly `ItemID.Count` rows, ids 0..=6195).
+    let id = id as usize;
+    if id >= crate::itemdata::NAMES.len() {
+        return String::new();
+    }
+    let key = format!("ItemName.{}", crate::itemdata::NAMES[id]);
     let value = text(&key);
     if value == key {
         crate::itemdata::ITEMS[id as usize].name.to_string()

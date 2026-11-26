@@ -154,7 +154,7 @@ pub(crate) fn tombstone_step(
             if placed {
                 // `:25356-25357` — the SendObjectPlacement wire is the
                 // SP no-op; the Dig thud plays at the TILE corner.
-                p.wants_sound = Some((0, 0, (tx * 16) as f32, (ty * 16) as f32, 0.0));
+                p.wants_sound = Some((0, 0, (tx * 16) as f32, (ty * 16) as f32, 0.0, 1.0));
                 // `:25358-25363` — Sign.ReadSign + TextSign(miscText):
                 // the tombstone tile 85 is a `tileSign` kind, so the
                 // origin decode resolves and the record is created
@@ -420,7 +420,7 @@ mod tests {
         assert!(w.signs.iter().any(|s| s.text == "Tester was slain..."),
             "the epitaph landed through Sign.TextSign");
         // The Dig thud at the probe corner (20*16, 29*16).
-        assert_eq!(p.wants_sound, Some((0, 0, 320.0, 464.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((0, 0, 320.0, 464.0, 0.0, 1.0)));
         // CanPlace drew NOTHING for tile 85 (no random styles).
         assert_eq!(w.place_rng.peek(), rng_before.peek(),
             "the place_rng stream is untouched");

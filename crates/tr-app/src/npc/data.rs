@@ -232,6 +232,13 @@ impl NpcKind {
     /// per-type tables (`Player.npcTypeNoAggro`, `Player.cs:2994`).
     pub const CS_ID_COUNT: usize = 697;
 
+    /// `NPC.TypeName` / `Lang.GetNPCNameValue(netID)` (`NPC.cs:6727`):
+    /// the localized display name for this kind. The port's language table
+    /// is keyed by the vanilla net id, so the kind view simply delegates.
+    pub fn name(self) -> String {
+        crate::lang::npc_name(self.net_id())
+    }
+
     // The protocol id tables below must stay a single live arm per kind/id:
     // the pirate/martian merges of 2026-11 appended duplicates that the
     // compiler only warns about, so 60 dead `to_u16` arms and 28 dead
@@ -2293,7 +2300,6 @@ impl NpcKind {
             _ => return None,
         })
     }
-}
 
     /// `npc.townNPC` (`NPC.cs:6537`) — the flag the town `SetDefaults`
     /// cases raise: the town roster, the goblin pair and the Travelling
@@ -3469,6 +3475,10 @@ impl NpcKind {
             NpcKind::CultistBossClone => "NPC_Hit_2",
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
             NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Hit_1",
             // W4-c10 — the waterfowl family's `SoundID.NPCHit1` rows
             // (`NPC.cs:13621`/`:13633`/`:13645`/`:13657`/`:16747`/
             // `:16759`/`:16817`/`:16829`).
@@ -3498,9 +3508,13 @@ impl NpcKind {
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
             NpcKind::BoneThrowingSkeleton4
             | NpcKind::SkeletonMerchant => "NPC_Hit_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => "NPC_Hit_56",
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
             NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Hit_56",
             NpcKind::Butcher => "NPC_Hit_7",
             NpcKind::CreatureFromTheDeep => "NPC_Hit_1",
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
@@ -3895,6 +3909,8 @@ impl NpcKind {
             // `:14462`), the 521 squidhead NPCHit1 (`NPC.cs:15776`).
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Hit_56",
             NpcKind::AncientCultistSquidhead => "NPC_Hit_1",
             // W4-d39: the Butterfly's `SoundID.NPCHit1` row
             // (`NPC.cs:13539`); the scorpion pair `:13669`, the
@@ -4035,7 +4051,6 @@ impl NpcKind {
             // W4-g5 — the two casters' `HitSound` rows: `SoundID.NPCHit2`
             // (`NPC.cs:11162`/`:17729`).
             NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Hit_2",
-            | NpcKind::CultistDragonTail => "NPC_Hit_56",
             _ => return None,
         })
     }
@@ -4449,6 +4464,10 @@ impl NpcKind {
             NpcKind::CultistDevote => "NPC_Killed_1",
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
             NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Killed_1",
             // W4-c10 — the waterfowl family's `SoundID.NPCDeath1` rows
             // (`NPC.cs:13622`/`:13634`/`:13646`/`:13658`/`:16748`/
             // `:16760`/`:16818`/`:16830`).
@@ -4481,9 +4500,13 @@ impl NpcKind {
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
             NpcKind::BoneThrowingSkeleton4
             | NpcKind::SkeletonMerchant => "NPC_Killed_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => "NPC_Killed_60",
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
             NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Killed_60",
             NpcKind::Butcher => "NPC_Killed_17",
             NpcKind::CreatureFromTheDeep => "NPC_Killed_1",
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
@@ -4651,7 +4674,6 @@ impl NpcKind {
             NpcKind::Shimmerfly => "NPC_Killed_1",
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
-            }
             NpcKind::BartenderUnconscious => "NPC_Killed_6",
             // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
             NpcKind::ShimmerSlime => "NPC_Killed_1",
@@ -4879,8 +4901,12 @@ impl NpcKind {
             // W4-d9 wiring (d40 rows): the SetDefaults DeathSound rows —
             // the dragon family NPCDeath60 (`NPC.cs:14426`/`:14444`/
             // `:14463`), the 521 squidhead NPCDeath6 (`NPC.cs:15777`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Killed_60",
             NpcKind::AncientCultistSquidhead => "NPC_Killed_6",
             // W4-d39: the Butterfly's `SoundID.NPCDeath1` row
             // (`NPC.cs:13540`); the scorpion pair `:13670`, the
@@ -5813,7 +5839,7 @@ impl NpcKind {
             // aiStyle 13 - NPC.cs:9299 (43), :9480 (56), :10193 (101),
             // :11214 (175), :12338 (259), :12354 (260): the man-eater
             // family (W4-d23).
-            | NpcKind::AngryTrapper
+            NpcKind::AngryTrapper => 13,
             // aiStyle 14 - NPC.cs:9378, :9409, :9543, :9629
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => 14,
             // aiStyle 14 — the W4-d23 flyer family (NPC.cs:9364 (48),
@@ -6039,6 +6065,8 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2 => 6,
             // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
             NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 6,
             NpcKind::Butcher
             | NpcKind::CreatureFromTheDeep => 3,
             // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
@@ -6378,7 +6406,7 @@ impl NpcKind {
             // (`:9572`/`:10052`/`:10470`/`:10739`/`:10890`/`:10905`/
             // `:10921`/`:15471`/`:11916`).
             NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
-            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox => 14,
             // W4-g8 lane 1 batch 4 — the `SetDefaults` aiStyle rows: 221 18
             // (`NPC.cs:11845`), 48/156 14 (`:9364`/`:10979`).
             // W4-g8 machine round 3 — the Vampire 159's aiStyle 3
@@ -6406,8 +6434,12 @@ impl NpcKind {
             // W4-d9 wiring (d40 rows): the SetDefaults aiStyle rows —
             // the dragon family 6 (`NPC.cs:14420`/`:14438`/`:14457`),
             // the 521 squidhead 86 (`NPC.cs:15772`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 6,
             NpcKind::AncientCultistSquidhead => 86,
             // W4-d39: the Butterfly's `SetDefaults` row — 356 aiStyle 65
             // (`NPC.cs:13535`); the scorpion pair 7 (`:13665`), the
@@ -6619,16 +6651,16 @@ impl NpcKind {
             // (`:13549`), 359 67 (`:13577`).
             NpcKind::Firefly | NpcKind::LightningBug => 64,
             NpcKind::Butterfly => 65,
-(f18's Worm 66 arm deduped into the W4-c10 crawler group above.)
+            // (f18's Worm 66 arm deduped into the W4-c10 crawler group above.)
             NpcKind::Snail => 67,
             // W4-f18 batch 2 — 360 67 (`NPC.cs:13589`), 361/362/364 7
             // (`:13603`/`:13615`/`:13639`), 363 68 (`:13627`).
             NpcKind::GlowingSnail => 67,
             NpcKind::Frog => 7, // (f18 Duck/DuckWhite members deduped into the c10 walker group above)
-(f18's Duck2 68 arm deduped into the W4-c10 swimmer group above.)
+            // (f18's Duck2 68 arm deduped into the W4-c10 swimmer group above.)
             // W4-f18 batch 3 — 365 68 (`NPC.cs:13651`), 366/367 7
             // (`:13663`), 374 66 (`:13764`), 375 6 (`:13779`).
-(f18's DuckWhite2 68 arm deduped into the W4-c10 swimmer group above.)
+            // (f18's DuckWhite2 68 arm deduped into the W4-c10 swimmer group above.)
             NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
             NpcKind::TruffleWorm => 66,
             NpcKind::TruffleWormDigger => 6,
@@ -6638,7 +6670,18 @@ impl NpcKind {
             NpcKind::ChatteringTeethBomb => 41,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
             NpcKind::ArmedZombie => 3,
-        }
+
+            // RESTORE-5: 688-roster tail — the C# `SetDefaults` aiStyle rows
+            // (`NPC.cs` 34/63/64/85/169/182 + the jellyfish pair).
+            NpcKind::CursedSkull => 10,
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish | NpcKind::GreenJellyfish => 18,
+            NpcKind::FloatyGross
+            | NpcKind::Gastropod
+            | NpcKind::IceElemental
+            | NpcKind::Pixie
+            | NpcKind::Wraith => 22,
+            NpcKind::Mimic => 25,
+}
     }
 
     /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
@@ -7438,6 +7481,7 @@ impl NpcKind {
             // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
             NpcKind::CultistDragonBody3
             | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => (32.0, 32.0),
             NpcKind::Butcher
             | NpcKind::CreatureFromTheDeep => (18.0, 40.0),
             // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
@@ -7810,8 +7854,12 @@ impl NpcKind {
             // W4-d9 wiring (d40 rows): the SetDefaults width/height boxes
             // (`NPC.cs:14418-14419`/`:14436-14437`/`:14455-14456`); the
             // 521 squidhead's 60x60 (`NPC.cs:15770-15771`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => (32.0, 32.0),
             NpcKind::AncientCultistSquidhead => (60.0, 60.0),
             // W4-d39: the Butterfly's `SetDefaults` box — 356 10x10
             // (`NPC.cs:13533-13534`); the scorpion pair 26x18
@@ -8029,7 +8077,7 @@ impl NpcKind {
             NpcKind::ShimmerSlime => (24.0, 18.0),
             NpcKind::Firefly => (10.0, 10.0),
             NpcKind::Butterfly => (10.0, 10.0),
-(f18's Worm box deduped into the W4-c10 crawler group above.)
+            // (f18's Worm box deduped into the W4-c10 crawler group above.)
             NpcKind::LightningBug => (12.0, 12.0),
             NpcKind::Snail => (12.0, 12.0),
             // W4-f18 batch 2 — 360 14x14 (`NPC.cs:13587-13588`), 361 12x10
@@ -8037,12 +8085,12 @@ impl NpcKind {
             // `:13637-13638`), 363 28x22 (`:13625-13626`).
             NpcKind::GlowingSnail => (14.0, 14.0),
             NpcKind::Frog => (12.0, 10.0),
-(f18's Duck/DuckWhite box deduped into the W4-c10 walker group above.)
-(f18's Duck2 box deduped into the W4-c10 swimmer group above.)
+            // (f18's Duck/DuckWhite box deduped into the W4-c10 walker group above.)
+            // (f18's Duck2 box deduped into the W4-c10 swimmer group above.)
             // W4-f18 batch 3 — 365 28x22 (`NPC.cs:13649-13650`), 366/367
             // 26x18 (`:13661-13662`), 374 20x10 (`:13762-13763`), 375
             // 10x10 (`:13777-13778`).
-(f18's DuckWhite2 box deduped into the W4-c10 swimmer group above.)
+            // (f18's DuckWhite2 box deduped into the W4-c10 swimmer group above.)
             NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
             NpcKind::TruffleWorm => (20.0, 10.0),
             NpcKind::TruffleWormDigger => (10.0, 10.0),
@@ -8065,7 +8113,13 @@ impl NpcKind {
                 (18.0, 40.0)
             }
             NpcKind::WalkingAntlion => (26.0, 26.0),
-        }
+
+            // RESTORE-5: the jellyfish body pair 26x26 (`NPC.cs:9585-9586`/
+            // `:9599-9600`), the SolarGoop 26x26 (`:15411-15412`) and the
+            // squirrel pair 18x20 (`:15875-15876`/`:15887-15888`).
+            NpcKind::PinkJellyfish | NpcKind::SolarGoop => (26.0, 26.0),
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold => (18.0, 20.0),
+}
     }
 
     /// The C# `NPCID` this kind ports — the statue spawns' ids, the
@@ -10026,7 +10080,7 @@ impl NpcKind {
             NpcKind::Moth => 1000,
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
-            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonBody4 => 10000,
             // W4-d120 - SetDefaults lifeMax rows: 142/160/178/579 250
             // (`NPC.cs:10800`/`:11012`/`:11261`/`:16562`), 209 500
             // (`:11691`).
@@ -10060,7 +10114,20 @@ impl NpcKind {
             NpcKind::DarkMummy | NpcKind::BloodMummy => 180,
             NpcKind::LightMummy => 200,
             NpcKind::WalkingAntlion => 80,
-        }
+
+            // RESTORE-5: 688-roster tail HP rows (`NPC.cs` SetDefaults).
+            NpcKind::CursedSkull => 40,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::IlluminantBat => 200,
+            NpcKind::FlyingSnake => 260,
+            NpcKind::Gastropod => 220,
+            NpcKind::GreenJellyfish => 120,
+            NpcKind::Mimic => 500,
+            NpcKind::Slimer => 60,
+            NpcKind::Squid => 30,
+            NpcKind::Wraith => 160,
+            NpcKind::BlueJellyfish => 34,
+            NpcKind::Pixie => 150,
+}
     }
 
     /// `NPC.defDamage`'s stand-in — the kind's `SetDefaults` contact
@@ -10851,7 +10918,7 @@ impl NpcKind {
             // (`:14440`/`:14459`), the 521 squidhead 90 (`NPC.cs:15773`).
             NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2
-            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody3 => 50,
             NpcKind::AncientCultistSquidhead => 90,
             // W4-d39: the Butterfly's `damage = 0` row
             // (`NPC.cs:13536`); the scorpion pair `:13665`, the
@@ -11077,7 +11144,19 @@ impl NpcKind {
             NpcKind::DarkMummy | NpcKind::BloodMummy => 60,
             NpcKind::LightMummy => 55,
             NpcKind::WalkingAntlion => 25,
-        }
+
+            // RESTORE-5: 688-roster tail contact-damage rows
+            // (`NPC.cs` SetDefaults).
+            NpcKind::BlueJellyfish => 25,
+            NpcKind::CursedHammer
+            | NpcKind::EnchantedSword
+            | NpcKind::GreenJellyfish
+            | NpcKind::Mimic => 80,
+            NpcKind::CursedSkull => 35,
+            NpcKind::Gastropod => 60,
+            NpcKind::Pixie => 55,
+            NpcKind::Wraith => 65,
+}
     }
 }
 

@@ -164,7 +164,7 @@ pub(crate) fn ai010_owner_tile_walk(p: &mut Projectile, world: &mut World, local
                 || kind == 105
                 || kind == 178
             {
-                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                let _ = tr_core::edit::kill_tile_legacy(world, tx, ty, false);
             } else if tile.top_slope() && !tr_core::tiledata::SET_PLATFORMS.has(kind) {
                 // `:58061-58068` — `WorldGen.SlopeTile(i, j)`: clear the
                 // half brick and the slope (the `slope_tile_flatten`
@@ -383,7 +383,7 @@ pub(crate) fn step(
             }
             if p.local_ai[0] == 0.0 {
                 p.local_ai[0] = 1.0;
-                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0));
             }
         } else {
             // `:19849-19853` — the blocked-move default: one last step
@@ -454,7 +454,7 @@ pub(crate) fn cut_tiles_in_flight_box(p: &Projectile, world: &mut World, local_o
                 t.kind == 484
             };
             if matches_kind && tr_core::tileobject::can_cut_tile(world, tx, ty) {
-                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                let _ = tr_core::edit::kill_tile_legacy(world, tx, ty, false);
             }
         }
     }

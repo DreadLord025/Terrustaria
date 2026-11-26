@@ -85,7 +85,7 @@ pub fn bomb_bundle_gores(
         let scale = pass as f32 / 3.0;
         for (sx, sy) in signs {
             let ty = rng.next_range(61, 64);
-            let idx = gore.new_gore_direct(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+            let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
             let g = gore.slot_mut(idx);
             g.velocity *= scale;
             g.velocity.x += sx;

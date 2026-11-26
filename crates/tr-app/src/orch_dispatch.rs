@@ -177,7 +177,7 @@ pub(crate) fn spawn_orchestra_d54(
     kind: u8,
     settings: &D54Settings,
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -201,7 +201,7 @@ pub(crate) fn spawn_orchestra_d54(
         SNAPPING_STONE => orch_dust::snapping_stone(rng, dust, ctx, world, settings.position, settings.movement.x),
         SNAPPING_STONE_MELEE => orch_dust::snapping_stone_melee(rng, dust, ctx, world, settings.position),
         SNAPPING_STONE_SUMMON => orch_dust::snapping_stone_summon(rng, dust, ctx, world, settings.position),
-        PALADINS_HAMMER_SHOCKWAVE => orch_dust::paladins_hammer_shockwave(rng, gen, disco, dust, ctx, world, settings.position, settings.movement),
+        PALADINS_HAMMER_SHOCKWAVE => orch_dust::paladins_hammer_shockwave(rng, gen_rng, disco, dust, ctx, world, settings.position, settings.movement),
         PALADINS_SHIELD_HIT => {
             // `:911-914`/`:940` — the two indices ride the position's
             // truncated components; `Utils.IndexInRange` (Utils.cs:
@@ -226,7 +226,7 @@ pub(crate) fn spawn_orchestra_d54(
                 Color::WHITE
             };
             let weapon = settings.invoker != u8::MAX;
-            orch_dust_lightning::storm_lightning_dust(rng, gen, disco, dust, ctx, world, settings.position, white, weapon);
+            orch_dust_lightning::storm_lightning_dust(rng, gen_rng, disco, dust, ctx, world, settings.position, white, weapon);
         }
         RAINBOW_BOULDER1 => orch_dust_boulder::rainbow_boulder1(rng, dust, ctx, world, settings.position),
         RAINBOW_BOULDER3 => orch_dust_boulder::rainbow_boulder3(rng, dust, ctx, world, settings.position, settings.movement),
@@ -234,14 +234,14 @@ pub(crate) fn spawn_orchestra_d54(
         RAINBOW_BOULDER_PET_BOUNCE => orch_dust_boulder::rainbow_boulder4(rng, dust, ctx, world, settings.position, settings.movement, true),
         MOON_LORD_WHIP_HIT => orch_dust_boulder::moon_lord_whip(rng, dust, ctx, world, settings.position, settings.movement),
         DEAD_CELLS_BARREL_EXPLOSION => orch_dust_boulder::dead_cells_barrel_explosion(rng, dust, ctx, world, settings.position),
-        DEAD_CELLS_FLINT => orch_dust_boulder::dead_cells_flint(rng, gen, disco, dust, ctx, world, settings.position, settings.movement),
+        DEAD_CELLS_FLINT => orch_dust_boulder::dead_cells_flint(rng, gen_rng, disco, dust, ctx, world, settings.position, settings.movement),
         SHADOW_ORB_EXPLOSION => orch_dust_boulder::shadow_orb_explosion(rng, dust, ctx, world, settings.position),
         UFO_LASER => ufo_laser(settings, rng, dust, ctx, world),
         MAGNET_SPHERE_BOLT => magnet_sphere_bolt(settings, rng, dust, ctx, world),
         HEAT_RAY => heat_ray(settings, rng, dust, ctx, world),
         SHADOWBEAM_HOSTILE => shadowbeam(settings, true, rng, dust, ctx, world),
         SHADOWBEAM_FRIENDLY => shadowbeam(settings, false, rng, dust, ctx, world),
-        DEAD_CELLS_DOWN_DASH_EXPLOSION => orch_dust_town::dead_cells_down_dash_explosion(rng, gen, disco, dust, ctx, world, settings.position, settings.movement, settings.info),
+        DEAD_CELLS_DOWN_DASH_EXPLOSION => orch_dust_town::dead_cells_down_dash_explosion(rng, gen_rng, disco, dust, ctx, world, settings.position, settings.movement, settings.info),
         SHIMMER_TOWN_NPC => orch_dust_town::shimmer_town_npc(rng, dust, ctx, world, settings.position),
         DIGESTION => orch_dust_town::digestion(rng, dust, ctx, world, settings.position, settings.movement.x),
         LOADOUT_CHANGE => {
@@ -326,7 +326,7 @@ mod tests {
         s.position = Vec2::new(1600.0, 1600.0);
         // The line kinds need a non-zero |position − movement| to walk.
         s.movement = s.position - Vec2::new(16.0, 0.0);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         let owned = [
             26u8, 27, 29, 32, 35, 36, 38, 39, 42, 44, 47, 49, 50,
@@ -339,7 +339,7 @@ mod tests {
                 sk.position = Vec2::ZERO;
             }
             let mut rng = UnifiedRandom::new(54);
-            spawn_orchestra_d54(kind, &sk, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+            spawn_orchestra_d54(kind, &sk, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
             assert_ne!(rng.peek(), UnifiedRandom::new(54).peek(), "kind {kind} must draw");
             drain(&mut dust);
         }
@@ -349,7 +349,7 @@ mod tests {
         // (the head draws nothing; the scan's gates are tile reads).
         {
             let mut rng = UnifiedRandom::new(54);
-            spawn_orchestra_d54(d54_kind::DEAD_CELLS_FLINT, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+            spawn_orchestra_d54(d54_kind::DEAD_CELLS_FLINT, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
             assert_eq!(rng.peek(), UnifiedRandom::new(54).peek(), "flint empty-world early return");
         }
         // e4's lane-owned kinds + unported bodies + strays.
@@ -359,7 +359,7 @@ mod tests {
         ];
         for kind in unowned {
             let mut rng = UnifiedRandom::new(54);
-            spawn_orchestra_d54(kind, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+            spawn_orchestra_d54(kind, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
             assert_eq!(rng.peek(), UnifiedRandom::new(54).peek(), "kind {kind} must drop");
         }
     }
@@ -377,10 +377,10 @@ mod tests {
         let s = settings();
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         for i in 0..50 {
-            spawn_orchestra_d54(d54_kind::ARMLET_OF_RUIN_RECHARGE, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+            spawn_orchestra_d54(d54_kind::ARMLET_OF_RUIN_RECHARGE, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
             for _ in 0..10 {
                 block(&mut probe, 15, 20, 42);
             }
@@ -410,9 +410,9 @@ mod tests {
         ] {
             let mut rng = UnifiedRandom::new(54);
             let mut probe = UnifiedRandom::new(54);
-            let mut gen = UnifiedRandom::new(7);
+            let mut gen_rng = UnifiedRandom::new(7);
             let mut dust = DustPool::new();
-            spawn_orchestra_d54(kind, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &[]);
+            spawn_orchestra_d54(kind, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &[]);
             for _ in 0..4 {
                 for _ in 0..singles {
                     if gates {
@@ -440,9 +440,9 @@ mod tests {
         s.info = 0;
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
-        spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &[]);
+        spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &[]);
         for _ in 0..60 {
             // circular(2) + velocity NextFloat + scale NextFloat + block.
             probe.next_float();
@@ -456,7 +456,7 @@ mod tests {
             s.info = info;
             let mut r2 = UnifiedRandom::new(54);
             let mut d2 = DustPool::new();
-            spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut r2, &mut gen, [255, 255, 255], &mut d2, &ctx, &w, &[]);
+            spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut r2, &mut gen_rng, [255, 255, 255], &mut d2, &ctx, &w, &[]);
             let live: Vec<_> = d2.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), if info == 1 { 40 } else { 30 }, "copper 40 / elder 30 perfects, no clones");
             assert!(live.iter().all(|d| d.dust_type == 43));
@@ -464,7 +464,7 @@ mod tests {
         s.info = 7;
         let mut r3 = UnifiedRandom::new(54);
         let mut d3 = DustPool::new();
-        spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut r3, &mut gen, [255, 255, 255], &mut d3, &ctx, &w, &[]);
+        spawn_orchestra_d54(d54_kind::TOWN_SLIME_TRANSFORM, &s, &mut r3, &mut gen_rng, [255, 255, 255], &mut d3, &ctx, &w, &[]);
         assert_eq!(r3.peek(), UnifiedRandom::new(54).peek(), "unknown info draws nothing");
     }
 
@@ -477,16 +477,16 @@ mod tests {
         let w = World::new("t".into(), 200, 200);
         let ctx = dust_ctx(&w);
         let s = settings();
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut rng = UnifiedRandom::new(54);
         let mut dust = DustPool::new();
-        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &[]);
-        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &[None]);
+        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &[]);
+        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &[None]);
         assert_eq!(rng.peek(), UnifiedRandom::new(54).peek(), "no player, no draws");
         let p = player(&w);
         let players = [Some(&p)];
         let mut probe = UnifiedRandom::new(54);
-        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+        spawn_orchestra_d54(d54_kind::LOADOUT_CHANGE, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
         for _ in 0..40 {
             probe.next_float();
             probe.next_float();
@@ -522,9 +522,9 @@ mod tests {
         s.position = Vec2::new(0.0, 0.0);
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
-        spawn_orchestra_d54(d54_kind::PALADINS_SHIELD_HIT, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &players);
+        spawn_orchestra_d54(d54_kind::PALADINS_SHIELD_HIT, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &players);
         for _ in 0..8 {
             block(&mut probe, 57, 20, 42);
         }
@@ -532,7 +532,7 @@ mod tests {
         s.position = Vec2::new(1600.0, 1600.0);
         let mut r2 = UnifiedRandom::new(54);
         let mut d2 = DustPool::new();
-        spawn_orchestra_d54(d54_kind::PALADINS_SHIELD_HIT, &s, &mut r2, &mut gen, [255, 255, 255], &mut d2, &ctx, &w, &players);
+        spawn_orchestra_d54(d54_kind::PALADINS_SHIELD_HIT, &s, &mut r2, &mut gen_rng, [255, 255, 255], &mut d2, &ctx, &w, &players);
         assert_eq!(r2.peek(), UnifiedRandom::new(54).peek(), "out-of-range draws nothing");
     }
 
@@ -553,14 +553,14 @@ mod tests {
         s.invoker = u8::MAX; // storm (weapon = false → 12-step loop)
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut gprobe = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         let mut mirror = DustPool::new();
-        spawn_orchestra_d54(d54_kind::STORM_LIGHTNING, &s, &mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, &[]);
+        spawn_orchestra_d54(d54_kind::STORM_LIGHTNING, &s, &mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, &[]);
         orch_dust_lightning::storm_lightning_dust(&mut probe, &mut gprobe, [255, 255, 255], &mut mirror, &ctx, &w, s.position, Color::WHITE, false);
         assert_eq!(rng.peek(), probe.peek(), "storm body parity");
-        assert_eq!(gen.peek(), gprobe.peek(), "gen stream parity");
+        assert_eq!(gen_rng.peek(), gprobe.peek(), "gen stream parity");
         let live = dust.slots().iter().filter(|d| d.active).count();
         let mlive = mirror.slots().iter().filter(|d| d.active).count();
         assert_eq!(live, mlive, "slot census parity");

@@ -964,6 +964,8 @@ mod tests {
         // The event ends → the torch lights again.
         p.torch_god.happy_fun_torch_time = false;
         assert_eq!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).len(), 1);
+    }
+
     /// W4-g79 — `BiomeCampfireHoldStyle` (`Player.cs:40403-40458`): the
     /// campfire 966's zone ladder, the glowshroom-before-temple order (the
     /// torch chain differs), the underworld line and the unlock gate.

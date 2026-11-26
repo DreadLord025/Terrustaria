@@ -226,7 +226,7 @@ pub(crate) fn chain_step(
                 // HitTilesInACircle effectOnly dust (skipped — zero
                 // explicit rand) and the Item14 cue.
                 p.local_ai[0] = 200.0;
-                p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
             }
         }
         // `:24784-24785` — the return flies through tiles.
@@ -295,7 +295,7 @@ pub(crate) fn chain_step(
             p.net_update = true;
             // `:19571` — the Dig thud (the int-id overload).
             if p.wants_sound.is_none() {
-                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0));
             }
         }
     }
@@ -595,7 +595,7 @@ mod tests {
         assert_eq!(p.local_ai[0], 200.0);
         // The cue rides the PRE-integration position (`:24781` plays
         // before UpdatePosition): spawn (515, 326), the seek moves −30.
-        assert_eq!(p.wants_sound, Some((2, 14, 515.0, 326.0)));
+        assert_eq!(p.wants_sound, Some((2, 14, 515.0, 326.0, 0.0, 1.0)));
         // Inside 150 the pin is −1 (the second tick reads localAI != 0
         // — the one-shot never re-fires).
         let mut q = chain(GOLEM_FIST);
@@ -625,7 +625,7 @@ mod tests {
         chain_step(&mut p, &w, Some(&pl), true, None, false);
         assert_eq!(p.ai[0], 1.0);
         assert_eq!(p.vel.x, 0.0, "the blocked axis zeroes (TileCollision)");
-        assert_eq!(p.wants_sound, Some((0, 0, p.pos.x, p.pos.y)));
+        assert_eq!(p.wants_sound, Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0)));
         // The harpoon sticks fully (its 4-px box must reach the wall:
         // pos.x 346 + vel 10 → 356 inside 352..368).
         let mut h = chain(HARPOON);

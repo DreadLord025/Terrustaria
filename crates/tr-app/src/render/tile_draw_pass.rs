@@ -109,10 +109,11 @@
 //!   g30 convention).
 #![allow(dead_code)] // UNWIRED — see the module doc; wiring is the family merge step.
 
-use super::tile_pass::{
-    LayerCacheClear, LegacyCacheClear, LAYER_BEHIND_TILES, LAYER_LIQUID_BEHIND_TILES,
-    LAYER_OVER_TILES, LAYER_TILES, MAX_SPECIALS_LEGACY,
-};
+// The g29 seam's `LegacyCacheClear` + the per-layer `LayerCacheClear` stay
+// bound here; the LAYER_* caps are this module's own consts below (the
+// g32/batch-P canonical shape) — the duplicate re-import from tile_pass is
+// dropped at the union.
+use super::tile_pass::{LayerCacheClear, LegacyCacheClear};
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
@@ -125,7 +126,7 @@ use std::collections::HashSet;
 /// (`tr-core::wind`, `WindGrid.cs:25-30`) only grows. The union binds the
 /// g29 seam to this body; the area comes from the canonical
 /// `tile_pass::get_screen_draw_area` (a FRESH probe, `:476`).
-pub(crate) fn ensure_wind_grid_size(
+pub(crate) fn ensure_wind_grid_size_for_tile_pass(
     area: &super::tile_pass::ScreenDrawArea,
     grid: &mut tr_core::wind::WindGrid,
 ) {
@@ -139,7 +140,6 @@ pub(crate) fn ensure_wind_grid_size(
 // The layer pick (TileDrawing.cs:877-887, :521-526) — KEEP (g32-only)
 // ---------------------------------------------------------------------------
 
-use std::collections::HashSet;
 use tr_core::World;
 
 // ---------------------------------------------------------------------------
@@ -291,11 +291,6 @@ pub(crate) fn cell_batch_layers(solid_layer: bool) -> &'static [u32] {
 /// fields/methods ([`LegacyCaches::clear_legacy_step`] /
 /// [`LegacyCaches::clear_layer_step`]); g29's `LegacySpecialPoints` and
 /// g28's stand-in legacy Vec both dropped onto this list.
-#[derive(Default)]
-pub(crate) struct LegacyCaches {
-    /// `_chestPositions` (`:96`) — filled by `CacheSpecialDraws_Part2`
-    /// (`:4300-4303`, the d58 slice; d58's wired per-draw HashMap is the
-    /// implementation, this key set is the orchestration-side mirror).
 /// (`:7900-7907`).
 #[derive(Default)]
 pub(crate) struct LegacyCaches {
@@ -375,12 +370,6 @@ impl LegacyCaches {
         if solid_layer {
             self.clear_layer_step(LayerCacheClear::DisplayDollTileEntityPositions);
             self.clear_layer_step(LayerCacheClear::HatRackTileEntityPositions);
-    /// clear, which this module cannot reach UNWIRED. Returns `true` when
-    /// the caller must run the g30 `clear_special_block_counts` seam.
-    pub fn clear_cached_tile_draws(&mut self, solid_layer: bool) -> bool {
-        if solid_layer {
-            self.display_doll.clear();
-            self.hat_rack.clear();
             false
         } else {
             true
@@ -409,7 +398,7 @@ impl LegacyCaches {
 
 // ---------------------------------------------------------------------------
 // The Draw head/tail step order (TileDrawing.cs:465-533, :728-741) — KEEP
-}
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // DrawBlackHelper (DrawBlackHelper.cs:5-38)
@@ -503,13 +492,7 @@ pub(crate) enum DrawStep {
     /// `:497` — `new DrawBlackHelper(Layer_Tiles, drawOffSet)` (the g29
     /// `tile_pass::DrawBlackHelper`).
     NewBlackHelper,
-    /// `:498-499` — `tile_pass::martian_glow_byte` (+ the `[b,b,b,0]`
-    /// quad, the seam binding).
-    /// `:496` — [`get_screen_draw_area`] with `!Main.drawToScreen`.
-    ScreenDrawArea,
-    /// `:497` — `new DrawBlackHelper(Layer_Tiles, drawOffSet)`.
-    NewBlackHelper,
-    /// `:498-499` — [`martian_glow`].
+    /// `:498-499` — [`martian_glow`] (+ the `[b,b,b,0]` quad, the seam binding).
     MartianGlow,
     /// `:500-503` — `_lastPaintLookupKey.TileType = -1` (the paint cache
     /// key reset; the paint system itself is unported).
@@ -772,20 +755,11 @@ mod tests {
     use super::*;
     use crate::render::tile_pass::PlacementPreviewGate;
     use DrawStep::*;
-
-    fn area(fx: i32, lx: i32, fy: i32, ly: i32) -> super::super::tile_pass::ScreenDrawArea {
-        super::super::tile_pass::ScreenDrawArea {
-            draw_offset: [0.0, 0.0],
-            first_tile_x: fx,
-            last_tile_x: lx,
-            first_tile_y: fy,
-            last_tile_y: ly,
     use tr_core::tile::FLAG_ACTIVE;
-    use DrawStep::*;
     use PostPass::*;
 
-    fn area(fx: i32, lx: i32, fy: i32, ly: i32) -> ScreenDrawArea {
-        ScreenDrawArea {
+    fn area(fx: i32, lx: i32, fy: i32, ly: i32) -> super::ScreenDrawArea {
+        super::ScreenDrawArea {
             draw_offset: [0.0, 0.0],
             first_x: fx,
             last_x: lx,

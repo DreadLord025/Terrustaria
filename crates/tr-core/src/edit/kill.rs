@@ -1123,7 +1123,10 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         34 => check_chandelier(world, x, y, kind),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
-        219 | 642 => check_3x3_bottom(world, x, y, kind),
+        // W4-c31: the larva 231 rides the same group (`:53114`) — the break
+        // records `item: None` (the `:53230-53257` case spawns gore + the
+        // Queen Bee app-side, never an item).
+        219 | 231 | 642 => check_3x3_bottom(world, x, y, kind),
         // `Check1x2Top` (`WorldGen.cs:46706`, dispatch :85752-85759): the
         // hanging lantern 42, the critter bottles 270/271/581/660, the soul
         // bottles 572 and the Dead-Cells display jar 698.
@@ -1148,6 +1151,10 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // explicit check drop is the ONLY drop (the per-cell `by_tile`
         // fallback finds nothing — 751/752 are NOT in the empty case group).
         751 | 752 => check_2x2(world, x, y),
+        // W4-f41: the party present (457) rides `Check2x2Style` (the
+        // `type != 457` gate `:85649` falls through to `goto case 254`
+        // `:85950-85952`, drop `case 457` -> 3749 `:52395-52397`).
+        457 => check_2x2_style(world, x, y, kind),
         101 => check_bookcase(world, x, y),
         104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
@@ -1743,13 +1750,6 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     // a 32x32 box). The centre conversion happens ONCE at the app's
     // ObjectDrop → spawn seam (W4-g34, the g78 centre-gap fix), so the record
     // carries the top-left like every other check — NOT a pre-centred cell.
-    // `:54292-54293`'s flags (outside the drop switch — all three kinds
-    // count toward the same world counter).
-    world.shadow_orb_smashed = true;
-    world.shadow_orb_count += 1;
-    // W4-c36 — `:54331`: the smash fires progression 7 (SMASHING_POPPET);
-    // the app's break seam drains the flag into the manager.
-    world.orb_smash_notify_pending = true;
     // `:54292-54293`'s flags — INSIDE case 31 only (the 12/639/696 breaks
     // never count toward the orb counter or arm the goblin rolls).
     if kind == 31 {
@@ -1908,8 +1908,10 @@ fn check_bowl(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pigronata_event: None,
         ring: None,
         bulb_summon: None,
-        sound: None,
-        cues: Vec::new(),
+        // `:47255` — `SoundEngine.PlaySound(13, i*16, y*16)`: the Shatter at
+        // the trigger cell (the same tail shape as the piggy's `:47235`).
+        sound: Some((13, 1)),
+        cues: vec![(13, 1, x, y)],
     })
 }
 
@@ -2240,6 +2242,78 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pile_event: None,
         pigronata_event: None,
         ring: Some(region_ring(&region)),
+        bulb_summon: None,
+        sound: None,
+        cues: Vec::new(),
+    })
+}
+
+/// `WorldGen.Check2x2Style` (`WorldGen.cs:52293-52436`) for the party
+/// present (457, W4-f41 — the `TileFrameImportant` gate `:85649`'s
+/// `type != 457` falls through to `goto case 254` `:85950-85952`): the
+/// origin decode walks `frameY / 18` down by 2 and `frameX / 18` down by 2
+/// counting styles (`:52300-52314`), the 2x2 cells need the matching kind
+/// and the style-column `frameX` (the row frames are NOT checked — the
+/// C# checks only `frameX`, `:52323`), and both floor cells must be
+/// `SolidTileAllowBottomSlope` (`:52328`; the 254 pumpkin's ground-kind
+/// extra gate is out of this slice). Drop = `case 457` → 3749
+/// (`:52395-52397`) at the trigger cell; the tail's 4x4 `TileFrame` ring
+/// (`:52429-52435`) — the C# rings `num3-1..num3+3` x `num-1..num+3`.
+fn check_2x2_style(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    // `:52300-52305` — the origin row.
+    let mut row = t.frame_y as i32 / 18;
+    while row > 1 {
+        row -= 2;
+    }
+    let oy = y - row;
+    // `:52306-52314` — the origin column + the style offset.
+    let mut col = t.frame_x as i32 / 18;
+    let mut style = 0i32;
+    while col > 1 {
+        col -= 2;
+        style += 1;
+    }
+    let ox = x - col;
+    let style_x = style * 36;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(4);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            // `:52323` — the frameX check ONLY (the C# never checks frameY
+            // here — the style rows share the column frames).
+            let expected_fx = ((k - ox) * 18 + style_x) as i16;
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || c.frame_x != expected_fx)
+            {
+                broken = true;
+            }
+        }
+        // `:52328-52331` — the floor cell (the 254-only ground-kind arm
+        // `:52334-52346` never runs for 457).
+        if !solid_tile_allow_bottom_slope(world, k, oy + 2) {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            // `:52395-52397` — `Item.NewItem(..., 3749)`.
+            item: Some(3749),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: Some(region_ring(&region)),
+        pigronata_event: None,
         bulb_summon: None,
         sound: None,
         cues: Vec::new(),
@@ -4250,7 +4324,7 @@ pub fn check_lily_pad(world: &mut World, x: i32, y: i32, raw_solid: impl Fn(u16)
         60 => 36,
         _ => {
             // :59302-59309 — no row: the pad dies.
-            return kill_tile(world, x, y, false, rng);
+        return kill_tile(world, x, y, false, rng);
         }
     };
     // :59243-59250 — the gated frameY write.
@@ -4505,7 +4579,7 @@ mod tests {
         }
         // Break the floor under the middle column: the support dies,
         // the Check3x3 arm fires.
-        let kill = kill_tile(&mut w, 10, 20, false).expect("the floor dies");
+        let kill = kill_tile(&mut w, 10, 20, false, &mut rng()).expect("the floor dies");
         let larva_drops: Vec<_> = kill
             .object_drops
             .iter()
@@ -4535,7 +4609,7 @@ mod tests {
             }
         }
         // Break a far-away floor cell: the larva's support is intact.
-        let kill = kill_tile(&mut w, 30, 20, false).expect("the floor dies");
+        let kill = kill_tile(&mut w, 30, 20, false, &mut rng()).expect("the floor dies");
         assert!(
             !kill.object_drops.iter().any(|d| d.tile_kind == 231),
             "no larva record"
@@ -4744,7 +4818,7 @@ mod tests {
             ..Default::default()
         };
         w.compute_column_surface();
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the plant dies");
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).expect("the plant dies");
         assert!(
             kill.tree_events
                 .iter()
@@ -6712,7 +6786,7 @@ mod tests {
         // surviving plant cell the 3×3 `SquareTileFrame` walk visits
         // (`WorldGen.cs:80187-80195`): from (11,19) that is (10,18) — the
         // top-left — so the drop lands there, not at the broken cell.
-        let kill = kill_tile(&mut w, 11, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 19, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert_eq!(
             kill.object_drops,
@@ -6732,14 +6806,19 @@ mod tests {
     #[test]
     fn w4_g84_life_fruit_replica_drops_1291_too() {
         let mut w = jungle_plant_world(702, 1);
-        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 18, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert_eq!(
             kill.object_drops,
             vec![ObjectDrop {
                 tile_kind: 702,
+                // The check fires on the lowest surviving cell the 3x3 walk
+                // visits ((10,19), whose `CheckJunglePlant` passes the
+                // integrity/masonry scan); `Item.NewItem` sits at the CHECK
+                // cell `i, j` (`WorldGen.cs:48031-48034`), not the snapped
+                // origin (10,18).
                 x: 10,
-                y: 18,
+                y: 19,
                 item: Some(1291),
             }]
         );
@@ -6754,7 +6833,7 @@ mod tests {
         let mut w = jungle_plant_world(238, 0);
         // Break the bottom-left cell; the first surviving cell the 3×3 walk
         // visits is (10,18) (the top-left), so the summon records that cell.
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert!(kill.object_drops.is_empty(), "the bulb drops no item");
         assert_eq!(
@@ -6763,7 +6842,7 @@ mod tests {
         );
         // noItem suppresses drops, never the summon.
         let mut w = jungle_plant_world(238, 0);
-        let kill = kill_tile(&mut w, 10, 19, true).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, true, &mut rng()).unwrap();
         assert_eq!(kill.bulb_summons.len(), 1);
     }
 
@@ -6776,7 +6855,7 @@ mod tests {
         // A stone block beside the fruit: its break frames the fruit's
         // cells, the check runs, the integrity + the 60 ground hold.
         set_object_cell(&mut w, 12, 19, 1, 0, 0);
-        let kill = kill_tile(&mut w, 12, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 12, 19, false, &mut rng()).unwrap();
         assert!(w.tile(10, 18).unwrap().active(), "the fruit survives");
         assert!(kill.object_drops.is_empty());
         // Convert the ground back to stone: the next break pops it. A fresh
@@ -6784,7 +6863,7 @@ mod tests {
         let i = w.index(10, 20);
         w.tiles[i].kind = 1;
         set_object_cell(&mut w, 12, 18, 1, 0, 0);
-        let kill = kill_tile(&mut w, 12, 18, false).unwrap();
+        let kill = kill_tile(&mut w, 12, 18, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert_eq!(kill.object_drops.len(), 1);
         assert_eq!(kill.object_drops[0].item, Some(1291));
@@ -6815,7 +6894,7 @@ mod tests {
         }
         w.compute_column_surface();
         // Kill the middle ground column — the check's ground scan fails.
-        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 20, false, &mut rng()).unwrap();
         for dy in 0..2i32 {
             for dx in 0..3i32 {
                 assert!(
@@ -6904,14 +6983,17 @@ mod tests {
             w
         };
         // The Shadow Orb: Shatter 13 at the checked cell - the cascade's
-        // 3x3 walk around the hit (99,99) frames the orb's (100,100) cell.
+        // 3x3 walk around the hit (99,99) reaches the orb's (99,100) cell
+        // first (`SquareTileFrame`'s (-1,+1)... (0,+1) offset order), and the
+        // C# tail plays at the CHECK cell `i,j` (`:54337`/:54341), not the
+        // 2x2 anchor.
         let mut w = orb_world(false);
-        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
-        assert_eq!(kill.check_sounds, vec![(13, 1, 100, 100)]);
+        let kill = super::kill_tile(&mut w, 99, 99, true, &mut rng()).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(13, 1, 99, 100)]);
         // The Crimson Heart: the killed sound 4 style 1.
         let mut w = orb_world(true);
-        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
-        assert_eq!(kill.check_sounds, vec![(4, 1, 100, 100)]);
+        let kill = super::kill_tile(&mut w, 99, 99, true, &mut rng()).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(4, 1, 99, 100)]);
         // The piggy bank: the hit on the right cell (11,20) frames the
         // left (10,20) first - the check's tail plays Shatter 13 there
         // (`:47235` - the C# `i`, not the pair anchor `num`).
@@ -6921,7 +7003,7 @@ mod tests {
         set_object_cell(&mut w, 12, 21, 14, 36, 0);
         set_object_cell(&mut w, 10, 20, 29, 0, 0);
         set_object_cell(&mut w, 11, 20, 29, 18, 0);
-        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 20, false, &mut rng()).unwrap();
         assert!(
             kill.check_sounds.contains(&(13, 1, 10, 20)),
             "the piggy's own Shatter tail: {:?}",
@@ -6934,6 +7016,7 @@ mod tests {
     /// type 0 before `SquareTileFrame`, so the check fires on the
     /// neighbour), not the snapped origin `num`. The tail is NOT
     /// `noItem`-gated (the C# plays it outside the drop block).
+    #[test]
     fn w4_g24_piggy_break_records_the_shatter_at_the_framed_cell() {
         let mut w = soil_world(2);
         set_object_cell(&mut w, 10, 20, 29, 0, 0);
@@ -6941,13 +7024,17 @@ mod tests {
         // The direct hit on the RIGHT cell: the left cell (10, 20) survives
         // to be framed, its Check2x1 plays the Shatter at (10, 20); the
         // origin snaps to 10 for the drop.
-        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 20, false, &mut rng()).unwrap();
         assert_eq!(kill.check_cues, vec![(13, 1, 10, 20)]);
         let drop = kill.object_drops.iter().find(|d| d.tile_kind == 29);
         assert_eq!(drop.and_then(|d| d.item), Some(87), "the piggy item");
-        // The mirror hit: the RIGHT cell is framed, the cue lands there.
-        // `noItem` suppresses the drop but not the cue tail.
-        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        // The mirror hit: a FRESH pair, the LEFT cell struck. The RIGHT cell
+        // (11, 20) survives to be framed, so its Check2x1 plays the Shatter
+        // there. `noItem` suppresses the drop but not the cue tail.
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
+        let kill = kill_tile(&mut w, 10, 20, true, &mut rng()).unwrap();
         assert_eq!(kill.check_cues, vec![(13, 1, 11, 20)]);
         assert!(kill.object_drops.is_empty(), "noItem holds the drop");
     }
@@ -6960,8 +7047,12 @@ mod tests {
     /// nested kill cues. The before-loop recording would have interleaved
     /// them the other way — c14's `check_sounds` position is the faithful
     /// one, kept.
+    #[test]
     fn w4_g24_the_check_tail_records_after_the_kill_loop() {
+        let mut w = soil_world(2);
         // The left pair (10/11, 20) and the right pair (12/13, 20).
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
         set_object_cell(&mut w, 12, 20, 29, 0, 0);
         set_object_cell(&mut w, 13, 20, 29, 18, 0);
         // The trigger block between them: its 3x3 frames both pairs.
@@ -6969,7 +7060,7 @@ mod tests {
         let kill = trigger_at(&mut w, 11, 19);
         assert_eq!(
             kill.check_cues,
-            vec![(13, 1, 10, 20), (13, 1, 13, 20)],
+            vec![(13, 1, 10, 20), (13, 1, 12, 20)],
             "the left pair's tail first, the right pair's second"
         );
         // Both pairs died (their cells are gone), the drops rode the plan.
@@ -6986,9 +7077,11 @@ mod tests {
     /// `Main.tileTable` test OR the Table anchor — platforms pass, unlike
     /// the piggy's case-29), dies off it with the style-row item
     /// (356/2235/2242/2243) and the Shatter at the trigger cell.
+    #[test]
     fn w4_g24_bowl_pair_table_anchor_and_the_style_drop() {
         // On a bench (the plain table test): the pair survives a
         // pass-through framing.
+        let mut w = soil_world(2);
         set_object_cell(&mut w, 10, 21, 14, 0, 0);
         set_object_cell(&mut w, 11, 21, 14, 18, 0);
         set_object_cell(&mut w, 10, 20, 103, 0, 0);
@@ -6999,8 +7092,12 @@ mod tests {
         // Off the table: the direct hit kills the pair, drops the style-0
         // Bowl 356 and records the Shatter at the SURVIVING framed cell
         // (11, 20) — the hit cell (10, 20) is cleared to type 0 first.
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 20, 103, 0, 0);
+        set_object_cell(&mut w, 11, 20, 103, 18, 0);
+        let kill = kill_tile(&mut w, 10, 20, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 20), (11, 20)]);
+        assert_eq!(kill.check_cues, vec![(13, 1, 11, 20)]);
         let drop = kill.object_drops.iter().find(|d| d.tile_kind == 103);
         assert_eq!(drop.and_then(|d| d.item), Some(356));
         // The style rows: frameX 36/72 → num3 = 1/2 → 2235/2242; 108 → 3 →
@@ -7009,14 +7106,19 @@ mod tests {
             let mut w = soil_world(2);
             set_object_cell(&mut w, 10, 20, 103, fx, 0);
             set_object_cell(&mut w, 11, 20, 103, fx + 18, 0);
-            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 20, false, &mut rng()).unwrap();
             let drop = kill.object_drops.iter().find(|d| d.tile_kind == 103);
             assert_eq!(drop.and_then(|d| d.item), Some(item), "frameX {fx}");
         }
         // A platform below passes the Table anchor (`AnchorValid`,
         // `:51841-51871` — the flat segment frames), unlike the piggy arm.
+        let mut w = soil_world(2);
         set_object_cell(&mut w, 10, 21, 19, 0, 0);
         set_object_cell(&mut w, 11, 21, 19, 18, 0);
+        set_object_cell(&mut w, 10, 20, 103, 0, 0);
+        set_object_cell(&mut w, 11, 20, 103, 18, 0);
+        set_active(&mut w, 10, 19, 1);
+        trigger_at(&mut w, 10, 19);
         assert!(
             w.tile(10, 20).unwrap().active(),
             "the platform's Table anchor carries the bowls"
@@ -7026,7 +7128,9 @@ mod tests {
     /// heart plays the killed cue 4 (style 1), the shadow orb the Shatter
     /// 13 — both at the TRIGGER cell, outside the netMode/generatingWorld
     /// drop gate (the `no_item` break still records the cue).
+    #[test]
     fn w4_g24_orb_tail_cue_by_evil_at_the_trigger_cell() {
+        use crate::worldgen::evil::add_shadow_orb;
         let orb_world = || -> World {
             let mut w = World::new("t".into(), 200, 200);
             for x in 0..200 {
@@ -7043,18 +7147,19 @@ mod tests {
             w.frame_important[31] = true;
             w.frame_important[12] = true;
             w.frame_important[639] = true;
-            add_shadow_orb(&mut w, 100, 100, crimson);
             w
         };
         // The Shadow Orb: Shatter 13 at the checked cell - the cascade's
         // 3x3 walk around the hit (99,99) visits the orb's (99,100) cell
         // first (the row-major order's (0,+1) offset precedes (+1,0)).
-        let mut w = orb_world(false);
-        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        let mut w = orb_world();
+        add_shadow_orb(&mut w, 100, 100, false);
+        let kill = super::kill_tile(&mut w, 99, 99, true, &mut rng()).expect("the break");
         assert_eq!(kill.check_sounds, vec![(13, 1, 99, 100)]);
         // The Crimson Heart: the killed sound 4 style 1.
-        let mut w = orb_world(true);
-        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        let mut w = orb_world();
+        add_shadow_orb(&mut w, 100, 100, true);
+        let kill = super::kill_tile(&mut w, 99, 99, true, &mut rng()).expect("the break");
         assert_eq!(kill.check_sounds, vec![(4, 1, 99, 100)]);
         // The piggy bank: the hit on the right cell (11,20) frames the
         // left (10,20) first - the check's tail plays Shatter 13 there
@@ -7065,7 +7170,7 @@ mod tests {
         set_object_cell(&mut w, 12, 21, 14, 36, 0);
         set_object_cell(&mut w, 10, 20, 29, 0, 0);
         set_object_cell(&mut w, 11, 20, 29, 18, 0);
-        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 20, false, &mut rng()).unwrap();
         assert!(
             kill.check_sounds.contains(&(13, 1, 10, 20)),
             "the piggy's own Shatter tail: {:?}",
@@ -7076,10 +7181,12 @@ mod tests {
         // (99, 99) is cleared to type 0 before the frame walk).
         let mut w = orb_world();
         add_shadow_orb(&mut w, 100, 100, false);
-        let kill = kill_tile(&mut w, 99, 99, true).unwrap();
+        let kill = kill_tile(&mut w, 99, 99, true, &mut rng()).unwrap();
         assert_eq!(kill.check_cues, vec![(13, 1, 99, 100)]);
         // The crimson heart: the killed cue 4 style 1 (frameX >= 36).
+        let mut w = orb_world();
         add_shadow_orb(&mut w, 100, 100, true);
+        let kill = kill_tile(&mut w, 99, 99, true, &mut rng()).unwrap();
         assert_eq!(kill.check_cues, vec![(4, 1, 99, 100)]);
     }
 
@@ -7149,7 +7256,7 @@ mod tests {
         // all 18 and drops the cage item at the trigger cell — the critter
         // stays inside (no NPC release; the C# has no release arm here).
         let mut w = cage_6x3_world(275);
-        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 18, false, &mut rng()).unwrap();
         let cells: Vec<(i32, i32)> = (8..=13)
             .flat_map(|x| (17..=19).map(move |y| (x, y)))
             .collect();
@@ -7175,7 +7282,7 @@ mod tests {
         // 41 kinds drops its own cage item, never a neighbour's.
         for &(kind, item) in CAGE_6X3_DROP {
             let mut w = cage_6x3_world(kind);
-            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 18, false, &mut rng()).unwrap();
             assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
             assert_eq!(kill.object_drops[0].tile_kind, kind);
             assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
@@ -7189,10 +7296,10 @@ mod tests {
         // dies; `noItem` keeps the cascade but suppresses the drop record
         // (the shared `no_item` gate).
         let mut w = cage_6x3_world(275);
-        let kill = kill_tile(&mut w, 20, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 20, 20, false, &mut rng()).unwrap();
         assert!(kill.object_drops.is_empty(), "the intact cage drops nothing");
         assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
-        let kill = kill_tile(&mut w, 10, 18, true).unwrap();
+        let kill = kill_tile(&mut w, 10, 18, true, &mut rng()).unwrap();
         assert!(kill.object_drops.is_empty(), "noItem suppresses the record");
         assert!(!w.tile(9, 17).is_some_and(|t| t.active()), "the sweep ran");
     }
@@ -7224,7 +7331,7 @@ mod tests {
         }
         // Break the floor cell (14, 20): its 3x3 reaches the cage's bottom-
         // right cell (13, 19), so check_6x3 runs — the table tops carry it.
-        let kill = kill_tile(&mut w, 14, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 14, 20, false, &mut rng()).unwrap();
         assert!(
             !kill.object_drops.iter().any(|d| d.tile_kind == 275),
             "the table carries the cage"
@@ -7258,7 +7365,7 @@ mod tests {
             538, 544, 555, 556, 582, 619, 629,
         ] {
             let mut w = cage_3x2_world(kind);
-            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
             let cells: Vec<(i32, i32)> = (9..=11)
                 .flat_map(|x| (18..=19).map(move |y| (x, y)))
                 .collect();
@@ -7281,7 +7388,7 @@ mod tests {
         for x in 9..=11 {
             set_object_cell(&mut w, x, 20, 19, 0, 0); // platform 19
         }
-        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 12, 20, false, &mut rng()).unwrap();
         assert!(
             !kill.object_drops.iter().any(|d| d.tile_kind == 285),
             "the platform carries the cage"
@@ -7298,7 +7405,7 @@ mod tests {
         // `item: None` (the app resolves the placing item via `by_tile`).
         for kind in [17u16, 77, 86, 114, 217, 218, 237, 244, 377, 405, 486] {
             let mut w = cage_3x2_world(kind);
-            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
             let cells: Vec<(i32, i32)> = (9..=11)
                 .flat_map(|x| (18..=19).map(move |y| (x, y)))
                 .collect();
@@ -7318,7 +7425,7 @@ mod tests {
         // their style tables.
         // Forge style 0 (frameX 0..53) → Adamantite 524.
         let mut w = cage_3x2_world(133);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(524));
         // Forge style 1 (frameX 54..107) → Titanium 1221.
         let mut w = object_world();
@@ -7327,23 +7434,23 @@ mod tests {
                 set_object_cell(&mut w, 9 + dx, 18 + dy, 133, (54 + dx * 18) as i16, (dy * 18) as i16);
             }
         }
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(1221));
         // Altar replica style 0 → Demon 5467; style 1 → Crimson 5468.
         let mut w = cage_3x2_world(695);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(5467));
         // Campfire style 0 → 966.
         let mut w = cage_3x2_world(215);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(966));
         // Tables2 style 0 → Crystal Table 3920.
         let mut w = cage_3x2_world(469);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(3920));
         // Bench style 0 → 335.
         let mut w = cage_3x2_world(89);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_eq!(kill.object_drops[0].item, Some(335));
     }
 
@@ -7353,7 +7460,7 @@ mod tests {
         // cells but records NO item drop — the SmashAltar ore-seeding is
         // app-wired through break_tile (editing.rs:1303-1315), not a drop.
         let mut w = cage_3x2_world(26);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         let cells: Vec<(i32, i32)> = (9..=11)
             .flat_map(|x| (18..=19).map(move |y| (x, y)))
             .collect();
@@ -7368,7 +7475,7 @@ mod tests {
         // sweeps it. Without the boulder the intact altar survives.
         let mut w = cage_3x2_world(26);
         set_object_cell(&mut w, 10, 20, 138, 0, 0); // boulder 138 under the middle column
-        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 12, 20, false, &mut rng()).unwrap();
         assert!(
             kill.object_drops.iter().all(|d| d.tile_kind != 26),
             "the altar records no drop"
@@ -7392,7 +7499,7 @@ mod tests {
             (706, 4144),      // terragrim-shrine echo → Terragrim 4144
         ] {
             let mut w = cage_3x2_world(kind);
-            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
             assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
             assert_eq!(kill.object_drops[0].tile_kind, kind);
             assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
@@ -7413,7 +7520,7 @@ mod tests {
         for x in 9..=11 {
             set_object_cell(&mut w, x, 20, 2, 0, 0); // dirt grass below
         }
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert!(kill.object_drops.is_empty(), "the wood rides the pile event");
         assert_eq!(
             kill.pile_events,
@@ -7427,7 +7534,7 @@ mod tests {
         // floor (the object_world default) refuses it, so the cascade sweeps
         // it when a nearby break re-frames it.
         let mut w = cage_3x2_world(488); // stone floor below — not grass
-        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        let kill = kill_tile(&mut w, 12, 20, false, &mut rng()).unwrap();
         assert!(
             kill.pile_events.iter().any(|p| p.kind == 488),
             "the log dies off the grass and records its wood"
@@ -7441,7 +7548,7 @@ mod tests {
         // (census: :49432-49836 carries no case 552) — the cascade sweeps the
         // cells but records no item.
         let mut w = cage_3x2_world(552);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         let cells: Vec<(i32, i32)> = (9..=11)
             .flat_map(|x| (18..=19).map(move |y| (x, y)))
             .collect();
@@ -7475,7 +7582,7 @@ mod tests {
             (698, Some(5472)),       // DeadCellsDisplayJar
         ] {
             let mut w = bottle_world(kind);
-            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 18, false, &mut rng()).unwrap();
             assert_all_gone(&w, &[(10, 17), (10, 18)]);
             assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
             assert_eq!(kill.object_drops[0].tile_kind, kind);
@@ -7496,7 +7603,7 @@ mod tests {
         // A stone block beside the bottle's top cell: breaking it runs
         // check_1x2_top on the bottle (the 3x3 reaches (10, 17)).
         set_object_cell(&mut w, 11, 17, 1, 0, 0);
-        let kill = kill_tile(&mut w, 11, 17, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 17, false, &mut rng()).unwrap();
         assert!(
             !kill.object_drops.iter().any(|d| d.tile_kind == 270),
             "the platform carries the bottle"
@@ -7509,7 +7616,7 @@ mod tests {
         // The lantern 42 keeps its style-0 drop through `by_tile` (136, the
         // Chain Lantern) — the rename to check_1x2_top preserves its record.
         let mut w = bottle_world(42);
-        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 18, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 17), (10, 18)]);
         assert_eq!(kill.object_drops.len(), 1);
         assert_eq!(kill.object_drops[0].tile_kind, 42);
@@ -7542,7 +7649,7 @@ mod tests {
             580, 620, 521, 522, 523, 524, 525, 526, 527, 316, 317, 318,
         ] {
             let mut w = cage_2x2_world(kind);
-            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
             let cells: Vec<(i32, i32)> = (10..=11)
                 .flat_map(|x| (18..=19).map(move |y| (x, y)))
                 .collect();
@@ -7564,7 +7671,7 @@ mod tests {
         // and the app resolves it via `by_tile`.
         for kind in [316u16, 317, 318] {
             let mut w = cage_2x2_world(kind);
-            let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+            let kill = kill_tile(&mut w, 11, 18, false, &mut rng()).unwrap();
             assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
             assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
             assert_eq!(kill.object_drops[0].tile_kind, kind);
@@ -7588,7 +7695,7 @@ mod tests {
         // nothing). Dispatch: the plain-break group :85689-85691 falls to
         // `goto case 132` :85927 → Check2x2.
         let mut w = cage_2x2_world(752);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile(&mut w, 10, 19, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
         assert_eq!(
             kill.object_drops,
@@ -7607,7 +7714,7 @@ mod tests {
         // (the Palworld Digtoise item) — the sibling arm ported with the
         // Chillet egg. Same 2x2 sweep + trigger-cell drop position.
         let mut w = cage_2x2_world(751);
-        let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+        let kill = kill_tile(&mut w, 11, 18, false, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
         assert_eq!(
             kill.object_drops,
@@ -7629,7 +7736,7 @@ mod tests {
         // egg record back — the same shape as the chest support-break
         // witness above, with the drops suppressed.
         let mut w = cage_2x2_world(752);
-        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        let kill = kill_tile(&mut w, 10, 20, true, &mut rng()).unwrap();
         assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
         assert!(kill.object_drops.is_empty(), "no_item suppresses the egg");
     }
@@ -7770,7 +7877,7 @@ mod tests {
         };
         // Tile 12 → the Life Crystal 29; the flags stay down.
         place(&mut w, 12, 20, 20, false);
-        let kill = super::kill_tile(&mut w, 20, 20, false).expect("the 12 break");
+        let kill = super::kill_tile(&mut w, 20, 20, false, &mut rng()).expect("the 12 break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(29));
         assert!(!w.shadow_orb_smashed, "12 never arms the goblin rolls");
         assert_eq!(w.shadow_orb_count, 0);
@@ -7779,23 +7886,23 @@ mod tests {
         assert!(!w.orb_smash_notify_pending, "12 never fires SMASHING_POPPET");
         // Tile 639 → 109, flags still down.
         place(&mut w, 639, 40, 20, false);
-        let kill = super::kill_tile(&mut w, 40, 20, false).expect("the 639 break");
+        let kill = super::kill_tile(&mut w, 40, 20, false, &mut rng()).expect("the 639 break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(109));
         assert!(!w.shadow_orb_smashed);
         assert!(!w.orb_smash_notify_pending, "639 never fires it either");
         // Tile 696 orb half → 5469; crimson half → 5470; flags still down.
         place(&mut w, 696, 60, 20, false);
-        let kill = super::kill_tile(&mut w, 60, 20, false).expect("the 696 break");
+        let kill = super::kill_tile(&mut w, 60, 20, false, &mut rng()).expect("the 696 break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(5469));
         place(&mut w, 696, 80, 20, true);
-        let kill = super::kill_tile(&mut w, 80, 20, false).expect("the 696 heart break");
+        let kill = super::kill_tile(&mut w, 80, 20, false, &mut rng()).expect("the 696 heart break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(5470));
         assert!(!w.shadow_orb_smashed, "the replica never counts");
         assert_eq!(w.shadow_orb_count, 0);
         assert!(!w.orb_smash_notify_pending, "the replica never fires it");
         // Tile 31 crimson half → the forced Undertaker 800 + the flags.
         add_shadow_orb(&mut w, 100, 100, true);
-        let kill = super::kill_tile(&mut w, 99, 99, false).expect("the heart break");
+        let kill = super::kill_tile(&mut w, 99, 99, false, &mut rng()).expect("the heart break");
         assert_eq!(kill.object_drops.first().unwrap().item, Some(800));
         assert!(w.shadow_orb_smashed, "31 arms the flag");
         assert_eq!(w.shadow_orb_count, 1);
@@ -7808,7 +7915,7 @@ mod tests {
         // records its bit (`:54296`'s flag), the corruption smash clears it.
         assert!(w.orb_smash_crimson, "the heart smash is the Brain half");
         add_shadow_orb(&mut w, 140, 100, false);
-        let _ = super::kill_tile(&mut w, 139, 99, false).expect("the orb break");
+        let _ = super::kill_tile(&mut w, 139, 99, false, &mut rng()).expect("the orb break");
         assert!(!w.orb_smash_crimson, "the orb smash is the EoW half");
         assert_eq!(w.shadow_orb_count, 2, "both 31 breaks counted");
     }

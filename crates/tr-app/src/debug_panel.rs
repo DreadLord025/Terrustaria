@@ -1,5 +1,3 @@
-{
-// balance-open (union shared delimiter)
 //! The F3 developer workbench — the `tr-app` adapter.
 //!
 //! The panel's state, layout, hit-testing and input→intent translation live in
@@ -120,7 +118,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 16,
+        Tab::World => 17,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -338,7 +336,7 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
     }
 }
 
-/// The World tab's 16 rows. The order is the click dispatch's (`world_click`).
+/// The World tab's 17 rows. The order is the click dispatch's (`world_click`).
 fn world_rows(
     world: &tr_core::World,
     stepper_paused: bool,
@@ -865,13 +863,6 @@ fn world_click(app: &mut App, row: usize) {
             } else {
                 let remix_world = app.wind.remix_world;
                 let player_luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
-                app.rain.start_rain(
-                    &app.world,
-                    remix_world,
-                    player_luck,
-                    app.cloud_field.cloud_bg_active,
-                    app.cloud_field.num_clouds,
-                );
                 app.rain.start_rain(&mut app.world, remix_world, player_luck);
             }
         }
@@ -887,7 +878,7 @@ fn world_click(app: &mut App, row: usize) {
                 app.sandstorm.start_sandstorm();
             }
         }
-        15 => {
+        16 => {
             // The `/quit` chat command (`ToolkitDebugCommands.cs:232-237`):
             // `WorldGen.JustQuit()` (`WorldGen.cs:6627-6662`), the no-save
             // exit. The panel is the chat dispatcher's stand-in (the
@@ -951,13 +942,13 @@ mod tests {
     /// (`ToolkitDebugCommands.cs:232-237`): `WorldGen.JustQuit` runs its
     /// sentinel-stop pair + the tracked drain, then the single-player
     /// `GoToWorldSelect` hop (`WorldGen.cs:6655`). The row count includes
-    /// the new row (16).
+    /// the new row (17).
     #[test]
     fn w4_g24_the_quit_row_runs_just_quit() {
         let mut app = flow_app();
         app.player = Some(crate::player::Player::spawn(&app.world));
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
-        click_world(&mut app, 15);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 17);
+        click_world(&mut app, 16);
         assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
         assert!(matches!(
             app.front,
@@ -1161,47 +1152,24 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_sixteen_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_seventeen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 17);
         let rows = world_rows(&app.world, false, false, false, false);
-        assert_eq!(rows.len(), 16, "the draw and the dispatch agree");
+        assert_eq!(rows.len(), 17, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
         // S1-E-34 — the god-mode toggle rides row 11.
         assert_eq!(rows[11].0, "God Mode: OFF");
         // S1-L-3 — the `/map pretty` reveal rides row 12.
         assert_eq!(rows[12].0, "Reveal Map (pretty)");
-        // S1-E-35 — the weather toggles ride rows 13/14.
-        assert_eq!(rows[13].0, "Rain: OFF");
-        assert_eq!(rows[14].0, "Sandstorm: OFF");
-        // The quit-stop keep-one — the `/quit` row is the new tail row.
-        assert_eq!(rows[15].0, "Quit (no save)");
-    }
-
-    /// The quit row is the `/quit` chat command (`ToolkitDebugCommands.cs:
-    /// 232-237`): `WorldGen.JustQuit` runs its sentinel-stop pair + the
-    /// tracked drain, then the single-player `GoToWorldSelect` hop
-    /// (`WorldGen.cs:6655`). The row count includes the new row (16).
-    #[test]
-    fn w4_g24_the_quit_row_runs_just_quit() {
-        let mut app = flow_app();
-        app.player = Some(crate::player::Player::spawn(&app.world));
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
-        click_world(&mut app, 15);
-        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
-        assert!(matches!(
-            app.front,
-            Some(crate::app::flow::FrontScreen::WorldSelect)
-        ), "the world-select hop");
-        assert!(matches!(app.net, crate::app::NetRole::Off));
-
-        }        // The quit-stop keep-one (g73 retire bce01ece8's C#-verified fix,
-        // adopted on g24) — the `/quit` row is the new tail row 15.
         // W4-e18 — the `/clearmap` command rides row 13.
         assert_eq!(rows[13].0, "Clear Map");
-        // S1-E-35 — the weather toggles ride the last two rows.
+        // S1-E-35 — the weather toggles ride rows 14/15.
         assert_eq!(rows[14].0, "Rain: OFF");
         assert_eq!(rows[15].0, "Sandstorm: OFF");
+        // The quit-stop keep-one (g73 retire bce01ece8's C#-verified fix,
+        // adopted on g24) — the `/quit` row is the new tail row 16.
+        assert_eq!(rows[16].0, "Quit (no save)");
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.

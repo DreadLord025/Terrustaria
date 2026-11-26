@@ -46,18 +46,6 @@ impl ResearchTracker {
     /// catalog cap (`Math.Min(value3 + amount, amountNeeded)`, `:131`), a
     /// capless kind or an already-full row registers nothing (`:122-130`),
     /// and reaching the cap marks the kind newly-unlocked (`:135-137`).
-    /// `ItemsSacrificedUnlocksTracker.LastEditId` (`:23`): bumped by every
-    /// `MarkContentsDirty` (`:222-225`) — a sacrifice registration or a
-    /// direct count set. `CheckResearchAchievement` compares it against its
-    /// own `_lastResearchVersion` latch to skip unchanged frames.
-    last_edit_id: i32,
-}
-
-impl ResearchTracker {
-    /// `ItemsSacrificedUnlocksTracker.RegisterItemSacrifice`'s count
-    /// accumulation (the stack merges into the running total). The C# clamps
-    /// at the cap and marks dirty (`:131-134`); the port keeps the running
-    /// total (the cap read rides `is_fully_researched`) and bumps the edit id.
     pub fn register_sacrifice(&mut self, item_id: u16, stack: u32) {
         let Some(cap) = sacrifice_cap(item_id) else {
             return; // `:122-125` — no catalog row, no registration
@@ -93,13 +81,6 @@ impl ResearchTracker {
     /// hover calls it (`UICreativeItemGrid.cs:28`).
     pub fn clear_newly_researched(&mut self, item_id: u16) {
         self.newly.retain(|&id| id != item_id);
-                *count += stack;
-                self.last_edit_id += 1;
-                return;
-            }
-        }
-        self.counts.push((item_id, stack));
-        self.last_edit_id += 1;
     }
 
     pub fn sacrificed(&self, item_id: u16) -> u32 {
@@ -121,15 +102,6 @@ impl ResearchTracker {
         }
     }
 
-    /// `ItemsSacrificedUnlocksTracker.TryGetSacrificeNumbers`
-    /// (`ItemsSacrificedUnlocksTracker.cs:75-86`): `(have, needed)` when the
-    /// catalog carries the item, `None` for the capless kinds (the UI prints
-    /// "X" for them, `UICreativeInfiniteItemsDisplay.cs:426-429`).
-    pub fn sacrifice_numbers(&self, item_id: u16) -> Option<(u32, u32)> {
-        let cap = sacrifice_cap(item_id)?;
-        Some((self.sacrificed(item_id), cap))
-    }
-
     /// `ForEachItemWithResearchProgress` (`ItemsSacrificedUnlocksTracker.cs:47-55`):
     /// every item whose sacrificed count is positive — the duplication grid's
     /// roster (`UICreativeInfiniteItemsDisplay.UpdateContents:536-549`).
@@ -138,29 +110,6 @@ impl ResearchTracker {
             .iter()
             .filter(|(_, count)| *count > 0)
             .map(|(id, _)| *id)
-    /// `ItemsSacrificedUnlocksTracker.LastEditId` (`:23`) — the dirty counter
-    /// `CheckResearchAchievement` latches against.
-    pub fn last_edit_id(&self) -> i32 {
-        self.last_edit_id
-    }
-
-    /// `ItemsSacrificedUnlocksTracker.CountFullyResearchedItems` (`:60-75`):
-    /// walks `ItemID.Count` (6196, `ItemID.cs:14861`); every id with a
-    /// sacrifice-cap row counts toward `all_items`, and the ones whose
-    /// sacrificed total reaches the cap count toward `fully_researched`.
-    /// Returns `(fully_researched, all_items)`.
-    pub fn count_fully_researched(&self) -> (u32, u32) {
-        let mut fully = 0u32;
-        let mut all = 0u32;
-        for id in 0..crate::itemdata::ITEMS.len() as u16 {
-            if let Some(cap) = sacrifice_cap(id) {
-                all += 1;
-                if self.sacrificed(id) >= cap {
-                    fully += 1;
-                }
-            }
-        }
-        (fully, all)
     }
 
     pub fn reset(&mut self) {
@@ -171,8 +120,8 @@ impl ResearchTracker {
 
     /// `LastEditId` (`ItemsSacrificedUnlocksTracker.cs:23`): the edit version
     /// the research-achievement gate compares (`AchievementsHelper.cs:389`).
-    pub fn last_edit_id(&self) -> u32 {
-        self.last_edit_id
+    pub fn last_edit_id(&self) -> i32 {
+        self.last_edit_id as i32
     }
 
     /// `CountFullyResearchedItems` (`ItemsSacrificedUnlocksTracker.cs:60-75`):
@@ -323,8 +272,6 @@ pub fn research_tooltip_rows(
                 journey,
             ));
         }
-        // `Reset` calls `MarkContentsDirty` (`:215`).
-        self.last_edit_id += 1;
     }
 }
 

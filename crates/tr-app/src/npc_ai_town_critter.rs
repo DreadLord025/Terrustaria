@@ -228,7 +228,7 @@ pub fn town_critter_step(
                 && town::check_if_will_drown(town::drown_collision(world, npc.x, npc.y, w, h, true))
             {
                 npc.ai[0] = 1.0;
-                npc.ai[1] = 200.0 + rng.next_range(300) as f32;
+                npc.ai[1] = 200.0 + rng.next_max(300) as f32;
                 npc.ai[2] = 0.0;
                 if town::town_critter(net_id) {
                     npc.ai[1] += rng.next_range(200, 400) as f32;
@@ -244,7 +244,7 @@ pub fn town_critter_step(
             if npc.ai[1] <= 0.0 {
                 if flag21 && !avoid_falling2 {
                     npc.ai[0] = 1.0;
-                    npc.ai[1] = 200.0 + rng.next_range(300) as f32;
+                    npc.ai[1] = 200.0 + rng.next_max(300) as f32;
                     npc.ai[2] = 0.0;
                     if town::town_critter(net_id) {
                         npc.ai[1] += rng.next_range(200, 400) as f32;
@@ -253,7 +253,7 @@ pub fn town_critter_step(
                     npc.net_update = true;
                 } else {
                     npc.facing *= -1;
-                    npc.ai[1] = 60.0 + rng.next_range(120) as f32;
+                    npc.ai[1] = 60.0 + rng.next_max(120) as f32;
                     npc.net_update = true;
                 }
             }
@@ -304,12 +304,12 @@ pub fn town_critter_step(
         // `:53817-53832` — the walk-end idle arm.
         if npc.ai[1] <= 0.0 {
             npc.ai[0] = 0.0;
-            npc.ai[1] = 300.0 + rng.next_range(300) as f32;
+            npc.ai[1] = 300.0 + rng.next_max(300) as f32;
             npc.ai[2] = 0.0;
             if town::town_critter(net_id) {
-                npc.ai[1] -= rng.next_range(100) as f32;
+                npc.ai[1] -= rng.next_max(100) as f32;
             } else {
-                npc.ai[1] += rng.next_range(900) as f32;
+                npc.ai[1] += rng.next_max(900) as f32;
             }
             npc.local_ai[3] = 60.0;
             npc.net_update = true;
@@ -392,7 +392,7 @@ pub fn town_critter_step(
                     keepwalking3 = false;
                     avoid_falling3 = false;
                     npc.ai[0] = 0.0;
-                    npc.ai[1] = 50.0 + rng.next_range(50) as f32;
+                    npc.ai[1] = 50.0 + rng.next_max(50) as f32;
                     npc.ai[2] = 0.0;
                     npc.local_ai[3] = 40.0;
                 }
@@ -510,7 +510,7 @@ pub fn town_critter_step(
             if npc.local_ai[2] >= 30.0 {
                 npc.local_ai[2] = 0.0;
                 npc.ai[0] = 1.0;
-                npc.ai[1] = 200.0 + rng.next_range(300) as f32;
+                npc.ai[1] = 200.0 + rng.next_max(300) as f32;
                 npc.ai[2] = 0.0;
                 if town::town_critter(net_id) {
                     npc.ai[1] += rng.next_range(200, 400) as f32;
@@ -643,8 +643,8 @@ mod tests {
         let mut mirror = rng.clone();
         town_critter_step(&mut n, &w, &ctx(&players), &mut rng);
         assert_eq!(n.ai[0], 0.0);
-        let base = mirror.next_range(300);
-        let crit = mirror.next_range(100);
+        let base = mirror.next_max(300);
+        let crit = mirror.next_max(100);
         assert_eq!(n.ai[1], 300.0 + base as f32 - crit as f32);
         assert_eq!(n.local_ai[3], 60.0);
     }

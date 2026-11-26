@@ -1495,19 +1495,23 @@ mod tests {
         place_3x2(&mut w3, 30, 19, 26, 0);
         assert!(!w3.tile(30, 18).unwrap().active());
         // The 285 arm accepts an active solidTop floor with frameY 0.
+        // Tile 19 (platform) is BOTH tileSolid and tileSolidTop in 1.4.5.8
+        // (`Main.cs:7892-7893`), so SolidTile2 already accepts it and the
+        // frameY gate never fires. Use a table (14) — solidTop, not solid —
+        // so the `!SolidTile2 && (... || frameY != 0)` arm is exercised.
         let mut w4 = floor_world();
         for col in [39, 40, 41] {
             let i = w4.index(col, 20);
-            w4.tiles[i].kind = 19; // platform: tileSolidTop, not tileSolid
+            w4.tiles[i].kind = 14; // table: tileSolidTop, not tileSolid
             w4.tiles[i].frame_y = 0;
         }
         place_3x2(&mut w4, 40, 19, 285, 0);
         assert!(w4.tile(40, 18).unwrap().active());
-        // … but a framed platform (frameY != 0) refuses.
+        // … but a framed table (frameY != 0) refuses.
         let mut w5 = floor_world();
         for col in [44, 45, 46] {
             let i = w5.index(col, 20);
-            w5.tiles[i].kind = 19;
+            w5.tiles[i].kind = 14;
             w5.tiles[i].frame_y = 18;
         }
         place_3x2(&mut w5, 45, 19, 285, 0);
@@ -1556,11 +1560,16 @@ mod tests {
         place_3x3(&mut w2, 20, 10, 42, 1);
         assert!(w2.tile(19, 10).unwrap().active());
         assert_eq!(w2.tile(21, 12).unwrap().frame_y, 36);
-        // 753 on an active 753 floor passes without SolidTile2.
+        // 753 on an active 753 floor passes without SolidTile2. The C#
+        // gate is PER COLUMN (`:53562`), and the body sits over all three
+        // floor columns (`x-1..=x+1`), so all three must carry the 753 —
+        // only then does the whole 3-wide body pass.
         let mut w3 = World::new("ph".into(), 60, 60);
-        let i = w3.index(30, 20);
-        w3.tiles[i].flags |= FLAG_ACTIVE;
-        w3.tiles[i].kind = 753;
+        for col in [29, 30, 31] {
+            let i = w3.index(col, 20);
+            w3.tiles[i].flags |= FLAG_ACTIVE;
+            w3.tiles[i].kind = 753;
+        }
         place_3x3(&mut w3, 30, 19, 753, 0);
         assert!(w3.tile(30, 17).unwrap().active());
     }
@@ -1665,6 +1674,10 @@ mod tests {
         // The book (78) accepts plain stone; the book (50) rolls Next(5).
         place_on_table_1x1(&mut w2, &mut rng, 22, 19, 78, 0);
         assert!(w2.tile(22, 19).unwrap().active());
+        // Type 50 is NOT in the 78 solid arm (`:45355`): it needs a table
+        // below, so plant one under the roll site.
+        let i = w2.index(24, 20);
+        w2.tiles[i].kind = 14;
         let mut probe = Rng(5);
         let roll = probe.range(0, 5);
         place_on_table_1x1(&mut w2, &mut rng, 24, 19, 50, 0);

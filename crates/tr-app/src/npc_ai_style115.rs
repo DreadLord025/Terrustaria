@@ -1,154 +1,3 @@
-//! The aiStyle-115 family — the Lady Bugs and the Stinkbug
-//! (`NPC.AI_115_LadyBugs`, `NPC.cs:47580-47714`, dispatched at
-//! `:41080-41083`). W4-d33, research/25 row 115, CODE-ONLY MODE (no
-//! compiler invoked; the witness tests below are written, not run).
-//!
-//! ## Census
-//!
-//! The family has THREE vanilla members: the LadyBug 604 / GoldLadyBug
-//! 605 (`ID/NPCID.cs:11885-11887`; the shared `SetDefaults` row
-//! `NPC.cs:16763-16780`) and the Stinkbug 669 (`:12015`; row
-//! `:17467-17480`). The census of `this.aiStyle = 115;` returns exactly
-//! those two rows (`:16767`, `:17471`) — no projectile-space user. The
-//! port's roster has no ladybug kind — the module lands UNWIRED (the
-//! `npc_ai_style73.rs` precedent).
-//!
-//! ## The machine
-//!
-//! The wind-drifting critter with a walk mode: `ai[0]` is the flight
-//! ANGLE, `ai[1]` the scale seed (0.7-0.9), `ai[2]` the mode (0 fly,
-//! 1 walk).
-//!
-//! The non-client head (`:47582-47620`): the `ai[1] == 0` scale seed
-//! `NextFloat()*0.2 + 0.7`; the `--localAI[0] <= 0` re-roll (reset
-//! `Next(60,181)`): the `Next(5) == 0` mode flip — fly→walk zeroes
-//! `ai[0]`; walk→fly runs TargetClosest + the random-angle pick
-//! (`NextFloat()*2π`, the >700-px `AngleTo + NextFloatDirection()*0.3`
-//! override) — then the UNCONDITIONAL second TargetClosest + angle
-//! pick (the C# runs BOTH — the walk→fly pick is overwritten the same
-//! tick, but its DRAWS stay; verbatim).
-//!
-//! `scale = ai[1]` (`:47521`).
-//!
-//! Fly mode (`:47622-47671`): the desired velocity
-//! `ai[0].ToRotationVector2() + (windSpeedTarget*0.8, 0)`, the 0.0125
-//! Lerp. A falling vy probes the 4-row centre column (solid OR liquid)
-//! — each hit NEGATES the angle and damps vy ×0.9 (the per-row loop,
-//! no break). A rising vy scans the 30-row column (NO break — the flag
-//! ORs every row); no hit negates the angle + damps. The collideX
-//! reflect: `ai[0] = -ai[0] + π`, `vx *= -0.2`.
-//!
-//! Walk mode (`:47672-47712`): a falling vy probes the 4-row
-//! direction-shifted column for LIQUID only — a hit runs TargetClosest,
-//! `vy = -1`, mode 0, the `-π/2 + NextFloat()*π/4` upward angle (the
-//! >700 override), netUpdate + RETURN. A non-zero vy damps vx ×0.98 and
-//! Lerps vy toward 2 at 0.005; a zero vy Lerps toward
-//! `(direction, 0)` at 0.05, adds 0.2 gravity, and the collideX flips
-//! the facing + `vx *= -0.2` + netUpdate.
-//!
-//! The tail (`:47713`): `direction = vx > 0 ? 1 : -1` — the 0-on-tie
-//! folds to -1 (NOT Math.Sign).
-//!
-//! ## RNG order (by construction)
-//!
-//! The scale seed: ONE NextFloat. The re-roll: Next(60,181), Next(5);
-//! the mode-flip pick (walk→fly only): NextFloat (+ NextFloatDirection
-//! when >700); then the unconditional pick: NextFloat (+ the
-//! direction). The walk-mode liquid escape: NextFloat (+ the
-//! direction). TargetClosest is RNG-free; the probes draw nothing.
-//!
-//! ## FindFrame cases 604/605/669
-//!
-//! `NPC.cs:66961-66999` (the two cases are identical): the counter
-//! advances ONLY while moving (`velocity != Zero`), wrapping at 8;
-//! `vy == 0` picks the walk rows 0-3 (`counter/2`), else the fly rows
-//! 4-7. `Main.npcFrameCount[604/605/669] = 8`. [`ladybug_find_frame`]
-//! ports the pair.
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
-
-use crate::npc::Npc;
-use crate::npc_target::{target_closest, TargetCandidate};
-use glam::Vec2;
-use tr_core::tiledata::TILE_SOLID;
-use tr_core::{UnifiedRandom, World};
-
-/// The type-604/605 `SetDefaults` row (`NPC.cs:16763-16780`), verbatim.
-pub struct LadyBugDefaults {
-    pub width: i32,
-    pub height: i32,
-    pub ai_style: i32,
-    pub damage: i32,
-    pub defense: i32,
-    pub life_max: i32,
-    /// `(SoundType, Style)` — `SoundID.NPCHit1`.
-    pub hit_sound: (i32, i32),
-    /// `(SoundType, Style)` — `SoundID.NPCDeath1`.
-    pub death_sound: (i32, i32),
-    pub npc_slots: f32,
-    pub no_gravity: bool,
-    /// `catchItem = type - 604 + 4361` (4361/4362).
-    pub catch_item_base: i32,
-    /// The Gold 605's rarity 3.
-    pub gold_rarity: i32,
-}
-
-/// `NPC.cs:16763-16780` — `else if (this.type == 604 || 605)`.
-pub const LADY_BUG: LadyBugDefaults = LadyBugDefaults {
-    width: 10,
-    height: 10,
-    ai_style: 115,
-    damage: 0,
-    defense: 0,
-    life_max: 5,
-    hit_sound: (3, 1),
-    death_sound: (4, 1),
-    npc_slots: 0.25,
-    no_gravity: true,
-    catch_item_base: 4361,
-    gold_rarity: 3,
-};
-
-/// The type-669 Stinkbug row (`NPC.cs:17467-17480`), verbatim — the
-/// same stats, `catchItem = 5132`, no rarity write.
-pub const STINKBUG: LadyBugDefaults = LadyBugDefaults {
-    width: 10,
-    height: 10,
-    ai_style: 115,
-    damage: 0,
-    defense: 0,
-    life_max: 5,
-    hit_sound: (3, 1),
-    death_sound: (4, 1),
-    npc_slots: 0.25,
-    no_gravity: true,
-    catch_item_base: 5132,
-    gold_rarity: 0, // no rarity write — the head default stands
-};
-
-/// `Main.npcFrameCount[604/605/669]` = 8 (`Main.cs:67144`/`:67150`).
-pub const LADY_BUG_FRAME_COUNT: u32 = 8;
-
-/// The per-tick environment.
-pub struct Style115Env<'a> {
-    pub world: &'a World,
-    pub rng: &'a mut UnifiedRandom,
-    /// The `Main.player[]` slots as `TargetClosest` sees them.
-    pub players: &'a [TargetCandidate],
-    /// `Main.windSpeedTarget` — the fly drift.
-    pub wind_speed_target: f32,
-    /// `Main.netMode`.
-    pub net_mode: i32,
-    /// `Main.EverLastingTicker` for the selection's `targetSetFrame`.
-    pub ticker: u64,
-}
-
-/// XNA `Vector2.Distance` — the f32 sum widened to f64 for the root.
-fn distance(a: Vec2, b: Vec2) -> f32 {
-    let d = a - b;
-    ((d.x * d.x + d.y * d.y) as f64).sqrt() as f32
-}
-
-/// The target slot's candidate — the style16 `target_of` fallback.
 //! The aiStyle-115 family — the ladybugs (`NPC.AI()`'s
 //! `else if (this.aiStyle == 115) { this.AI_115_LadyBugs(); }` arm,
 //! `NPC.cs:41081-41083`; the machine `AI_115_LadyBugs`,
@@ -235,55 +84,161 @@ fn distance(a: Vec2, b: Vec2) -> f32 {
 //! (`Npc::ladybug_wind`); the solo path passes 0. `TargetClosest()`
 //! rides `npc_target::target_closest` UNMODIFIED (style 115 — the
 //! `:77761` fighter arm is style-3-only, so no directionY rewrite).
+//!
+//! The aiStyle-115 family — the Lady Bugs and the Stinkbug
+//! (`NPC.AI_115_LadyBugs`, `NPC.cs:47580-47714`, dispatched at
+//! `:41080-41083`). W4-d33, research/25 row 115, CODE-ONLY MODE (no
+//! compiler invoked; the witness tests below are written, not run).
+//!
+//! ## Census
+//!
+//! The family has THREE vanilla members: the LadyBug 604 / GoldLadyBug
+//! 605 (`ID/NPCID.cs:11885-11887`; the shared `SetDefaults` row
+//! `NPC.cs:16763-16780`) and the Stinkbug 669 (`:12015`; row
+//! `:17467-17480`). The census of `this.aiStyle = 115;` returns exactly
+//! those two rows (`:16767`, `:17471`) — no projectile-space user. The
+//! port's roster has no ladybug kind — the module lands UNWIRED (the
+//! `npc_ai_style73.rs` precedent).
+//!
+//! ## The machine
+//!
+//! The wind-drifting critter with a walk mode: `ai[0]` is the flight
+//! ANGLE, `ai[1]` the scale seed (0.7-0.9), `ai[2]` the mode (0 fly,
+//! 1 walk).
+//!
+//! The non-client head (`:47582-47620`): the `ai[1] == 0` scale seed
+//! `NextFloat()*0.2 + 0.7`; the `--localAI[0] <= 0` re-roll (reset
+//! `Next(60,181)`): the `Next(5) == 0` mode flip — fly→walk zeroes
+//! `ai[0]`; walk→fly runs TargetClosest + the random-angle pick
+//! (`NextFloat()*2π`, the >700-px `AngleTo + NextFloatDirection()*0.3`
+//! override) — then the UNCONDITIONAL second TargetClosest + angle
+//! pick (the C# runs BOTH — the walk→fly pick is overwritten the same
+//! tick, but its DRAWS stay; verbatim).
+//!
+//! `scale = ai[1]` (`:47521`).
+//!
+//! Fly mode (`:47622-47671`): the desired velocity
+//! `ai[0].ToRotationVector2() + (windSpeedTarget*0.8, 0)`, the 0.0125
+//! Lerp. A falling vy probes the 4-row centre column (solid OR liquid)
+//! — each hit NEGATES the angle and damps vy ×0.9 (the per-row loop,
+//! no break). A rising vy scans the 30-row column (NO break — the flag
+//! ORs every row); no hit negates the angle + damps. The collideX
+//! reflect: `ai[0] = -ai[0] + π`, `vx *= -0.2`.
+//!
+//! Walk mode (`:47672-47712`): a falling vy probes the 4-row
+//! direction-shifted column for LIQUID only — a hit runs TargetClosest,
+//! `vy = -1`, mode 0, the `-π/2 + NextFloat()*π/4` upward angle (the
+//! >700 override), netUpdate + RETURN. A non-zero vy damps vx ×0.98 and
+//! Lerps vy toward 2 at 0.005; a zero vy Lerps toward
+//! `(direction, 0)` at 0.05, adds 0.2 gravity, and the collideX flips
+//! the facing + `vx *= -0.2` + netUpdate.
+//!
+//! The tail (`:47713`): `direction = vx > 0 ? 1 : -1` — the 0-on-tie
+//! folds to -1 (NOT Math.Sign).
+//!
+//! ## RNG order (by construction)
+//!
+//! The scale seed: ONE NextFloat. The re-roll: Next(60,181), Next(5);
+//! the mode-flip pick (walk→fly only): NextFloat (+ NextFloatDirection
+//! when >700); then the unconditional pick: NextFloat (+ the
+//! direction). The walk-mode liquid escape: NextFloat (+ the
+//! direction). TargetClosest is RNG-free; the probes draw nothing.
+//!
+//! ## FindFrame cases 604/605/669
+//!
+//! `NPC.cs:66961-66999` (the two cases are identical): the counter
+//! advances ONLY while moving (`velocity != Zero`), wrapping at 8;
+//! `vy == 0` picks the walk rows 0-3 (`counter/2`), else the fly rows
+//! 4-7. `Main.npcFrameCount[604/605/669] = 8`. [`ladybug_find_frame`]
+//! ports the pair.
+
+// ---- MODULE UNION: the wired e26 port above; the unwired W4-d33 port below ----
+#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
+use glam::Vec2;
 use tr_core::tiledata::TILE_SOLID;
 use tr_core::{UnifiedRandom, World};
 
-/// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `((float)cos(f),
-/// (float)sin(f))` — the f64 trig over the f32 angle.
-fn to_rotation_vector2(f: f32) -> (f32, f32) {
-    ((f as f64).cos() as f32, (f as f64).sin() as f32)
+
+/// The type-604/605 `SetDefaults` row (`NPC.cs:16763-16780`), verbatim.
+pub struct LadyBugDefaults {
+    pub width: i32,
+    pub height: i32,
+    pub ai_style: i32,
+    pub damage: i32,
+    pub defense: i32,
+    pub life_max: i32,
+    /// `(SoundType, Style)` — `SoundID.NPCHit1`.
+    pub hit_sound: (i32, i32),
+    /// `(SoundType, Style)` — `SoundID.NPCDeath1`.
+    pub death_sound: (i32, i32),
+    pub npc_slots: f32,
+    pub no_gravity: bool,
+    /// `catchItem = type - 604 + 4361` (4361/4362).
+    pub catch_item_base: i32,
+    /// The Gold 605's rarity 3.
+    pub gold_rarity: i32,
 }
 
-/// `MathHelper.Lerp(a, b, t)` — `a + (b - a) * t` (the XNA scalar form;
-/// `Vector2.Lerp` applies it per component).
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
+/// `NPC.cs:16763-16780` — `else if (this.type == 604 || 605)`.
+pub const LADY_BUG: LadyBugDefaults = LadyBugDefaults {
+    width: 10,
+    height: 10,
+    ai_style: 115,
+    damage: 0,
+    defense: 0,
+    life_max: 5,
+    hit_sound: (3, 1),
+    death_sound: (4, 1),
+    npc_slots: 0.25,
+    no_gravity: true,
+    catch_item_base: 4361,
+    gold_rarity: 3,
+};
+
+/// The type-669 Stinkbug row (`NPC.cs:17467-17480`), verbatim — the
+/// same stats, `catchItem = 5132`, no rarity write.
+pub const STINKBUG: LadyBugDefaults = LadyBugDefaults {
+    width: 10,
+    height: 10,
+    ai_style: 115,
+    damage: 0,
+    defense: 0,
+    life_max: 5,
+    hit_sound: (3, 1),
+    death_sound: (4, 1),
+    npc_slots: 0.25,
+    no_gravity: true,
+    catch_item_base: 5132,
+    gold_rarity: 0, // no rarity write — the head default stands
+};
+
+/// `Main.npcFrameCount[604/605/669]` = 8 (`Main.cs:67144`/`:67150`).
+pub const LADY_BUG_FRAME_COUNT: u32 = 8;
+
+/// The per-tick environment.
+pub struct Style115Env<'a> {
+    pub world: &'a World,
+    pub rng: &'a mut UnifiedRandom,
+    /// The `Main.player[]` slots as `TargetClosest` sees them.
+    pub players: &'a [TargetCandidate],
+    /// `Main.windSpeedTarget` — the fly drift.
+    pub wind_speed_target: f32,
+    /// `Main.netMode`.
+    pub net_mode: i32,
+    /// `Main.EverLastingTicker` for the selection's `targetSetFrame`.
+    pub ticker: u64,
 }
 
-/// `Vector2.Distance` — `sqrt(DistanceSquared)`, f32 sum, f64 sqrt cast
-/// back (the `npc_ai_style64.rs` convention).
-fn vector_distance(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
-    let dx = ax - bx;
-    let dy = ay - by;
-    ((dx * dx + dy * dy) as f64).sqrt() as f32
+/// XNA `Vector2.Distance` — the f32 sum widened to f64 for the root.
+fn distance(a: Vec2, b: Vec2) -> f32 {
+    let d = a - b;
+    ((d.x * d.x + d.y * d.y) as f64).sqrt() as f32
 }
 
-/// `Entity.AngleTo` (`Entity.cs:185-188`): `(float)Math.Atan2(dest.Y -
-/// Center.Y, dest.X - Center.X)` — the f64 atan2 over the f32 deltas.
-fn angle_to(cx: f32, cy: f32, dx: f32, dy: f32) -> f32 {
-    ((dy - cy) as f64).atan2((dx - cx) as f64) as f32
-}
-
-/// The arm's `Main.tileSolid[type]` read — the RUNTIME table: the
-/// generated `TILE_SOLID` minus the living-tree leaves (192) that
-/// `WorldGen.cs:15714` clears after generation (the
-/// `npc_ai_style64.rs::tile_solid_runtime` precedent). `tileSolidTop`
-/// (platforms) is NOT in this set.
-fn tile_solid_runtime(kind: u16) -> bool {
-    TILE_SOLID.has(kind) && kind != 192
-}
-
-/// `Tile.nactive()` (`Tile.cs:240-247`): active AND not actuated-off.
-fn nactive(t: &tr_core::tile::Tile) -> bool {
-    t.active() && !t.inactive()
-}
-
-/// The target slot's candidate — the `npc_ai_style74.rs::target_of`
-/// fallback (the C# indexes `Main.player[this.target]`, 255 slots always
-/// exist; an unset/stale slot falls back to slot 0).
+/// The target slot's candidate — the style16 `target_of` fallback.
 fn target_of<'a>(npc: &Npc, players: &'a [TargetCandidate]) -> &'a TargetCandidate {
     let i = if npc.target >= 0 && (npc.target as usize) < players.len() {
         npc.target as usize
@@ -371,15 +326,149 @@ pub fn style115_step(npc: &mut Npc, env: &mut Style115Env<'_>) {
                     npc.ai[0] = 0.0 - npc.ai[0];
                     if npc.vy > 0.0 {
                         npc.vy *= 0.9;
-/// `Entity.Center` (`Entity.cs:50-55`) for a player candidate.
-fn candidate_center(p: &TargetCandidate) -> (f32, f32) {
-    (p.x + p.width as f32 / 2.0, p.y + p.height as f32 / 2.0)
                     }
                 }
             }
         }
+        if npc.vy < 0.0 {
+            // `:47644-47665` — the 30-row ceiling scan (NO break).
+            let col = center.x as i32 / 16;
+            let row = center.y as i32 / 16;
+            let mut ceiling = false;
+            for j in row..row + 30 {
+                let blocked = env.world.tile(col, j).is_some_and(|t| {
+                    (t.active() && !t.inactive() && TILE_SOLID.has(t.kind)) || t.liquid > 0
+                });
+                if blocked {
+                    ceiling = true;
+                }
+            }
+            if !ceiling {
+                npc.ai[0] = 0.0 - npc.ai[0];
+                if npc.vy < 0.0 {
+                    npc.vy *= 0.9;
+                }
+            }
+        }
+        // `:47666-47670` — the collideX reflect.
+        if npc.collide_x {
+            npc.ai[0] = 0.0 - npc.ai[0] + std::f32::consts::PI;
+            npc.vx *= -0.2;
+        }
+    } else {
+        // `:47672-47712` — the walk mode.
+        if npc.vy > 0.0 {
+            // `:47674-47695` — the liquid escape.
+            let col = center.x as i32 / 16 + npc.facing;
+            let row = center.y as i32 / 16;
+            for k in row..row + 4 {
+                if env.world.tile(col, k).is_some_and(|t| t.liquid > 0) {
+                    if !env.players.is_empty() {
+                        target_closest(npc, env.world, env.players, true, 115, env.ticker);
+                    }
+                    npc.vy = -1.0;
+                    npc.ai[2] = 0.0;
+                    npc.ai[0] = pick_angle(
+                        npc,
+                        env,
+                        -std::f32::consts::FRAC_PI_2,
+                        std::f32::consts::PI / 4.0,
+                        center,
+                    );
+                    npc.net_update = true;
+                    return; // `:47692` — the tail facing is SKIPPED
+                }
+            }
+        }
+        if npc.vy != 0.0 {
+            // `:47696-47700` — the fall.
+            npc.vx *= 0.98;
+            npc.vy += (2.0 - npc.vy) * 0.005;
+        } else {
+            // `:47701-47711` — the ground walk.
+            let want = Vec2::new(npc.facing as f32, 0.0);
+            let v = Vec2::new(npc.vx, npc.vy);
+            let blended = v + (want - v) * 0.05;
+            npc.vx = blended.x;
+            npc.vy = blended.y + 0.2;
+            if npc.collide_x {
+                npc.facing *= -1;
+                npc.vx *= -0.2;
+                npc.net_update = true;
+            }
+        }
     }
+    // `:47713` — the tail facing (the 0-tie folds to -1).
+    npc.facing = if npc.vx > 0.0 { 1 } else { -1 };
 }
+
+/// `NPC.FindFrame` cases 604/605/669 (`NPC.cs:66961-66999`) — the
+/// counter pair (the style73 convention): the counter advances ONLY
+/// while moving, wrapping at 8; `vy == 0` picks the walk rows
+/// (`counter/2`), else the fly rows (`4 + counter/2`). The
+/// `spriteDirection = direction` write is the caller's.
+pub fn ladybug_find_frame(_frame_row: u32, frame_counter: f32, vx: f32, vy: f32) -> (u32, f32) {
+    let mut counter = frame_counter;
+    if vx != 0.0 || vy != 0.0 {
+        counter += 1.0;
+        if counter >= 8.0 {
+            counter = 0.0;
+        }
+    }
+    let row = if vy == 0.0 {
+        (counter as i32 / 2) as u32
+    } else {
+        (4 + counter as i32 / 2) as u32
+    };
+    (row, counter)
+}
+
+
+
+/// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `((float)cos(f),
+/// (float)sin(f))` — the f64 trig over the f32 angle.
+fn to_rotation_vector2(f: f32) -> (f32, f32) {
+    ((f as f64).cos() as f32, (f as f64).sin() as f32)
+}
+
+/// `MathHelper.Lerp(a, b, t)` — `a + (b - a) * t` (the XNA scalar form;
+/// `Vector2.Lerp` applies it per component).
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// `Vector2.Distance` — `sqrt(DistanceSquared)`, f32 sum, f64 sqrt cast
+/// back (the `npc_ai_style64.rs` convention).
+fn vector_distance(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let dx = ax - bx;
+    let dy = ay - by;
+    ((dx * dx + dy * dy) as f64).sqrt() as f32
+}
+
+/// `Entity.AngleTo` (`Entity.cs:185-188`): `(float)Math.Atan2(dest.Y -
+/// Center.Y, dest.X - Center.X)` — the f64 atan2 over the f32 deltas.
+fn angle_to(cx: f32, cy: f32, dx: f32, dy: f32) -> f32 {
+    ((dy - cy) as f64).atan2((dx - cx) as f64) as f32
+}
+
+/// The arm's `Main.tileSolid[type]` read — the RUNTIME table: the
+/// generated `TILE_SOLID` minus the living-tree leaves (192) that
+/// `WorldGen.cs:15714` clears after generation (the
+/// `npc_ai_style64.rs::tile_solid_runtime` precedent). `tileSolidTop`
+/// (platforms) is NOT in this set.
+fn tile_solid_runtime(kind: u16) -> bool {
+    TILE_SOLID.has(kind) && kind != 192
+}
+
+/// `Tile.nactive()` (`Tile.cs:240-247`): active AND not actuated-off.
+fn nactive(t: &tr_core::tile::Tile) -> bool {
+    t.active() && !t.inactive()
+}
+
+
+/// `Entity.Center` (`Entity.cs:50-55`) for a player candidate.
+fn candidate_center(p: &TargetCandidate) -> (f32, f32) {
+    (p.x + p.width as f32 / 2.0, p.y + p.height as f32 / 2.0)
 }
 
 /// The `ai[0]` roll + the >700px redirect, shared by the rearm tail
@@ -480,20 +569,6 @@ pub fn ai_115_step(
                 }
             }
         }
-        if npc.vy < 0.0 {
-            // `:47644-47665` — the 30-row ceiling scan (NO break).
-            let col = center.x as i32 / 16;
-            let row = center.y as i32 / 16;
-            let mut ceiling = false;
-            for j in row..row + 30 {
-                let blocked = env.world.tile(col, j).is_some_and(|t| {
-                    (t.active() && !t.inactive() && TILE_SOLID.has(t.kind)) || t.liquid > 0
-                });
-                if blocked {
-                    ceiling = true;
-                }
-            }
-            if !ceiling {
         // `:47644-47665` — rising: the 30-tile down-scan for ANY solid
         // OR liquid; none → flip the aim + damp ONCE.
         if npc.vy < 0.0 {
@@ -515,49 +590,12 @@ pub fn ai_115_step(
                 }
             }
         }
-        }
-        // `:47666-47670` — the collideX reflect.
         // `:47666-47670` — the wall bounce.
         if npc.collide_x {
             npc.ai[0] = 0.0 - npc.ai[0] + std::f32::consts::PI;
             npc.vx *= -0.2;
         }
     } else {
-        // `:47672-47712` — the walk mode.
-        if npc.vy > 0.0 {
-            // `:47674-47695` — the liquid escape.
-            let col = center.x as i32 / 16 + npc.facing;
-            let row = center.y as i32 / 16;
-            for k in row..row + 4 {
-                if env.world.tile(col, k).is_some_and(|t| t.liquid > 0) {
-                    if !env.players.is_empty() {
-                        target_closest(npc, env.world, env.players, true, 115, env.ticker);
-                    }
-                    npc.vy = -1.0;
-                    npc.ai[2] = 0.0;
-                    npc.ai[0] = pick_angle(
-                        npc,
-                        env,
-                        -std::f32::consts::FRAC_PI_2,
-                        std::f32::consts::PI / 4.0,
-                        center,
-                    );
-                    npc.net_update = true;
-                    return; // `:47692` — the tail facing is SKIPPED
-                }
-            }
-        }
-        if npc.vy != 0.0 {
-            // `:47696-47700` — the fall.
-            npc.vx *= 0.98;
-            npc.vy += (2.0 - npc.vy) * 0.005;
-        } else {
-            // `:47701-47711` — the ground walk.
-            let want = Vec2::new(npc.facing as f32, 0.0);
-            let v = Vec2::new(npc.vx, npc.vy);
-            let blended = v + (want - v) * 0.05;
-            npc.vx = blended.x;
-            npc.vy = blended.y + 0.2;
         // `:47672-47712` — the perch.
         // `:47674-47695` — falling: the 4-tile down-scan at
         // centerX/16 + direction for LIQUID only → the water launch.
@@ -603,35 +641,13 @@ pub fn ai_115_step(
             }
         }
     }
-    }
-    // `:47713` — the tail facing (the 0-tie folds to -1).
+    // `:47713` — the direction tail (every tick but the launch return).
     npc.facing = if npc.vx > 0.0 { 1 } else { -1 };
 }
-}
 
-/// `NPC.FindFrame` cases 604/605/669 (`NPC.cs:66961-66999`) — the
-/// counter pair (the style73 convention): the counter advances ONLY
-/// while moving, wrapping at 8; `vy == 0` picks the walk rows
-/// (`counter/2`), else the fly rows (`4 + counter/2`). The
-/// `spriteDirection = direction` write is the caller's.
-pub fn ladybug_find_frame(_frame_row: u32, frame_counter: f32, vx: f32, vy: f32) -> (u32, f32) {
-    let mut counter = frame_counter;
-    if vx != 0.0 || vy != 0.0 {
-        counter += 1.0;
-        if counter >= 8.0 {
-            counter = 0.0;
-        }
-    }
-    let row = if vy == 0.0 {
-        (counter as i32 / 2) as u32
-    } else {
-        (4 + counter as i32 / 2) as u32
-    };
-    (row, counter)
-}
 
 #[cfg(test)]
-mod tests {
+mod d33_tests {
     use super::*;
     use crate::npc::NpcKind;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -647,22 +663,6 @@ mod tests {
         n.ai[1] = 0.8; // the scale seed already rolled
         n.local_ai[0] = 50.0; // no re-roll this tick
         n
-    // `:47713` — the direction tail (every tick but the launch return).
-    npc.facing = if npc.vx > 0.0 { 1 } else { -1 };
-}
-}
-
-#[cfg(test)]
-mod tests {
-    //! Witness tests — WRITTEN, NOT RUN (code-only mode). Each pins one
-    //! C# branch against its citation; the RNG witnesses mirror the
-    //! cited draws on a cloned `UnifiedRandom` and compare the stream
-    //! state (`PartialEq`) so a drifted draw order fails by construction.
-    use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
-
-    fn air() -> World {
-        World::new("t".into(), 400, 300)
     }
 
     fn cand(x: f32, y: f32) -> TargetCandidate {
@@ -937,6 +937,38 @@ mod tests {
             assert_eq!(a.vx.to_bits(), b.vx.to_bits(), "vx @{tick}");
             assert_eq!(a.ai[0].to_bits(), b.ai[0].to_bits(), "angle @{tick}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Witness tests — WRITTEN, NOT RUN (code-only mode). Each pins one
+    //! C# branch against its citation; the RNG witnesses mirror the
+    //! cited draws on a cloned `UnifiedRandom` and compare the stream
+    //! state (`PartialEq`) so a drifted draw order fails by construction.
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn air() -> World {
+        World::new("t".into(), 400, 300)
+    }
+
+    fn cand(x: f32, y: f32) -> TargetCandidate {
+        TargetCandidate {
+            active: true,
+            dead: false,
+            ghost: false,
+            x,
+            y,
+            width: 20,
+            height: 42,
+            aggro: 0,
+            item_animation: 0,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        }
+    }
+
     /// A ladybug body: the C#'s 10×10 box (`NPC.cs:16765-16766`), 5 HP,
     /// the scale latch pre-set so the one-time draw stays out of the way
     /// unless a test wants it; `local_ai[0]` high so no rearm fires.
@@ -1178,5 +1210,4 @@ mod tests {
         assert!(n.vx > 0.0);
         assert_eq!(n.facing, 1, ":47713");
     }
-}
 }

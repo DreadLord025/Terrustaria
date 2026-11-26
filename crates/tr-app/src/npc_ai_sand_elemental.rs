@@ -250,7 +250,7 @@ fn random_vector2(rng: &mut UnifiedRandom, min: f32, max: f32) -> (f32, f32) {
 
 /// XNA's `Vector2.CatmullRom` (the `projectile.rs::catmull_rom`
 /// coefficients, verbatim) — the trail arc's interpolation.
-fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
+pub(crate) fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
     let t2 = t * t;
     let t3 = t2 * t;
     0.5 * ((2.0 * p1)

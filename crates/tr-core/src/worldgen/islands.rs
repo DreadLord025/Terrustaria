@@ -1739,9 +1739,12 @@ mod tests {
         let mut gv3 = gv_with_lakes(4200);
         pass_floating_islands(&mut deep, &mut gv3, &mut Rng(42), 520.0, false);
         assert!(!gv3.island_house_y.is_empty(), "noSurface+extra runs");
-        // The deep roll `Next(200, UnderworldLayer - 200)` = Next(200, 800).
+        // The deep roll `Next(200, UnderworldLayer - 200)` = [200, 800) is the
+        // `num6` ANCHOR; the island row is `num11 = Next(90, num6 - 100)`
+        // and the ledger stores `num11 - radius/2` (radius 40..60), so the
+        // final y spans roughly [60, 700) — not the anchor band itself.
         for y in &gv3.island_house_y {
-            assert!((200..800).contains(y), "the noSurface y {y} is deep");
+            assert!((60..700).contains(y), "the noSurface y {y} is in the deep band");
         }
     }
 
@@ -2349,11 +2352,12 @@ mod tests {
         // Settle: wake every bowl cell (the WaterCheck registration the
         // gen loop would do) and drain the engine to quiescence.
         let mut sys = crate::liquid::LiquidSystem::new(&w);
+        let mut rng = crate::UnifiedRandom::new(0);
         for &(x, y) in &bowl_cells {
-            sys.add_water(&w, x, y);
+            sys.add_water(&mut w, &mut rng, x, y);
         }
         for _ in 0..400 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng);
         }
         assert_eq!(mass(&w), before, "the enclosed lake keeps every unit");
         // No water leaked below the floor or past the sides.
@@ -2365,7 +2369,7 @@ mod tests {
         // The retired list is empty or static — the lake is settled, not
         // flowing (the kill-passes retirement, `Liquid.cs:1120-1130`).
         for _ in 0..200 {
-            sys.update(&mut w);
+            sys.update(&mut w, &mut rng);
         }
         assert_eq!(mass(&w), before, "still full after the retirement tail");
     }

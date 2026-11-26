@@ -1338,14 +1338,27 @@ mod tests {
         assert_eq!(w.tile(10, 20).unwrap().kind, 109, "the hallow grass");
         assert_eq!(w.tile(10, 20).unwrap().wall, 1, "the wall stays (walls: false)");
         assert_eq!(w.tile(11, 20).unwrap().kind, 1, "the neighbour is untouched");
-        // The torch row the flavor map lacked: a style-0 torch converts to
-        // style 20 (`:55216-55218`). The dirt arg is 4 so the `type == dirt`
-        // guard passes (the C# caller reads the cell's own type).
+        // The torch → style 20 row (`Convert(i, j, 2)`'s `type == 4` arm,
+        // `:55216-55218`) is NOT reachable through SpreadGrass: the entry
+        // gate (`:75150`) requires the cell's own type to equal `dirt`, and
+        // `flag2` (`:75206`) requires `Conversion.Grass[dirt]` — a torch 4
+        // is neither, so `SpreadGrass(i, j, 4, 109)` takes the plain-write
+        // else arm. The row lives in the C3 Convert cell itself, so drive
+        // that seam directly: a style-0 torch converts to style 20
+        // (`Convert_ActuallyConvertTorch(.., 20)` → frameY 20·22).
         let mut w2 = World::new("t".into(), 64, 64);
         w2.world_surface = 30.0;
+        // A torch is tileFrameImportant: the post-convert `reframe_area`
+        // must not take the generic connected-frame path over it.
+        w2.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w2.frame_important[4] = true;
         let t = w2.index(10, 20);
         w2.tiles[t] = Tile { kind: 4, flags: FLAG_ACTIVE, frame_y: 0, ..Default::default() };
-        spread_grass(&mut w2, 10, 20, 4, 109);
+        // A standing torch needs its support or the post-convert `CheckTorch`
+        // (inside `SquareTileFrame`) kills it before the frame can be read.
+        let sup = w2.index(10, 21);
+        w2.tiles[sup] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        crate::spread::convert_hallow_cell_halves(&mut w2, 10, 20, true, false);
         assert_eq!(w2.tile(10, 20).unwrap().frame_y, 20 * 22, "the torch → style 20");
     }
 
@@ -1420,7 +1433,7 @@ mod tests {
         w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
         let mut rng = UnifiedRandom::new(7);
         let witness = UnifiedRandom::new(7);
-        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
         assert_eq!(rng, witness, "the unmapped kind draws nothing");
         assert_eq!(w.tile(101, 200).unwrap().kind, 0, "no underground plain-grass spread");
     }
@@ -1447,7 +1460,7 @@ mod tests {
         for seed in 1i32..200 {
             let mut rng = UnifiedRandom::new(seed);
             let mut witness = UnifiedRandom::new(seed);
-            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             let roll = witness.next_max(10);
             assert_eq!(rng, witness, "seed {seed}: one Next(10), the veto adds no draw");
             if roll == 0 {
@@ -1494,7 +1507,7 @@ mod tests {
             let mut w = build(true);
             let mut rng = UnifiedRandom::new(seed);
             let mut witness = UnifiedRandom::new(seed);
-            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             let roll = witness.next_max(10);
             if roll == 0 {
                 assert!(
@@ -1520,7 +1533,7 @@ mod tests {
             let mut w = build(false);
             let mut rng = UnifiedRandom::new(seed);
             let mut witness = UnifiedRandom::new(seed);
-            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+            update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             let roll = witness.next_max(10);
             if roll == 0 {
                 let fx = witness.next_max(5) * 18;

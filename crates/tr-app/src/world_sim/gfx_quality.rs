@@ -244,25 +244,16 @@ fn int_ceil(v: f32) -> i32 {
 
     /// S1-B-6 — the snow budget formula (`Main.cs:13057`): the witness of
     /// the arithmetic the snowfall's spawn gate now applies verbatim
-    /// (`crate::snow::snowing`, W4-d130 — the retired rain-rig cap).
+    /// (`crate::snow::snowing`, W4-d130 — the retired rain-rig cap), now pinned
+    /// through `Main.snowing()`'s break
+    /// (`main_dust.rs::w4_g11_snowing_breaks_on_the_live_76_budget`): the
+    /// arithmetic witness stays as the formula's unit pin.
     #[test]
     fn s1_b_6_the_snow_cap_scales_with_quality() {
         let cap = |num2: f32, q: f32| (num2 * (q / 2.0 + 0.5) + num2 * 0.1) as usize;
         let full = cap(600.0, 1.0);
         let half = cap(600.0, 0.5);
         let zero = cap(600.0, 0.0);
-    /// S1-B-6 — the snow budget formula (`Main.cs:13057`), now pinned through
-    /// `Main.snowing()`'s break (`main_dust.rs::w4_g11_snowing_breaks_on_the_live_76_budget`):
-    /// the arithmetic witness stays as the formula's unit pin.
-    #[test]
-    fn s1_b_6_the_snow_cap_scales_with_quality() {
-        let cap = |max_snow: usize, quality: f32| -> usize {
-            let num2 = max_snow as f32;
-            (num2 * (quality / 2.0 + 0.5) + num2 * 0.1) as usize
-        };
-        let full = cap(600, 1.0);
-        let half = cap(600, 0.5);
-        let zero = cap(600, 0.0);
         assert_eq!(full, 600 + 60, "`600 * 1.0 + 60` at q=1");
         assert_eq!(half, 510, "`600 * 0.75 + 60` at q=0.5");
         assert_eq!(zero, 360, "`600 * 0.5 + 60` at q=0");

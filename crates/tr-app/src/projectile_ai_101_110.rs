@@ -812,7 +812,7 @@ fn wrench_movement(p: &mut Projectile, world: &World) {
             p.net_update = true;
             // `:19571` — the Dig thud (the int-id 0 cue).
             if p.wants_sound.is_none() {
-                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0));
             }
         }
     }
@@ -1276,11 +1276,13 @@ mod tests {
         let mut p = proj(567);
         let npcs: Vec<Npc> = Vec::new();
         for _ in 0..89 {
-            ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+            let spore_pos = p.pos;
+            ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         }
         assert_eq!(p.local_ai[0], 89.0);
         assert!((p.scale - (1.0 + 0.003 * 89.0)).abs() < 1e-4);
-        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         assert_eq!(p.local_ai[0], -90.0, "the 90-tick flip");
         assert!((p.scale - (1.0 + 0.003 * 89.0 - 0.003)).abs() < 1e-4, "the shrink leg");
     }
@@ -1292,18 +1294,21 @@ mod tests {
     fn w4_d11_105_the_drift_table_and_cycle() {
         let npcs: Vec<Npc> = Vec::new();
         let mut p = proj(567);
-        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 3, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 3, 0);
         assert_eq!(p.vel.x, 0.0, "index 3: num3 = 0");
         assert!((p.vel.y - 0.002).abs() < 1e-6, "num2 = 1");
         let mut p = proj(567);
-        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 4, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 4, 0);
         assert!((p.vel.x - 0.002).abs() < 1e-6);
         assert_eq!(p.vel.y, 0.0, "index 4: num2 = 0");
         // The cycle: 60 ticks reach 60, tick 61 wraps to -180 (the
         // negative leg subtracts).
         let mut p = proj(567);
         for _ in 0..61 {
-            ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+            let spore_pos = p.pos;
+            ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         }
         assert_eq!(p.local_ai[1], -180.0, ":40088");
     }
@@ -1333,13 +1338,15 @@ mod tests {
         p.ai[0] = 5400.0;
         p.alpha = 250;
         p.damage = 30;
-        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         assert_eq!(p.ai[0], 5401.0);
         assert_eq!(p.damage, 0, ":40103");
         assert_eq!(p.ai[1], 1.0, ":40104");
         assert_eq!(p.alpha, 255, "the +5 clamp");
         assert!(p.active, "the fade leg does not kill");
-        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &npcs, Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         assert!(!p.active, "alpha 255 + owner -> Kill");
     }
 
@@ -1368,7 +1375,8 @@ mod tests {
         // No chaseable: the drag.
         let mut p = proj(567);
         p.vel = Vec2::new(1.0, 0.0);
-        ai_spore_sac(&mut p, &[], Some(p.pos), true, 5, 0);
+        let spore_pos = p.pos;
+        ai_spore_sac(&mut p, &[], Some((spore_pos.x, spore_pos.y)), true, 5, 0);
         // The drift adds 0.002 then the 0.98 drag: (1.002)*0.98.
         assert!((p.vel.x - 1.002 * 0.98).abs() < 1e-5, ":40190");
     }

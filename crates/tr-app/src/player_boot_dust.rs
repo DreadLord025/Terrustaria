@@ -740,8 +740,8 @@ mod tests {
         p.equipped[1] = 101;
         p.equipped[2] = 100;
         p.update(&w, crate::player::PlayerInput::default());
-        let w = p.take_walk_effect_dust().expect("the walking snapshot queues");
-        assert_eq!((w.head, w.body, w.legs), (5, 5, 5));
+        let wd = p.take_walk_effect_dust().expect("the walking snapshot queues");
+        assert_eq!((wd.head, wd.body, wd.legs), (5, 5, 5));
         assert!(p.social_shadow_rocket_boots);
         // Strip the armor: the flag clears next tick.
         p.equipped[0] = 0;

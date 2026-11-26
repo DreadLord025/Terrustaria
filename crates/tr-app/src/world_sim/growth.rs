@@ -105,6 +105,9 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         {
             relocated += 1;
         }
+        // The walker's world flags are read before the `&mut World` borrow.
+        let invasion_type = app.world.invasion_type;
+        let eclipse = app.world.eclipse;
         let world = &mut app.world;
         // W4-c24c — `GetWorldUpdateRate` (`WorldGen.cs:72020-72028`):
         // `min(desiredWorldTilesUpdateRate, 24)`, 0 while FreezeTime is on.
@@ -130,8 +133,8 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // inline with the picks exactly like the C#); the drain below runs
         // the full `SpawnTownNPC` per request after the mutable pass.
         let mut walker = tr_core::growth::TownSpawnWalker {
-            invasion_type: app.world.invasion_type,
-            eclipse: app.world.eclipse,
+            invasion_type,
+            eclipse,
             npc_spawn_delay: &mut app.town_spawn.npc_spawn_delay,
             npc_spawn_period: app.town_spawn.npc_spawn_period,
             requests: &mut app.town_spawn_requests,
@@ -499,12 +502,14 @@ mod tests {
         );
         let sx = stream.next_range(10, twin.world.width - 10);
         let sy = stream.next_range(twin.world.rock_layer as i32, twin.world.height - 40);
+        let hard_updates = tr_core::growth::hard_mode_world_updates(&twin.world);
+        let downed_plant = twin.world.downed_plant_boss;
         tr_core::spread::hard_update_world_gated(
             &mut twin.world,
             sx,
             sy,
-            tr_core::growth::hard_mode_world_updates(&twin.world),
-            twin.world.downed_plant_boss,
+            hard_updates,
+            downed_plant,
             allowed,
             &mut stream,
         );
@@ -543,7 +548,7 @@ mod tests {
             crate::creative::PowerId::TimeRate,
             crate::creative::PowerState::Slider(24.0),
         );
-        let before = *fast.rngs.stream(RngKey::UpdateWorldGen);
+        let before = fast.rngs.stream(RngKey::UpdateWorldGen).clone();
         update_growth(&mut fast, 1.0 / 60.0);
         assert_ne!(
             *fast.rngs.stream(RngKey::UpdateWorldGen),
@@ -625,6 +630,8 @@ mod tests {
             "the walker seam consumed exactly this prefix of the stream"
         );
         assert_worlds_equal(&app.world, &twin.world);
+    }
+
     /// W4-g69 retire sweep — the hardmode V's evil flavour reads the LIVE
     /// `World.crimson` (the C# `GERunner` reads the `WorldGen.crimson` static
     /// at `WorldGen.cs:76304`), NOT the seed's high bit: a UI-picked crimson
@@ -824,8 +831,8 @@ mod w4_d15_starfall_tests {
         update_growth(&mut day, 1.0 / 60.0);
         // Both phases ran the same growth picks; the night loop adds the
         // starfall gate draws on top (the day loop returns draw-free).
-        let night_state = *night.rngs.stream(RngKey::UpdateWorldGen);
-        let day_state = *day.rngs.stream(RngKey::UpdateWorldGen);
+        let night_state = night.rngs.stream(RngKey::UpdateWorldGen).clone();
+        let day_state = day.rngs.stream(RngKey::UpdateWorldGen).clone();
         assert_ne!(night_state, day_state, "the night starfall drew past the day prefix");
     }
 

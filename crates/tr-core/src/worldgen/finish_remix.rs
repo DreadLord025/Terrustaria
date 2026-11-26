@@ -949,7 +949,9 @@ mod tests {
     }
 
     /// The lily-pad sweep (`:59203-59309`): a pad over a jungle-grass
-    /// floor restyles to frameY 36 and moves down into the air cell.
+    /// floor restyles to frameY 36 and falls through every free cell down
+    /// to the first one above the floor (the sweep visits the moved pad
+    /// again on the next row, so it cascades).
     #[test]
     fn the_lily_pad_restyles_and_moves_down() {
         let mut w = air(900, 500, 50.0, 300.0);
@@ -957,7 +959,12 @@ mod tests {
         put(&mut w, 450, 60, TILE_JUNGLE_GRASS);
         finish_remix_world(&mut w, &gv(), &mut Streams::new(7), &opts(SeedFlags::REMIX, false));
         assert!(!active_at(&w, 450, 55), "the source cell deactivates");
-        let t = w.tile(450, 56).unwrap();
+        // Rows 56..59 are re-visited by the ascending y sweep, so the pad
+        // settles on 59 — the last air cell above the jungle-grass floor.
+        for y in 55..59 {
+            assert!(!active_at(&w, 450, y), "the pad left row {y}");
+        }
+        let t = w.tile(450, 59).unwrap();
         assert!(t.active() && t.kind == TILE_LILY_PAD);
         assert_eq!(t.frame_y, 36, "the jungle floor picks frame row 36");
     }

@@ -249,7 +249,10 @@ mod tests {
         assert_eq!(Vec2::dot(a, Vec2::new(1.0, 0.0)), 3.0);
         assert_eq!(Vec2::cross(a, Vec2::new(1.0, 0.0)), -4.0);
         let n = Vec2::normalize(a);
-        assert_eq!(n, Vec2::new(0.6, 0.8));
+        // `Normalize` divides via the `1/sqrt` reciprocal (`Vector2D.cs:296`),
+        // so 3/5 lands one ulp above the `0.6` literal — compare the C#
+        // double result within a tight tolerance, not bit-exactly.
+        assert!((n.x - 0.6).abs() < 1e-12 && (n.y - 0.8).abs() < 1e-12);
         // SafeNormalize of zero returns the default (Utils.cs:1848-1851).
         assert_eq!(Vec2::ZERO.safe_normalize(Vec2::UNIT_X), Vec2::UNIT_X);
         assert_eq!(a.safe_normalize(Vec2::ZERO), n);

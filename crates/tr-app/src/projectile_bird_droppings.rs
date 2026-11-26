@@ -360,7 +360,7 @@ mod tests {
         assert_eq!(pl.buffs.buff_time[stink.unwrap()], 600);
         let cues = pool.drain_proj_sounds();
         assert!(
-            cues.contains(&(2, 177, 1010.0, 1010.0, 0.0)),
+            cues.contains(&(2, 177, 1010.0, 1010.0, 0.0, 1.0)),
             "Item177 at the int centre (:70936); got {cues:?}"
         );
         // A death AWAY from the player: no buff, but the cue stands.
@@ -383,7 +383,7 @@ mod tests {
             true,
         );
         assert!(!pl2.buffs.buff_type.contains(&120), "no intersect, no buff");
-        assert!(pool2.drain_proj_sounds().contains(&(2, 177, 1505.0, 905.0, 0.0)));
+        assert!(pool2.drain_proj_sounds().contains(&(2, 177, 1505.0, 905.0, 0.0, 1.0)));
         // A DEAD player never gains the buff (`:70928`'s gate).
         let mut pl3 = crate::player::Player::spawn(&w);
         pl3.x = 1000.0;

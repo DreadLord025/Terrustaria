@@ -379,7 +379,6 @@ impl TileFilter {
         }
     }
 }
-}
 
 #[allow(clippy::too_many_arguments)]
 /// Records one draw phase for the order-pinning test (`S1-B-7`) — the
@@ -470,14 +469,11 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
-    // W4-g34 union: the critter-cage animator's tables
-    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — ALL 92 cage ids'
-    // `addFrY = Main.<table>[idx] * stride` rewrite
-    // (`TileDrawing.cs:5629-5907`) reads them through `cage_draw_data`'s
-    // `frame_of`. `critter_cage` is `Main.critterCage` (`Main.cs:1445`):
-    // cleared at the pass head (`TileDrawing.cs:474`), raised for every cage
-    // cell drawn (`:5672` etc.), read back by the caller for the animator gate.
-    cage_anim: &tr_core::critter_cage_anim::CritterCageAnimator,
+    // The 92-cage-id `addFrY` rewrite (`TileDrawing.cs:5629-5907`, W4-g34's
+    // `critter_cage_anim` tables + W4-f14's wire) is served by the ONE
+    // `cage_anim` param below: f14's animator carries the same `frame_of`
+    // table walk plus `Main.critterCage`'s live flag. The duplicate g34
+    // immutable param was dropped at the union; its module/surface stay live.
     critter_cage: &mut bool,
     // W4-d58: `Main.chest[]` (`Main.cs:66994`) — the chest rewrite
     // (`CacheSpecialDraws_Part2`, `TileDrawing.cs:4289-4330`) reads each
@@ -508,21 +504,21 @@ pub(crate) fn draw_tiles(
     // C#, no event gate; the glow record rides unused until the glow pass
     // binds it (TILE-DRAW-2), but the value is now the live one.
     martian_light: f32,
-    // W4-g12 doc-sweep: the gore pool for `DrawGoreBehind`
-    // (`Main.cs:21842-21871`) — the drip rows outside frames 7..=9 draw
-    // in the behind-tiles slot of this pass (the `:56934-56940` site).
-    gore_pool: &tr_core::gore::GorePool,
+    // W4-g12 doc-sweep: `DrawGoreBehind` (`Main.cs:21842-21871`) reads the
+    // SAME `gore` pool above — the drip rows outside frames 7..=9 draw in
+    // the behind-tiles slot of this pass (the `:56934-56940` site). The
+    // union's second `gore_pool` alias was a duplicate borrow and is folded.
     // W4-g85: the orb-family emit slice's inputs (`DrawTiles_EmitParticles`,
     // `TileDrawing.cs:7335-7347`/`:7413-7529`, entry gate `:965-968`).
-    // `orb_dust` is the shared pool (`Main.dust`); `orb_main_rand` the
+    // The pool is the SAME `dust` above (`Main.dust`) — the union's second
+    // `dust` param was an aliasing duplicate and cannot be inhabited by
+    // two simultaneous `&mut`; the body reads `dust`. `orb_main_rand` is the
     // `Main.rand` stand-in for the `NewDust` internals (`world.frame_rng`,
     // borrowed through the draw like the d54 break seam). `orb_ctx` carries
     // the `Dust.NewDust` cull inputs (`App::spawn_ctx`). The `_rand` gate
     // stream is the pass-local `leaf_rng` (the pinned per-rebuild stand-in).
-    orb_dust: &mut tr_core::particles::DustPool,
     orb_main_rand: &mut tr_core::UnifiedRandom,
     orb_ctx: &tr_core::particles::SpawnCtx,
-    game_paused: bool,
     // W4-d127 — `Main.gamePaused` for the WoF mouth clock's advance gate
     // (`DrawWOFBody`, `Main.cs:38427`).
     game_paused: bool,
@@ -870,6 +866,8 @@ pub(crate) fn draw_tiles(
         true,
         empress_ctx,
         None,
+        latest_filter_strength,
+    );
     // cut into tiles drawn earlier in the row. S1-G-13 consumers: the loop body
     // moved verbatim into `draw_wall_layer` so the wallTarget callback
     // (`Main.RenderWalls`, `Main.cs:58081-58091`) drives the SAME pass; under a
@@ -901,7 +899,7 @@ pub(crate) fn draw_tiles(
             r, &sheets, &wof_ctx, light, style, anim_time, camera, zoom, screen,
         );
     }
-        latest_filter_strength,
+        let _ = latest_filter_strength;
 
     // W4-g12 doc-sweep: `Main.DrawGoreBehind` (`Main.cs:21842-21871`,
     // capture site `:56934-56940`) — the drip rows outside frames 7..=9
@@ -913,7 +911,7 @@ pub(crate) fn draw_tiles(
     // key (`WorldFrameKey::back_gore`, the waterfall convention: 0 while
     // no drip slot draws — ANALYSIS "The back gore pass (W4-g12)").
     stats.quads += crate::render::gore::draw_behind(
-        gore_pool, r, lookups, light, style, anim_time,
+        gore, r, lookups, light, style, anim_time,
     );
 
     // S1-G-13 consumers: the direct-screen extras block (`ScreenExtras`)
@@ -933,6 +931,9 @@ pub(crate) fn draw_tiles(
             zoom,
             screen,
             true,
+            empress_ctx,
+            None,
+            latest_filter_strength,
         );
     }
 
@@ -1033,7 +1034,13 @@ pub(crate) fn draw_tiles(
                             || tr_core::flame::has_glow_branch(tile.kind));
                     if light_is_zero(l)
                         && !flame_tile
-                        && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
+                        && (active
+                            || (crate::env::walls_enabled()
+                                && wall_visible(
+                                    tile.wall,
+                                    world.invisible_wall(tx, ty),
+                                    show_invisible_blocks,
+                                )))
                     {
                         if run_start < 0 {
                             run_start = tx;
@@ -1127,6 +1134,10 @@ pub(crate) fn draw_tiles(
                     // three-clause subset. The exact predicate already lives
                     // in `drawdata_cases_a::solid_tile` (the 518 probe).
                     let solid_above = crate::drawdata_cases_a::solid_tile(world, tx, ty - 1);
+                    tr_core::drawdata::TileDrawData::default()
+                } else {
+                    tr_core::drawdata::TileDrawData::default()
+                };
                 let (dd, glow) = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
@@ -1285,7 +1296,6 @@ pub(crate) fn draw_tiles(
                             tile.frame_y,
                             tr_core::drawdata_furniture::CAGE_FRAMES,
                             |table, row, idx| cage_anim.frame_of(table, row, idx),
-                            None,
                             &mut dd,
                         );
                     }
@@ -1396,7 +1406,7 @@ pub(crate) fn draw_tiles(
                     crate::render::orb_draw::spelunker_dust(
                         &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
                         orb_main_rand,
-                        orb_dust,
+                        dust,
                         orb_ctx,
                         world,
                         tx,
@@ -1450,7 +1460,7 @@ pub(crate) fn draw_tiles(
                     crate::render::orb_draw::orb_ambient_dust(
                         &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
                         orb_main_rand,
-                        orb_dust,
+                        dust,
                         orb_ctx,
                         world,
                         tx,
@@ -1467,7 +1477,7 @@ pub(crate) fn draw_tiles(
                     crate::render::orb_draw::orb_shine_sparkle(
                         &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
                         orb_main_rand,
-                        orb_dust,
+                        dust,
                         orb_ctx,
                         world,
                         tx,
@@ -1533,13 +1543,19 @@ pub(crate) fn draw_tiles(
                     && tile.wall != 0
                     && (!world.invisible_wall(tx, ty) || show_invisible_blocks)
                     && (tile.wall != WALL_ECHO || show_invisible_blocks);
-                if light_is_zero(l) && !flame_tile && !echo_wall_lit && (block_covers || wall_covers)
+                let keep_quad = (light_is_zero(l) && !flame_tile && !echo_wall_lit && (block_covers || wall_covers)
                         || tr_core::flame::has_glow_branch(tile.kind)
                         || glow_mask_tile
                         || glow.is_some());
                 if light_is_zero(l)
                     && !flame_tile
-                    && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
+                    && (active
+                        || (crate::env::walls_enabled()
+                            && wall_visible(
+                                tile.wall,
+                                world.invisible_wall(tx, ty),
+                                show_invisible_blocks,
+                            )))
                 {
                     // S1-G-13 consumers: under a split half the black coverage
                     // belongs to the wallTarget callback (`RenderBlacks`,
@@ -1993,6 +2009,7 @@ pub(crate) fn draw_tiles(
                             anim_time,
                             tile.paint(),
                             &dd,
+                            None,
                         );
                         stats.quads += 1;
                         stats.quads += draw_platform_side_fill(
@@ -2015,6 +2032,7 @@ pub(crate) fn draw_tiles(
                             anim_time,
                             tile.paint(),
                             &dd,
+                            None,
                         );
                         stats.quads += 1;
                     } else {
@@ -2540,7 +2558,11 @@ pub(crate) fn draw_wall_layer(
     for ty in y0..=y1 {
         for tx in x0..=x1 {
             let tile = &world.tiles[ty as usize * width + tx as usize];
-            if !wall_visible(tile.wall) {
+            if !wall_visible(
+                tile.wall,
+                world.invisible_wall(tx, ty),
+                crate::env::show_invisible(),
+            ) {
                 continue;
             }
             let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
@@ -3376,6 +3398,7 @@ mod tests {
         let s1 = tr_core::flame::tile_frame_seed_at(1.0 / 12.0);
         assert_eq!(s1, tr_core::flame::random_next_seed(s0));
         assert_eq!(tr_core::flame::tile_frame_seed_at(4.9 / 60.0), s0);
+    }
     /// W4-g12 doc-sweep: the shroom-cap frame pick
     /// (`TileDrawing.cs:994-1005`) — the `frameX >= 36` gate and the two
     /// EXACT `frameY` equalities (18 → 1, 36 → 2, everything else 0).
@@ -3550,6 +3573,7 @@ mod tests {
             body.matches("multi_tile_vines::is_multi_tile_vine(tile.kind)").count(),
             2, // the dispatch arm + the flame-overlay gate
         );
+    }
     /// W4-g83 wiring witness: the reverse-vine (549) crawl sits at the C#
     /// switch position (`TileDrawing.cs:546-548`) — right after the forward
     /// vine arm (`:536-545`), BEFORE the draw-data dispatch and any
@@ -3691,6 +3715,7 @@ mod tests {
             .expect("the counter step is wired");
         let clone = draw_src.find("let render_player =").unwrap();
         assert!(step < clone, "the step runs before the render clone");
+    }
     /// W4-g78 draw-feed witness (WRITTEN NOT RUN): the tile pass's three
     /// Echo gates read the ONE sight input — the wall layer
     /// (`WallDrawing.cs:91`), the dark-coverage merge
@@ -3737,6 +3762,7 @@ mod tests {
             body.contains("let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;"),
             "a shown echo wall is never dark coverage"
         );
+    }
     /// W4-g34 union draw-feed witness (WRITTEN NOT RUN — code-only mode):
     /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/197
     /// §2.2 — the g33 42 + g34 50 union) and reads the wired cage animator
@@ -3747,15 +3773,6 @@ mod tests {
     /// order witness below (research/197 §2.3 — f14's slice-B/A order).
     #[test]
     fn the_cage_rewrite_feeds_from_the_cage_animator() {
-    /// W4-d58 draw-feed witness: the chest rewrite sits at the C#
-    /// `CacheSpecialDraws_Part2` position — AFTER the whole `GetTileDrawData`
-    /// dispatch (static table + world corrections + slice B + slice A) and
-    /// BEFORE the source-rect resolution (`DrawSingleTile`,
-    /// `TileDrawing.cs:993` vs `:1007`), gated on `BasicChest` and keyed on
-    /// the per-draw `_chestPositions` cache. The lid frame comes from the
-    /// store (`Main.chest[i].frame`, `:4311`) — read-only, no RNG draw.
-    #[test]
-    fn w4_d58_the_chest_rewrite_runs_after_the_dispatch_before_the_rect() {
         let src = include_str!("tiles.rs");
         let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
@@ -3802,6 +3819,11 @@ mod tests {
     /// (the assertion INVERTS to glow > post-cage-read).
     #[test]
     fn the_cage_rewrite_rides_the_first_switch_tail() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
         let cases_a = dd_block.find("apply_cases_a").expect("slice A dispatch");
         let chest = dd_block
             .find("is_basic_chest(tile.kind)")
@@ -3810,6 +3832,25 @@ mod tests {
             cases_a < chest,
             "the chest rewrite runs after GetTileDrawData (TileDrawing.cs:993)"
         );
+    }
+
+    /// W4-d58 draw-feed witness: the chest rewrite sits at the C#
+    /// `CacheSpecialDraws_Part2` position — AFTER the whole `GetTileDrawData`
+    /// dispatch (static table + world corrections + slice B + slice A) and
+    /// BEFORE the source-rect resolution (`DrawSingleTile`,
+    /// `TileDrawing.cs:993` vs `:1007`), gated on `BasicChest` and keyed on
+    /// the per-draw `_chestPositions` cache. The lid frame comes from the
+    /// store (`Main.chest[i].frame`, `:4311`) — read-only, no RNG draw.
+    #[test]
+    fn w4_d58_the_chest_rewrite_runs_after_the_dispatch_before_the_rect() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let chest = dd_block
+            .find("is_basic_chest(tile.kind)")
+            .expect("the chest rewrite gate");
         assert!(
             dd_block[chest..].contains("tr_render::chest_frame_adjust"),
             "the +0/38/76 selection lives in tr-render"
@@ -3849,6 +3890,7 @@ mod tests {
         let cage = dd_block
             .find("tr_core::drawdata_furniture::cage_draw_data(")
             .expect("the cage rewrite");
+        let _post_pass = dd_block
             .find("tr_core::drawdata_furniture::furniture_post_pass(")
             .expect("the cage post-pass");
         let cases_a = dd_block
@@ -3877,6 +3919,14 @@ mod tests {
     #[test]
     fn wired_cage_rewrite_matches_the_static_arms_at_t0() {
         let a = tr_core::critter_cage_anim::CritterCageAnimator::new();
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let cage = dd_block
+            .find("tr_core::drawdata_furniture::cage_draw_data(")
+            .expect("the cage rewrite");
         let cages: &[u16] = &[
             275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
             553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,

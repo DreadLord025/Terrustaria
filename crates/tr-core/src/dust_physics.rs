@@ -1234,39 +1234,50 @@ mod tests {
         let mut spawns = Vec::new();
         let mut sand = 0;
         let mut snow = 0;
-        let mk = || DustPhysicsEnv {
-            world: &w,
-            show_sandstorm_visuals: true,
-            player_vx: 0.0,
-            player_vy: 0.0,
-            player_wet: false,
-            player_center: Vec2::new(10.0, 21.0),
-            solid_collision: &solid,
-            wet_collision: &wet,
-            light_color: &light,
-            spawns: &mut spawns,
-            sand_storm_count: &mut sand,
-            snow_dust: &mut snow,
-        };
+        fn mk<'a>(
+            w: &'a World,
+            solid: &'a dyn Fn(Vec2, f32, f32) -> bool,
+            wet: &'a dyn Fn(Vec2, f32, f32) -> bool,
+            light: &'a dyn Fn(i32, i32) -> Color,
+            spawns: &'a mut Vec<DustChildSpawn>,
+            sand: &'a mut i32,
+            snow: &'a mut i32,
+        ) -> DustPhysicsEnv<'a> {
+            DustPhysicsEnv {
+                world: w,
+                show_sandstorm_visuals: true,
+                player_vx: 0.0,
+                player_vy: 0.0,
+                player_wet: false,
+                player_center: Vec2::new(10.0, 21.0),
+                solid_collision: solid,
+                wet_collision: wet,
+                light_color: light,
+                spawns,
+                sand_storm_count: sand,
+                snow_dust: snow,
+            }
+        }
         // 329 (`:587`): scale *= 0.8, then the generic burn-out −0.01.
         let mut d = dust(329, 1.0);
-        let mut e = mk();
+        let mut e = mk(&w, &solid, &wet, &light, &mut spawns, &mut sand, &mut snow);
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.scale, 0.8 - 0.01);
         // 211 (`:729`): noLight + solid → kill.
         let mut d = dust(211, 1.0);
         d.no_light = true;
-        let mut e = mk();
+        let mut e = mk(&w, &solid, &wet, &light, &mut spawns, &mut sand, &mut snow);
         type_chain(&mut d, &mut rng, &mut e);
         assert!(!d.active);
         // 284 (`:733`): fadeIn 0 + solid → velocity *= 0.25, then the
-        // generic `:2073` drag on vx.
+        // generic `:1819` gravity fall (284 is not 41/44/309 and carries no
+        // chain arm) adds 0.1 to vy, then the `:2073` drag on vx.
         let mut d = dust(284, 1.0);
         d.fade_in = 0.0;
         d.velocity = Vec2::new(4.0, 4.0);
-        let mut e = mk();
+        let mut e = mk(&w, &solid, &wet, &light, &mut spawns, &mut sand, &mut snow);
         type_chain(&mut d, &mut rng, &mut e);
-        assert_eq!(d.velocity, Vec2::new(1.0 * 0.99, 1.0));
+        assert_eq!(d.velocity, Vec2::new(1.0 * 0.99, 1.0 + 0.1));
     }
 
     // ---- the big else-if chain ----
@@ -1449,14 +1460,16 @@ mod tests {
         let mut d = dust(27, 1.6);
         d.fade_in = 100.0;
         run(&mut d, &mut rng);
-        // 1.6 - 0.01 = 1.59; not <= 0.5/0.25; then *= 0.94 vel, += 0.002.
-        assert!((d.scale - (1.59 + 0.002)).abs() < 1e-5);
+        // 1.6 - 0.01 = 1.59; not <= 0.5/0.25; then *= 0.94 vel, += 0.002;
+        // fadeIn 100 skips the ramp (`< 100` is strict) so the `:2127`
+        // burn-out −0.01 lands after.
+        assert!((d.scale - (1.59 + 0.002 - 0.01)).abs() < 1e-5);
         // scale 0.3: < 1.5 → -= 0.05 → 0.25; <= 0.5 → -= 0.05 → 0.20;
-        // <= 0.25 → -= 0.05 → 0.15; then += 0.002.
+        // <= 0.25 → -= 0.05 → 0.15; then += 0.002 and the burn-out −0.01.
         let mut d = dust(27, 0.3);
         d.fade_in = 100.0;
         run(&mut d, &mut rng);
-        assert!((d.scale - (0.15 + 0.002)).abs() < 1e-5);
+        assert!((d.scale - (0.15 + 0.002 - 0.01)).abs() < 1e-5);
     }
 
     #[test]
@@ -1565,8 +1578,11 @@ mod tests {
     #[test]
     fn w4_d50_the_generic_gravity_fall_and_the_107_exception() {
         let mut rng = UnifiedRandom::new(7);
-        // A plain gravity dust (`:1827`): vy += 0.1.
-        let mut d = dust(60, 1.0);
+        // A plain gravity dust with NO chain arm (`:1827`): vy += 0.1.
+        // Type 0 is unarmed — type 60 used to stand here, but it is in the
+        // torch family's `59..=65` matches arm (`:824-827`, +0.05), so it
+        // never reaches the generic fall.
+        let mut d = dust(0, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(1.0, 1.0);
         run(&mut d, &mut rng);
@@ -1648,8 +1664,9 @@ mod tests {
         // The 34 grow +0.005 then the generic burn-out −0.01.
         assert_eq!(d.scale, 1.005 - 0.01, "the 34 grow");
         assert_eq!(d.velocity.y, -0.5);
-        // Next(-10,10)=100 → 100 % 20 - 10 = 0 → vx += 0; clamp leaves 0.
-        assert_eq!(d.velocity.x, 0.0);
+        // Next(-10,10)=100 → -10 → vx += -0.02; the clamp (±0.25) leaves it,
+        // then the generic `:2073` drag takes vx ×0.99.
+        assert!((d.velocity.x - (-0.02 * 0.99)).abs() < 1e-6);
         // Dry 34 (`:1955`): scale 0, NO draws.
         let dry = |_: Vec2, _: f32, _: f32| false;
         let mut d = dust(34, 1.0);
@@ -1700,12 +1717,20 @@ mod tests {
     #[test]
     fn w4_d50_the_fade_in_ramp_per_type_and_burn_out() {
         let mut rng = UnifiedRandom::new(7);
-        // 46 fadeIn ramp (`:2102`): scale += 0.1.
+        // 46 fadeIn ramp (`:2102`): scale += 0.1. With fadeIn 5 the 1.1
+        // stays BELOW the live fadeIn, so the `:2114-2117` zero does not
+        // fire.
         let mut d = dust(46, 1.0);
         d.fade_in = 5.0;
         run(&mut d, &mut rng);
         assert_eq!(d.scale, 1.1);
-        assert_eq!(d.fade_in, 0.0, "scale > fadeIn zeroes it");
+        assert_eq!(d.fade_in, 5.0, "scale (1.1) < fadeIn (5) keeps it live");
+        // A live fadeIn the ramp CROSSES zeroes (`:2114-2117`).
+        let mut d = dust(46, 1.0);
+        d.fade_in = 0.5;
+        run(&mut d, &mut rng);
+        assert_eq!(d.scale, 1.1);
+        assert_eq!(d.fade_in, 0.0, "scale (1.1) > fadeIn (0.5) zeroes it");
         // generic fadeIn ramp (`:2110`): scale += 0.03.
         let mut d = dust(60, 1.0);
         d.fade_in = 5.0;
@@ -1779,19 +1804,25 @@ mod tests {
         assert_eq!(d.velocity, Vec2::new(0.99 * 0.93, 0.93));
         assert_eq!(d.scale, 1.0 - 0.01 + 0.0025);
         // 131 gravity (`:2161`): velocity *= 0.98, vy -= 0.1, scale += 0.0025.
+        // The generic `:1819` fall (+0.1) runs first: 131 has no big-chain
+        // arm of its own.
         let mut d = dust(131, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched);
-        assert_eq!(d.velocity, Vec2::new(0.99 * 0.98, 0.98 - 0.1));
+        assert_eq!(
+            d.velocity,
+            Vec2::new(0.99 * 0.98, (1.0 + 0.1) * 0.98 - 0.1)
+        );
         // 132 gravity (`:2167`): velocity *= 0.95, scale -= 0.0025.
+        // The generic `:1819` fall (+0.1) precedes it (132 is unarmed).
         let mut d = dust(132, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched);
-        assert_eq!(d.velocity, Vec2::new(0.99 * 0.95, 0.95));
+        assert_eq!(d.velocity, Vec2::new(0.99 * 0.95, (1.0 + 0.1) * 0.95));
         assert_eq!(d.scale, 1.0 - 0.01 - 0.0025);
         // 219 noGravity (`:2229`): *= 0.93 then *= (0.97, 0.99), scale -= 0.0025.
         let mut d = dust(219, 1.0);
@@ -1802,13 +1833,14 @@ mod tests {
         assert!(matched);
         assert_eq!(d.velocity, Vec2::new(0.99 * 0.93 * 0.97, 0.93 * 0.99));
         // 226/331/272 (`:2264`/`:2295`/`:2322`): *= (0.97,0.99), scale -= 0.01.
+        // Gravity kinds take the generic `:1819` fall (+0.1) first.
         for ty in [226, 331, 272] {
             let mut d = dust(ty, 1.0);
             d.no_gravity = false;
             d.velocity = Vec2::new(1.0, 1.0);
             let (matched, _, _) = run(&mut d, &mut rng);
             assert!(matched, "type {ty} matches");
-            assert_eq!(d.velocity, Vec2::new(0.99 * 0.97, 0.99));
+            assert_eq!(d.velocity, Vec2::new(0.99 * 0.97, (1.0 + 0.1) * 0.99));
             assert_eq!(d.scale, 1.0 - 0.01 - 0.01);
         }
     }
@@ -1847,8 +1879,9 @@ mod tests {
         assert!(matched);
         // The generic fall +0.1 (`:1827`), drag ×0.99 (`:2073`), burn-out
         // −0.01 (`:2127`) precede the second chain: *= 0.95, scale
-        // -= 0.0025, then *= 0.9 / *= 0.25 (solid).
-        assert!((d.scale - ((1.0 - 0.01) * 0.95 - 0.0025) * 0.9).abs() < 1e-5);
+        // -= 0.0025 (the gravity arm only touches the VELOCITY by 0.95),
+        // then *= 0.9 / *= 0.25 (solid).
+        assert!((d.scale - ((1.0 - 0.01) - 0.0025) * 0.9).abs() < 1e-5);
         assert_eq!(
             d.velocity,
             Vec2::new(0.99 * 0.95 * 0.25, (1.0 + 0.1) * 0.95 * 0.25)
@@ -1965,7 +1998,9 @@ mod tests {
     #[test]
     fn w4_d50_census_the_173_gravity_next10_gate() {
         // `:1147-1156`: scale -= 0.015, vel *= 0.8, Next(-10,11) x2 * 0.005,
-        // Next(10); ==10 → child scale = dust.scale (no fold).
+        // Next(10). The C# gate is the literal `Next(10) == 10`
+        // (`Dust.cs:1151`) — a NEVER-true comparison (Next(10) yields
+        // 0..=9), so NO child is ever spawned. The draw still spends.
         let mut d = dust(173, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(0.0, 0.0);
@@ -1975,9 +2010,11 @@ mod tests {
             rng.calls,
             vec!["rng-10..11=0", "rng-10..11=0", "max10=10"]
         );
-        assert_eq!(spawns.len(), 1);
-        assert_eq!(spawns[0].scale, 1.0 - 0.015, "the 173 child carries the parent scale");
-        // Next(10) != 10 → no child.
+        assert!(
+            spawns.is_empty(),
+            "the vanilla Next(10) == 10 gate is dead — no 173 child"
+        );
+        // A non-10 draw is just as dead (the gate can never fire).
         let mut d = dust(173, 1.0);
         d.no_gravity = false;
         let mut rng = ScriptRng::new(&[0, 0, 3]);

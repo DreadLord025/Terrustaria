@@ -588,7 +588,6 @@ mod tests {
             &mut rng,
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
     }
 

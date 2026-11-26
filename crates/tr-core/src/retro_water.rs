@@ -212,7 +212,7 @@ mod tests {
         let i = w.index(10, 10);
         w.tiles[i].kind = 1;
         w.tiles[i].flags |= FLAG_ACTIVE;
-        let scan = ambient_lava_scan(&w, &light_map(&w), screen, false, false);
+        let scan = ambient_lava_scan(&w, &lit_map(&w), screen, false, false);
         assert_eq!(scan, AmbientScan::default());
         // drewLava at entry: the arm skips and the store is gated.
         let w2 = world_with_lava();

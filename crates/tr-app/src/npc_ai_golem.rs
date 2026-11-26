@@ -681,6 +681,8 @@ pub fn body_landing_burst(
         let _kick_x = rng.next_range(-20, 21) as f32 * 0.1;
         l += 20;
     }
+}
+
 /// W4-e2 — sites 31576/31579: the free head's two type-228 emitters
 /// (`NPC.cs:31572-31585`), the arm's LAST block before the caller's
 /// integration, gated `!Main.getGoodWorld` (the port's seed-only fold

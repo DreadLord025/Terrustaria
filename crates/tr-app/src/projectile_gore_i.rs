@@ -82,7 +82,7 @@ pub fn tombstone_kill_gore(
         p.pos.y - (p.h as i32 / 2) as f32,
     );
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, p.scale);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, p.scale);
     gore.slot_mut(idx).velocity *= 0.1;
 }
 
@@ -104,7 +104,7 @@ pub fn lava_boulder_gores(
     let signs = [(1.5, 1.5), (-1.5, 1.5), (1.5, -1.5), (-1.5, -1.5)];
     for (sx, sy) in signs {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.scale = 1.5;
         g.velocity.x += sx;
@@ -139,7 +139,7 @@ pub fn star_kill_gores(
         let unit = next_vector2_unit(rng);
         let vel = Vec2::new(unit.x * 0.5, unit.y * 0.5) * len;
         let ty = [16, 17, 17, 17, 17, 17, 17, 17][rng.next_max(8) as usize];
-        gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
+        gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
     }
 }
 
@@ -155,7 +155,7 @@ pub fn shadow_kill_gores(
     let vel = Vec2::new(p.vel.x * 0.05, p.vel.y * 0.05);
     for _ in 0..3 {
         let ty = [16, 17, 17][rng.next_max(3) as usize];
-        let idx = gore.new_gore_direct(rng, world, p.pos, vel, ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
         gore.slot_mut(idx).velocity *= 2.0;
     }
 }
@@ -174,7 +174,7 @@ pub fn falling_star_kill_gores(
     let vel = Vec2::new(p.vel.x * 0.05, p.vel.y * 0.05);
     for _ in 0..3 {
         let ty = rng.next_range(16, 18);
-        let idx = gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, ty, 1.0);
         if halve {
             gore.slot_mut(idx).velocity *= 0.5;
         }

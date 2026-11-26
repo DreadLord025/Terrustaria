@@ -24,7 +24,6 @@ use tr_core::wld::sections::WldSign;
 use tr_core::World;
 
 use crate::app::flow::KeyboardTail;
-use crate::app::App;
 use crate::ui::keyboard::{Context, Request};
 
 /// `Main.sign[0..31999]` (`Sign.cs:8`, `Main.cs:10081-10084`): the array size
@@ -115,17 +114,6 @@ pub(crate) fn close_all_windows_quiet(app: &mut App) {
     app.crafting_open = false;
 }
 
-/// `Player.OpenSign` (`Player.cs:33542-33551`): `IngameUIWindows.CloseAll
-/// (quiet: true)`, then for `s >= 0` the unpositioned `PlaySound(10)`
-/// Menu_Open (`:33547`), the sign latch and `npcChatText =
-/// Main.sign[s].text`. A negative index only closes the other windows; an
-/// index past the store reads "" (the C# would throw on `Main.sign[s] ==
-/// null` — the port's store is dense, so this is the defensive shape).
-pub(crate) fn open_sign(app: &mut App, s: i32) {
-    close_all_windows_quiet(app);
-    if s >= 0 {
-        crate::chest::play_menu_sound(app, 10); // `:33547`
-        let text = app
 /// `Sign.KillSign` (`Sign.cs:13-22`): every record at the coords dies (the
 /// C# nulls in place; the port's dense store splices, the `text_sign` shape).
 pub(crate) fn kill_sign(signs: &mut Vec<WldSign>, x: i32, y: i32) {
@@ -247,19 +235,15 @@ pub(crate) fn read_sign(world: &mut World, i: i32, j: i32, create_if_missing: bo
 /// index latch and `Main.npcChatText = Main.sign[s].text` (the read
 /// display).
 pub(crate) fn open_sign(app: &mut App, s: i32) {
-    if let Some(m) = app.map.as_mut() {
-        m.set_open(false);
-    }
+    // `IngameUIWindows.CloseAll(quiet: true)` — the W4-e10 pieces: the
+    // fullscreen map, the bestiary, the talk latch + chat text, the chest,
+    // the inventory, the shop index and the crafting panel.
+    close_all_windows_quiet(app);
+    // The W4-f22 pieces of the same C# close: the options window and the
+    // emotes wheel (plus the fancy-UI close's bestiary-selection drop).
     app.ingame_options.close();
     app.emotes.close();
-    if app.bestiary_open {
-        // `IngameFancyUI.Close(quiet)` (`IngameUIWindows.CloseAll`'s
-        // `Main.inFancyUI` arm) — the port's bestiary rides the same flag.
-        app.bestiary_open = false;
-        app.bestiary_selected = None;
-    }
-    app.talk_npc = None;
-    app.npc_chat_text.clear();
+    app.bestiary_selected = None;
     if s >= 0 {
         crate::chest::play_menu_sound(app, 10); // `:33547`
         if let Some(p) = app.player.as_mut() {
@@ -270,22 +254,6 @@ pub(crate) fn open_sign(app: &mut App, s: i32) {
             .signs
             .get(s as usize)
             .map(|r| r.text.clone())
-            .unwrap_or_default();
-        if let Some(p) = app.player.as_mut() {
-            p.sign = s; // `:33548`
-        }
-        app.npc_chat_text = text; // `:33549`
-    }
-}
-
-/// `Player.CloseSign` (`Player.cs:33528-33540`): with a live sign latch,
-/// `sign = -1`, `Main.editSign = false` (no port editor — S1-E-26), the
-/// chat text empties, and unless `quiet` the unpositioned `PlaySound(11)`
-/// Menu_Close (`:33537`). A closed latch is a no-op — no cue.
-pub(crate) fn close_sign(app: &mut App, quiet: bool) {
-    let live = app.player.as_ref().is_some_and(|p| p.sign > -1);
-    if !live {
-        return; // `:33530`
             .unwrap_or_default(); // `:33549`
     }
 }
@@ -333,6 +301,9 @@ pub(crate) fn tick_sign_range_close(app: &mut App) {
     });
     if !inside {
         close_sign(app, false); // `:27512`/:27517
+    }
+}
+
 /// The `Main.tileSign` right-click arm (`Player.cs:32693-32724`): every
 /// active sign tile consumes the click (`flag2 = true`, `:32695`). A
 /// re-click on the OPEN sign closes it (`:32697-32701`); otherwise single
@@ -646,7 +617,7 @@ mod tests {
     // ---- W4-e10 gap census: the open/close menu-tails (WRITTEN NOT RUN) ----
 
     /// An App with a live player and one sign record at (19, 30).
-    fn sign_app() -> App {
+    fn sign_app_with_record() -> App {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.world = sign_world();
         app.player = Some(crate::player::Player::spawn(&app.world));
@@ -662,7 +633,7 @@ mod tests {
     /// latch.
     #[test]
     fn w4_e10_open_sign_latches_and_plays_one_menu_open() {
-        let mut app = sign_app();
+        let mut app = sign_app_with_record();
         // The prologue's victims: an open chest + talk latch + inventory.
         app.player.as_mut().unwrap().chest = 3;
         app.talk_npc = Some(0);
@@ -689,7 +660,7 @@ mod tests {
     /// suppresses the cue only; a closed latch is a draw/cue-free no-op.
     #[test]
     fn w4_e10_close_sign_plays_one_menu_close_unless_quiet() {
-        let mut app = sign_app();
+        let mut app = sign_app_with_record();
         open_sign(&mut app, 0);
         let before = app.audio.played_count();
         close_sign(&mut app, false);
@@ -713,7 +684,7 @@ mod tests {
     /// or out of the Simple region closes WITH the cue.
     #[test]
     fn w4_e10_the_sign_range_close_fires_on_gone_or_far_records() {
-        let mut app = sign_app();
+        let mut app = sign_app_with_record();
         // Stand the player beside the sign (19*16, 30*16).
         {
             let p = app.player.as_mut().unwrap();
@@ -738,6 +709,8 @@ mod tests {
         tick_sign_range_close(&mut app);
         assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:27517`");
         assert_eq!(app.audio.played_count(), mid + 1);
+    }
+
     /// W4-f22 — `Sign.ReadSign` (`Sign.cs:24-60`): the create-if-missing
     /// arm claims the slot, the non-create arm answers -1 on a miss, and a
     /// non-sign tile kills the record and answers -1.
@@ -890,7 +863,7 @@ mod tests {
         assert!(try_open_sign_at_cursor(&mut app, click(20, 30)));
         open_sign_keyboard(&mut app);
         if let Some(p) = app.player.as_mut() {
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
         }
         assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:17014`");
         sign_tick(&mut app);

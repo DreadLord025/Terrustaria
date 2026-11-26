@@ -1108,7 +1108,7 @@ pub fn convert_sized_mushroom(world: &mut World, i: i32, j: i32, size: i32) {
 /// the converted cell dies when the new floor no longer fits its ground
 /// test. The gem/vanity/ash profiles (`GrowTreeSettings.Profiles.
 /// TryGetFromTreeId`, `:3890-3928`) override the vanilla test; the
-/// `ConvertTreeAndGround` cross-conversion half is the documented skip.
+/// `ConvertTreeAndGround` cross-conversion half is wired below (W4-f25).
 /// [`try_kill_invalid_tree_above`] with the seed stand-in — the conversion
 /// helpers below predate the W4-g83 stream threading (legacy-path stand-in).
 fn try_kill_invalid_tree_above_legacy(world: &mut World, x: i32, y: i32, new_floor: u16) {
@@ -1161,8 +1161,47 @@ fn try_kill_invalid_tree_above(
         fits = new_floor == 633;
     }
     if !fits {
-        // W4-g83: the cascade rides the caller's ACTIVE genRand stream.
-        let _ = crate::edit::kill_tile(world, x, y - 1, false, rng);
+        // The `!flag` switch (`:54844-54898`): the C7 `ConvertTreeAndGround`
+        // cross-conversion arms run on the caller's ACTIVE genRand stream
+        // (the C# `genRand == Main.rand`); the default arm kills. W4-f25
+        // wiring over W4-g83's stream threading.
+        let new_tree: Option<u16> = match tree {
+            // `case 596: case 616:` (`:54855-54872`).
+            596 | 616 => {
+                if grass_side {
+                    Some(5)
+                } else if sand_side {
+                    Some(323)
+                } else {
+                    None
+                }
+            }
+            // `case 5:` (`:54873-54884`).
+            5 => {
+                if sand_side {
+                    Some(323)
+                } else {
+                    None
+                }
+            }
+            // `case 323:` (`:54885-54896`).
+            323 => {
+                if grass_side {
+                    Some(5)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(new_tree) = new_tree {
+            // The frame rolls draw the caller's stream, so the active RNG
+            // advances exactly as in the C# (no genRand stand-in here).
+            let mut rng = rng;
+            crate::tree::convert_tree_and_ground(world, &mut rng, x, y - 1, new_floor, tree, new_tree);
+        } else {
+            let _ = crate::edit::kill_tile(world, x, y - 1, false, rng);
+        }
     }
 }
 
@@ -2060,10 +2099,10 @@ pub fn gerunner(
     }
 }
 
-/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31659-31660`):
-/// the hallow V on one side and the evil V on the other (the C# `GERunner(
-/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, 3·−num5, 5f, good:
-/// false)`); the start xs sit ±`maxTilesX/7` off the middle.
+/// `WorldGen.initializeHardMode` (`WorldGen.cs:31570-31698`), verbatim:
+/// the three head draws (`Next(300, 400)`, `Next(200, 300)`, `Next(2)`), the
+/// dungeon-side anchor bias, the remix hallow band / the two `GERunner` V
+/// arms (skipped on the `dualDungeons` seeds), then the moss-wall tail.
 ///
 /// W4-g69 retire sweep: the evil flavour is `WorldGen.crimson` read LIVE
 /// inside `GERunner` (`WorldGen.cs:76304`) — the port reads `world.crimson`
@@ -2071,18 +2110,278 @@ pub fn gerunner(
 /// callers re-derived from the seed's high bit (the `roll_crimson` stand-in,
 /// which ignored the UI pick and the drunk dawn flip).
 pub fn initialize_hard_mode(world: &mut World, rng: &mut UnifiedRandom) {
-    let offset = world.width / 7;
-    // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
-    // the 3:5 V slope verbatim.
-    let speed = 3.0;
-    // The evil side's flavour: the C# `GERunner` reads the `WorldGen.crimson`
-    // static at `:76304`; `convert_tile`/`convert_wall` take the OPPOSITE
-    // bool (`corruption = !crimson`).
+    // `flag = !dualDungeonsSeed` (`:31575-31579`): the dual-dungeon seeds
+    // skip the V runners (and the remix band) entirely.
+    let runners = !world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+    // The head draws (`:31581-31591`), verbatim order: num, num2, the flip.
+    let num = rng.next_range(300, 400) as f64 * 0.001;
+    let num2 = rng.next_range(200, 300) as f64 * 0.001;
+    let width = world.width as f64;
+    let (mut num3, mut num4, mut num5) = (
+        (width * num) as i32,
+        (width * (1.0 - num)) as i32,
+        1i32,
+    );
+    if rng.next_max(2) == 0 {
+        num4 = (width * num) as i32;
+        num3 = (width * (1.0 - num)) as i32;
+        num5 = -1;
+    }
+    // The dungeon-side bias (`:31592-31615`): num6 = -1 when the dungeon sits
+    // left of the middle, +1 otherwise; the dungeon-OPPOSITE anchor takes the
+    // num2 fraction.
+    let mut num6 = 1;
+    if world.dungeon_x < world.width / 2 {
+        num6 = -1;
+    }
+    if num6 < 0 {
+        if num4 < num3 {
+            num4 = (width * num2) as i32;
+        } else {
+            num3 = (width * num2) as i32;
+        }
+    } else if num4 > num3 {
+        num4 = (width * (1.0 - num2)) as i32;
+    } else {
+        num3 = (width * (1.0 - num2)) as i32;
+    }
     let corruption = !world.crimson;
-    // The hallow runner: the east side heading further east.
-    gerunner(world, world.width / 2 + offset, 0, speed, 5.0, true, corruption, rng);
-    // The evil runner: the west side heading further west.
-    gerunner(world, world.width / 2 - offset, 0, -speed, 5.0, false, corruption, rng);
+    if runners {
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            // The remix hallow band (`:31618-31656`): the dungeon-OPPOSITE
+            // edge takes `width/7` full hallow columns, the `width/14` band
+            // beside it only hallows its crimson/corrupt cells. Each column's
+            // start is jittered by `Next(-1, 2)` off the surface.
+            let band = world.width / 7;
+            let half = world.width / 14;
+            let surface = world.world_surface as i32;
+            let bottom = world.height - 10;
+            if world.dungeon_x < world.width / 2 {
+                for i in (world.width - band - half)..world.width {
+                    let start = surface + rng.next_range(-1, 2);
+                    for j in start..bottom {
+                        let hallow_direct = i > world.width - band;
+                        let recruit = !hallow_direct
+                            && world.tile(i, j).is_some_and(|t| {
+                                crate::tiledata::SET_CRIMSON.has(t.kind)
+                                    || crate::tiledata::SET_CORRUPT.has(t.kind)
+                            });
+                        if hallow_direct || recruit {
+                            convert_cell_flavor(world, i, j, ConversionFlavor::Hallow, true);
+                        }
+                    }
+                }
+            } else {
+                for k in 0..(band + half) {
+                    let start = surface + rng.next_range(-1, 2);
+                    for l in start..bottom {
+                        let hallow_direct = k < band;
+                        let recruit = !hallow_direct
+                            && world.tile(k, l).is_some_and(|t| {
+                                crate::tiledata::SET_CRIMSON.has(t.kind)
+                                    || crate::tiledata::SET_CORRUPT.has(t.kind)
+                            });
+                        if hallow_direct || recruit {
+                            convert_cell_flavor(world, k, l, ConversionFlavor::Hallow, true);
+                        }
+                    }
+                }
+            }
+        } else {
+            // `GERunner`'s two arms (`:31658-31661`): the hallow runner east
+            // of the middle, the evil runner west, both `num5`-signed.
+            gerunner(world, num3, 0, 3.0 * num5 as f64, 5.0, true, corruption, rng);
+            gerunner(world, num4, 0, -3.0 * num5 as f64, 5.0, false, corruption, rng);
+        }
+    }
+    // The moss-wall tail (`:31663-31698`, W4-d103 P5).
+    hardmode_moss_walls(world, rng);
+}
+
+/// `initializeHardMode`'s moss-wall tail (`WorldGen.cs:31663-31698`):
+/// `(int)(25 · maxTilesX/4200)` wall-ring placements. Each attempt draws a
+/// `RandomWorldPoint(worldSurface − 100, 1, 190, 1)` (the `worldSurface <=
+/// 100` arm uses top 20, `:31672`); a crimson/corrupt/hallowed floor tile
+/// with air above rolls the unsafe-wall family (`192 + Next(4)` crimson,
+/// `188 + Next(4)` corrupt, `200 + Next(4)` hallow, `:31676-31687`), then
+/// floods the pocket above through `ShapeFloodFill(1000)` carrying
+/// `IsNotSolid → OnlyWalls(the 31-wall natural set) → Blank.Output`
+/// (`:31690`). A drained pocket over 50 cells takes the wall ring
+/// (`OuterOutline(useDiagonals, useInterior)` + `PlaceWall`, `:31693`);
+/// every 15000th failed attempt burns one placement (`:31668-31671`).
+///
+/// The shape/action framework is ported inline (the `wall_variety.rs`
+/// precedent): the `OnlyWalls` list verbatim (the duplicated 71 kept), the
+/// `PlaceWall` `SquareWallFrame` self + 4 neighbours deferred per the
+/// port's plain-write convention.
+fn hardmode_moss_walls(world: &mut World, rng: &mut UnifiedRandom) {
+    let mut num9 = (25.0 * (world.width as f64 / 4200.0)) as i32;
+    let mut shape = MossShape::default();
+    let mut num10 = 0;
+    while num9 > 0 {
+        num10 += 1;
+        if num10 % 15000 == 0 {
+            num9 -= 1;
+        }
+        // `RandomWorldPoint` (`:27111-27114`): X first, then Y.
+        let top = if world.world_surface > 100.0 {
+            world.world_surface as i32 - 100
+        } else {
+            20
+        };
+        let px = rng.next_range(1, world.width - 1);
+        let py = rng.next_range(top, world.height - 190);
+        let Some(tile) = world.tile(px, py) else {
+            continue;
+        };
+        let kind = tile.kind;
+        let mut num11: u16 = 0;
+        if crate::tiledata::SET_CRIMSON.has(kind) {
+            num11 = 192 + rng.next_max(4) as u16;
+        } else if crate::tiledata::SET_CORRUPT.has(kind) {
+            num11 = 188 + rng.next_max(4) as u16;
+        } else if crate::tiledata::SET_HALLOW.has(kind) {
+            num11 = 200 + rng.next_max(4) as u16;
+        }
+        let above_active = world.tile(px, py - 1).is_some_and(|t| t.active());
+        if tile.active() && num11 != 0 && !above_active {
+            let flag2 = moss_pocket_fill(world, (px, py - 1), &mut shape);
+            if shape.count() > 50 && flag2 {
+                moss_outline_place(world, (px, py), &shape, num11);
+                num9 -= 1;
+            }
+            shape.clear();
+        }
+    }
+}
+
+/// The `OnlyWalls` list of the hardmode moss chain (`WorldGen.cs:31690`) —
+/// the natural unsafe-wall families; the duplicated 71 is the C#'s own.
+const MOSS_POCKET_WALLS: [u16; 31] = [
+    0, 54, 55, 56, 57, 58, 59, 61, 185, 212, 213, 214, 215, 2, 196, 197, 198, 199, 15, 40, 71,
+    64, 204, 205, 206, 207, 208, 209, 210, 211, 71,
+];
+
+/// `ShapeData` (`ShapeData.cs:9-114`) — the relative cell set, insertion
+/// order beside the membership set (the `wall_variety.rs` precedent).
+#[derive(Default)]
+struct MossShape {
+    points: Vec<(i32, i32)>,
+    set: std::collections::HashSet<(i32, i32)>,
+}
+
+impl MossShape {
+    fn add(&mut self, x: i32, y: i32) {
+        if self.set.insert((x, y)) {
+            self.points.push((x, y));
+        }
+    }
+    fn contains(&self, x: i32, y: i32) -> bool {
+        self.set.contains(&(x, y))
+    }
+    fn count(&self) -> usize {
+        self.set.len()
+    }
+    fn clear(&mut self) {
+        self.points.clear();
+        self.set.clear();
+    }
+}
+
+/// `ShapeFloodFill(1000)` (`ShapeFloodFill.cs:17-58`) carrying
+/// `Chain(IsNotSolid, OnlyWalls(MOSS_POCKET_WALLS), Blank.Output(shape))`
+/// (`WorldGen.cs:31690`): a cell passes only when it is not solid-or-sloped
+/// AND its wall is in the natural set; a pass records the relative cell and
+/// enqueues the 4 neighbours (the 1-tile border guards). Returns the C#
+/// `queue.Count == 0` after the drain loop — true only when the pocket
+/// drained within the 1000-action budget.
+fn moss_pocket_fill(world: &World, origin: (i32, i32), shape: &mut MossShape) -> bool {
+    use std::collections::{HashSet, VecDeque};
+    let (ox, oy) = origin;
+    let mut queue: VecDeque<(i32, i32)> = VecDeque::new();
+    let mut visited: HashSet<(i32, i32)> = HashSet::new();
+    queue.push_back(origin);
+    let mut num = 1000;
+    while !queue.is_empty() && num > 0 {
+        let (x, y) = queue.pop_front().unwrap();
+        if visited.contains(&(x, y)) {
+            continue;
+        }
+        // `Modifiers.IsNotSolid` (`Modifiers.cs:573-583`) — inactive or not
+        // solid-or-sloped (`WorldGen.cs:69985-70009`: tileSolid, not
+        // tileSolidTop, not wired-inactive; slopes/half-bricks pass).
+        let not_solid = !world.tile(x, y).is_some_and(|t| {
+            t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+        });
+        // `Modifiers.OnlyWalls` (`Modifiers.cs:220-230`).
+        let wall_ok = world
+            .tile(x, y)
+            .is_some_and(|t| MOSS_POCKET_WALLS.contains(&t.wall));
+        if !not_solid || !wall_ok {
+            continue;
+        }
+        shape.add(x - ox, y - oy);
+        visited.insert((x, y));
+        num -= 1;
+        if x + 1 < world.width - 1 {
+            queue.push_back((x + 1, y));
+        }
+        if x - 1 >= 1 {
+            queue.push_back((x - 1, y));
+        }
+        if y + 1 < world.height - 1 {
+            queue.push_back((x, y + 1));
+        }
+        if y - 1 >= 1 {
+            queue.push_back((x, y - 1));
+        }
+    }
+    // The drain loop (`:48-57`).
+    while let Some(item) = queue.pop_front() {
+        if !visited.contains(&item) {
+            queue.push_front(item);
+            break;
+        }
+    }
+    queue.is_empty()
+}
+
+/// `ModShapes.OuterOutline(shape, useDiagonals: true, useInterior: true)` +
+/// `Actions.PlaceWall(num11)` (`WorldGen.cs:31693`, `ModShapes.cs:43-61`):
+/// every recorded cell plus its 8-neighbour ring cells NOT in the set, in
+/// discovery order. The origin is the FLOOR cell while the data was
+/// recorded relative to the air cell above — the ring lands one row lower,
+/// verbatim. The `PlaceWall` `SquareWallFrame` self + 4 neighbours
+/// (`Actions.cs:536-547`) is deferred per the plain-write convention.
+fn moss_outline_place(world: &mut World, origin: (i32, i32), shape: &MossShape, wall: u16) {
+    const OFFSETS: [(i32, i32); 8] = [
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1),
+    ];
+    let (ox, oy) = origin;
+    for &(dx, dy) in &shape.points {
+        if let Some(t) = world.tile_mut(ox + dx, oy + dy) {
+            t.wall = wall;
+        }
+        for (px, py) in OFFSETS {
+            if !shape.contains(dx + px, dy + py) {
+                if let Some(t) = world.tile_mut(ox + dx + px, oy + dy + py) {
+                    t.wall = wall;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2236,7 +2535,7 @@ mod runner_tests {
         let mut w = World::new("t".into(), 60, 60);
         w.dungeon_x = 45; // the right side: num6 = +1
         let mut rng = UnifiedRandom::new(7);
-        initialize_hard_mode(&mut w, true, &mut rng);
+        initialize_hard_mode(&mut w, &mut rng);
         // The three head draws, verbatim order, then the anchor maths.
         let mut mirror = UnifiedRandom::new(7);
         let num = mirror.next_range(300, 400) as f64 * 0.001;
@@ -2276,8 +2575,8 @@ mod runner_tests {
         right.dungeon_x = 700; // >= 400: num6 = +1
         let mut rng_a = UnifiedRandom::new(21);
         let mut rng_b = UnifiedRandom::new(21);
-        initialize_hard_mode(&mut left, true, &mut rng_a);
-        initialize_hard_mode(&mut right, true, &mut rng_b);
+        initialize_hard_mode(&mut left, &mut rng_a);
+        initialize_hard_mode(&mut right, &mut rng_b);
         assert_ne!(
             left.tiles, right.tiles,
             "the dungeon side moves the V anchors"
@@ -2295,7 +2594,7 @@ mod runner_tests {
         w.seeds.insert(crate::seeds::SeedFlags::REMIX);
         w.dungeon_x = 700; // the right side: the band lands left
         let mut rng = UnifiedRandom::new(5);
-        initialize_hard_mode(&mut w, true, &mut rng);
+        initialize_hard_mode(&mut w, &mut rng);
         // The left band (0..width/7 = 0..114) carries hallowed stone.
         let left_hallow = (0..114).any(|x| {
             (300..590).any(|y| {
@@ -2324,7 +2623,7 @@ mod runner_tests {
         let before = w.tiles.clone();
         let mut rng = UnifiedRandom::new(3);
         let pristine = rng.clone();
-        initialize_hard_mode(&mut w, true, &mut rng);
+        initialize_hard_mode(&mut w, &mut rng);
         assert_eq!(w.tiles, before, "no V conversions");
         assert_ne!(rng, pristine, "the head still drew");
     }
@@ -2430,7 +2729,9 @@ mod tests {
     use crate::tile::{FLAG_ACTIVE, Tile};
 
     fn world() -> World {
-        let mut w = World::new("t".into(), 400, 400);
+        // Wide enough for the convert transcripts' x up to 452 (the signs
+        // ran against a 400-wide fixture whose cells past 399 never existed).
+        let mut w = World::new("t".into(), 800, 400);
         w.rock_layer = 200.0;
         w
     }
@@ -2551,14 +2852,21 @@ mod tests {
         assert_eq!(w.tile(22, 100).unwrap().kind, 70, "60 → 70");
         // The torch default-switch set (`TileID.cs:63-77`): styles
         // {0, 9, 16, 18, 19, 20, 21, 22} convert to 22; style 5 does not.
+        // `Main.tileFrameImportant[4] = true`: the real table marks torches
+        // frame-important, so the trailing `SquareTileFrame` runs `CheckTorch`
+        // (frameX only) and the style column survives.
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[4] = true;
         for (x, style) in [(24i32, 0i16), (26, 9), (28, 16), (30, 21)] {
             put(&mut w, x, 100, 4);
+            put(&mut w, x, 101, 1); // the floor the torch stands on
             let i = w.index(x, 100);
             w.tiles[i].frame_y = style * 22;
             convert_cell_mushroom(&mut w, x, 100);
             assert_eq!(w.tile(x, 100).unwrap().frame_y, 22 * 22, "torch {style} → 22");
         }
         put(&mut w, 32, 100, 4);
+        put(&mut w, 32, 101, 1);
         let i = w.index(32, 100);
         w.tiles[i].frame_y = 5 * 22;
         convert_cell_mushroom(&mut w, 32, 100);
@@ -2571,11 +2879,11 @@ mod tests {
         }
     }
 
-    /// W4-g42 G7: the 60 → 70 write kills an invalid tree above
-    /// (`Convert_ActuallyConvertTile` → `TryConvertingOrKillingTreesAbove…`,
-    /// `:56316`): a palm 323 above a jungle-grass cell dies (the mushroom
-    /// grass 70 is not in `Conversion.Sand`), a tile-5 tree survives (70 is
-    /// in the grass-side union).
+    /// W4-g42 G7: the 60 → 70 write runs `TryConvertingOrKillingTreesAbove…`
+    /// (`:54802-54899`): the mushroom grass 70 is in the grass-family union,
+    /// so a palm 323 above is CONVERTED to a vanilla tree 5 (`case 323:` →
+    /// `ConvertTreeAndGround(…, 323, 5)` `:54885-54896`), while a tile-5
+    /// tree above passes its own grass test and simply survives.
     #[test]
     fn w4_g42_the_mushroom_conversion_kills_the_invalid_tree_above() {
         let mut w = world();
@@ -2583,12 +2891,17 @@ mod tests {
         put(&mut w, 50, 99, 323); // the palm trunk
         convert_cell_mushroom(&mut w, 50, 100);
         assert_eq!(w.tile(50, 100).unwrap().kind, 70);
-        assert!(!w.tile(50, 99).unwrap().active(), "the palm dies on 70");
+        assert_eq!(
+            w.tile(50, 99).unwrap().kind,
+            5,
+            "the palm converts to a tree on 70 (not a kill)"
+        );
         let mut w2 = world();
         put(&mut w2, 50, 100, 60);
         put(&mut w2, 50, 99, 5); // the vanilla tree trunk
         convert_cell_mushroom(&mut w2, 50, 100);
         assert!(w2.tile(50, 99).unwrap().active(), "the tree survives on 70");
+        assert_eq!(w2.tile(50, 99).unwrap().kind, 5, "the tree stays a tree");
     }
 
     /// W4-g42 GROWTH SEAL: the sized type-3 walk (`WorldGen.cs:55067-55083`,
@@ -2844,21 +3157,29 @@ mod tests {
         // (`:55846-55848`); types 1/4 take the default set → 18/19
         // (`:55299-55301`/`:55138-55140`).
         let mut w = world();
+        // `Main.tileFrameImportant[4] = true`: the real table marks torches
+        // frame-important, so the trailing `SquareTileFrame` runs `CheckTorch`
+        // (frameX only) instead of re-deriving the style column.
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[4] = true;
         for (i, (style, ty, want)) in [(18, 11u8, 0i16), (0, 1, 18), (9, 4, 19)]
             .iter()
             .enumerate()
         {
-            put(&mut w, 400 + i as i32, 200, 4);
-            w.tile_mut(400 + i as i32, 200).unwrap().frame_y = style * 22;
-            convert_sized(&mut w, 400 + i as i32, 200, *ty, 0);
+            let x = 400 + i as i32;
+            put(&mut w, x, 200, 4);
+            put(&mut w, x, 201, 1); // the floor the torch stands on
+            w.tile_mut(x, 200).unwrap().frame_y = style * 22;
+            convert_sized(&mut w, x, 200, *ty, 0);
             assert_eq!(
-                w.tile(400 + i as i32, 200).unwrap().frame_y,
+                w.tile(x, 200).unwrap().frame_y,
                 want * 22,
                 "torch style {style} type {ty}"
             );
         }
         // A non-convertible style stays (type 11's 18-20 gate).
         put(&mut w, 410, 200, 4);
+        put(&mut w, 410, 201, 1);
         w.tile_mut(410, 200).unwrap().frame_y = 9 * 22;
         convert_sized(&mut w, 410, 200, 11, 0);
         assert_eq!(w.tile(410, 200).unwrap().frame_y, 9 * 22);

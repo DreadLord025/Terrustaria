@@ -480,18 +480,6 @@ pub(crate) fn draw_background(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`): carried across frames — the black
     // box consumes the value the previous frame's magma pass produced.
     hell_black_box_bottom: &mut f32,
-    // `Main.shimmerAlpha` (`Main.cs:52800`): the SceneState ramp — 1 skips the
-    // whole pass (W4-e19 aether arm).
-    shimmer_alpha: f32,
-) {
-    // `Main.cs:52800-52805`: full shimmer skips the pass (the aether's black
-    // backdrop replaces it) and zeroes `ugBackTransition`. The port pins
-    // `undergroundBackground` 0 (the cross-fade never runs — see
-    // `draw_background_update_background_styles`), so the zeroing is a no-op
-    // here; g72's live `UgBackState` merge must zero its transition on this arm.
-    if shimmer_alpha == 1.0 {
-        return;
-    }
     // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`): the Echo
     // coating's see-invisible gate the wall-parallax `WallLightAt` reads. The port
     // has no Echo Monolith / accessory yet, so it rides the `TR_SHOW_INVISIBLE` pin.
@@ -1480,6 +1468,11 @@ pub(crate) struct AmbiencePass<'a> {
     /// W4-f39: the SlimeSky rides the same depth boundaries (the c39
     /// `draw_balloons_band` shape) — `None` outside the event.
     pub slime_sky: Option<&'a crate::slime_sky::SlimeSky>,
+    /// W4-f40: the `LanternSky` + its own depth tracker + the hourly bob
+    /// phase, drawn at the same front-row boundaries as the ambience.
+    pub lantern_sky: &'a crate::render::lantern_sky::LanternSky,
+    pub lantern_last: &'a mut f32,
+    pub global_time: f32,
 }
 
 /// W4-f39: one `SkyManager.DrawDepthRange` boundary for BOTH sandwich
@@ -1508,11 +1501,6 @@ pub(crate) fn draw_sandwich_band(r: &mut SpriteRenderer, p: &mut AmbiencePass<'_
             band_max,
         );
     }
-    /// W4-f40: the `LanternSky` + its own depth tracker + the hourly bob
-    /// phase, drawn at the same front-row boundaries as the ambience.
-    pub lantern_sky: &'a crate::render::lantern_sky::LanternSky,
-    pub lantern_last: &'a mut f32,
-    pub global_time: f32,
 }
 
 /// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).

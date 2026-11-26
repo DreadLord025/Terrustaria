@@ -161,6 +161,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let splash_water_style = crate::env::water_style()
         .map(|n| n.min(14) as i32)
         .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
+    let dust_ctx = app.spawn_ctx();
     let world = &app.world;
     let player = &mut app.player;
     let items = &mut app.items;
@@ -172,7 +173,6 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let audio = &mut app.audio;
     // The splash arms draw `Main.rand` under the `UpdateItems` swap, so
     // the RNG borrows stay per-call inside the step closure.
-    let dust = &mut app.dust;
     let mut voodoo: Option<(Vec2, u32)> = None;
     // W4-g15 lane 5 — the copper-slime unlock latch: the flag write rides
     // the post-tick pass (the closure holds the world borrow); the latch
@@ -186,7 +186,6 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // `world_sim/player.rs:426` snapshot pattern). The day/remix/DD2 gates
     // the despawn burns read are captured here too (they cannot change
     // mid-tick).
-    let dust_ctx = app.spawn_ctx();
     // 347 §2.1 keep-one — the e19 splash drain's water style wins (the f47b
     // adopt): `Main.waterStyle` is the live biome style the `Dust.dustWater()`
     // arm reads (`Dust.cs:402-418`); the `TR_WATER_STYLE` pin caps at 14 like
@@ -972,7 +971,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // after `:413`'s MoveInWorld). All draws ride `UpdateItems`.
             if drop.splash_due.is_some() {
                 drop.splash(
-                    dust,
+                    &mut app.dust,
                     &splash_ctx,
                     world,
                     audio,
@@ -993,9 +992,13 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 item_splash(
                     &mut app.dust,
                     &dust_ctx,
+                    world,
                     water_style,
-                    &mut app.audio,
+                    audio,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
                     splash,
+                );
+            }
             // W4-g15 — `DespawnIfMeetingConditions` (`WorldItem.cs:423`,
             // `:639-679`): the fallen-star daytime burn / the 4143 expiry /
             // the 3822 DD2 despawn, AFTER MoveInWorld and BEFORE the visual
@@ -1060,6 +1063,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                         items.swap_remove(i);
                         continue;
                     }
+                }
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -1339,6 +1344,82 @@ fn try_fill_bucket(
 /// active swap's stream, `Item.cs:49654-49727`) — shared by every pass, so
 /// each caller feeds its own; no field lookups here (the drop list comes in
 /// too, so the caller's stream borrow and the list stay disjoint).
+fn item_splash(
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::world::World,
+    water_style: i32,
+    audio: &mut crate::audio::Audio,
+    rng: &mut UnifiedRandom,
+    splash: crate::item::ItemSplash,
+) {
+    use tr_core::particles::Color;
+    // The dust anchor (`:892` etc.): `position.X - 6f`,
+    // `position.Y + height/2 - 8f`; the water exit arm (`:1011`) has no `- 8`.
+    let size = crate::item::SIZE;
+    let water_exit = !splash.lava && !splash.shimmer && !splash.honey && splash.exit;
+    let y_off = if water_exit { size / 2.0 } else { size / 2.0 - 8.0 };
+    let anchor = Vec2::new(splash.pos.x - 6.0, splash.pos.y + y_off);
+    let (w, h) = (size as i32 + 12, 24);
+    // The family: (dust type, count, style). `Dust.dustWater()` reads the
+    // camera's water style (`Main.waterStyle`, the g67 seam).
+    let (ty, n, style) = if splash.lava {
+        (35, 5, 1) // `:944-953`/`:1023-1032`
+    } else if splash.shimmer {
+        (308, 10, if splash.exit { 5 } else { 4 }) // `:890-913`/`:969-992`
+    } else if splash.honey {
+        (152, 5, 1) // `:917-926`/`:996-1005`
+    } else {
+        (tr_core::particles::dust_water(water_style), 10, 1) // `:930-939`/`:1009-1018`
+    };
+    for _ in 0..n {
+        let idx = dust.new_dust(
+            rng, ctx, world, anchor, w, h, ty, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        if ty == 35 {
+            // `:946-951` — vel.Y -= 1.5, vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.5;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else if ty == 308 {
+            // `:892-911` — vel.Y -= 4, vel.X *= 2.5, scale 0.8 (SET, not ×),
+            // noGravity, then the `Next(6)` four-colour switch.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale = 0.8;
+            d.no_gravity = true;
+            d.color = match rng.next_max(6) {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+        } else if ty == 152 {
+            // `:919-924` — vel.Y-- (1.0), vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.0;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else {
+            // `:932-937` — vel.Y -= 4, vel.X *= 2.5, scale *= 0.8 (MULTIPLY),
+            // alpha 100, noGravity.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale *= 0.8;
+            d.alpha = 100;
+            d.no_gravity = true;
+        }
+    }
+    // `:913`/`:926`/`:939`/`:953` — `SoundEngine.PlaySound(19, (int)x, (int)y
+    // [, style])`: the shimmer arms pass 4 (entry) / 5 (exit), the rest the
+    // default style 1. The play gates on attenuation BEFORE its pitch draw.
+    audio.play_splash_sound(style, splash.pos.x as i32 as f32, splash.pos.y as i32 as f32, rng);
+}
+
 pub(crate) fn spawn_item_drop(
     items: &mut Vec<ItemDrop>,
     rng: &mut UnifiedRandom,
@@ -2103,94 +2184,6 @@ mod shimmer_tests {
     // draw-census twins live in item.rs's w4_f47ds block).
     // -----------------------------------------------------------------
 
-    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
-
-    /// The entry splash (`WorldItem.cs:881-958`): a dry drop falling into
-    /// the shimmer pool arms `wetCount = 20` and bursts 10 dust 308 (the
-    /// `Next(6)` colour switch) through the shared pool, all on the
-    /// `UpdateItems` stream. The camera parks at the pool so the spawn
-    /// cull passes.
-    #[test]
-    fn w4_f47k1_the_shimmer_entry_splash_bursts_10_dust_308() {
-        let mut app = shimmer_world();
-        // The full dust budget (the flow_app default is 0 — every spawn
-        // would hit the >90% pressure band's Next(4) refusal).
-        app.gfx_quality.max_dust_to_draw = 6000;
-        // Above the pool (rows 18-19), dry, falling — parked at x = 30
-        // tiles (outside the player's grab magnet).
-
-        }    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
-    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
-        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
-        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
-        let mut d = resting_drop(11, 3);
-        d.vel = Vec2::new(2.0, 3.0);
-        app.items.push(d);
-        for _ in 0..120 {
-            update_items(&mut app, 1.0 / 60.0);
-        }
-        let d = &app.items[0];
-        assert!(d.shimmered);
-        assert_eq!(d.kind, 699);
-        // The tail set shimmerTime = 1 at the transform tick (the stack
-        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
-        // (a shimmered drop's ramp condition is false, so it falls to the
-        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
-        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
-        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
-            "the tail reset then decayed: {}", d.shimmer_time);
-        assert!(d.shimmer_wet, "the tail set shimmerWet");
-        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
-        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
-        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
-        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
-    }
-    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
-        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
-        app.items.push(resting_drop(11, 3));
-        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
-        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
-    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
-        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
-        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
-        // source's Centre with the alternating fan velocity, prefix 0.
-        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
-        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
-        assert!(spawn.shimmered, "the ingredient is shimmered");
-        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
-        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
-        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
-        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
-        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
-        // The source aired out (60 - 2*30 = 0).
-        assert!(!app.items.iter().any(|d| d.kind == 3077));
-    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
-        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
-        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
-        // The port's add_coin_luck adds the merged stack without rebuilding
-        // `luck` (the old apply called recalculate_luck eagerly).
-        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
-        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
-        // `luck` is rebuilt by the luck pass, not the coin arm — the items
-        // pass alone does not touch it (no UpdateLuck in update_items).
-        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
-    /// W4-e19 deferred 4 — the entry splash (`WorldItem.cs:881-958`): a dry
-    /// drop falling into the shimmer pool arms `wetCount = 20` and bursts 10
-    /// dust 308 (the `Next(6)` colour switch) through the shared pool, all on
-    /// the `UpdateItems` stream. The camera parks at the pool so the spawn
-    fn w4_e19_the_shimmer_entry_splash_bursts_10_dust_308() {
-        // Above the pool (rows 18-19), dry, falling — parked at x = 30 tiles
-        // (outside the player's grab magnet).
-    }
-
-    // -----------------------------------------------------------------
-    // Keep-one 144 — the e19 lane's pass-level splash witnesses folded
-    // (7d3cb5e3's four, re-pinned at the 16 geometry; the unit-level
-    // draw-census twins live in item.rs's w4_f47ds block).
-    // -----------------------------------------------------------------
-
     /// The entry splash (`WorldItem.cs:881-958`): a dry drop falling into
     /// the shimmer pool arms `wetCount = 20` and bursts 10 dust 308 (the
     /// `Next(6)` colour switch) through the shared pool, all on the
@@ -2242,9 +2235,6 @@ mod shimmer_tests {
     fn w4_f47k1_the_shimmer_exit_splash_after_the_cooldown() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
-
-        }    /// the OLD shimmerWet (still set at the edge) and plays style 5.
-    fn w4_e19_the_shimmer_exit_splash_after_the_cooldown() {
         // Resting IN the pool (the entry burst fires on tick 1).
         app.items.push(resting_drop(2, 1));
         app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
@@ -2270,8 +2260,6 @@ mod shimmer_tests {
     fn w4_f47k1_the_wet_count_suppresses_the_second_burst() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
-
-        }    fn w4_e19_the_wet_count_suppresses_the_second_burst() {
         app.items.push(resting_drop(2, 1));
         app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
         update_items(&mut app, 1.0 / 60.0); // entry burst
@@ -2291,8 +2279,6 @@ mod shimmer_tests {
     fn w4_f47k1_the_water_entry_splash_uses_the_water_style_dust() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
-
-        }    fn w4_e19_the_water_entry_splash_uses_the_water_style_dust() {
         // Replace the shimmer pool with water.
         for x in 0..40 {
             for y in 18..=19 {
@@ -2314,7 +2300,6 @@ mod shimmer_tests {
         let ws = crate::env::water_style()
             .map(|n| n.min(14) as i32)
             .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
-        let ws = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
         let want = tr_core::particles::dust_water(ws);
         let hits: Vec<_> = app.dust.slots().iter().filter(|d| d.active && d.dust_type == want).collect();
         assert!(hits.len() >= 10, "the water burst: {} dust {want}", hits.len());
@@ -2323,6 +2308,89 @@ mod shimmer_tests {
             assert!(d.no_gravity);
         }
     }
+
+    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+
+    #[test]
+    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
+        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
+        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
+        let mut app = shimmer_world();
+        let mut d = resting_drop(11, 3);
+        d.vel = Vec2::new(2.0, 3.0);
+        app.items.push(d);
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(d.shimmered);
+        assert_eq!(d.kind, 699);
+        // The tail set shimmerTime = 1 at the transform tick (the stack
+        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
+        // (a shimmered drop's ramp condition is false, so it falls to the
+        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
+        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
+        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
+            "the tail reset then decayed: {}", d.shimmer_time);
+        assert!(d.shimmer_wet, "the tail set shimmerWet");
+        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
+        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
+        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
+        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
+    }
+
+    #[test]
+    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
+        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(11, 3));
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
+        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
+    }
+
+    #[test]
+    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
+        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
+        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
+        // source's Centre with the alternating fan velocity, prefix 0.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
+        assert!(spawn.shimmered, "the ingredient is shimmered");
+        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
+        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
+        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
+        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
+        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
+        // The source aired out (60 - 2*30 = 0).
+        assert!(!app.items.iter().any(|d| d.kind == 3077));
+    }
+
+    #[test]
+    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
+        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
+        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
+        // The port's add_coin_luck adds the merged stack without rebuilding
+        // `luck` (the old apply called recalculate_luck eagerly).
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
+        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
+        // `luck` is rebuilt by the luck pass, not the coin arm — the items
+        // pass alone does not touch it (no UpdateLuck in update_items).
+        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
+    }
+
 }
 
 #[cfg(test)]
@@ -4451,8 +4519,4 @@ mod drop_witness_tests {
         drop_item_check(&mut app, false);
         assert!(app.items.is_empty());
     }
-
-
-// balance-close (union shared delimiter)
-}}}}}})
 }

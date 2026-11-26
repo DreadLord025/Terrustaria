@@ -518,7 +518,7 @@ mod tests {
             }
             oracle.next_float();
         }
-        assert_eq!(rng.peek(), oracle.peek(), "the gore argument order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the gore argument order");
         // The client pops but does NOT release.
         let mut n = balloon(100.0, 100.0);
         n.wet = true;

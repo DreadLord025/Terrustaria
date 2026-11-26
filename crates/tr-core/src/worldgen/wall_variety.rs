@@ -269,11 +269,23 @@ pub(crate) fn pass_wall_variety(
     let mut num = (300.0 * ((world.width * world.height) as f64 / 5040000.0)) as i32;
     let mut num3 = 100000;
     let mut shape = ShapeData::default();
-    while num > 0 && num3 > 0 {
-        // `:16709-16713` — the point draw and the shimmer safety re-draw.
+    // The C# budget semantics are preserved verbatim for normal worlds;
+    // only sub-vanilla sizes get the hang guard (their bands can all fail).
+    let subvanilla = world.width < 4200 || world.height < 1200;
+    let guard_limit = if subvanilla { 1_000_000u64 } else { u64::MAX };
+    let mut guard = 0u64;
+    while num > 0 && num3 > 0 && guard < guard_limit {
+        guard += 1;
+        // W4-d103 P21: the C# decrements num3 only inside the placement
+        // gate, so an all-fail band can spin; the guard bounds sub-vanilla.
         let mut point = random_world_point(rng, world, top, 2, 190, 2);
-        while distance((point.0 as f64, point.1 as f64), shimmer_position) < SHIMMER_SAFETY_DISTANCE {
+        let reroll_limit = if subvanilla { 10_000u32 } else { u32::MAX };
+        let mut rerolls = 0u32;
+        while distance((point.0 as f64, point.1 as f64), shimmer_position) < SHIMMER_SAFETY_DISTANCE
+            && rerolls < reroll_limit
+        {
             point = random_world_point(rng, world, top, 2, 190, 2);
+            rerolls += 1;
         }
         let (x, y) = point;
         let Some(tile) = world.tile(x, y) else {

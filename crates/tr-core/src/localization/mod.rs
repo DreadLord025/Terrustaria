@@ -700,8 +700,13 @@ mod tests {
     /// W4-d120 — `SelectRandom` (`LanguageManager.cs:392-411`) picks by
     /// `--num == index`: index 0 is the LAST matching row, `count-1` the
     /// first, in the Dictionary's insertion order. The conditional rows
-    /// (`{?Day}`…) only count while their substitution holds
+    /// (`{?Night}`…) only count while their substitution holds
     /// (`Lang.CreateDialogFilter`'s `ConditionsMet` gate, `Lang.cs:424`).
+    ///
+    /// RE-DERIVED (W4-d120 merge): the callers read `.Value`, i.e. the
+    /// FORMATTED text — `VariableText.TryFormat` strips the `{?Night}`
+    /// marker (`LocalizedText.cs:24-31`). `UnformattedValue` keeps it, so
+    /// the condition row has to be compared through `value_with`.
     #[test]
     fn select_random_picks_reverse_insertion_order_with_conditions() {
         let json = r#"{"Chatter":{"A":"first","B":"second","C":"{?Night}third"}}"#;
@@ -716,20 +721,20 @@ mod tests {
             m.select_random_from_dialog("Chatter.", 1).unformatted_value(),
             "first"
         );
-        // Night true → three matches; index 0 now answers C.
+        // Night true → three matches; index 0 now answers C, formatted (the
+        // `{?Night}` gate marker is consumed by the format pass).
         m.set_substitution("Night", true);
         assert_eq!(m.dialog_category_count("Chatter."), 3);
-        assert_eq!(
-            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
-            "third"
-        );
+        let sel = m.select_random_from_dialog("Chatter.", 0);
+        assert_eq!(sel.value_with(&|n| m.substitution(n)), "third");
         assert_eq!(
             m.select_random_from_dialog("Chatter.", 2).unformatted_value(),
             "first"
         );
         // The FindAll[i] arm walks FORWARD (`array[num - k]`'s array).
         assert_eq!(m.dialog_row("Chatter.", 0).unformatted_value(), "first");
-        assert_eq!(m.dialog_row("Chatter.", 2).unformatted_value(), "third");
+        let row = m.dialog_row("Chatter.", 2);
+        assert_eq!(row.value_with(&|n| m.substitution(n)), "third");
         // No match → `LocalizedText.Empty` (`:410`).
         assert_eq!(
             m.select_random_from_dialog("Nope.", 0).unformatted_value(),
@@ -741,6 +746,10 @@ mod tests {
     /// W4-d120 — a plain `{Name}` variable with no substitution fails
     /// `ConditionsMet` too (`VariableText.cs:87-90`'s null check), so the
     /// row drops out of the dialog filter until the name resolves.
+    ///
+    /// RE-DERIVED (W4-d120 merge): index 0 is the LAST matching row, so
+    /// once BOTH rows qualify index 0 is the plain "B" and index 1 the
+    /// variable row (which formats to "hi Bob").
     #[test]
     fn dialog_filter_needs_every_variable_resolved() {
         let json = r#"{"Chatter":{"A":"hi {PlayerName}","B":"plain"}}"#;
@@ -752,10 +761,10 @@ mod tests {
         );
         m.set_substitution("PlayerName", "Bob");
         assert_eq!(m.dialog_category_count("Chatter."), 2);
-        assert_eq!(
-            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
-            "hi {PlayerName}"
-        );
+        let last = m.select_random_from_dialog("Chatter.", 0);
+        assert_eq!(last.value_with(&|n| m.substitution(n)), "plain");
+        let first = m.select_random_from_dialog("Chatter.", 1);
+        assert_eq!(first.value_with(&|n| m.substitution(n)), "hi Bob");
     }
 
     #[test]

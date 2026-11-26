@@ -211,7 +211,7 @@ mod tests {
         assert!(NpcKind::BloodSquid.no_gravity());
         assert_eq!(NpcKind::BloodSquid.hit_sound(), Some("NPC_Hit_1"));
         assert_eq!(NpcKind::BloodSquid.death_sound(), Some("NPC_Killed_1"));
-        assert!(n.buffs.buff_immune[31], "NPCID.cs:9648-9654's {31}");
+        assert!(n.buffs.buff_immune[31], "NPCID.cs:9648-9654's {{31}}");
         // The protocol id keeps the vanilla 619 and round-trips.
         assert_eq!(NpcKind::BloodSquid.to_u16(), 619);
         assert_eq!(NpcKind::from_u16(619), Some(NpcKind::BloodSquid));
@@ -282,7 +282,8 @@ mod tests {
         n.vy = -5.0;
         // The approach may move vy; the wet block runs LAST, so a vy
         // already below -2 pins to exactly -2.
-        blood_squid_step(&mut n, &w, target(n.x + 22.0, n.y + 22.0), false);
+        let t = target(n.x + 22.0, n.y + 22.0);
+        blood_squid_step(&mut n, &w, t, false);
         assert_eq!(n.vy, -2.0, "the wet floor");
     }
 }

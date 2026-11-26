@@ -1790,7 +1790,7 @@ pub fn replay_hit_dust(
         204 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(
-                    s, 4, dir, -1.0, 100, Color::new(149, 208, 104), 1.0,
+                    s, 4, dir, -1.0, 100, Color::new(149, 208, 104, 255), 1.0,
                     rng, dust, ctx, world,
                 );
             }
@@ -1914,7 +1914,7 @@ pub fn replay_hit_dust(
         141 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(
-                    s, 4, dir, -1.0, s.alpha, Color::new(210, 230, 140), 1.0,
+                    s, 4, dir, -1.0, s.alpha, Color::new(210, 230, 140, 255), 1.0,
                     rng, dust, ctx, world,
                 );
             }
@@ -4137,10 +4137,10 @@ mod tests {
         let s = snap(661, 100, 100, 1.0);
         // Find a seed whose first Next(5) == 0.
         let seed = (1..500).find(|&v| UnifiedRandom::new(v).next_max(5) == 0).unwrap();
-        let mut rng = UnifiedRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
-        let mut twin_rng = UnifiedRandom::new(seed);
+        let mut twin_rng = UnifiedRandom::new(seed as i32);
         let mut twin = DustPool::new();
         assert_eq!(twin_rng.next_max(5), 0);
         let hsl = tr_core::tile_light::hsl_to_rgb(0.0, 1.0, 0.5);
@@ -4789,12 +4789,12 @@ mod tests {
         let mut saw_pass = false;
         let mut saw_fail = false;
         for seed in 0..64u64 {
-            let mut r = UnifiedRandom::new(seed);
+            let mut r = UnifiedRandom::new(seed as i32);
             let mut p = DustPool::new();
             let mut g = GorePool::new();
             replay_hit_dust(&s, &mut r, &mut p, &mut g, &ctx, &world);
             let live = g.slots().iter().filter(|x| x.active).count();
-            let mut probe = UnifiedRandom::new(seed);
+            let mut probe = UnifiedRandom::new(seed as i32);
             let mut probe_pool = DustPool::new();
             for _ in 0..10 {
                 probe_pool.new_dust(

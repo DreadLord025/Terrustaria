@@ -751,7 +751,7 @@ impl Projectile {
                 // `:49521` — Next(10)==0 → NPCDeath61 (4,61) else NPCDeath59
                 // (4,59). The draw stays on the stream.
                 let style = if rng.next_range(0, 10) == 0 { 61 } else { 59 };
-                self.wants_sound = Some((4, style, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((4, style, self.pos.x, self.pos.y, 0.0, 1.0));
             }
             self.kill_time_left = self.time_left;
             self.active = false;
@@ -777,7 +777,7 @@ impl Projectile {
         if self.local_ai[1] > threshold && !p.immune && p.vx == 0.0 && p.vy == 0.0 {
             if rng.next_range(0, 5) == 0 {
                 // `:49542-49543` — the fake scream: Item16, localAI[1] = -600.
-                self.wants_sound = Some((2, 16, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0));
+                self.wants_sound = Some((2, 16, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0, 1.0));
                 self.local_ai[1] = -600.0;
             } else {
                 // `:49547-49551` — the bite: Item1, Hurt(3), the i-frame
@@ -785,9 +785,9 @@ impl Projectile {
                 // hitDirection 0 — `Hurt`'s knockback gate (`Player.cs:38519`
                 // `hitDirection != 0`) takes NO pop; the port's `hurt_inner`
                 // with knock_back false (the fall lane's precedent).
-                self.wants_sound = Some((2, 1, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0));
+                self.wants_sound = Some((2, 1, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0, 1.0));
                 let cx = self.pos.x + self.w * 0.5;
-                p.hurt_inner(3, cx, false, rng, true, false, None, true);
+                p.hurt_inner(3, cx, false, rng, true, false, None, 0);
                 p.immune = false;
                 p.immune_time = 0;
                 // The port's collapsed cooldown rides `hurt_cd` too — clear
@@ -1183,7 +1183,7 @@ mod s1_d_4b_12_tests {
         assert_eq!(p.immune_time, 0);
         assert_eq!(p.hurt_cd, 0.0, "the collapsed cooldown clears too");
         assert_eq!(proj.local_ai[1], -300.0, "-300 + Next(30)*-10 with the 0 roll");
-        assert_eq!(proj.wants_sound, Some((2, 1, 320.0, 320.0, 0.0)), "Item1 at the centre");
+        assert_eq!(proj.wants_sound, Some((2, 1, 320.0, 320.0, 0.0, 1.0)), "Item1 at the centre");
     }
 
     /// W4-d7 F3 — the 1090's frame cycle + localAI[2] fade (`:51172-51200`):

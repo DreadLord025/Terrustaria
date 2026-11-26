@@ -334,7 +334,7 @@ pub struct AchievementManager {
     /// half-research gate only re-counts when the tracker changed
     /// (`:389-392`). A static in the C#, an instance field here (one manager
     /// per App, the same lifetime).
-    last_research_version: u32,
+    last_research_version: i32,
     /// `AchievementsHelper`'s MechaMayhem statics (`AchievementsHelper.cs:19-25`)
     /// — the MECHA_MAYHEM (progression 21) run state, see [`MechaMayhem`].
     pub mecha_mayhem: MechaMayhem,
@@ -450,8 +450,6 @@ impl AchievementManager {
     /// (`BOOK_WORM`).
     pub fn try_grant_bestiary_100(&mut self, bestiary: &tr_core::bestiary::WorldBestiary) -> Option<&'static str> {
         let pct = crate::bestiary::completion_percent_world(bestiary);
-    pub fn try_grant_bestiary_100(&mut self, tracker: &tr_core::bestiary::WorldBestiary) -> Option<&'static str> {
-        let pct = crate::bestiary::completion_percent(tracker);
         if pct >= 1.0 {
             self.notify_progression(29)
         } else {
@@ -638,49 +636,6 @@ impl AchievementManager {
         match event_id {
             24 => self.complete_condition("GAIN_TORCH_GODS_FAVOR", "Use"),
             _ => None,
-    /// `Main.Achievements.GetCondition(name, conditionName).Complete()`
-    /// (`AchievementManager.cs:214-222` + `AchievementCondition.cs:37-47`):
-    /// complete ONE named condition of ONE row — the shape every
-    /// `AchievementsHelper.HandleSpecialEvent` arm (`AchievementsHelper.cs:
-    /// 282-380`), `HandleOnEquip` (`:239-280`) and `OnPlayerEnteredWorld`
-    /// (`:94-198`) uses. `Complete()` is idempotent and sets the tracker to
-    /// its maximum; the row completes (save + event, `AchievementManager.cs:
-    /// 180-187`) only when its LAST condition closes. An unknown row or
-    /// condition name is a no-op (the C# `GetCondition` would throw; the
-    /// port's callers name shipped rows only).
-    /// 282-380`) uses, NOT the `notify_custom` broadcast (which completes
-    /// every row listening on the flag kind). `Complete()` is idempotent
-    /// and sets the tracker to its maximum; the row completes (save +
-    /// event, `AchievementManager.cs:180-187`) only when its LAST condition
-    /// closes. An unknown row or condition name is a no-op (the C#
-    /// `GetCondition` would throw; the port's callers name shipped rows
-    /// only). W4-a6 reconcile: the row-targeted form g88's
-    /// `complete_named` / c36's `complete_condition` established — keep-one
-    /// at the merge (research/138 §3).
-    pub fn complete_condition(&mut self, row: &str, cond: &str) -> Option<&'static str> {
-        let a = self.list.iter_mut().find(|a| a.name == row)?;
-        if a.completed {
-            return None;
-        }
-        {
-            let c = a.conditions.iter_mut().find(|c| c.name == cond)?;
-            if c.completed {
-                return None;
-            }
-            // `AchievementCondition.Complete()` (`:37-47`): the tracker jumps
-            // to its max, the fraction clears, the flag latches.
-            c.value = c.max;
-            c.frac = 0.0;
-            c.completed = true;
-        }
-        if a.is_completed() {
-            a.completed = true;
-            let name = a.name;
-            self.save();
-            self.completed_events.push(name);
-            Some(name)
-        } else {
-            None
         }
     }
 
@@ -1145,6 +1100,8 @@ mod tests {
         // The completed row never re-fires (`notify`'s completed skip); the
         // forced recount runs but stays silent.
         assert_eq!(m.check_research(&t, true), None);
+    }
+
     /// W4-g58: `GetCondition(row, name).Complete()` — the ROW-TARGETED
     /// completion (`AchievementsHelper.cs:355-357`'s case 20). The "Do"
     /// flag is shared by nine rows (`PET_THE_PET`, `FIND_A_FAIRY`, …);

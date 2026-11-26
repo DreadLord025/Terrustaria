@@ -879,7 +879,6 @@ mod tests {
             &mut seq,
             0,
             false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let children: Vec<_> = pool
             .slots()

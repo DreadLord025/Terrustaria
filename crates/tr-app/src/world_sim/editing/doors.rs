@@ -20,7 +20,7 @@ use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 
-use super::super::items::spawn_item_drop_px;
+use super::super::items::{spawn_item_drop, spawn_item_drop_px};
 
 /// The right-click interaction hook (the port's `TileInteractionsUse`):
 /// dispatches the world interaction at `(tx, ty)` through
@@ -265,7 +265,7 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
 /// (4× Dust 11 per cell, `:37621-37624`) has no port layer here — the
 /// standing tile-edit dust deviation; the MP `52` client send (`:32812`)
 /// rides the same unported door-sync gap as the chest key walks.
-fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
+fn unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
     // `:32799-32813` — the inventory key scan. The pay lands first, the
     // unlock after the slot borrow releases (`unlock_door` takes the app).
     let mut paid = false;
@@ -494,6 +494,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 crate::signs::open_sign(app, idx as i32); // `:32706`
             }
         }
+        return true;
+    }
     // The `Main.tileSign` arm (`TileInteractionsUse`, `Player.cs:32693-
     // 32724`, W4-f22): the re-click closes the open sign, single player
     // opens the record (sound 10 + the dialog), the MP client asks with
@@ -526,7 +528,9 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         .tile(tx, ty)
         .is_some_and(|t| t.active() && t.kind == 10 && (594..=646).contains(&t.frame_y) && t.frame_x < 54)
     {
-        try_unlock_temple_door(app, tx, ty);
+        unlock_temple_door(app, tx, ty);
+        return true;
+    }
     // The pylon arm (`TileInteractionsUse`'s `type == 597` branch,
     // `Player.cs:32180-32212`): the right-click opens the fullscreen map
     // centred on the pylon network and selects the clicked pylon for the
@@ -590,7 +594,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 // The fit overrides the helper's recentre arm: disarm it
                 // and keep the pan clear (`recentre` already cleared it).
                 m.pan_target = None;
-                m.reset_pos = false;
+                // `WorldMap::reset_pos` is private (map.rs owns it); `recentre`
+                // already disarmed it above (map.rs:1280), so the fit needs no write.
             }
         }
         return true;
@@ -771,12 +776,16 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             }
             // The §8.2 echoes: SP discards (the netMode-0 return).
             for (n, x, y, d) in app.wiring.take_door_echoes() {
-                app.send_door_toggle(n, x, y, d);
+                app.send_door_toggle(n as u8, x, y, d);
             }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
         }
+        // W4-f41 — the party monolith right-click dispatch was once the
+        // `edit::TileInteraction::PartyMonolithToggle` arm; the c42 nine-kind
+        // gate folds it into `MonolithToggle { x, y }` below (the Mech-28 cue
+        // and the THROW_A_PARTY up-edge are unchanged).
         edit::TileInteraction::MonolithToggle { x, y } => {
             // `Player.cs:32271-32277` (W4-c42 final — the g78 research/76
             // contested-seam request): `flag2 = true` + `PlaySound(28,
@@ -1390,7 +1399,7 @@ impl crate::npc_ai_town::TownDoorOps for AppTownDoors<'_> {
     /// `(i*16, j*16)` (`:37727`) on success only; the refusal is silent.
     fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool {
         let mut drops = Vec::new();
-        let opened = edit::open_door(&mut self.app.world, x, y, direction, &mut drops);
+        let opened = edit::open_door(&mut self.app.world, x, y, direction, &mut drops, None, self.app.rngs.stream(crate::app::RngKey::UpdateNpcs));
         if opened {
             self.app.audio.play_door_sound(
                 true,
@@ -1412,7 +1421,7 @@ impl crate::npc_ai_town::TownDoorOps for AppTownDoors<'_> {
         let (player, npcs) = (&self.app.player, &self.app.npcs);
         let blocked = |bx: i32, by: i32| cell_blocked_by_entity(player.as_ref(), npcs, bx, by);
         let closed =
-            edit::close_door(&mut self.app.world, x, y, false, &blocked, &mut drops);
+            edit::close_door(&mut self.app.world, x, y, false, &blocked, &mut drops, None, self.app.rngs.stream(crate::app::RngKey::UpdateNpcs));
         if closed {
             self.app.audio.play_door_sound(
                 false,
@@ -2021,17 +2030,6 @@ mod tests {
 
     // ---- W4-e28: the Crystal Ball / Ammo Box station buffs -----------------
 
-    /// A station app: the object-world floor with the station tile at
-    /// (10, 19) and the player spawned on the floor.
-    fn station_app(kind: u16) -> App {
-        let mut w = object_world();
-        set_tile(&mut w, 10, 19, kind);
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        let player = Player::spawn(&app.world);
-        app.player = Some(player);
-        app
-    }
 
     #[test]
     fn w4_e28_the_crystal_ball_grants_clairvoyance_and_plays_item4() {
@@ -2498,23 +2496,9 @@ mod tests {
 
     // ---- W4-e28 + W4-f34: the station-buff app arms ------------------------
 
-    #[test]
-    fn w4_e28_the_crystal_ball_grants_clairvoyance_and_plays_item4() {
-        // `Player.cs:32594-32599`: the click on tile 125 grants buff 29 for
-        // 108000 ticks (30 min) and plays `SoundID.Item4` at the PLAYER's
-        // position. The click is consumed; the cell keeps its kind.
-        let mut app = station_app(125);
-        let played0 = app.audio.played_count();
-        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
-        let p = app.player.as_ref().unwrap();
-        let slot = p.buffs.find_buff_index(29).expect("Clairvoyance granted");
-        assert_eq!(p.buffs.buff_time[slot], 108000);
-        assert_eq!(app.audio.played_count(), played0 + 1, "one cue played");
-        assert_eq!(app.world.tile(10, 19).unwrap().kind, 125, "no world write");
-    }
 
     #[test]
-    fn w4_e28_the_ammo_box_grants_buff_93_and_plays_item149() {
+    fn w4_e28_the_ammo_box_grants_buff_93_and_plays_item149_union_b() {
         // `Player.cs:32630-32635`: tile 287 grants buff 93 for 108000 ticks
         // and plays `SoundID.Item149`. The buff's effect arm
         // (`:10078-10081`) sets `ammoBox` — the 1/5 not-consume roll's flag.
@@ -2528,7 +2512,7 @@ mod tests {
     }
 
     #[test]
-    fn w4_e28_the_station_grants_draw_no_rng() {
+    fn w4_e28_the_station_grants_draw_no_rng_union_b() {
         // RNG-free verify for the UNPITCHED rows: the plain `play_at` path
         // draws no pitch roll — no stream moves. (The cake 621's faithful
         // case-2 play DOES draw; its own witness pins that below.)
@@ -2554,40 +2538,7 @@ mod tests {
         assert_eq!(p.buffs.buff_time[slot], 108000, "refreshed, not stacked");
     }
 
-    #[test]
-    fn w4_f34_the_cake_war_table_and_dead_cells_station_grant_their_buffs() {
-        // `Player.cs:32600-32617`: tile 621 grants buff 192 (Sugar Rush) for
-        // 7200 ticks + Item2; tile 464 grants 348 (War Table) for 108000 +
-        // Item4; tile 699 grants 366 for 108000 + Item179. Each consumes the
-        // click, plays ONE cue at the player position and writes no world.
-        for (kind, buff, time) in [(621u16, 192, 7_200), (464, 348, 108_000), (699, 366, 108_000)]
-        {
-            let mut app = station_app(kind);
-            let played0 = app.audio.played_count();
-            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
-            let p = app.player.as_ref().unwrap();
-            let slot = p.buffs.find_buff_index(buff).expect("the grant");
-            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
-            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
-            assert_eq!(app.world.tile(10, 19).unwrap().kind, kind, "no world write");
-        }
-    }
 
-    #[test]
-    fn w4_f34_the_sharpening_and_bewitching_tables_grant_their_buffs() {
-        // `Player.cs:32618-32629`: tile 377 grants buff 159 (Sharpened) for
-        // 108000 ticks + Item37 (the case-2 ×0.5 volume rides the arm);
-        // tile 354 grants 150 (Bewitched) for 108000 + Item4.
-        for (kind, buff) in [(377u16, 159), (354u16, 150)] {
-            let mut app = station_app(kind);
-            let played0 = app.audio.played_count();
-            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
-            let p = app.player.as_ref().unwrap();
-            let slot = p.buffs.find_buff_index(buff).expect("the grant");
-            assert_eq!(p.buffs.buff_time[slot], 108000);
-            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
-        }
-    }
 
     /// W4-f34's neighbour no-draw witness, RE-DERIVED for the pitched-cue
     /// follow-up (research/70 §1f): the cake 621 left the RNG-free loop —
@@ -2596,7 +2547,7 @@ mod tests {
     /// that). The unpitched rows keep the e28 contract: no stream moves,
     /// the re-click refreshes in place, never stacks.
     #[test]
-    fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack() {
+    fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack_union_b() {
         for (kind, buff, time) in [(699u16, 366, 108_000), (464, 348, 108_000)] {
             let mut app = station_app(kind);
             let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
@@ -2876,6 +2827,8 @@ mod tests {
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             rng_before,
             "the menu cues draw no gameplay RNG"
+        );
+    }
     /// W4-d8 DOC-SWEEP (5) — the firework fountain's right-click arm
     /// (`Player.cs:32355-32377`, WRITTEN NOT RUN): the anchor shifts up on
     /// the bottom row (frameY 18), the dedupe blocks a second fountain on
@@ -2946,6 +2899,8 @@ mod tests {
             app.projectiles.slots().iter().filter(|p| p.active).count(),
             1,
             "the dead anchor frees the spawn"
+        );
+    }
     /// W4-c42 FINAL (the g78 research/76 contested-seam request): the
     /// Echo Monolith 657's RIGHT-CLICK use arm (`Player.cs:32271-32277`) —
     /// `PlaySound(28)` + `GamepadEnableGrappleCooldown` (3 ticks) +
@@ -3072,6 +3027,7 @@ mod tests {
             app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
             "the fallback fires the same progression"
         );
+    }
     /// W4-c28: the door right-click fires the `19 ToggleDoorState` send
     /// decision (`Player.cs:32844`/`:32861`). The `19` id parks until d90's
     /// `DOOR_TOGGLE` codec, so the send is a recorded no-op — this pins that
@@ -3103,4 +3059,3 @@ mod tests {
         assert_eq!(app.world.tile(10, 18).map(|t| t.kind), Some(10), "the door closed");
     }
 }
-})

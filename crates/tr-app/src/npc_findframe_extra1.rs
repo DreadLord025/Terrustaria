@@ -562,11 +562,11 @@ mod tests {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
             assert_eq!(kind.frame_count(), count, "{kind:?} npcFrameCount");
             assert_eq!(
-                crate::render::entities::npc_rows(vanilla),
+                crate::render::entities::npc_rows(vanilla as u16),
                 count,
                 "{kind:?} vs the port's NPC_FRAME_COUNT"
             );
-            assert_eq!(find_frame_kind_for_cs_id(vanilla), Some(kind), "{kind:?} cs_id map");
+            assert_eq!(find_frame_kind_for_cs_id(vanilla as u16), Some(kind), "{kind:?} cs_id map");
         }
     }
 

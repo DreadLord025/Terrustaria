@@ -470,10 +470,10 @@ fn sonar_bite_cues(p: &mut Projectile, sonar: bool, rolled_item: u16, rolled_ene
         return;
     }
     if rolled_item > 0 {
-        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     if rolled_enemy > 0 {
-        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0, 1.0));
     }
 }
 
@@ -741,15 +741,17 @@ mod tests {
         assert_eq!(p.wants_sound, None);
         // The item arm.
         sonar_bite_cues(&mut p, true, 2300, 0);
-        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0, 1.0)));
         // The enemy arm alone.
         p.wants_sound = None;
         sonar_bite_cues(&mut p, true, 0, 586);
-        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0, 1.0)));
         // Both land: the enemy intent wins the slot (the C# order).
         p.wants_sound = None;
         sonar_bite_cues(&mut p, true, 2300, 586);
-        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0, 1.0)));
+    }
+
     /// W4-d7 F1 — the aiStyle-61 bounce (`:19615-19625`): a blocked X
     /// reflects at 0.3; a blocked Y reflects at 0.3 only when
     /// `lastVelocity.Y > 1`; NO Kill. The caller passes the pre-collision
@@ -779,5 +781,4 @@ mod tests {
         assert_eq!(p3.vel.x, 4.0, "the unblocked X holds");
         assert!((p3.vel.y - -1.8).abs() < 1e-6, "the blocked Y reflects");
     }
-}
 }

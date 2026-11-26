@@ -1330,7 +1330,7 @@ mod tests {
             oracle.next_float(); // the Lerp
             oracle.next_range(0, 17); // the fadeIn
         }
-        assert_eq!(rng.peek(), oracle.peek(), "the burst draw order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the burst draw order");
         // The client never expires.
         let mut n = fairy(100.0, 100.0);
         n.ai[2] = 5.0;

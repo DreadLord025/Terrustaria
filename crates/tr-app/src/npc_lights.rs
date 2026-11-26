@@ -68,7 +68,7 @@ pub(crate) fn npc_light(
         // W4-g8 lane 1 batch 2 — the CrimsonAxe 179 (`NPC.cs:25245`).
         NpcKind::CrimsonAxe => [0.3, 0.15, 0.05],
         _ => {
-            return npc_light_anchor(kind, pos, width, height);
+            return npc_light_anchor(kind, pos, width, height, ai0);
         }
     };
     let lx = ((pos.x + (width as i32 / 2) as f32) / 16.0) as i32;
@@ -84,6 +84,7 @@ fn npc_light_anchor(
     pos: Vec2,
     width: f32,
     height: f32,
+    ai0: f32,
 ) -> Option<(i32, i32, [f32; 3])> {
     let (anchor, rgb) = match kind {
         // `:21280-21300` — the sorcerer/Tim (29/45) and Dark Caster (32)
@@ -259,13 +260,13 @@ mod tests {
     /// the colour + the centre tile).
     #[test]
     fn the_hungry_emits_the_style29_tail_light() {
-        let (x, y, rgb) = npc_light(NpcKind::Hungry, Vec2::new(160.0, 176.0), 30.0, 30.0)
+        let (x, y, rgb) = npc_light(NpcKind::Hungry, Vec2::new(160.0, 176.0), 30.0, 30.0, 0.0)
             .expect("the Hungry lights its centre");
         // Centre (175, 191) → tiles (10, 11).
         assert_eq!((x, y), (10, 11));
         assert_eq!(rgb, [0.3, 0.2, 0.1]);
         // A fractional centre: 240.9 + 15 = 255.9 → (int)255 → tile 15.
-        let (x2, _, _) = npc_light(NpcKind::Hungry, Vec2::new(240.9, 0.0), 30.0, 30.0)
+        let (x2, _, _) = npc_light(NpcKind::Hungry, Vec2::new(240.9, 0.0), 30.0, 30.0, 0.0)
             .expect("the Hungry lights");
         assert_eq!(x2, 255 / 16, "(int)centre then /16");
     }

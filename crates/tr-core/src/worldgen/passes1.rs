@@ -793,8 +793,9 @@ mod tests {
     }
 
     /// Small Holes: the diggers open air below `worldSurfaceHigh` and the
-    /// 1-in-5 lottery fills some pockets with liquid between the water and
-    /// lava lines (`WorldGen.cs:12019-12021`, the runner's -2 arm).
+    /// 1-in-5 lottery fills some pockets with liquid OUTSIDE the
+    /// `[waterLine, lavaLine]` band (`WorldGen.cs:12019-12021`; the
+    /// runner's -2 arm gates on `l < waterLine || l > lavaLine`, `:76895`).
     #[test]
     fn small_holes_dig_air_and_fill_water_pockets() {
         let (w, h) = (1000, 400);
@@ -811,8 +812,10 @@ mod tests {
             .filter(|&(x, y)| world.tile(x, y).is_some_and(|t| !t.active()))
             .count();
         assert!(air > 0, "no holes dug");
-        // Some -2 pocket carries water between the lines.
-        let water = (200..300)
+        // The -2 arm fills water above the water line or below the lava
+        // line (`:76895`: `l < GenVars.waterLine || l > GenVars.lavaLine`).
+        let water = (layers.surface_high as i32..200)
+            .chain(301..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
             .any(|(x, y)| world.tile(x, y).is_some_and(|t| t.liquid > 0));
         assert!(water, "no water pocket from the Next(5) lottery");

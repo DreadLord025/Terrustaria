@@ -35,6 +35,10 @@
 use glam::Vec2;
 use tr_core::UnifiedRandom;
 
+#[cfg(test)]
+#[path = "slime_sky_w4_f39.rs"]
+mod slime_sky_w4_f39;
+
 /// One falling sky slime (`SlimeSky.Slime`, `SlimeSky.cs:11-63`).
 #[derive(Clone, Debug)]
 pub(crate) struct SkySlime {
@@ -376,7 +380,3 @@ pub(crate) fn slime_tint(sky: [f32; 3], depth: f32) -> [f32; 4] {
     let t = tier * 0.8;
     b.map(|c| ((c as f32 * t) as u8) as f32 / 255.0)
 }
-
-#[cfg(test)]
-#[path = "slime_sky_w4_f39.rs"]
-mod slime_sky_w4_f39;

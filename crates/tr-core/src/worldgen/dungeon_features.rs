@@ -1949,6 +1949,20 @@ mod tests {
     fn w4_f24_r3_the_drunk_and_no_surface_scan_rows_diverge() {
         let run = |drunk: bool, no_surface: bool| -> Vec<(u16, u16)> {
             let (mut w, fp) = room(4200, 80);
+            // The ceiling arm walks HORIZONTALLY to a wall column and needs
+            // active tiles above/below it plus one more active cell BEYOND
+            // the wall in the walk direction (`:165`, `:169`) — a flat room
+            // alone never lets the ceiling half place anything. Make the
+            // pillars 3 wide so either walk direction finds that second cell.
+            for bx in (200..4000).step_by(150) {
+                for dx in 0..3 {
+                    for y in 27..80 {
+                        let i = w.index(bx + dx, y);
+                        w.tiles[i].kind = 41;
+                        w.tiles[i].flags |= FLAG_ACTIVE;
+                    }
+                }
+            }
             let mut r = HallSeed::new(0xA3D);
             place_spikes(&mut w, &fp, 40.0, 1.0, false, drunk, no_surface, 50, &mut r);
             w.tiles.iter().map(|t| (t.kind, t.wall)).collect()

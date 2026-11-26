@@ -223,7 +223,7 @@ pub fn flairon_hit_latch(p: &mut Projectile) {
 pub fn flairon_tile_hit(p: &mut Projectile) {
     p.ai[0] = 1.0;
     p.net_update = true;
-    p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+    p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0));
 }
 
 /// `HandleMovement`'s type-405 blocked-move arm (`Projectile.cs:18317-18335`,
@@ -461,7 +461,7 @@ mod tests {
         assert_eq!(p.ai[0], 1.0);
         assert!(p.net_update);
         assert_eq!(p.vel, Vec2::new(14.0, 3.0), "69 keeps its velocity");
-        assert_eq!(p.wants_sound, Some((0, 0, 100.0, 100.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((0, 0, 100.0, 100.0, 0.0, 1.0)));
         assert!(p.active, "the head recalls, it does not die on the tile");
     }
 

@@ -375,6 +375,7 @@ mod tests {
     #[test]
     fn w4_g83_check_vines_the_flower_arm_is_last() {
         let mut w = world();
+        put(&mut w, 60, 59, 2); // dirt holds the flower vine up (num 2/477/192)
         put(&mut w, 60, 60, 382); // vine flower above
         put(&mut w, 60, 61, 52);
         assert!(!check_vines(&mut w, 60, 61, 52, &mut rng()));
@@ -429,7 +430,8 @@ mod tests {
     fn w4_g83_check_vines_a_bottom_slope_support_is_absent() {
         let mut w = world();
         put(&mut w, 60, 60, 60);
-        w.tiles[w.index(60, 60)].set_slope(3); // bottom slope
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].set_slope(3); // bottom slope
         put(&mut w, 60, 61, 62);
         assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
         assert!(!w.tile(60, 61).unwrap().active());
@@ -440,7 +442,8 @@ mod tests {
     fn w4_g83_check_vines_an_actuated_support_is_absent() {
         let mut w = world();
         put(&mut w, 60, 60, 60);
-        w.tiles[w.index(60, 60)].flags |= crate::tile::FLAG_INACTIVE;
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].flags |= crate::tile::FLAG_INACTIVE;
         put(&mut w, 60, 61, 62);
         assert!(!check_vines(&mut w, 60, 61, 62, &mut rng()));
     }
@@ -456,7 +459,11 @@ mod tests {
             w.tiles[i].liquid = 255; // full water
         }
         put(&mut w, 60, 61, 53); // sand floor (conversion sand)
-        put(&mut w, 60, 60, 549);
+        // The plant cell must KEEP its water: the C# validity gate reads the
+        // cell itself (`liquid != 0`, `WorldGen.cs:58553-58560`), so a plain
+        // `put` (which replaces the whole `Tile`, drying it) would make every
+        // `seaweed_world` invalid before the test starts.
+        plant(&mut w, 60, 60, 549);
         w
     }
 
@@ -467,7 +474,8 @@ mod tests {
         let w = seaweed_world();
         assert!(can_underwater_plant_grow_here(&w, 549, 60, 60, true));
         let mut dry = seaweed_world();
-        dry.tiles[dry.index(60, 59)].liquid = 0; // y-1 dry
+        let __bi = dry.index(60, 59);
+        dry.tiles[__bi].liquid = 0; // y-1 dry
         assert!(!can_underwater_plant_grow_here(&dry, 549, 60, 60, true));
         // ignore_self=false refuses an already-active cell.
         assert!(!can_underwater_plant_grow_here(&w, 549, 60, 60, false));
@@ -478,14 +486,16 @@ mod tests {
     fn w4_g83_the_seaweed_wall_whitelist() {
         let mut w = seaweed_world();
         for wall in [0u16, 63, 69, 80, 81] {
-            w.tiles[w.index(60, 60)].wall = wall;
+            let __bi = w.index(60, 60);
+            w.tiles[__bi].wall = wall;
             assert!(
                 can_underwater_plant_grow_here(&w, 549, 60, 60, true),
                 "wall {wall} allowed"
             );
         }
         for wall in [1u16, 62, 70, 79, 82] {
-            w.tiles[w.index(60, 60)].wall = wall;
+            let __bi = w.index(60, 60);
+            w.tiles[__bi].wall = wall;
             assert!(
                 !can_underwater_plant_grow_here(&w, 549, 60, 60, true),
                 "wall {wall} refused"
@@ -497,8 +507,10 @@ mod tests {
     #[test]
     fn w4_g83_the_lone_seaweed_frames_to_column_zero() {
         let mut w = seaweed_world();
-        w.tiles[w.index(60, 60)].frame_x = 90; // a stale column 5
-        w.tiles[w.index(60, 60)].frame_y = 18;
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_x = 90; // a stale column 5
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_y = 18;
         let mut rng = UnifiedRandom::new(1);
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         let t = w.tile(60, 60).unwrap();
@@ -511,13 +523,15 @@ mod tests {
     fn w4_g83_a_seaweed_above_forces_columns_one_to_seven() {
         let mut w = seaweed_world();
         plant(&mut w, 60, 59, 549); // a 549 above (keeps the water)
-        w.tiles[w.index(60, 60)].frame_x = 0; // stale lone column
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_x = 0; // stale lone column
         let mut rng = UnifiedRandom::new(7);
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         let fx = w.tile(60, 60).unwrap().frame_x;
         assert!((18..=126).contains(&fx) && fx % 18 == 0, "column 1-7, got {fx}");
         // A column already in 1-7 is kept (no re-roll).
-        w.tiles[w.index(60, 60)].frame_x = 54; // column 3
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_x = 54; // column 3
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         assert_eq!(w.tile(60, 60).unwrap().frame_x, 54);
     }
@@ -530,7 +544,8 @@ mod tests {
         // Move the floor down and put a 549 below the cell.
         put(&mut w, 60, 61, 549);
         put(&mut w, 60, 62, 53); // new sand floor
-        w.tiles[w.index(60, 60)].frame_x = 0;
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_x = 0;
         let mut rng = UnifiedRandom::new(11);
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         let fx = w.tile(60, 60).unwrap().frame_x;
@@ -545,7 +560,8 @@ mod tests {
         plant(&mut w, 60, 59, 549); // above (keeps the water)
         put(&mut w, 60, 61, 549); // below (replaces the sand)
         put(&mut w, 60, 62, 53);
-        w.tiles[w.index(60, 60)].frame_x = 0;
+        let __bi = w.index(60, 60);
+        w.tiles[__bi].frame_x = 0;
         let mut rng = UnifiedRandom::new(3);
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         let fx = w.tile(60, 60).unwrap().frame_x;
@@ -556,7 +572,8 @@ mod tests {
     #[test]
     fn w4_g83_an_invalid_seaweed_dies() {
         let mut w = seaweed_world();
-        w.tiles[w.index(60, 59)].liquid = 0;
+        let __bi = w.index(60, 59);
+        w.tiles[__bi].liquid = 0;
         let mut rng = UnifiedRandom::new(1);
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         assert!(!w.tile(60, 60).unwrap().active(), "the dry seaweed is killed");

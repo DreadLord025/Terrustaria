@@ -196,7 +196,7 @@ impl Projectile {
             }
             // `SoundID.Item34` (`:35926`) at base.position — the pool's cue.
             let (x, y) = (self.pos.x, self.pos.y);
-            self.wants_sound = Some((2, 34, x, y, 0.0));
+            self.wants_sound = Some((2, 34, x, y, 0.0, 1.0));
         }
         // `:35928-35944` — the downward plume (num938 == 1), 9 dust.
         if num938 == 1 {

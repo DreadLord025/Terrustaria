@@ -195,6 +195,7 @@ pub(crate) fn molotov_step(
             let _ = rng.next_float(); // the 0.8 - NextFloat*0.2 scale
             let _ = rng.next_range(0, 2); // SelectRandom(white, gold)
         }
+    }
     // `:30189-30207` — W4-g63: the 399's `alpha == 0` fire dust RE-ARMED
     // (flag34; the 669's flag35 block is kind > 400, W4-g64's).
     if p.alpha == 0 && p.kind == MOLOTOV_COCKTAIL {
@@ -396,7 +397,7 @@ pub(crate) fn target_sticker_step(
                 if p.ai[1] == 1.0 {
                     num9 += (num8 * num7) as f64;
                 }
-                p.vel += crate::projectile::rotate(Vec2::UNIT_Y, p.rot) * num9 as f32;
+                p.vel += crate::projectile::rotate(Vec2::Y, p.rot) * num9 as f32;
             }
         }
     }
@@ -595,7 +596,7 @@ pub(crate) fn target_sticker_step(
         if hit {
             if p.ai[0] == 0.0 {
                 // `:18291-18293` — HitTiles (skip) + the Item10 cue.
-                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             // `:18295-18301` — the tile pin: ai[0]=1, ai[1]=-1, the velocity
             // collapses to its unit heading. The stand-in does not integrate
@@ -959,6 +960,9 @@ pub(crate) fn ale_death_draws(rng: &mut dyn DropRng) {
     for _ in 0..80 {
         let _ = rng.next_range(10, 71); // `:71964` — dust33.velocity *= Next(10,71)*0.1
         let _ = rng.next_range(10, 41); // `:71965` — the second dust's Next(10,41)*0.1
+    }
+}
+
 /// W4-d12 F1 — the 636 Daybreak's `Kill()` spawn request: the 953 explosion
 /// at the spear's centre (`Projectile.cs:72143`), damage carried, kb 10,
 /// `ai1 = 0.85 + NextFloat * 1.15` (the explosion's scale seed).
@@ -1020,7 +1024,7 @@ pub(crate) fn sticker_death(
         }
         DEAD_CELLS_KILLING_DECK_CARD => {
             // `:74819` — the Item8 cue (the pool drains `wants_sound`).
-            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
             // `:74820-74827` — the 12-dust ring: per dust the scale
             // argument's NextFloat + the velocity magnitude's NextFloat.
             for _ in 0..12 {
@@ -1523,6 +1527,8 @@ mod tests {
         assert!(ale.melee);
         assert_eq!(ale.time_left, 3600);
         assert!(ale.tile_collide);
+    }
+
     // ===== W4-d12 census F1 — the full aiStyle-113 family =====
 
     /// A census RNG: `next_range` returns `max - 1`, floats/doubles 0.5;
@@ -1831,7 +1837,7 @@ mod tests {
         let mut rng = census();
         assert!(sticker_death(&mut p, true, &mut rng).is_none());
         assert_eq!(rng.floats, 24, "the 12-dust ring × 2");
-        assert_eq!(p.wants_sound, Some((2, 8, 500.0, 300.0, 0.0)), "the Item8 cue");
+        assert_eq!(p.wants_sound, Some((2, 8, 500.0, 300.0, 0.0, 1.0)), "the Item8 cue");
         for kind in [crate::projectile::STARDUST_CELL_MINION_SHOT, crate::projectile::TENTACLE_SPIKE] {
             let mut q = proj(kind);
             let mut r = census();

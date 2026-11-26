@@ -106,7 +106,7 @@ pub(crate) fn paladins_shield_hit(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn storm_lightning_dust(
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -124,7 +124,7 @@ pub(crate) fn storm_lightning_dust(
             };
             let num3 = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
             for _ in 0..num3 {
-                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                 let obj = dust.slot_mut(idx);
                 obj.velocity.y -= 3.0 + num2 as f32 * 1.5;
                 obj.velocity.y *= rng.next_float();
@@ -132,7 +132,7 @@ pub(crate) fn storm_lightning_dust(
                 obj.scale += num2 as f32 * 0.03;
             }
             for _ in 0..num3 - 1 {
-                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen, dust, ctx, world);
+                let idx = tr_core::worldgen_dust_tile::kill_tile_make_tile_dust(i, j, t, (disco[0], disco[1], disco[2]), rng, gen_rng, dust, ctx, world);
                 let obj2 = dust.slot_mut(idx);
                 obj2.velocity.y -= 1.0 + num2 as f32;
                 obj2.velocity.y *= rng.next_float();
@@ -418,9 +418,9 @@ mod tests {
         let ctx = dust_ctx(&w);
         let pos = Vec2::new(tx as f32 * 16.0 + 8.0, ty as f32 * 16.0 + 8.0);
         let mut rng = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
-        storm_lightning_dust(&mut rng, &mut gen, [255, 255, 255], &mut dust, &ctx, &w, pos, Color::WHITE, false);
+        storm_lightning_dust(&mut rng, &mut gen_rng, [255, 255, 255], &mut dust, &ctx, &w, pos, Color::WHITE, false);
         let six: Vec<_> = dust.slots().iter().filter(|d| d.active && d.dust_type == 6).collect();
         let thirty_one: Vec<_> = dust.slots().iter().filter(|d| d.active && d.dust_type == 31).collect();
         assert_eq!(six.len(), 6, "the tree-5 arm spawns six type-6");

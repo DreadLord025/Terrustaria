@@ -229,7 +229,7 @@ pub enum ImageDraw {
 /// `UIImageFramed` (`GameContent/UI/Elements/UIImageFramed.cs:8-50`),
 /// research/18b row 37 (W4-d83): a fixed sub-frame of a sheet, sized to the
 /// frame, drawn at the element position with no scale/rotation (`:45-49`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FramedImage {
     /// `_frame` (`UIImageFramed.cs:12`) — the source rect on the sheet.
     pub frame: [i32; 4],
@@ -351,7 +351,7 @@ impl BorderedImage {
 /// `Utils.DrawSplicedPanel` (`:46-50`, the `uistate::spliced_rects` table).
 /// Unlike `UIImage.SetImage`, its `SetImage` (`:41-44`) swaps the texture
 /// **without** resizing — only the ctor pins the size (`:37-38`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SlicedImage {
     /// `Width`/`Height` — the ctor's texture size (`:37-38`).
     pub size: [f32; 2],

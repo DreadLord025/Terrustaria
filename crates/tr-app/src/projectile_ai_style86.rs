@@ -64,7 +64,7 @@ pub(crate) fn ai_ice_mist(p: &mut Projectile, rng: &mut dyn DropRng) -> bool {
     // `:31829-31833` — the first-tick sound latch (Item120, style 2).
     if p.local_ai[1] == 0.0 {
         p.local_ai[1] = 1.0;
-        p.wants_sound = Some((2, 120, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, 120, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     p.ai[0] += 1.0;
     if p.ai[1] == 1.0 {
@@ -97,6 +97,7 @@ pub(crate) fn ai_ice_mist(p: &mut Projectile, rng: &mut dyn DropRng) -> bool {
                 0.0,
                 0.0,
                 0,
+                0.0,
             ));
         }
         p.rot += PI / 30.0;
@@ -223,7 +224,7 @@ mod tests {
         let mut rng = Recorder { floats: 0 };
         let spawner = ai_ice_mist(&mut p, &mut rng);
         assert!(spawner, "the spawner form returns true");
-        assert_eq!(p.wants_sound, Some((2, 120, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 120, p.pos.x, p.pos.y, 0.0, 1.0)));
         assert!((p.rot - PI / 30.0).abs() < 1e-6, "the rotation step");
         // 30 ticks: one child at ai[0]=30.
         for _ in 0..29 {

@@ -33,6 +33,7 @@ impl SheetLayout {
     }
 }
 
+#[derive(Clone)]
 pub struct AtlasImage {
     pub name: String,
     pub width: u32,

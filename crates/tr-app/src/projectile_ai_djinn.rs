@@ -53,7 +53,7 @@ pub fn curse_ai(p: &mut Projectile, world: &World, player: Option<&Player>, rng:
     }
     if p.time_left > 30
         && p.alpha < 128
-        && crate::player::solid_collision(world, p.pos.x, p.pos.y, p.w, p.h)
+        && crate::projectile::solid_collision(world, p.pos, p.w, p.h)
     {
         p.alpha = 128;
     }

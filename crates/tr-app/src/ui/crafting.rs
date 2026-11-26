@@ -332,6 +332,12 @@ fn title_width(lookups: &assets::Lookups) -> f32 {
     }
 }
 
+/// [`title_width`] for the App-side layout builders (the scroll frame in
+/// `frame/draw.rs`) — the same measurement the draw and click paths use.
+pub(crate) fn title_width_for(lookups: &assets::Lookups) -> f32 {
+    title_width(lookups)
+}
+
 /// The `i`-th recipe cell's origin and 44x44 hover/click rect —
 /// `UIDynamicItemCollection.GetGridParameters` (`:81-97`) +
 /// `GetItemSlotHitbox` (`:75-79`): the grid element fills the `UIList`'s
@@ -1639,19 +1645,19 @@ mod tests {
         // Row 9's centre y = 842 + 20 = 862 > 850 (the list bottom).
         let clipped = recipe_cell(&l, 9 * 10, 0.0);
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(clipped[0] + 20.0, clipped[1] + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(clipped[0] + 20.0, clipped[1] + 20.0), &available, 0.0),
             None,
             "the point is inside cell 90 but outside the OverflowHidden list"
         );
         // Row 8's centre y = 798 + 20 = 818 < 850: still reachable.
         let visible = recipe_cell(&l, 8 * 10, 0.0);
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(visible[0] + 20.0, visible[1] + 20.0), &available),
+            hit_test(screen, &lookups, Vec2::new(visible[0] + 20.0, visible[1] + 20.0), &available, 0.0),
             Some(80)
         );
         // Outside the list horizontally: also unreachable.
         assert_eq!(
-            hit_test(screen, &lookups, Vec2::new(l.list[0] + l.list[2] + 2.0, 500.0), &available),
+            hit_test(screen, &lookups, Vec2::new(l.list[0] + l.list[2] + 2.0, 500.0), &available, 0.0),
             None
         );
     }

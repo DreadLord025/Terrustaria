@@ -464,10 +464,10 @@ mod tests {
         let mut p = shot(MOONLORD_ARROW_TRAIL);
         p.vel = Vec2::ZERO;
         p.local_ai[1] = 2.0;
-        p.old_pos = [Vec2::new(1600.0, 800.0); 10];
+        p.old_pos = [Vec2::new(1600.0, 800.0); 80];
         step(&mut p, &w, &[], &[]);
         p.old_pos[..p.trail_len].fill(Vec2::new(1600.0, 800.0));
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert!(!p.active, "the all-equal Kill (`:55450`)");
         assert_eq!(p.kill_time_left, 90, "the Kill() `num` capture (`:70649`)");
     }
@@ -490,7 +490,6 @@ mod tests {
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7), 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = &pool.slots()[slot];
         assert_eq!(p.ai[1], 0.0, "3 sub-steps drained the counter");
@@ -501,7 +500,6 @@ mod tests {
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7), 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(pool.slots()[slot].pos.x > 1600.0, "the AI runs after the wait");
     }
@@ -529,7 +527,6 @@ mod tests {
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7), 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the arrow dies on the wall");
         let trail = pool
@@ -571,7 +568,6 @@ mod tests {
             &mut w, std::slice::from_mut(&mut npc), None, None, None,
             YoyoInputs::default(), FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7), 0, false,
-            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(npc.hp < npc.max_hp, "the bullet lands");
         assert_eq!(pool.slots()[slot].damage, 96, "`(int)(100 * 0.96)`");

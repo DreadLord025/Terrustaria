@@ -85,18 +85,6 @@ pub(crate) mod tile_draw_pass;
 // pass-family merge step. The g28 pass-1 head folds in here (its stand-in
 // registry dropped onto g30's; its payload is tr_render::quality_light).
 pub(crate) mod tile_pass;
-// W4-g28 pass 1: UNWIRED Draw main-pass orchestration (TileDrawing.cs:465-
-// 742 head/tail, GetScreenDrawArea :6549-6586, ClearCachedTileDraws :6588-
-// 6599, the :504-506 loop margins, the frozen PostDrawTiles order :414-442)
-// — the draw_tiles seam is contested by the in-flight pass siblings
-// (g29-g32 own passes 2-5); wiring is the family's merge step.
-pub(crate) mod tile_pass;
-// W4-g32 pass 5: UNWIRED Draw orchestration + PostDrawTiles post-pass order
-// (TileDrawing.cs:465-533/:728-741/:414-442/:6549-6622, DrawBlackHelper.cs,
-// Main.cs:56949-56988) — the draw_tiles seam is contested by the in-flight
-// pass siblings; wiring is the family's merge step (module doc lists the
-// intended call sites).
-pub(crate) mod tile_draw_pass;
 // TILE-DRAW-2 (W4-f15): the DrawSingleTile glow bind (:1343-1403) — the
 // second GetTileDrawData switch's record drawn after the cell sprite.
 pub(crate) mod tile_glow;

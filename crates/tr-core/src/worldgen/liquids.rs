@@ -344,7 +344,7 @@ pub(crate) fn settle_liquids_again(
 #[cfg(test)]
 mod tests {
     use super::lake_floor_depth;
-    use super::{pass_waterfalls, Rng};
+    use super::{pass_waterfalls, place_liquids, Layers, Rng, SurfaceMap};
     use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK};
     use crate::tiledata as td;
     use crate::world::World;
@@ -362,7 +362,8 @@ mod tests {
             world.tiles[i].flags |= FLAG_ACTIVE;
         }
         // Water beside the edge cell (50, 40), air on both sides.
-        world.tiles[world.index(49, 40)].liquid = 255;
+        let __bi = world.index(49, 40);
+        world.tiles[__bi].liquid = 255;
         world
     }
 
@@ -403,7 +404,8 @@ mod tests {
         let shore = world.index(49, 40);
         world.tiles[shore].kind = 1;
         world.tiles[shore].flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
-        world.tiles[world.index(48, 40)].liquid = 255;
+        let __bi = world.index(48, 40);
+        world.tiles[__bi].liquid = 255;
         pass_waterfalls(&mut world, &mut Rng(0x5EED));
         assert!(
             world.tile(50, 40).unwrap().half_brick(),
@@ -491,23 +493,66 @@ mod tests {
         }
     }
 
+    /// A flat dirt world at row 100 with a `lake_level = 101` map — the
+    /// `place_liquids` lake carve in isolation, before the union pipeline's
+    /// later decorative passes (Water Plants' lily pads/cattails, Piles,
+    /// Spreading Grass) dress the finished bowl.
+    fn lake_carve_fixture() -> (World, SurfaceMap, Layers) {
+        let width = 200;
+        let height = 400;
+        let mut world = World::new("lake".into(), width, height);
+        for x in 0..width {
+            for y in 100..height {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_DIRT;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let map = SurfaceMap {
+            heights: vec![100; width as usize],
+            spawn_center: 100,
+            desert_enabled: false,
+            desert_start: 0,
+            desert_end: 0,
+            lake_center: 100,
+            lake_half: 10,
+            lake_level: 101,
+            left_beach_end: 10,
+            right_beach_start: 190,
+            sea_level: 100,
+        };
+        let layers = Layers {
+            avg_surface: 100.0,
+            world_surface: 100.0,
+            rock_layer: 200.0,
+            hell_top: 300,
+            surface_low: 100.0,
+            surface_high: 100.0,
+            rock_low: 200.0,
+            rock_high: 200.0,
+        };
+        (world, map, layers)
+    }
+
     #[test]
     fn lake_keeps_grass_on_the_dry_banks() {
-        let mut w = generate(&GenOptions::default());
-        w.compute_column_surface();
-        let (center, half, level) = lake_params(&w);
+        let (mut world, mut map, layers) = lake_carve_fixture();
+        let (center, half, level) = (map.lake_center, map.lake_half, map.lake_level);
+        // Grass on the flattened banks just outside the carved span (the
+        // terrain step flattens `lake_half + 2` columns; the carve only
+        // touches `lake_half`).
+        for dx in [-(half + 1), half + 1] {
+            let x = center + dx;
+            let i = world.index(x, map.heights[x as usize]);
+            world.tiles[i].kind = TILE_GRASS;
+        }
+        let width = world.width;
+        place_liquids(&mut world, &mut Rng(0x5EED), &mut map, &layers, width);
         let mut grass_banks = 0;
         for dx in [-(half + 1), half + 1] {
             let x = center + dx;
-            // The bank's top: the first non-cloud tile from the surface (the
-            // floating islands hang over the terrain).
-            let mut top = w.surface_of(x);
-            while top < w.height - 2
-                && matches!(w.tile(x, top).unwrap().kind, 189 | 196)
-            {
-                top += 1;
-            }
-            let t = *w.tile(x, top).unwrap();
+            let top = map.heights[x as usize];
+            let t = *world.tile(x, top).unwrap();
             assert!(t.active(), "bank column x={x} has no ground");
             if t.kind == TILE_GRASS {
                 assert!(
@@ -515,7 +560,7 @@ mod tests {
                     "grass bank at x={x} sits below the water line (top {top}, level {level})"
                 );
                 assert!(
-                    (0..w.height).all(|y| w.tile(x, y).unwrap().liquid == 0),
+                    (0..world.height).all(|y| world.tile(x, y).unwrap().liquid == 0),
                     "dry bank at x={x} contains liquid"
                 );
                 grass_banks += 1;
@@ -526,20 +571,21 @@ mod tests {
 
     #[test]
     fn lake_bowl_floor_is_solid_below_the_surface() {
-        let mut w = generate(&GenOptions::default());
-        w.compute_column_surface();
-        let (center, half, level) = lake_params(&w);
+        let (mut world, mut map, layers) = lake_carve_fixture();
+        let (center, half, level) = (map.lake_center, map.lake_half, map.lake_level);
+        let width = world.width;
+        place_liquids(&mut world, &mut Rng(0x5EED), &mut map, &layers, width);
         let mut deepest = 0;
         for dx in -half..=half {
             let x = center + dx;
-            let top = ground_row(&w, x);
-            let t = *w.tile(x, top).unwrap();
+            let floor = level + lake_floor_depth(dx, half);
+            let t = *world.tile(x, floor).unwrap();
             assert!(
                 t.active() && td::TILE_SOLID.has(t.kind),
-                "bowl floor is not solid at {x},{top}"
+                "bowl floor is not solid at {x},{floor}"
             );
-            assert_eq!(t.kind, TILE_DIRT, "bowl floor is not dirt at {x},{top}");
-            let depth = top - level;
+            assert_eq!(t.kind, TILE_DIRT, "bowl floor is not dirt at {x},{floor}");
+            let depth = floor - level;
             assert_eq!(
                 depth,
                 lake_floor_depth(dx, half),
@@ -551,11 +597,11 @@ mod tests {
             );
             deepest = deepest.max(depth);
             assert!(
-                w.tile(x, top + 1).unwrap().active(),
+                world.tile(x, floor + 1).unwrap().active(),
                 "bowl floor is only one tile thin at x={x}"
             );
             assert!(
-                w.tile(x, level).unwrap().liquid > 0,
+                world.tile(x, level).unwrap().liquid > 0,
                 "shore is dry at the water line at x={x}"
             );
         }
@@ -571,7 +617,7 @@ mod tests {
     // `settle_liquids_again`, which re-runs that body minus the ocean retype).
 
     use super::settle_liquids_again;
-    use crate::tile::{FLAG_ACTIVE, LiquidKind, Tile};
+    use crate::tile::{LiquidKind, Tile};
     use crate::worldgen::pipeline::GenVars;
 
     /// A flat stone-floor world with a water column perched above a gap:
@@ -579,7 +625,7 @@ mod tests {
     fn perched_world() -> World {
         let mut w = World::new("settle".into(), 120, 120);
         // A stone floor at y=100 across the middle.
-        for x in 10..110 {
+        for x in 0..120 {
             let i = w.index(x, 100);
             w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
         }
@@ -590,7 +636,11 @@ mod tests {
     }
 
     fn settle_gv() -> GenVars {
-        GenVars { water_line: 60, lava_line: 90, ..Default::default() }
+        let mut gv = GenVars::default();
+        gv.shimmer_position = None;
+        gv.water_line = 60;
+        gv.lava_line = 90;
+        gv
     }
 
     fn classic_opts() -> GenOptions {
@@ -607,7 +657,7 @@ mod tests {
         settle_liquids_again(&mut w, &settle_gv(), &classic_opts());
         assert_eq!(w.tile(60, 40).unwrap().liquid, 0, "the perch drained");
         // The water landed on the floor row above the stone (y=99).
-        let floor_water: i32 = (10..110).map(|x| w.tile(x, 99).unwrap().liquid as i32).sum();
+        let floor_water: i32 = (0..120).map(|x| w.tile(x, 99).unwrap().liquid as i32).sum();
         assert!(floor_water > 0, "the water settled onto the floor ({floor_water})");
     }
 
@@ -647,7 +697,7 @@ mod tests {
     #[test]
     fn r2_the_settle_retypes_by_depth() {
         let mut w = World::new("settle".into(), 120, 120);
-        for x in 10..110 {
+        for x in 0..120 {
             let i = w.index(x, 110);
             w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
         }
@@ -657,8 +707,10 @@ mod tests {
         w.world_surface = 30.0;
         w.rock_layer = 70.0;
         settle_liquids_again(&mut w, &settle_gv(), &classic_opts());
-        let landed = w.tile(60, 109).unwrap();
-        assert!(landed.liquid > 0, "the cell landed");
-        assert_eq!(landed.liquid_kind(), LiquidKind::Lava, "below waterLine → lava");
+        let landed = (0..120)
+            .map(|x| w.tile(x, 109).unwrap())
+            .find(|t| t.liquid > 0)
+            .expect("the cell landed on the floor row");
+        assert_eq!(landed.liquid_kind(), LiquidKind::Lava, "below waterLine -> lava");
     }
 }

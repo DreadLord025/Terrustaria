@@ -43,6 +43,10 @@ pub(crate) struct PlayerAssets {
     pub(crate) pants: Option<BgTex>,
     pub(crate) shoes: Option<BgTex>,
     pub(crate) hair: Option<BgTex>,
+    /// `TextureAssets.PlayerHairAlt` (`Player_HairAlt_1`): the alternate
+    /// hair strip the hat-over-hair layer draws (`PlayerDrawLayers.cs:
+    /// 2104-2109`, before the normal-hat crop).
+    pub(crate) hair_alt: Option<BgTex>,
     /// Armor sheets by vanilla armor slot (`TextureAssets.ArmorHead[n]` etc.,
     /// `AssetInitializer.cs:165-185`): index 0 is the empty slot, 1..4 the
     /// copper/iron/silver/gold sets. The body entry is the 9x4 composite
@@ -97,6 +101,7 @@ impl Default for PlayerAssets {
             pants: None,
             shoes: None,
             hair: None,
+            hair_alt: None,
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
@@ -147,6 +152,7 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
+        hair_alt: sky_tex(atlas, "Player_HairAlt_1", None),
         armor_head: armor_sheets("Armor_Head"),
         // W4-d6 residual 6 — the Spectre head pair (`AssetInitializer.cs:
         // 165-185` indexes by the armor slot: file number == slot).
@@ -802,7 +808,6 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::Clinger
             | NpcKind::CursedHammer
             | NpcKind::EnchantedSword
-    )
             // W4-d23 merge-side fold: the 13 rotation writers the inline
             // whitelist carried (man-eater atan2 aim :22734-22750, SolarFlare
             // homing :21499, the flyers' FindFrame velocity tilt :74858) —
@@ -820,6 +825,7 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::SolarFlare
             | NpcKind::SporeBat
             | NpcKind::VampireBat
+    )
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -1667,6 +1673,8 @@ fn npc_anchor_nudge_x(n: &Npc) -> f32 {
         num45 += (4.0 * num48) as i32 as f32;
     }
     num45
+}
+
 /// W4-d125 draw phase: `Main.DrawNPCDirect_HallowBoss`
 /// (`Main.cs:26471-26652`) — the Empress's dedicated draw. The Centre
 /// anchor (`vector = Center - screenPos`, `:26474`), the GetAlpha 636
@@ -1798,7 +1806,6 @@ fn draw_empress(
     }
     // The body quad + up to four halo copies (the phase-2 ring).
     1 + if phase2 && assets.empress_halo.is_some() { 4 } else { 0 }
-    }
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
@@ -2248,6 +2255,14 @@ pub(crate) const DESERT_SHEETS: &[u32] = &[
     80,  // the LightMummy
     580, // the WalkingAntlion
     581, // the FlyingAntlion
+    // W4-d41 union: the desert antlions' + the Dune Splicer chain's own
+    // sheets (the W4-d41 DESERT_SHEETS body, merged here so no draw arm loses
+    // its sheet). `508`..`512` were a separate const in the splice.
+    508, // the Sand Poacher / antlion family
+    509,
+    510,
+    511,
+    512,
 ];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
@@ -2578,8 +2593,9 @@ pub(crate) const CRAWLER_SHEETS: &[u32] = &[357, 374, 375, 606];
 /// (359), the Glowing Snail (360), the Magma Snail (655) and the
 /// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
 /// vanilla net id ([`NpcKind::net_id`]) in [`NpcAssets::npc_sheet`].
-// E8 merge: 677 rides c7's FIREFLY_SHEETS (the dup drop).
-pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655];
+// Union: the Shimmerfly 677 is folded in here (the four-row c9 body);
+// c7's FIREFLY_SHEETS keeps its own row for the draw arm.
+pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655, 677];
 
 /// The gold critters (W4-c9): the Gold Bird (442), the Gold Grasshopper
 /// (446) and the Gold Mouse (447) each draw their own `NPC_<id>` art.
@@ -2588,19 +2604,6 @@ pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655];
 // E8 merge: the 5 gold sheets ride d40's D40_SHEETS (the dup drop) -
 // the const retires empty (the chain link stays for the witness).
 pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[];
-/// W4-c10 — the waterfowl family's own sheets (`TextureAssets.Npc[type]`),
-/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
-/// `SMALL_KIND_SHEETS`. All eight are 15-row strips
-/// (`Main.npcFrameCount[362..365/602/603/608/609]` = 15, `Main.cs:67082`).
-pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608, 609];
-
-/// W4-c10 roster tail — the twelve critters' own sheets
-/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
-/// `NpcAssets::npc_sheets` exactly like `WATERFOWL_SHEETS`. Row counts
-/// (`Main.npcFrameCount`, `Main.cs:67082`): 357→2, 442→5, 443→7, 444→3,
-/// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
-pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
-    &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
 /// W4-c6 style-59 wiring: the Pumpking blade's own sheet
 /// (`TextureAssets.Npc[328]`), keyed by the vanilla net id in
 /// [`NpcAssets::npc_sheet`] — the bestiary credit folds onto the Pumpking
@@ -2635,22 +2638,8 @@ pub(crate) const SPIT_FLARE_SHEETS: &[u32] = &[
 /// art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
 /// [`NpcAssets::npc_sheet`].
 pub(crate) const FLYER14_SHEETS: &[u32] = &[
-    48,  // the Harpy
-    62,  // the Demon
-    93,  // the Giant Bat
-    121, // the Slimer
-    137, // the Illuminant Bat
-    150, // the Ice Bat
-    151, // the Lava Bat
-    152, // the Giant Flying Fox
-    156, // the Red Devil
-    158, // the Vampire Bat
-    159, // the Vampire (the Transform target, aiStyle 3)
-    226, // the Flying Snake
-    634, // the Spore Bat
-    660, // the Queen Slime minion
+    48, 62, 93, 121, 137, 150, 151, 152, 156, 158, 159, 226, 634, 660,
 ];
-
 /// W4-f18 first-20 port — the critters' own sheets (the vanilla's
 /// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// [`NpcAssets::npc_sheets`] exactly like `SMALL_KIND_SHEETS`. Batch 1:
@@ -2662,19 +2651,6 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
     365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
     377, 378, 379, 380, 430, // batch 4 (the folded 380 draws its own)
 ];
-
-/// The man-eater family's sheets (W4-d23, aiStyle 13): Man Eater (43),
-/// Snatcher (56), Clinger (101), Angry Trapper (175), Fungi Bulb (259)
-/// and Giant Fungi Bulb (260) each draw their own `NPC_<id>` art. Keyed
-/// by the vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
-pub(crate) const MANEATER_SHEETS: &[u32] = &[
-    43,  // the Man Eater
-    56,  // the Snatcher
-    101, // the Clinger
-    175, // the Angry Trapper
-    259, // the Fungi Bulb
-    260, // the Giant Fungi Bulb
-];
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
 /// sheet whose height is not a multiple of its row count loses the leftover
@@ -2682,23 +2658,6 @@ pub(crate) const MANEATER_SHEETS: &[u32] = &[
 fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
     (tex.h as i32 / rows.max(1) as i32) as f32
 }
-
-/// The aiStyle-9 spit/flare family's sheets (W4-d23): Vile Spit (112),
-/// Vile Spit EoW (666) and Solar Flare (516) each draw their own
-/// `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
-/// [`NpcAssets::npc_sheet`].
-pub(crate) const SPIT_FLARE_SHEETS: &[u32] = &[
-    112, // the Vile Spit
-    666, // the Vile Spit (Eater of Worlds)
-    516, // the Solar Flare
-];
-
-/// The aiStyle-14 flyer family's sheets (W4-d23): the thirteen wired
-/// kinds + the Vampire transform target each draw their own `NPC_<id>`
-/// art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
-/// [`NpcAssets::npc_sheet`].
-pub(crate) const FLYER14_SHEETS: &[u32] = &[
-    48,  // the Harpy
 /// W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds' own sheets
 /// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
@@ -2751,12 +2710,6 @@ pub(crate) const KIND_WIRE_3_SHEETS: &[u32] = &[
     634, // the Spore Bat
     660, // the Queen Slime minion
 ];
-
-/// W4-c6 style-59 wiring: the Pumpking blade's own sheet
-/// (`TextureAssets.Npc[328]`), keyed by the vanilla net id in
-/// [`NpcAssets::npc_sheet`] — the bestiary credit folds onto the Pumpking
-/// (Hide=true) but the DRAW sheet is its own (the fishron-hazard precedent).
-pub(crate) const PUMPKING_BLADE_SHEET: &[u32] = &[328];
 /// W4-d125 sheets phase: the Empress of Light's + the Prismatic Lacewing's
 /// own sheets, keyed by the vanilla net id in [`NpcAssets::npc_sheet`] like
 /// the families. REAL .xnb dims: NPC_636 166x352 (2 rows of 176), NPC_661
@@ -2765,11 +2718,6 @@ pub(crate) const PUMPKING_BLADE_SHEET: &[u32] = &[328];
 /// under the strict-GPU bound; the sibling-union reconciliation is the
 /// atlas-repack wave's, research/113).
 pub(crate) const D125_SHEETS: &[u32] = &[636, 661];
-    151, // the Lavabat
-    152, // the Giant Flying Fox
-    158, // the Vampire Bat
-    226, // the Flying Snake
-];
 
 /// W4-g8 lane 1 batch 4 — the last three ≤230 d22-d33 machine members'
 /// own sheets (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
@@ -2784,21 +2732,6 @@ pub(crate) const KIND_WIRE_4_SHEETS: &[u32] = &[
 /// 158's Transform target), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `KIND_WIRE_4_SHEETS`.
 pub(crate) const VAMPIRE_SHEET: &[u32] = &[159];
-/// W4-d33 — the dragonfly sheets: one sheet per colour, exactly as the
-/// vanilla's `TextureAssets.Npc[type]` — the Black (595), Blue (596),
-/// Green (597), Orange (598), Red (599), Yellow (600) and Gold (601)
-/// Dragonflies each draw their own `NPC_<id>` art. Keyed by the vanilla
-/// net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
-pub(crate) const DRAGONFLY_SHEETS: &[u32] = &[595, 596, 597, 598, 599, 600, 601];
-
-/// W4-d33 wiring — the fairy critters' + the windy balloon's sheets: one
-/// sheet per kind, exactly as the vanilla's `TextureAssets.Npc[type]`
-/// (583/584/585 the 4-row fairy strips, 594 the balloon's 8-column
-/// colour strip — `Main.cs:23861`'s `Frame(8, 1, frame.Y)`). Keyed by the
-/// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
-/// d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
-pub(crate) const FAIRY_BALLOON_SHEETS: &[u32] = &[583, 584, 585, 594];
-
 /// W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's chain + the
 /// 521 squidhead draw their own sheets (`TextureAssets.Npc[type]`), keyed
 /// by the vanilla net id in [`NpcAssets::npc_sheet`] like the families.
@@ -2808,20 +2741,6 @@ pub(crate) const CULTIST_DRAGON_SHEETS: &[u32] = &[
     459, // the tail
     521, // the Ancient Vision (the squidhead)
 ];
-
-/// W4-d39 (research/125) — the band 351-420's unclaimed kinds' own
-/// sheets (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
-/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
-pub(crate) const CRITTER_SHEETS: &[u32] = &[
-    356, // the Butterfly
-    366, // the black Scorpion
-    367, // the brown Scorpion
-    377, // the Grasshopper
-    378, // the Chattering Teeth Bomb
-    379, // the blue Cultist Archer
-    380, // the white Cultist Archer (the Hide fold's own DRAW sheet)
-];
-
 /// W4-d41 — the cavern crawdads'/shellies' own sheets (the vanilla's
 /// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The 2-variants
@@ -2832,12 +2751,6 @@ pub(crate) const CAVERN_SHEETS: &[u32] = &[
     // W4-d41 — the nine salamander colours (498-506).
     498, 499, 500, 501, 502, 503, 504, 505, 506,
 ];
-
-/// W4-d41 — the desert antlions' + the Dune Splicer chain's own sheets
-/// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
-/// in `NpcAssets::npc_sheets` exactly like `CAVERN_SHEETS`.
-pub(crate) const DESERT_SHEETS: &[u32] = &[508, 509, 510, 511, 512];
-
 /// W4-d41 — the Tomb Crawler chain's + the solar fragments' own sheets
 /// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
 /// in `NpcAssets::npc_sheets` exactly like `DESERT_SHEETS`.
@@ -2889,26 +2802,6 @@ pub(crate) const TOWN_PET_SHEETS: &[u32] = &[
     684, // Squire Slime (the copper slime, W4-g10 batch 2)
     676, // the Shimmer Slime (doc-sweep lane 36)
 ];
-
-/// W4-f18 first-20 port — the critters' own sheets (the vanilla's
-/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
-/// [`NpcAssets::npc_sheets`] exactly like `SMALL_KIND_SHEETS`. Batch 1:
-/// the Firefly (355), the Butterfly (356), the Worm (357), the Lightning
-/// Bug (358) and the Snail (359).
-pub(crate) const CRITTER_SHEETS: &[u32] = &[
-    355, 356, 357, 358, 359, // batch 1
-    360, 361, 362, 363, 364, // batch 2 (the Duck2 363 draws its own sheet)
-    365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
-    377, 378, 379, 380, 430, // batch 4 (the folded 380 draws its own)
-];
-
-/// The Shimmerfly's sheet (W4-c9's `SNAIL_SHEETS` row, adopted by W4-g62
-/// with the kind rowing): the shimmer target draws its own `NPC_677`
-/// art. Keyed by the vanilla net id ([`NpcKind::net_id`]) in
-/// [`NpcAssets::npc_sheet`]. The snail trio 359/360/655 stays c9's —
-/// at merge the two consts union into c9's four-row SNAIL_SHEETS.
-pub(crate) const SNAIL_SHEETS: &[u32] = &[677];
-
 /// W4-d43 — the 631-696 kinds' own sheets (`TextureAssets.Npc[type]`), keyed by
 /// the vanilla net id in `NpcAssets::npc_sheets` (the SMALL_KIND_SHEETS shape).
 pub(crate) const W4_D43_SHEETS: &[u32] = &[
@@ -2929,17 +2822,6 @@ pub(crate) const W4_D43_SHEETS: &[u32] = &[
 /// E4 batch 3: 168/170/171/180/181; E4 batch 4: 185/197/198/199;
 /// E4 batch 5 (the SEAL): 201/202/203/204/206.
 pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199, 201, 202, 203, 204, 206];
-
-];
-
-/// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
-/// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
-/// sheet whose height is not a multiple of its row count loses the leftover
-/// pixels at the bottom instead of bleeding them into the last frame.
-fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
-    (tex.h as i32 / rows.max(1) as i32) as f32
-}
-
 /// The Pumpkin Moon family's draw (`S1-F-13b`): the sheet's real row
 /// (`NPC.SetFrameSize`'s integer-division height over `Main.npcFrameCount[type]`
 /// — the kind's own count) at the generic anchor (`Main.cs:25511-25516`) — the
@@ -3453,10 +3335,12 @@ pub(crate) fn player_draw_layers(
             [player.beetle_pos[0].x, player.beetle_pos[0].y],
             [player.beetle_pos[1].x, player.beetle_pos[1].y],
             [player.beetle_pos[2].x, player.beetle_pos[2].y],
+        ],
         beetle_vel: [
             [player.beetle_vel[0].x, player.beetle_vel[0].y],
             [player.beetle_vel[1].x, player.beetle_vel[1].y],
             [player.beetle_vel[2].x, player.beetle_vel[2].y],
+        ],
         beetle_set: player.beetle_offense || player.beetle_defense,
         // `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the
         // sim-derived visible shield slot + the raised/parry pose inputs.
@@ -5408,8 +5292,13 @@ pub(crate) fn draw_npcs(
             NpcKind::GrayCockatiel => {
                 pumpkin_moon_draw(assets.npc_sheet(675), npc_rows(675), n, w, h)
             }
+            // Doc-sweep lane 36 — the ShimmerSlime draws its own 2-frame
+            // strip (`Main.npcFrameCount[676]` = 2) at the generic
+            // centred anchor (the small-kinds shape).
+            NpcKind::ShimmerSlime => {
                 pumpkin_moon_draw(assets.npc_sheet(676), npc_rows(676), n, w, h)
             }
+            NpcKind::Shimmerfly => {
                 pumpkin_moon_draw(assets.npc_sheet(677), npc_rows(677), n, w, h)
             }
             NpcKind::TownSlimeGreen => {
@@ -5457,9 +5346,12 @@ pub(crate) fn draw_npcs(
             NpcKind::Orca => {
                 pumpkin_moon_draw(assets.npc_sheet(692), npc_rows(692), n, w, h)
             }
+            NpcKind::LibrarianSkeleton => {
                 pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
             }
+            NpcKind::WaterBoltMimic => {
                 pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
+            }
             NpcKind::PalworldCattivaDistressed => {
                 pumpkin_moon_draw(assets.npc_sheet(695), npc_rows(695), n, w, h)
             }
@@ -6270,7 +6162,9 @@ pub(crate) fn draw_npcs(
             // whitelist below) + the two-link PumpkingArm chain draw
             // (`Main.cs:22669-22700`, `pumpking_blade_chain` below the
             // body arm — drawn ahead of the body quad, as the C#).
+            NpcKind::PumpkingBlade => {
                 pumpkin_moon_draw(assets.npc_sheet(328), npc_rows(328), n, w, h)
+            }
             // W4-d25 STYLE-26 wiring: the gallopers' draw arms. **Sheet
             // deferral**: NPC_86/155 are NOT packed — the full-set
             // skyline measurement (tools/atlas_sim.js, the L-8b ref
@@ -6664,7 +6558,6 @@ pub(crate) fn draw_npcs(
             NpcKind::Firefly => {
                 scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h)
             }
-                scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
             NpcKind::Butterfly => {
                 scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
             }
@@ -6703,8 +6596,6 @@ pub(crate) fn draw_npcs(
             NpcKind::DuckWhite2 => {
                 pumpkin_moon_draw(assets.npc_sheet(365), npc_rows(365), n, w, h)
             }
-                pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
-                pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
             NpcKind::ScorpionBlack => {
                 pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
             }
@@ -6720,10 +6611,18 @@ pub(crate) fn draw_npcs(
             // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb,
             // the cultist archers and the ArmedZombie ride the generic
             // anchor (scale 1 — none carries a scale-rolled draw).
+            NpcKind::Grasshopper => {
                 pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
+            }
+            NpcKind::ChatteringTeethBomb => {
                 pumpkin_moon_draw(assets.npc_sheet(378), npc_rows(378), n, w, h)
+            }
+            NpcKind::CultistArcherBlue => {
                 pumpkin_moon_draw(assets.npc_sheet(379), npc_rows(379), n, w, h)
+            }
+            NpcKind::CultistArcherWhite => {
                 pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
+            }
             NpcKind::ArmedZombie => {
                 pumpkin_moon_draw(assets.npc_sheet(430), npc_rows(430), n, w, h)
             }
@@ -6741,7 +6640,9 @@ pub(crate) fn draw_npcs(
             // their own NPC_<id> sheets. The sheets are NOT packed yet
             // (the atlas headroom - the wyvern deferral precedent), so
             // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::GoblinShark => {
                 generic_anchor(assets.npc_sheet(620), npc_rows(620), n, w, h)
+            }
             // W4-d36 census batch 0 draw — own sheets at npc_rows, the
             // generic anchor (the repack wave packs the strips).
             NpcKind::ToxicSludge
@@ -6803,6 +6704,7 @@ pub(crate) fn draw_npcs(
             | NpcKind::Moth => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
             // W4-d11 DOC-SWEEP — the BloodSquid draws its own sheet
             // (`SMALL_KIND_SHEETS`' 619 row) at the 6-frame strip
             // (`Main.npcFrameCount[619]` = 6) with the generic centred
@@ -6818,6 +6720,7 @@ pub(crate) fn draw_npcs(
             // whitelist below.
             NpcKind::Wraith => {
                 pumpkin_moon_draw(assets.npc_sheet(82), npc_rows(82), n, w, h)
+            }
             NpcKind::Grasshopper => {
                 pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
             }
@@ -7042,10 +6945,17 @@ pub(crate) fn draw_npcs(
                     let (s, co) = rot.sin_cos();
                     let top_left =
                         [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
-                    r.push_sprite_rot(top_left, [arm.w, arm.h], arm.uv, ac, rot);
+                    r.push_sprite_rot(
+                        top_left,
+                        [arm.w, arm.h],
+                        arm.uv,
+                        [ac[0], ac[1], ac[2], 1.0],
+                        rot,
+                    );
                     quads += 1;
                 }
             }
+        }
         }
         if n.rotation != 0.0
             && matches!(
@@ -7523,7 +7433,7 @@ pub(crate) fn draw_npcs(
         // two-bars bug (red above, faithful green below).
     }
     quads
-
+}
 
 #[cfg(test)]
 mod anchor_tests {
@@ -7813,6 +7723,8 @@ mod anchor_tests {
         let src = include_str!("entities.rs");
         assert!(src.contains("draw_empress(r, assets, n, &c"), "the arm call");
         assert!(src.contains("empress_halo: npc_tex(atlas, \"Extra_188\")"));
+    }
+
     /// W4-g12 doc-sweep: the wave-A slimes' `NPC.scale` rows
     /// (`NPC.cs:8977`/`:9526`/`:9710`/`:9850`/`:10761`/`:11344`/`:11354`)
     /// reach `Npc::scale` at construction; IceSlime/UmbrellaSlime keep 1.
@@ -7951,6 +7863,26 @@ mod anchor_tests {
             (NpcKind::TheHungryII, 110.0, 300.0, 6),   // NPC_116
             (NpcKind::Slimer, 90.0, 168.0, 4),         // NPC_121
             (NpcKind::IlluminantBat, 44.0, 128.0, 4),  // NPC_137
+        ];
+        for &(kind, w, h, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(D35_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = generic_anchor(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            assert_eq!(fh, h / rows as f32, "{kind:?}: whole rows");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
+        }
+        // The 12 deferred kinds stay OUT of the packing list (the wyvern
+        // precedent): their draw arms ask npc_sheet, get None, and skip.
+        for id in [79u32, 80, 84, 85, 86, 103, 104, 109, 110, 120, 122, 140] {
+            assert!(!D35_SHEETS.contains(&id), "NPC_{id} must stay deferred");
+        }
+    }
+
     /// W4-d125 sheets phase: the Empress + Lacewing strips divide into
     /// their vanilla rows over the REAL .xnb dims (the pinned LZX harness,
     /// `tools/_d125_sheets_measure.js`: NPC_636 166x352, NPC_661 24x72),
@@ -7964,7 +7896,6 @@ mod anchor_tests {
         let cases: &[(NpcKind, f32, f32, u32)] = &[
             (NpcKind::EmpressOfLight, 166.0, 352.0, 2),   // NPC_636
             (NpcKind::PrismaticLacewing, 24.0, 72.0, 3),  // NPC_661
-    }
         ];
         for &(kind, w, h, rows) in cases {
             let net = texture_net_id(kind);
@@ -8310,9 +8241,21 @@ mod anchor_tests {
         // deferred 20 are NOT in D40_SHEETS, so their None-returning arms
         // stay out of this check).
         for &id in D40_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
         // W4-f42 — the sandstorm debris + desert family: every kind's draw
         // sheet must be packed (the same M4-NPC-3v guard).
         for &id in DESERT_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
         // S1-D-3ff d39 wave 1 — the critter band's sheets are packed too
         // (the M4-NPC-3v audit, critter edition).
         for &id in CRITTER_SHEETS {
@@ -8328,7 +8271,9 @@ mod anchor_tests {
             NpcKind::Antlion,
             NpcKind::Mummy,
             NpcKind::DarkMummy,
+            NpcKind::BloodMummy,
             NpcKind::LightMummy,
+            NpcKind::WalkingAntlion,
             NpcKind::FlyingAntlion,
         ] {
             let tex_id = texture_net_id(kind);
@@ -8437,7 +8382,7 @@ mod anchor_tests {
         // and −50 pushes flip sign).
         n.ai[0] = 1.0;
         let links_r = pumpking_blade_chain(&n, Some((545.0, 250.0)));
-        let dx0r = 545.0 - 135.0 - 200.0;
+        let dx0r = 545.0f32 - 135.0 - 200.0;
         let s0r = 92.0 / (dx0r * dx0r + 230.0 * 230.0).sqrt();
         assert!((links_r[0].0 - (135.0 + dx0r * s0r)).abs() < 1e-3);
         // No carrier: the empty-slot (0,0) centre — dx = −145 + 200 = 55
@@ -8766,7 +8711,6 @@ mod anchor_tests {
     }
 }
 }
-}
 
 /// The task/offsets pins: the three audit claims the branch fixes, each
 /// recomputed against the C# source before the fix was written.
@@ -9080,7 +9024,4 @@ mod d38_sheet_tests {
         }
         assert_eq!(STRIPS.iter().filter(|&&(k, _, _, _)| npc_rotation_allowed(k)).count(), 8);
     }
-
-// balance-close (union shared delimiter)
-]]
 }

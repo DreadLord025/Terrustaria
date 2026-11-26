@@ -2185,7 +2185,7 @@ pub(crate) fn npc_teleport(app: &mut App, req: NpcTeleportReq) {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_union_b {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::sound::Listener;
@@ -2625,7 +2625,7 @@ mod tests {
             let mut i = 0;
             while (i as f32) < 1.0 + 50.0 * 0.5 {
                 i += 1;
-                if !(spawned as f32 < num2 as f32 * 0.5 + num2 as f32 * 0.1) {
+                if !((spawned as f32) < num2 as f32 * 0.5 + num2 as f32 * 0.1) {
                     break;
                 }
                 if !(rng.next_float() < num) {
@@ -3201,7 +3201,7 @@ mod tests {
             }
             assert_eq!(d.velocity, want);
             assert_eq!(d.scale, mp.slot(mi).scale, "the Next(1,3) scale argument");
-            assert_eq!(sc, sarg, "the two mirrors agree on the scale roll");
+            assert_eq!(sc as f32, sarg, "the two mirrors agree on the scale roll");
         }
     }
 

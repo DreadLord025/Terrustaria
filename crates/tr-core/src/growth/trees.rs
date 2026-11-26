@@ -1409,12 +1409,13 @@ mod tests {
         }
         let mut rng = UnifiedRandom::new(7);
         assert!(!grow_shroom(&mut w, 100, 200, &mut rng, true), "the grass ground refuses");
-        // A missing side-70 (the right neighbour is dirt).
+        // A missing side-70 (the right NEIGHBOUR i+1 is dirt; i+2 is not
+        // read by the gate).
         let mut w2 = world();
         for dx in -2i32..=1 {
             put(&mut w2, 100 + dx, 200, 70, 0);
         }
-        put(&mut w2, 102, 200, 2, 0);
+        put(&mut w2, 101, 200, 2, 0);
         let mut rng2 = UnifiedRandom::new(7);
         assert!(!grow_shroom(&mut w2, 100, 200, &mut rng2, true), "the missing side-70 refuses");
         // Lava in the (i-1, y-1) gate cell.

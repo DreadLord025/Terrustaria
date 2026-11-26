@@ -1,4 +1,4 @@
-//! The App's network glue — the two handshake state machines, the event pump,
+﻿//! The App's network glue — the two handshake state machines, the event pump,
 //! the 10 Hz state tick and the in-process world install behind them.
 //!
 //! The machines are ports of the C# sides: the client's
@@ -211,7 +211,7 @@ impl App {
         if !tr_core::edit::can_kill_tile(&self.world, x, y, holds_items) {
             return;
         }
-        let kill = tr_core::edit::kill_tile(&mut self.world, x, y, false);
+        let kill = tr_core::edit::kill_tile(&mut self.world, x, y, false, self.rngs.global());
         if !self.world.tile(x, y).is_some_and(|t| t.active()) {
             // The store removal the C# cascade's `Chest.DestroyChest` runs
             // (`Chest.cs:625-645`) + the silent local close (`:640-643`).
@@ -662,8 +662,12 @@ impl App {
                 // (`LegacySoundPlayer.cs:386-388` — the listener's `server`
                 // flag); the play call keeps the C#'s shape.
                 if let Some(wall) = broken_wall {
+                    let wall_id = match wall {
+                        tr_core::edit::WallBreak::Broken(w)
+                        | tr_core::edit::WallBreak::Failed(w) => w,
+                    };
                     self.audio.play_wall_break_sound(
-                        tr_core::edit::kill_wall_sound(wall),
+                        tr_core::edit::kill_wall_sound(wall_id),
                         x as f32 * 16.0,
                         y as f32 * 16.0,
                         self.rngs.global(),
@@ -812,7 +816,7 @@ impl App {
             // others (`MessageBuffer.cs:1760-1763`).
             C2s::Projectile(ps) => {
                 let (spawner, _, _) = net::projectile_key_parts(ps.key);
-                if crate::projectile::data::proj_hostile(ps.kind.max(0) as u16)
+                if crate::projectile::proj_hostile(ps.kind.max(0) as u16)
                     || spawner != id as u8
                 {
                     return; // `:1727` — the whole arm is skipped
@@ -1352,6 +1356,7 @@ impl App {
                         h.home_y as i32,
                         Some(idx),
                         self.npcs[idx].kind.net_id(),
+                        false,
                     ) {
                         let mut rooms = std::mem::take(&mut self.town_rooms);
                         crate::town::move_room(&mut rooms, &mut self.npcs[idx], spot);
@@ -2042,8 +2047,14 @@ impl App {
                     }
                 }
                 // `TileEntityType<T>.Place` — the ValidTile gate + the books.
-                let Some(id) = self.world.tile_entities.place(&self.world, kind, p.x, p.y)
-                else {
+                // `place` borrows the world immutably beside its own store;
+                // take the store out so the two borrows stay disjoint (`place`
+                // only reads tiles through `world`, checked in
+                // `is_tile_valid`).
+                let mut te = std::mem::take(&mut self.world.tile_entities);
+                let placed = te.place(&self.world, kind, p.x, p.y);
+                self.world.tile_entities = te;
+                let Some(id) = placed else {
                     return;
                 };
                 self.broadcast_tile_entity(server, id);
@@ -2501,6 +2512,9 @@ impl App {
             C2s::TeamChangeUi(t) => {
                 self.apply_team_change_net(server, id, t.team);
             }
+            C2s::TeamChangeFromUi(t) => {
+                self.apply_team_change_net(server, id, t.team);
+            }
             // `case 159` — a client asks for a section (`MessageBuffer.cs:
             // 4457-4462`, host-only): `SendSection(sectionX, sectionY,
             // whoAmi)` (`NetMessage.cs:2697-2712`) — the bounds + not-already-
@@ -2783,7 +2797,7 @@ impl App {
                     false, // dodgeable: the net replay is not a dodge roll
                     h.crit,
                     None,
-                    false, // retaliate_lane: quiet net hurt
+                    0, // cooldown_counter: quiet net hurt
                 );
             }
         } else if let Some(p) = self.remote_players.get_mut(&(subject as u32)) {
@@ -2959,7 +2973,7 @@ impl App {
         }
         // `:46520` — `SquareTileFrame(i, j)`; the object drops it may pop
         // ride the edit chain's resolution.
-        let drops = tr_core::edit::square_tile_frame_default(&mut self.world, i, j);
+        let drops = tr_core::edit::square_tile_frame_default(&mut self.world, i, j, self.rngs.global());
         for drop in drops {
             let id = drop
                 .item
@@ -3245,9 +3259,14 @@ impl App {
                 }
             }
         }
+        let mut wc_store = std::mem::take(&mut self.world_chests);
+        let wanted: std::collections::HashMap<usize, (bool, (f32, f32))> = in_range
+            .into_iter()
+            .map(|(idx, locked, pos)| (idx, (locked, pos)))
+            .collect();
         let mut chests: Vec<(&mut [crate::item::ItemSlot], bool, (f32, f32), i32)> = Vec::new();
-        for (idx, locked, pos) in in_range {
-            if let Some(wc) = self.world_chests.get_mut(idx) {
+        for (idx, wc) in wc_store.iter_mut().enumerate() {
+            if let Some(&(locked, pos)) = wanted.get(&idx) {
                 chests.push((&mut wc.slots[..], locked, pos, idx as i32));
             }
         }
@@ -3269,6 +3288,8 @@ impl App {
                 }));
             }
         }
+        drop(dests);
+        self.world_chests = wc_store;
         // `RestoreToPlayer` (`:343-363`): every source slot restored + one
         // `5` re-send (blocked flag bit 1); the host's peer copy follows.
         for s in &source {
@@ -3776,8 +3797,11 @@ impl App {
                 // value), the portal-physics flag and the gravity zero (the
                 // gravity is a per-tick rebase in the port — the flag feeds
                 // `wet_gravity_and_cap`).
-                pl.last_portal_color_index = p.color_index;
-                pl.portal_physics = true;
+                pl.last_portal_color_index = p.color_index as i32;
+                // The C# sets `portalPhysics` here; the port has no Player
+                // field for it (`player.rs:300-307` documents the flag as
+                // unported — no portals), so the `wet_gravity_and_cap`
+                // `portal_physics` arm keeps its default false.
                 pl.vx = p.velocity_x;
                 pl.vy = p.velocity_y;
             }
@@ -4603,7 +4627,7 @@ impl App {
     fn peer_channel(p: &net::PlayerNet) -> bool {
         let slot = (p.selected as u8).min(58);
         p.inventory
-            .get(&slot)
+            .get(&(slot as i16))
             .and_then(|it| crate::registry::get(it.kind.max(0) as u16))
             .is_some_and(|def| def.channel)
     }
@@ -5217,8 +5241,12 @@ impl App {
                 // outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike
                 // precedent), so the draws ride the bare stream.
                 if let Some(wall) = broken_wall {
+                    let wall_id = match wall {
+                        tr_core::edit::WallBreak::Broken(w)
+                        | tr_core::edit::WallBreak::Failed(w) => w,
+                    };
                     self.audio.play_wall_break_sound(
-                        tr_core::edit::kill_wall_sound(wall),
+                        tr_core::edit::kill_wall_sound(wall_id),
                         x as f32 * 16.0,
                         y as f32 * 16.0,
                         self.rngs.global(),
@@ -5466,7 +5494,7 @@ impl App {
                 npc.vx = p.velocity_x;
                 npc.vy = p.velocity_y;
                 npc.net_offset = Vec2::ZERO;
-                npc.last_portal_color_index = p.color_index;
+                npc.last_portal_color_index = p.color_index as i32;
                 self.net_npcs_dirty = true;
             }
             // `case 101` — the four Lunar tower shields (W4-g50,
@@ -5521,6 +5549,7 @@ impl App {
                     item: s.kind.max(0) as u16,
                     when: crate::shop::StockWhen::Always,
                     shop_custom_price: None,
+                    shop_special_currency: -1,
                     buy_once: s.buy_once,
                     is_a_shop_item: false,
                     prefix,
@@ -6167,7 +6196,7 @@ impl App {
                             // (`Player.Center`, the port's 20×42 stand-in).
                             let held = p
                                 .inventory
-                                .get(&(p.selected as u8))
+                                .get(&(p.selected as i16))
                                 .map(|it| it.kind.max(0) as u16)
                                 .unwrap_or(0);
                             (p.x + 10.0, p.y + 21.0, held)
@@ -6929,7 +6958,7 @@ impl App {
             S2c::ItemUseSound { player_id } => {
                 let peer = player_id as u32;
                 if let Some(p) = self.remote_players.get(&peer) {
-                    let held = p.inventory.get(&(p.selected as u8)).map(|it| it.kind);
+                    let held = p.inventory.get(&(p.selected as i16)).map(|it| it.kind);
                     if let Some(kind) = held {
                         if kind > 0 {
                             if let Some((style, pitch)) = crate::item::initial_use_sound(kind as u16) {
@@ -7290,6 +7319,32 @@ impl App {
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
         world.moon_type = info.moon_type;
+        // W4-g71/g72 net seam: the host's rolled bg styles land here
+        // (`MessageBuffer.cs:493-505` — the 13 header bytes apply through
+        // `setBG` in the wire order 0,10,11,12,1..9).
+        const BG_SLOTS: [i32; 13] = [0, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        for (slot, style) in BG_SLOTS.iter().zip(info.backgrounds) {
+            world.set_surface_bg_style(*slot, style as i32);
+        }
+        world.ice_back_style = info.ice_back_style;
+        world.jungle_back_style = info.jungle_back_style;
+        world.hell_back_style = info.hell_back_style;
+        world.tree_x = info.tree_x;
+        world.tree_style = [
+            info.tree_style[0] as i32,
+            info.tree_style[1] as i32,
+            info.tree_style[2] as i32,
+            info.tree_style[3] as i32,
+        ];
+        // g72's cave roll (`NetMessage.cs:271-278`; `cave_back_x[3]` stays 0 —
+        // never sent).
+        world.cave_back_x = [info.cave_back_x[0], info.cave_back_x[1], info.cave_back_x[2], 0];
+        world.cave_back_style = [
+            info.cave_back_style[0] as i32,
+            info.cave_back_style[1] as i32,
+            info.cave_back_style[2] as i32,
+            info.cave_back_style[3] as i32,
+        ];
         world.blood_moon = info.blood_moon;
         world.sundial_cooldown = info.sundial_cooldown;
         world.moondial_cooldown = info.moondial_cooldown;
@@ -7425,7 +7480,7 @@ impl App {
         // `NetMessage.cs:246-258`'s 13-byte bg block narrowed to the port's
         // 11-row array (treeBG1..4 ride 0 — unported; corrupt..underworld
         // map onto the five owned styles).
-        let mut backgrounds = [0u8; 11];
+        let mut backgrounds = [0u8; 13];
         backgrounds[4] = w.corrupt_bg_style;
         backgrounds[5] = w.jungle_bg_style;
         backgrounds[7] = w.hallow_bg_style;
@@ -8311,6 +8366,26 @@ impl App {
                 });
             }
             NetRole::Client(_client) => {
+                // W4-g15 lane 5 — the client's `22 ItemOwner` reservation
+                // hold ticks down on the 10 Hz cadence (the C#'s
+                // `timeToKeepReservation` decrements per 60 Hz update,
+                // `WorldItem.cs:445-448`; the port's client reservation map
+                // is the `net_reserved` stand-in, so the hold decays 6 per
+                // cadence tick — the same 1 s grid the host's
+                // `net_play_counter` batches). An expired hold releases the
+                // reservation (the C#'s `FindOwner` re-reserves on the next
+                // tick; the port's client grab gate reads the map live).
+                let expired: Vec<i16> = self
+                    .net_reserved
+                    .iter_mut()
+                    .filter_map(|(slot, (_, hold))| {
+                        *hold = hold.saturating_sub(6);
+                        if *hold == 0 { Some(*slot) } else { None }
+                    })
+                    .collect();
+                for slot in expired {
+                    self.net_reserved.remove(&slot);
+                }
                 // S1-I-4d: the client's own projectiles already drained through
                 // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
                 // machine → `27`, despawns → `29`).
@@ -8626,7 +8701,7 @@ impl App {
                 }
                 PlayerSend::Inventory { slot } => {
                     if let Some(item) = self.net_item_at_wire_slot(slot) {
-                        client.send(&C2s::Inventory { slot, item });
+                        client.send(&C2s::Inventory { player_id: me, slot, item });
                     }
                 }
                 PlayerSend::ChestClose { chest, name } => {
@@ -8942,6 +9017,8 @@ impl App {
             body_frame: p.body_frame,
             hp: p.hp,
             max_hp: p.max_hp,
+            team: p.team,
+            dead: p.dead,
         }
     }
 
@@ -9349,9 +9426,9 @@ impl App {
         let old_team = self
             .remote_players
             .get(&id)
-            .map(|p| p.team)
+            .map(|p| p.team as u8)
             .unwrap_or(0);
-        self.remote_players.entry(id).or_default().team = new_team; // `:2336`
+        self.remote_players.entry(id).or_default().team = new_team as i32; // `:2336`
         let name = server.slot_name(id);
         // `:2342` — relay as 45 to the OTHERS.
         server.broadcast_except(
@@ -9384,7 +9461,7 @@ impl App {
             let peer_team = if peer == 0 {
                 host_team
             } else {
-                self.remote_players.get(&peer).map(|p| p.team).unwrap_or(0)
+                self.remote_players.get(&peer).map(|p| p.team as u8).unwrap_or(0)
             };
             let receives = peer == id
                 || (old_team > 0 && peer_team == old_team)
@@ -9562,21 +9639,6 @@ impl App {
         }
     }
 
-/// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
-/// the slot arithmetic the C# inventory messages use.
-/// `NetMessage.WriteAccessoryVisibility` (`NetMessage.cs:1882-1893`): the
-/// `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one
-/// `ushort` — bit `i` set when slot `i` is hidden. The reader unpacks it
-/// (`MessageBuffer.ReadAccessoryVisibility`, `:4494-4501`).
-fn accessory_visibility_mask(hide: &[bool; 10]) -> u16 {
-    let mut num = 0u16;
-    for (i, &hidden) in hide.iter().enumerate() {
-        if hidden {
-            num |= 1 << i;
-        }
-    }
-    num
-}
     /// `Player.TrySwitchingLoadout`'s `147` send (`Player.cs:5674` →
     /// `NetMessage.cs:1624-1628`): `(byte)whoAmI + (byte)loadoutIndex` + the
     /// `hideVisibleAccessory` ushort (`WriteAccessoryVisibility`,
@@ -9610,12 +9672,28 @@ fn accessory_visibility_mask(hide: &[bool; 10]) -> u16 {
     /// server) — this seam only carries the client request.
     pub(crate) fn send_torch_god_bestiary_request(&self) {
         if let NetRole::Client(client) = &self.net {
-            client.send(&C2s::MiscDataSync {
+            client.send(&C2s::MiscDataSync(net::MiscDataSync {
                 player_id: self.local_id as u8,
                 kind: 5,
-            });
+            }));
         }
     }
+}
+
+/// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
+/// the slot arithmetic the C# inventory messages use.
+/// `NetMessage.WriteAccessoryVisibility` (`NetMessage.cs:1882-1893`): the
+/// `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one
+/// `ushort` — bit `i` set when slot `i` is hidden. The reader unpacks it
+/// (`MessageBuffer.ReadAccessoryVisibility`, `:4494-4501`).
+fn accessory_visibility_mask(hide: &[bool; 10]) -> u16 {
+    let mut num = 0u16;
+    for (i, &hidden) in hide.iter().enumerate() {
+        if hidden {
+            num |= 1 << i;
+        }
+    }
+    num
 }
 
 /// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
@@ -10099,6 +10177,7 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        _ => return None,
     })
 }
 
@@ -11493,7 +11572,7 @@ mod handshake_tests {
     /// section (0,0): the join box covers 3x2 of them, so the latch and the
     /// move-driven catch-up have unlatched sections to work with. The markers
     /// are seeded before the stream so the sections carry them.
-    fn big_world_pair() -> (App, App) {
+    pub(super) fn big_world_pair() -> (App, App) {
         let (mut host_app, mut client_app) = connect_pair("", "");
         host_app.world = tr_core::World::new("flow".into(), 900, 600);
         host_app.world.spawn_x = 100;
@@ -11506,7 +11585,7 @@ mod handshake_tests {
     }
 
     /// Marks a tile as a real active tile.
-    fn mark(world: &mut tr_core::World, x: i32, y: i32, kind: u16) {
+    pub(super) fn mark(world: &mut tr_core::World, x: i32, y: i32, kind: u16) {
         let i = world.index(x, y);
         world.tiles[i].kind = kind;
         world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
@@ -12772,7 +12851,9 @@ mod npc_kind_wire_tests {
 mod message_family_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
-    use crate::app::netglue::handshake_tests::{apps, connect_pair, drive_to, in_world_pair, pump};
+    use crate::app::netglue::handshake_tests::{
+        apps, big_world_pair, connect_pair, drive_to, in_world_pair, mark, pump,
+    };
     use crate::ui::save_list::{PlayerEntry, WorldEntry};
 
     /// `case 31` + `SendChestContentsTo`: the client asks, the host answers
@@ -13146,11 +13227,18 @@ mod message_family_tests {
             y: 100.0,
             vx: 0.0,
             vy: 0.0,
+            target: 255,
             dir_right: true,
             dir_y_down: false,
             sprite_right: true,
             life_full: false,
             hp: 1000,
+            life_max: 1000,
+            ai: [0.0; 4],
+            spawned_from_statue: false,
+            difficulty: 1.0,
+            shimmer: false,
+            release_owner: 255,
         };
         let role = std::mem::replace(&mut client_app.net, NetRole::Off);
         if let NetRole::Client(client) = &role {
@@ -14753,7 +14841,7 @@ mod message_family_tests {
             .tile_entities
             .place_unchecked(tr_core::tile_entities::TeKind::ItemFrame, 10, 4);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::ItemFrameTryPlacing(net::ItemFrameTryPlacing {
+            client.send(&C2s::ItemFrameTryPlacing(net::TryPlacingItem {
                 x: 10,
                 y: 4,
                 kind: 29,
@@ -14783,7 +14871,7 @@ mod message_family_tests {
         // A second placement drops the old item (count 1) and takes the new.
         let drops_before = host_app.items.len();
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::ItemFrameTryPlacing(net::ItemFrameTryPlacing {
+            client.send(&C2s::ItemFrameTryPlacing(net::TryPlacingItem {
                 x: 10,
                 y: 4,
                 kind: 7,
@@ -14820,6 +14908,7 @@ mod message_family_tests {
                     kind: 29,
                     shimmered: false,
                     shimmer_time: 0.0,
+                    enemy_grab_delay: 0,
                 })),
             );
         }
@@ -15085,6 +15174,7 @@ mod message_family_tests {
                 item: 88,
                 when: crate::shop::StockWhen::Always,
                 shop_custom_price: None,
+                shop_special_currency: -1,
                 buy_once: false,
                 is_a_shop_item: false,
                 prefix: 0,
@@ -15095,6 +15185,7 @@ mod message_family_tests {
                 item: 87,
                 when: crate::shop::StockWhen::Always,
                 shop_custom_price: None,
+                shop_special_currency: -1,
                 buy_once: false,
                 is_a_shop_item: false,
                 prefix: 0,
@@ -15958,11 +16049,11 @@ mod message_family_tests {
         let (mut host_app, mut client_app) = in_world_pair();
         let z = net::PlayerZone {
             player_id: 200, // spoofed — the host must override it to 1
-            zone1: BitsByte(0xA5),
-            zone2: BitsByte(0x0F),
-            zone3: BitsByte(0xF0),
-            zone4: BitsByte(0x33),
-            zone5: BitsByte(0x01),
+            zone1: net::BitsByte(0xA5),
+            zone2: net::BitsByte(0x0F),
+            zone3: net::BitsByte(0xF0),
+            zone4: net::BitsByte(0x33),
+            zone5: net::BitsByte(0x01),
             town_npcs: 4,
         };
         if let NetRole::Client(client) = &client_app.net {
@@ -16074,7 +16165,7 @@ mod message_family_tests {
         // The client's own sim then crosses on its next step past it — the
         // strict boundary fires exactly once, overshoot discarded.
         let mut rng = tr_core::UnifiedRandom::new(0);
-        crate::world_sim::clock::advance_time(&mut client_app.world, 0.05, &mut rng, false);
+        crate::world_sim::clock::advance_time(&mut client_app.world, 0.05, &mut rng, false, (6, 1));
         assert!(!client_app.world.day_time, "past 54000 the night starts");
         assert_eq!(client_app.world.time, 0.0, "the overshoot is discarded");
     }
@@ -16869,9 +16960,11 @@ mod message_family_tests {
         .encode();
         let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..]))
             .expect("the 60 body decodes");
-        if let NetRole::Client(client) = &client_app.net {
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
+        client_app.net = role;
         assert_eq!(
             client_app.net_npcs[&0].home,
             Some((65, 106)),
@@ -16891,9 +16984,11 @@ mod message_family_tests {
         })
         .encode();
         let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
-        if let NetRole::Client(client) = &client_app.net {
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
+        client_app.net = role;
         assert_eq!(client_app.net_npcs[&0].home, None, "the KickOut homeless write");
         assert_eq!(client_app.town_rooms.has_room(22), None, "the KickOut book arm (`:2721-2723`)");
     }
@@ -16918,9 +17013,11 @@ mod message_family_tests {
         })
         .encode();
         let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
-        if let NetRole::Client(client) = &client_app.net {
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
+        client_app.net = role;
         // The home write is unconditional on the client (`:2708-2713`)...
         assert_eq!(client_app.net_npcs[&0].home, Some((10, 20)));
         // ...but `isLikeATownNPC` false breaks before the book (`:2715-2718`).
@@ -16934,9 +17031,11 @@ mod message_family_tests {
         })
         .encode();
         let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
-        if let NetRole::Client(client) = &client_app.net {
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
+        client_app.net = role;
         assert!(!client_app.net_npcs.contains_key(&199));
     }
 
@@ -16967,7 +17066,7 @@ mod message_family_tests {
         client_app.player = Some(p);
         // The send is queued by the dodge, not yet drained.
         assert_eq!(
-            client_app.player.as_ref().unwrap().take_dodge_sends(),
+            client_app.player.as_mut().unwrap().take_dodge_sends(),
             vec![1]
         );
         // Re-arm a fresh dodge, then let the net tick drain it.
@@ -16980,7 +17079,7 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 12);
         assert!(
-            client_app.player.as_ref().unwrap().take_dodge_sends().is_empty(),
+            client_app.player.as_mut().unwrap().take_dodge_sends().is_empty(),
             "net_tick drained the 62 send queue"
         );
         // The host's own player is not the subject (the relay excludes the
@@ -18846,6 +18945,7 @@ mod w4_g52_relay_tests {
 }
 
 
+#[cfg(test)]
 mod w4_g71_bg_net_tests {
     //! W4-g71/g72 net seam: the rolled surface + cave bg styles ride the
     //! `7 WorldInfo` header (`NetMessage.cs:245-278`), the client's install

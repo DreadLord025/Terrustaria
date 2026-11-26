@@ -92,7 +92,7 @@ pub(crate) fn gun_stream(
     p: &mut Projectile,
     world: &mut World,
     npcs: &mut [Npc],
-    player: Option<&mut crate::player::Player>,
+    mut player: Option<&mut crate::player::Player>,
     local_owner: u8,
     rng: &mut dyn DropRng,
 ) -> Vec<tr_core::edit::ObjectDrop> {

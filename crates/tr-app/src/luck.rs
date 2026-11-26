@@ -94,12 +94,6 @@ pub struct LuckState {
     /// (`powerups::use_shimmer_permanent` sets this field directly — the
     /// merger reconciles per research/138).
     pub used_galaxy_pearl: bool,
-    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — copied per
-    /// tick from the S1-F-14 scheduler (`world_sim/player.rs`, W4-e26).
-    /// (`RecalculateLuck` `:29142-29145`). W4-g90 lane 7: the persistence
-    /// owner is `Player.used_galaxy_pearl` (the 5340 use path); the player's
-    /// `update_luck` mirrors it here before every recalculation.
-    pub used_galaxy_pearl: bool,
     /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — W4-f40 wires it:
     /// `world_sim/player.rs` snapshots the event flag each tick beside the
     /// auras/zones (`Player.cs:29146-29149`'s live read).

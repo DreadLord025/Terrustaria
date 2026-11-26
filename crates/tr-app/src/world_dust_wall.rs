@@ -26,7 +26,7 @@ use tr_core::{UnifiedRandom, World};
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn wall_break_burst(
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
@@ -43,7 +43,7 @@ pub(crate) fn wall_break_burst(
             wall,
             (disco[0], disco[1], disco[2]),
             rng,
-            gen,
+            gen_rng,
             dust,
             ctx,
             world,
@@ -127,12 +127,12 @@ mod tests {
         w: &World,
         ctx: &SpawnCtx,
         rng: &mut UnifiedRandom,
-        gen: &mut UnifiedRandom,
+        gen_rng: &mut UnifiedRandom,
         dust: &mut DustPool,
         wall: u16,
     ) -> Option<i32> {
         let idx = tr_core::worldgen_dust_wall::kill_wall_make_wall_dust(
-            10, 20, wall, (0, 0, 0), rng, gen, dust, ctx, w,
+            10, 20, wall, (0, 0, 0), rng, gen_rng, dust, ctx, w,
         );
         if idx == DUST_SENTINEL {
             None
@@ -149,7 +149,7 @@ mod tests {
         let w = World::new("t".into(), 200, 200);
         let ctx = dust_ctx(&w);
         let mut rng = UnifiedRandom::new(1);
-        let mut gen = UnifiedRandom::new(1);
+        let mut gen_rng = UnifiedRandom::new(1);
         let mut dust = DustPool::new();
         let cases: &[(u16, i32)] = &[
             (0, 0), (366, 1), (365, 13), (364, 10), (363, 148), (362, 26),
@@ -187,7 +187,7 @@ mod tests {
             (140, 79), (141, 126), (149, 214), (151, 215), (245, 195),
         ];
         for &(wall, want) in cases {
-            let got = body(&w, &ctx, &mut rng, &mut gen, &mut dust, wall);
+            let got = body(&w, &ctx, &mut rng, &mut gen_rng, &mut dust, wall);
             let got_ty = got.unwrap_or(-1);
             assert!(
                 if want < 0 { got.is_none() } else { got_ty == want },
@@ -196,7 +196,7 @@ mod tests {
             drain(&mut dust);
         }
         // The constant cases drew NOTHING on gen.
-        assert_eq!(gen.peek(), UnifiedRandom::new(1).peek());
+        assert_eq!(gen_rng.peek(), UnifiedRandom::new(1).peek());
     }
 
     /// The genRand arms draw exactly one roll each, with the C#'s
@@ -213,13 +213,13 @@ mod tests {
         for seed in [1, 54, 99] {
             let mut rng = UnifiedRandom::new(seed);
             let mut rng_p = UnifiedRandom::new(seed);
-            let mut gen = UnifiedRandom::new(seed);
+            let mut gen_rng = UnifiedRandom::new(seed);
             let mut probe = UnifiedRandom::new(seed);
             let mut dust = DustPool::new();
             let cases: &[u16] = &[3, 246, 69, 264, 83, 234, 269, 200, 202, 288,
                 290, 203, 291, 208, 299, 186, 182, 93, 144, 27];
             for &wall in cases {
-                let got = body(&w, &ctx, &mut rng, &mut gen, &mut dust, wall);
+                let got = body(&w, &ctx, &mut rng, &mut gen_rng, &mut dust, wall);
                 let want = match wall {
                     3 | 246 => if probe.next_max(2) != 0 { 1 } else { 14 },
                     69 | 264 => if probe.next_max(2) != 0 { 17 } else { 14 },
@@ -236,7 +236,7 @@ mod tests {
                 };
                 assert_eq!(got, Some(want), "wall {wall} seed {seed}");
                 block(&mut rng_p, want, 16, 16);
-                assert_eq!(gen.peek(), probe.peek(), "gen stream wall {wall}");
+                assert_eq!(gen_rng.peek(), probe.peek(), "gen stream wall {wall}");
                 assert_eq!(rng.peek(), rng_p.peek(), "rng stream wall {wall}");
                 drain(&mut dust);
             }
@@ -263,17 +263,17 @@ mod tests {
         for &(wall, ty) in cases {
             let mut rng = UnifiedRandom::new(54);
             let mut probe = UnifiedRandom::new(54);
-            let mut gen = UnifiedRandom::new(7);
+            let mut gen_rng = UnifiedRandom::new(7);
             let mut dust = DustPool::new();
             for i in 0..50 {
-                wall_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, wall, 1);
+                wall_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, wall, 1);
                 if let Some(t) = ty {
                     block(&mut probe, t, 16, 16);
                 }
                 assert_eq!(rng.peek(), probe.peek(), "wall {wall} @{i}");
                 drain(&mut dust);
             }
-            assert_eq!(gen.peek(), UnifiedRandom::new(7).peek(), "wall {wall} gen");
+            assert_eq!(gen_rng.peek(), UnifiedRandom::new(7).peek(), "wall {wall} gen");
         }
     }
 
@@ -285,9 +285,9 @@ mod tests {
         let ctx = dust_ctx(&w);
         let disco = [10u8, 20, 30];
         let mut rng = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
-        wall_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, 348, 1);
+        wall_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, 348, 1);
         let mut probe = UnifiedRandom::new(54);
         probe.next_max(12);
         probe.next_max(12);
@@ -299,7 +299,7 @@ mod tests {
         assert!((d.velocity.y - vy * 0.4).abs() < 1e-6);
         drain(&mut dust);
         let mut rng = UnifiedRandom::new(54);
-        wall_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, 44, 1);
+        wall_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, 44, 1);
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 66);
         assert_eq!(d.color, Color::new(10, 20, 30, 255));
@@ -307,7 +307,7 @@ mod tests {
         assert!(d.no_gravity);
         drain(&mut dust);
         let mut rng = UnifiedRandom::new(54);
-        wall_break_burst(&mut rng, &mut gen, disco, &mut dust, &ctx, &w, 10, 20, 76, 1);
+        wall_break_burst(&mut rng, &mut gen_rng, disco, &mut dust, &ctx, &w, 10, 20, 76, 1);
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 4);
         assert_eq!(d.color, Color::new(0, 80, 255, 100));

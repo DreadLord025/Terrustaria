@@ -87,7 +87,7 @@ pub fn stellar_tune_gore(
     let unit = next_vector2_unit(rng);
     let vel = Vec2::new(unit.x * 0.5, unit.y * 0.5) * 3.0;
     let _pick = rng.next_max(1); // SelectRandom(16) — Next(1), always 0
-    gore.new_gore(rng, world, p.pos, vel, 16, 1.0);
+    gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, vel, 16, 1.0);
 }
 
 /// Site 53 — `Kill()`'s 664/666/668/706 DD2 gore loop (`Projectile.cs:
@@ -110,7 +110,7 @@ pub fn dd2_explosion_gores(
             (p.h * rng.next_max(100) as f32) / 100.0,
         );
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         let dir = rotated_by_random(rng, Vec2::new(0.0, 1.0), std::f64::consts::PI);
         g.position = center(p) + dir * (rng.next_double() as f32 * p.w / 2.0);
@@ -137,7 +137,7 @@ pub fn goblin_bomb_gores(
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
     for (sx, sy) in signs {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity *= 0.4;
         g.velocity.x += sx;
@@ -186,7 +186,7 @@ pub fn kill590_gores(
     let scale = 0.6 + rng.next_float() * 0.4;
     let base = if p.ai[2] == 1.0 { 61 } else { 375 };
     for off in 0..3 {
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, base + off, scale);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, base + off, scale);
         gore.slot_mut(idx).velocity *= 0.3;
     }
 }

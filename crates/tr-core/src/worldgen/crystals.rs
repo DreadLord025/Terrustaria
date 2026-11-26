@@ -244,7 +244,8 @@ mod tests {
     #[test]
     fn add_life_crystal_vetoes_the_dungeon_wall() {
         let mut world = pocket_world();
-        world.tiles[world.index(50, 63)].wall = 7;
+        let __bi = world.index(50, 63);
+        world.tiles[__bi].wall = 7;
         assert!(!add_crystal(&mut world, 50, 60, 12));
     }
 

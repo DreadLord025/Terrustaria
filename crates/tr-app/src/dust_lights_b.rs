@@ -1122,12 +1122,12 @@ mod tests {
         let mut b = setup();
         let mut ra = UnifiedRandom::new(42);
         let mut rb = UnifiedRandom::new(42);
-        a.update_dust(&ctx, &mut ra, |_| false);
-        b.update_dust(&ctx, &mut rb, |_| false);
+        a.update_dust(&ctx, &mut ra, |_, _| false);
+        b.update_dust(&ctx, &mut rb, |_, _| false);
         let mut lights = EntityLights::default();
         with_env(|env| feed_dust_chain_lights(&a, &params(), env, &mut lights));
-        a.update_dust(&ctx, &mut ra, |_| false);
-        b.update_dust(&ctx, &mut rb, |_| false);
+        a.update_dust(&ctx, &mut ra, |_, _| false);
+        b.update_dust(&ctx, &mut rb, |_, _| false);
         for _ in 0..32 {
             assert_eq!(ra.next_max(1_000_000), rb.next_max(1_000_000));
         }

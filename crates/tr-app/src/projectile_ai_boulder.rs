@@ -597,7 +597,7 @@ fn rainbow_check_bounce(
     if hard {
         p.local_ai[1] += 1.0;
         // HitTiles (effect-only dust) skipped; SoundID.RainbowBoulder.
-        p.wants_sound = Some((42, 274, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((42, 274, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     if bounced {
         rainbow_smart_bounce(p, world, npcs, player, rng, local_owner, spam_survives);
@@ -1043,7 +1043,7 @@ fn tile_cut_prologue(
                     .tile(i, j)
                     .is_some_and(|t| t.kind == 484 && can_cut_tile(world, i, j));
                 if cut {
-                    let _ = tr_core::edit::kill_tile(world, i, j, false);
+                    let _ = tr_core::edit::kill_tile_legacy(world, i, j, false);
                 }
             }
         }
@@ -1063,7 +1063,7 @@ fn tile_cut_prologue(
                     && can_cut_tile(world, i, j)
             });
             if cut {
-                let _ = tr_core::edit::kill_tile(world, i, j, false);
+                let _ = tr_core::edit::kill_tile_legacy(world, i, j, false);
             }
         }
     }
@@ -1089,7 +1089,7 @@ fn bounce_ladder(
 ) -> Vec<SpikeSpawn> {
     let mut spikes = Vec::new();
     let dig = |p: &mut Projectile| {
-        p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0, 1.0));
     };
     match p.kind {
         // `:18941-18986` — the 1055/99/1005/1014/1053/1057 group.
@@ -1254,7 +1254,7 @@ fn bounce_ladder(
             }
             if hard {
                 p.local_ai[1] += 3.0;
-                p.wants_sound = Some((2, 177, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 177, p.pos.x, p.pos.y, 0.0, 1.0));
                 // `:19242-19246` — 10 dust (this task's movement site): each a
                 // NextVector2FromRectangle(Hitbox) pair (2 floats) THEN the
                 // type-322 body at `vector23 − One`, box 2×2, speeds −vel×0.5.
@@ -1903,7 +1903,7 @@ pub(crate) fn poulder_spread(p: &Projectile, world: &mut World) {
                 .tile(x, y + 1)
                 .is_some_and(|t| !matches!(t.kind, 78 | 380 | 579));
             if below_ok {
-                let _ = tr_core::edit::kill_tile(world, x, y, false);
+                let _ = tr_core::edit::kill_tile_legacy(world, x, y, false);
             }
         }
         let _ = tr_core::edit::place_tile(world, x, y, 666);
@@ -1993,9 +1993,9 @@ pub(crate) fn family_dust_loop(
 /// (`Next(10, 31)` Y then `Next(-20, 21)` X, `Gore.cs:1327-1328` — the G3
 /// order, inside `new_gore`), post `scale = 1.5` + the sign pairs ±1.5 in
 /// order (+,+ / −,+ / +,− / −,−). The g16 `lava_boulder_gores` body.
-pub(crate) fn lava_death_gore(
+pub(crate) fn lava_death_gore<R: tr_core::gore::GoreRng + ?Sized>(
     p: &Projectile,
-    rng: &mut dyn DropRng,
+    rng: &mut R,
     gore: &mut GorePool,
     world: &World,
 ) {
@@ -2334,7 +2334,7 @@ mod tests {
         assert!((p.vel.x + 5.7).abs() < 1e-6, "-6 × 0.95");
         assert!((p.vel.y + 5.7).abs() < 1e-6);
         assert_eq!(p.local_ai[1], 1.0, "the hard-hit counter");
-        assert_eq!(p.wants_sound, Some((0, 0, 1600.0, 1600.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((0, 0, 1600.0, 1600.0, 0.0, 1.0)));
         // The slow band: |0.4| < 0.5 → ×0.1, no hard hit.
         let mut q = proj(BOUNCY_BOULDER);
         q.vel = Vec2::ZERO;

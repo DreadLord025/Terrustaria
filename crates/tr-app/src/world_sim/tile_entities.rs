@@ -7,7 +7,6 @@
 use crate::app::App;
 
 use crate::player;
-use crate::world_sim::wiring::stamp_wiring_entity_boxes;
 
 /// Fixed 60 Hz TE stepping. The sensors scan their state; the trips fire
 /// through `HitSwitch` after the scan (`UpdateEndInternal`'s order), the
@@ -24,12 +23,21 @@ pub(crate) fn update_tile_entities(app: &mut App, dt: f32) {
             vec![(p.x as i32, p.y as i32, w as i32, h as i32)]
         })
         .unwrap_or_default();
+    // The §8.2 door echoes defer past the step (the send-half needs `&mut App`).
+    let mut door_echoes: Vec<(u8, i32, i32, i32)> = Vec::new();
     app.te_step.tick(dt.min(0.25), |_| {
         let day = app.world.day_time;
         let boxes = player_boxes.clone();
         // The §8.1 stamp: the sensor trips fire `HitSwitch` after the scan
         // — a wired trapdoor/gate on the line reads the live entity boxes.
-        stamp_wiring_entity_boxes(app);
+        // The parts form: the whole-`app` helper would capture `*app`
+        // against the `te_step` borrow.
+        let entity_boxes = crate::world_sim::wiring::collect_entity_boxes(
+            app.player.as_ref(),
+            &app.npcs,
+            &app.remote_players,
+        );
+        app.wiring.set_entity_boxes(entity_boxes);
         let world = &mut app.world;
         let wiring = &mut app.wiring;
         tr_core::tile_entities::update_logic_sensors(world, wiring, day, &boxes);
@@ -62,9 +70,12 @@ pub(crate) fn update_tile_entities(app: &mut App, dt: f32) {
         // The §8.2 echoes: SP discards (the C# `SendData` netMode-0
         // return); the queue must still drain so it never lingers.
         for (n, x, y, d) in app.wiring.take_door_echoes() {
-            app.send_door_toggle(n, x, y, d);
+            door_echoes.push((n as u8, x, y, d));
         }
     });
+    for (n, x, y, d) in door_echoes {
+        app.send_door_toggle(n, x, y, d);
+    }
     app.te_step.cap_backlog();
 }
 

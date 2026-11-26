@@ -357,9 +357,11 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, ore, stack);
             // `:7251` — the bars: Next(3)+1.
             let bars = if env.crimson { 2171 } else { 59 };
-            quick_spawn(rng, out, bars, range(rng, 0, 3) + 1);
+            let stack = range(rng, 0, 3) + 1;
+            quick_spawn(rng, out, bars, stack);
             // `:7252` — the Unholy Arrows: Next(31)+20.
-            quick_spawn(rng, out, 47, range(rng, 0, 31) + 20);
+            let stack = range(rng, 0, 31) + 20;
+            quick_spawn(rng, out, 47, stack);
             quick_spawn(rng, out, 3097, 1); // Shield of Cthulhu
         }
         // Eater of Worlds (`Player.cs:7255-7284`).
@@ -369,15 +371,19 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             let _num5 = range(rng, 15, 30);
             // `:7258-7265` — the ore stack: master 110..135, else 80..110.
             if env.master_mode {
-                quick_spawn(rng, out, 56, range(rng, 110, 136));
+                let stack = range(rng, 110, 136);
+                quick_spawn(rng, out, 56, stack);
             } else {
-                quick_spawn(rng, out, 56, range(rng, 80, 111));
+                let stack = range(rng, 80, 111);
+                quick_spawn(rng, out, 56, stack);
             }
             // `:7266-7273` — the Shadow Scales: master 30..50, else 20..40.
             if env.master_mode {
-                quick_spawn(rng, out, 86, range(rng, 30, 51));
+                let stack = range(rng, 30, 51);
+                quick_spawn(rng, out, 86, stack);
             } else {
-                quick_spawn(rng, out, 86, range(rng, 20, 41));
+                let stack = range(rng, 20, 41);
+                quick_spawn(rng, out, 86, stack);
             }
             if rng.next_max(20) == 0 {
                 quick_spawn(rng, out, 994, 1); // Eater's Bone
@@ -393,15 +399,19 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             let _num6 = range(rng, 20, 46);
             // `:7288-7295` — the Crimtane Ore: master 110..135, else 80..110.
             if env.master_mode {
-                quick_spawn(rng, out, 880, range(rng, 110, 136));
+                let stack = range(rng, 110, 136);
+                quick_spawn(rng, out, 880, stack);
             } else {
-                quick_spawn(rng, out, 880, range(rng, 80, 111));
+                let stack = range(rng, 80, 111);
+                quick_spawn(rng, out, 880, stack);
             }
             // `:7296-7303` — the Tissue Samples: master 30..50, else 20..40.
             if env.master_mode {
-                quick_spawn(rng, out, 1329, range(rng, 30, 51));
+                let stack = range(rng, 30, 51);
+                quick_spawn(rng, out, 1329, stack);
             } else {
-                quick_spawn(rng, out, 1329, range(rng, 20, 41));
+                let stack = range(rng, 20, 41);
+                quick_spawn(rng, out, 1329, stack);
             }
             if rng.next_max(7) == 0 {
                 quick_spawn(rng, out, 2104, 1); // Brain Mask
@@ -439,10 +449,13 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             quick_spawn(rng, out, 1129, 1); // Hive Wand
             // `:7353` — the bottle pick: Next(842, 845).
-            quick_spawn(rng, out, range(rng, 842, 845), 1);
+            let item = range(rng, 842, 845);
+            quick_spawn(rng, out, item, 1);
             // `:7354-7355` — the Beenades Next(10, 31), the Wax Next(17, 31).
-            quick_spawn(rng, out, 1130, range(rng, 10, 31));
-            quick_spawn(rng, out, 2431, range(rng, 17, 31));
+            let stack = range(rng, 10, 31);
+            quick_spawn(rng, out, 1130, stack);
+            let stack = range(rng, 17, 31);
+            quick_spawn(rng, out, 2431, stack);
         }
         // Skeletron (`Player.cs:7358-7372`).
         3323 => {
@@ -488,8 +501,10 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             // `:7409-7410` — Souls of Might Next(25, 41), Hallowed Bars
             // Next(20, 36).
-            quick_spawn(rng, out, 548, range(rng, 25, 41));
-            quick_spawn(rng, out, 1225, range(rng, 20, 36));
+            let stack = range(rng, 25, 41);
+            quick_spawn(rng, out, 548, stack);
+            let stack = range(rng, 20, 36);
+            quick_spawn(rng, out, 1225, stack);
             quick_spawn(rng, out, 3355, 1); // Mechanical Wagon Piece
         }
         // The Twins (`Player.cs:7413-7422`).
@@ -500,8 +515,10 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             // `:7419-7420` — Souls of Sight Next(25, 41), Hallowed Bars
             // Next(20, 36).
-            quick_spawn(rng, out, 549, range(rng, 25, 41));
-            quick_spawn(rng, out, 1225, range(rng, 20, 36));
+            let stack = range(rng, 25, 41);
+            quick_spawn(rng, out, 549, stack);
+            let stack = range(rng, 20, 36);
+            quick_spawn(rng, out, 1225, stack);
             quick_spawn(rng, out, 3354, 1); // Mechanical Wheel Piece
         }
         // Skeletron Prime (`Player.cs:7423-7432`).
@@ -512,8 +529,10 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             // `:7429-7430` — Souls of Fright Next(25, 41), Hallowed Bars
             // Next(20, 36).
-            quick_spawn(rng, out, 547, range(rng, 25, 41));
-            quick_spawn(rng, out, 1225, range(rng, 20, 36));
+            let stack = range(rng, 25, 41);
+            quick_spawn(rng, out, 547, stack);
+            let stack = range(rng, 20, 36);
+            quick_spawn(rng, out, 1225, stack);
             quick_spawn(rng, out, 3356, 1); // Mechanical Battery Piece
         }
         // Plantera (`Player.cs:7433-7485`).
@@ -541,7 +560,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             match rng.next_max(8) {
                 0 => {
                     quick_spawn(rng, out, 758, 1); // Grenade Launcher
-                    quick_spawn(rng, out, 771, range(rng, 50, 151)); // Rocket I
+                    let stack = range(rng, 50, 151);
+                    quick_spawn(rng, out, 771, stack); // Rocket I
                 }
                 1 => quick_spawn(rng, out, 1255, 1), // Venus Magnum
                 2 => quick_spawn(rng, out, 788, 1),   // Nettle Burst
@@ -570,7 +590,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             match rng.next_max(7) {
                 0 => {
                     quick_spawn(rng, out, 1258, 1); // Stynger
-                    quick_spawn(rng, out, 1261, range(rng, 60, 181));
+                    let stack = range(rng, 60, 181);
+                    quick_spawn(rng, out, 1261, stack);
                 }
                 1 => quick_spawn(rng, out, 1122, 1), // Possessed Hatchet
                 2 => quick_spawn(rng, out, 899, 1),  // Sun Stone
@@ -580,7 +601,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 1297, 1), // Golem Fist
             }
             // `:7526` — the Beetle Husks Next(18, 24).
-            quick_spawn(rng, out, 2218, range(rng, 18, 24));
+            let stack = range(rng, 18, 24);
+            quick_spawn(rng, out, 2218, stack);
         }
         // Duke Fishron (`Player.cs:7528-7570`).
         3330 => {
@@ -633,7 +655,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             // `:7730-7733` — the Luminite Next(90, 111), then the three
             // always-grants.
-            quick_spawn(rng, out, 3460, range(rng, 90, 111));
+            let stack = range(rng, 90, 111);
+            quick_spawn(rng, out, 3460, stack);
             quick_spawn(rng, out, 1131, 1); // Gravity Globe
             quick_spawn(rng, out, 3577, 1); // Suspicious Looking Tentacle
             quick_spawn(rng, out, 4954, 1); // Long Rainbow Trail Wings
@@ -667,7 +690,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 quick_spawn(rng, out, 3883, 1); // Betsy Wings
             }
             // `:7603` — the Defender Medals Next(30, 51).
-            quick_spawn(rng, out, 3817, range(rng, 30, 51));
+            let stack = range(rng, 30, 51);
+            quick_spawn(rng, out, 3817, stack);
         }
         // Empress of Light (`Player.cs:7605-7643`).
         4782 => {
@@ -704,7 +728,8 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             // hardmode dev-set group).
             quick_spawn(rng, out, 4987, 1); // Volatile Gelatin (expert-exclusive)
             // `:7647` — the Gel Balloon 4986 stack Next(25, 76).
-            quick_spawn(rng, out, 4986, range(rng, 25, 76));
+            let stack = range(rng, 25, 76);
+            quick_spawn(rng, out, 4986, stack);
             if rng.next_max(7) == 0 {
                 quick_spawn(rng, out, 4959, 1); // Queen Slime Mask
             }
@@ -1092,8 +1117,10 @@ mod tests {
             }
             let stack = r.next_range(0, 21) + 10 + (r.next_range(0, 21) + 10) + (r.next_range(0, 21) + 10);
             spawn_replay(&mut r, &mut want, 56, stack);
-            spawn_replay(&mut r, &mut want, 59, r.next_range(0, 3) + 1);
-            spawn_replay(&mut r, &mut want, 47, r.next_range(0, 31) + 20);
+            let sr_stack = r.next_range(0, 3) + 1;
+            spawn_replay(&mut r, &mut want, 59, sr_stack);
+            let sr_stack = r.next_range(0, 31) + 20;
+            spawn_replay(&mut r, &mut want, 47, sr_stack);
             spawn_replay(&mut r, &mut want, 3097, 1);
             money_replay_on(&mut r, 4, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}: the grants + prefixes");
@@ -1149,11 +1176,15 @@ mod tests {
                 let mut want: Vec<BagGrant> = Vec::new();
                 let _num5 = r.next_range(15, 30); // the discarded draw
                 if master {
-                    spawn_replay(&mut r, &mut want, 56, r.next_range(110, 136));
-                    spawn_replay(&mut r, &mut want, 86, r.next_range(30, 51));
+                    let sr_stack = r.next_range(110, 136);
+                    spawn_replay(&mut r, &mut want, 56, sr_stack);
+                    let sr_stack = r.next_range(30, 51);
+                    spawn_replay(&mut r, &mut want, 86, sr_stack);
                 } else {
-                    spawn_replay(&mut r, &mut want, 56, r.next_range(80, 111));
-                    spawn_replay(&mut r, &mut want, 86, r.next_range(20, 41));
+                    let sr_stack = r.next_range(80, 111);
+                    spawn_replay(&mut r, &mut want, 56, sr_stack);
+                    let sr_stack = r.next_range(20, 41);
+                    spawn_replay(&mut r, &mut want, 86, sr_stack);
                 }
                 if r.next_max(20) == 0 {
                     spawn_replay(&mut r, &mut want, 994, 1);
@@ -1213,11 +1244,15 @@ mod tests {
                 let mut want: Vec<BagGrant> = Vec::new();
                 let _num6 = r.next_range(20, 46);
                 if master {
-                    spawn_replay(&mut r, &mut want, 880, r.next_range(110, 136));
-                    spawn_replay(&mut r, &mut want, 1329, r.next_range(30, 51));
+                    let sr_stack = r.next_range(110, 136);
+                    spawn_replay(&mut r, &mut want, 880, sr_stack);
+                    let sr_stack = r.next_range(30, 51);
+                    spawn_replay(&mut r, &mut want, 1329, sr_stack);
                 } else {
-                    spawn_replay(&mut r, &mut want, 880, r.next_range(80, 111));
-                    spawn_replay(&mut r, &mut want, 1329, r.next_range(20, 41));
+                    let sr_stack = r.next_range(80, 111);
+                    spawn_replay(&mut r, &mut want, 880, sr_stack);
+                    let sr_stack = r.next_range(20, 41);
+                    spawn_replay(&mut r, &mut want, 1329, sr_stack);
                 }
                 if r.next_max(7) == 0 {
                     spawn_replay(&mut r, &mut want, 2104, 1);
@@ -1310,9 +1345,12 @@ mod tests {
                 spawn_replay(&mut r, &mut want, 5483, 1);
             }
             spawn_replay(&mut r, &mut want, 1129, 1);
-            spawn_replay(&mut r, &mut want, r.next_range(842, 845), 1);
-            spawn_replay(&mut r, &mut want, 1130, r.next_range(10, 31));
-            spawn_replay(&mut r, &mut want, 2431, r.next_range(17, 31));
+            let sr_item = r.next_range(842, 845);
+            spawn_replay(&mut r, &mut want, sr_item, 1);
+            let sr_stack = r.next_range(10, 31);
+            spawn_replay(&mut r, &mut want, 1130, sr_stack);
+            let sr_stack = r.next_range(17, 31);
+            spawn_replay(&mut r, &mut want, 2431, sr_stack);
             money_replay_on(&mut r, 222, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
@@ -1485,8 +1523,10 @@ mod tests {
             if r.next_max(7) == 0 {
                 spawn_replay(&mut r, &mut want, 2113, 1);
             }
-            spawn_replay(&mut r, &mut want, 548, r.next_range(25, 41));
-            spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
+            let sr_stack = r.next_range(25, 41);
+            spawn_replay(&mut r, &mut want, 548, sr_stack);
+            let sr_stack = r.next_range(20, 36);
+            spawn_replay(&mut r, &mut want, 1225, sr_stack);
             spawn_replay(&mut r, &mut want, 3355, 1);
             money_replay_on(&mut r, 134, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
@@ -1524,8 +1564,10 @@ mod tests {
             if r.next_max(7) == 0 {
                 spawn_replay(&mut r, &mut want, 2106, 1);
             }
-            spawn_replay(&mut r, &mut want, 549, r.next_range(25, 41));
-            spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
+            let sr_stack = r.next_range(25, 41);
+            spawn_replay(&mut r, &mut want, 549, sr_stack);
+            let sr_stack = r.next_range(20, 36);
+            spawn_replay(&mut r, &mut want, 1225, sr_stack);
             spawn_replay(&mut r, &mut want, 3354, 1);
             money_replay_on(&mut r, 125, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
@@ -1563,8 +1605,10 @@ mod tests {
             if r.next_max(7) == 0 {
                 spawn_replay(&mut r, &mut want, 2107, 1);
             }
-            spawn_replay(&mut r, &mut want, 547, r.next_range(25, 41));
-            spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
+            let sr_stack = r.next_range(25, 41);
+            spawn_replay(&mut r, &mut want, 547, sr_stack);
+            let sr_stack = r.next_range(20, 36);
+            spawn_replay(&mut r, &mut want, 1225, sr_stack);
             spawn_replay(&mut r, &mut want, 3356, 1);
             money_replay_on(&mut r, 127, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
@@ -1656,7 +1700,8 @@ mod tests {
             match r.next_max(8) {
                 0 => {
                     spawn_replay(&mut r, &mut want, 758, 1);
-                    spawn_replay(&mut r, &mut want, 771, r.next_range(50, 151));
+                    let sr_stack = r.next_range(50, 151);
+                    spawn_replay(&mut r, &mut want, 771, sr_stack);
                 }
                 1 => spawn_replay(&mut r, &mut want, 1255, 1),
                 2 => spawn_replay(&mut r, &mut want, 788, 1),
@@ -1742,7 +1787,8 @@ mod tests {
             match r.next_max(7) {
                 0 => {
                     spawn_replay(&mut r, &mut want, 1258, 1);
-                    spawn_replay(&mut r, &mut want, 1261, r.next_range(60, 181));
+                    let sr_stack = r.next_range(60, 181);
+                    spawn_replay(&mut r, &mut want, 1261, sr_stack);
                 }
                 1 => spawn_replay(&mut r, &mut want, 1122, 1),
                 2 => spawn_replay(&mut r, &mut want, 899, 1),
@@ -1751,7 +1797,8 @@ mod tests {
                 5 => spawn_replay(&mut r, &mut want, 1296, 1),
                 _ => spawn_replay(&mut r, &mut want, 1297, 1),
             }
-            spawn_replay(&mut r, &mut want, 2218, r.next_range(18, 24));
+            let sr_stack = r.next_range(18, 24);
+            spawn_replay(&mut r, &mut want, 2218, sr_stack);
             money_replay_on(&mut r, 245, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
@@ -1947,7 +1994,8 @@ mod tests {
                 if !owned {
                     spawn_replay(&mut r, &mut want, 3384, 1);
                 }
-                spawn_replay(&mut r, &mut want, 3460, r.next_range(90, 111));
+                let sr_stack = r.next_range(90, 111);
+                spawn_replay(&mut r, &mut want, 3460, sr_stack);
                 spawn_replay(&mut r, &mut want, 1131, 1);
                 spawn_replay(&mut r, &mut want, 3577, 1);
                 spawn_replay(&mut r, &mut want, 4954, 1);
@@ -2025,7 +2073,8 @@ mod tests {
             if r.next_max(4) == 0 {
                 spawn_replay(&mut r, &mut want, 3883, 1);
             }
-            spawn_replay(&mut r, &mut want, 3817, r.next_range(30, 51));
+            let sr_stack = r.next_range(30, 51);
+            spawn_replay(&mut r, &mut want, 3817, sr_stack);
             money_replay_on(&mut r, 551, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
@@ -2158,7 +2207,8 @@ mod tests {
             let mut r = UnifiedRandom::new(seed);
             let mut want: Vec<BagGrant> = Vec::new();
             spawn_replay(&mut r, &mut want, 4987, 1);
-            spawn_replay(&mut r, &mut want, 4986, r.next_range(25, 76));
+            let sr_stack = r.next_range(25, 76);
+            spawn_replay(&mut r, &mut want, 4986, sr_stack);
             if r.next_max(7) == 0 {
                 spawn_replay(&mut r, &mut want, 4959, 1);
             }

@@ -322,6 +322,7 @@ fn portal_color(color_index: i32) -> Color {
 /// `lifeRegenTime` at the gate moment (`RegenState::shiny_gate_time`); the
 /// drain rolls `Next(30000) < time || Next(30)==0` (short-circuit — the
 /// second draw only when the first fails) and spawns the type-55 sparkle.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ShinySparkleDust {
     pub x: f32,
     pub y: f32,

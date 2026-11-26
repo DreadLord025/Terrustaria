@@ -2347,12 +2347,15 @@ pub(super) mod tests {
         let mut rng = UnifiedRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 80), "the cactus planted");
-        // A cactus crowding (4 in the box) refuses.
+        // A cactus crowding (4 in the box) refuses. The `:56634-56640`
+        // sand-count break stops the m-walk at the 11th sand column
+        // (m = 104 in this 17-wide floor row), so the four cacti must sit
+        // LEFT of that break to be counted (the +5 probe is never reached).
         let mut w = world();
         for dx in -8..=8 {
             put(&mut w, 100 + dx, 200, 53, 0);
         }
-        for dx in [-3i32, 3, -5, 5] {
+        for dx in [-3i32, -4, -5, -6] {
             put(&mut w, 100 + dx, 199, 80, 0); // 4 existing cacti
         }
         let mut rng = UnifiedRandom::new(7);
@@ -2839,6 +2842,15 @@ fn underground_nactive_arms(
     // 69 is disjoint from every earlier arm's kind set and the fn self-gates
     // on `kind == 69`. Same caller stream (UpdateWorldGen).
     crate::vine_growth::grow_underground_jungle_thorn(world, i, j, rng);
+    // The underground sapling arms (`:73756-73780`): the 20/590/595/615
+    // saplings at `Next(5)`, `AttemptToGrowTreeFromSapling(underground:
+    // true)` — the gem sapling 590's runtime growth the port lacked
+    // (W4-g42 dispatcher follow-up D5). The C# arms are else-ifs of the
+    // big chain; none of these kinds is a grass/vine/lily/thorn, so the
+    // flat kind tests are observation-equivalent.
+    if matches!(kind, 20 | 590 | 595 | 615) && rng.next_max(5) == 0 {
+        attempt_grow_tree_from_sapling(world, i, j, true, rng);
+    }
 }
 
 

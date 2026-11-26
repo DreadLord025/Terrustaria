@@ -287,14 +287,17 @@ pub(crate) fn kite_anchor_place_hook(app: &mut App, tx: i32, ty: i32, item_type:
     // `TileEntity.Place` → `TEKiteAnchor.IsTileValidForEntity`
     // (`TEKiteAnchor.cs:21-29`: the cell active + kind 723) + the
     // position-free gate (`TileEntitiesManager.CheckValidTile`).
-    let Some(id) = app.world.tile_entities.place(
-        &app.world,
-        tr_core::tile_entities::TeKind::KiteAnchor,
-        tx as i16,
-        ty as i16,
-    ) else {
+    // The `place` gate without the self-borrow: the duplicate position and the
+    // tile-validity checks run first, then the unchecked insert (same gates as
+    // `TileEntities::place`, which needs `&World` while borrowing itself).
+    let te_kind = tr_core::tile_entities::TeKind::KiteAnchor;
+    if app.world.tile_entities.get_at(tx as i16, ty as i16).is_some() {
         return false;
-    };
+    }
+    if !te_kind.is_tile_valid(&app.world, tx, ty) {
+        return false;
+    }
+    let id = app.world.tile_entities.place_unchecked(te_kind, tx as i16, ty as i16);
     // `InsertItem(num2)` (`:64`): the anchor stores the kite item type
     // (the `TeData::Anchor` payload is the itemType int).
     if let Some(entity) = app.world.tile_entities.by_id_mut(id) {
@@ -702,7 +705,8 @@ mod w4_d16_kite_use_tests {
         let id = w.tile_entities.place_unchecked(tr_core::tile_entities::TeKind::KiteAnchor, 10, 10);
         w.tile_entities.by_id_mut(id).unwrap().data =
             tr_core::tile_entities::TeData::Anchor(4367);
-        let kill = tr_core::edit::kill_tile(&mut w, 10, 10, false).expect("the break");
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        let kill = tr_core::edit::kill_tile(&mut w, 10, 10, false, &mut rng).expect("the break");
         assert!(w.tile_entities.get_at(10, 10).is_none(), "the entity removed");
         assert_eq!(kill.object_drops.len(), 1, "the stored-item drop");
         assert_eq!(kill.object_drops[0].item, Some(4367));
@@ -712,14 +716,14 @@ mod w4_d16_kite_use_tests {
         w.tiles[j] = tr_core::tile::Tile { kind: 723, ..Default::default() };
         w.tiles[j].flags |= tr_core::tile::FLAG_ACTIVE;
         w.tile_entities.place_unchecked(tr_core::tile_entities::TeKind::KiteAnchor, 11, 10);
-        let kill2 = tr_core::edit::kill_tile(&mut w, 11, 10, false).expect("the break");
+        let kill2 = tr_core::edit::kill_tile(&mut w, 11, 10, false, &mut rng).expect("the break");
         assert!(w.tile_entities.get_at(11, 10).is_none());
         assert!(kill2.object_drops.is_empty(), "itemType 0 drops nothing");
         // A plain 723 cell with no entity breaks cleanly (no drop).
         let k = w.index(12, 10);
         w.tiles[k] = tr_core::tile::Tile { kind: 723, ..Default::default() };
         w.tiles[k].flags |= tr_core::tile::FLAG_ACTIVE;
-        let kill3 = tr_core::edit::kill_tile(&mut w, 12, 10, false).expect("the break");
+        let kill3 = tr_core::edit::kill_tile(&mut w, 12, 10, false, &mut rng).expect("the break");
         assert!(kill3.object_drops.is_empty());
     }
 

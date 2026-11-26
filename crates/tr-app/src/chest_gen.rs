@@ -2397,7 +2397,7 @@ mod tests {
         let mut rng = tr_core::UnifiedRandom::new(3);
         let mahog = stock_chest_at(&mut stock, &w, 100, 198, false, 25, 467, 0, &mut rng);
         assert!(
-            rows21.iter().any(|r| matches!(r.kind, 2766 | 2767)),
+            mahog.iter().any(|r| matches!(r.kind, 2766 | 2767)),
             "the 21 temple tablet"
         );
         let mut stock = ChestStock::new(3, false);

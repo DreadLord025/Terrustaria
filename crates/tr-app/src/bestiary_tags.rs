@@ -22,7 +22,7 @@
 /// `SpawnConditionDecorativeOverlayInfoElement.cs:16-20`). The Visuals
 /// rows carry no key/frame (""/0 — decorative only). W4-e23 remainder 3
 /// + the final-phase overlays.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TagDef {
     pub key: &'static str,
     pub frame: u32,

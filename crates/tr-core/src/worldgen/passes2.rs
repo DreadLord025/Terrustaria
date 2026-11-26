@@ -898,12 +898,16 @@ mod tests {
         pass_webs(&mut b, 100.0, 90.0, 100.0, 0, &anchors, &anchors, &mut Rng(0xEB));
         assert_eq!(a.tiles, b.tiles, "a == b");
         assert!(web_count(&a) > 0, "the pass places cobwebs");
-        // Every cobweb sits inside the pocket band (the ceiling walk never
-        // leaves the carved rows).
+        // The ceiling walk climbs to the pocket ceiling (row 120); the
+        // cobweb runner then climbs UP from there (speedY -1, overRide
+        // false => `TileRunner` replaces the solid stone above,
+        // `WorldGen.cs:76924`). Webs therefore sit in the pocket and the
+        // ceiling stone just above it — never below the pocket floor
+        // (row 140). The band below bounds the up-climb blob.
         for y in 0..a.height {
             for x in 0..a.width {
                 if a.tile(x, y).is_some_and(|t| t.active() && t.kind == 51) {
-                    assert!((120..140).contains(&y), "web outside the pocket");
+                    assert!((100..140).contains(&y), "web outside the ceiling band: y={y}");
                 }
             }
         }

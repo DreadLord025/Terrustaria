@@ -71,7 +71,7 @@ pub fn scarab_bomb_gores(
     let signs = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
     for (sx, sy) in signs {
         let ty = rng.next_range(61, 64);
-        let idx = gore.new_gore_direct(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity = g.velocity * 0.5 + dig_dir * 3.0;
         g.velocity += Vec2::new(sx, sy) * 0.2;
@@ -123,7 +123,7 @@ pub fn confetti_bomb_gores(
             continue;
         }
         let ty = rng.next_range(276, 283);
-        let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity *= 0.4;
         g.velocity.x += sx;

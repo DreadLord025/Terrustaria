@@ -1989,7 +1989,11 @@ mod tests {
 
     /// W4-g14 — site 69101: the 518 liquid lift — liquid/16 - 3, capped
     /// at 8 only when the tile above is solid. The ladder's 518 arm
-    /// picks the type by frameY (0 → 3).
+    /// picks the type by frameY (0 → 3). RE-DERIVED: the C# call is
+    /// `Dust.NewDust(new Vector2(i*16, j*16 - num20), 16, 16, num)`
+    /// (`WorldGen.cs:69100-69105`), so the spawn keeps NewDust's own 16x16
+    /// jitter — mirrored against a `new_dust` at the lifted origin instead of
+    /// pinning the raw position.
     #[test]
     fn w4_g14_tile_518_liquid_lift_cap() {
         let mut w = world();
@@ -2003,7 +2007,14 @@ mod tests {
         let idx = kill_tile_make_tile_dust(
             400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
-        assert_eq!(pool.slot(idx).position.y, 1600.0 - 12.0);
+        assert_eq!(pool.slot(idx).dust_type, 3, "frameY 0 → type 3");
+        let mut mp = DustPool::new();
+        let mut mr = UnifiedRandom::new(73);
+        let midx = mp.new_dust(
+            &mut mr, &c, &w, Vec2::new(6400.0, 1600.0 - 12.0), 16, 16, 3,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        assert_eq!(pool.slot(idx).position, mp.slot(midx).position);
         // Solid above: capped at 8.
         if let Some(above) = w.tile_mut(400, 99) {
             above.kind = 1;
@@ -2015,7 +2026,19 @@ mod tests {
         let idx2 = kill_tile_make_tile_dust(
             400, 100, &t, (0, 0, 0), &mut rng2, &mut gen2, &mut pool2, &c, &w,
         );
-        assert_eq!(pool2.slot(idx2).position.y, 1600.0 - 8.0);
+        let mut mp2 = DustPool::new();
+        let mut mr2 = UnifiedRandom::new(73);
+        let midx2 = mp2.new_dust(
+            &mut mr2, &c, &w, Vec2::new(6400.0, 1600.0 - 8.0), 16, 16, 3,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        assert_eq!(pool2.slot(idx2).position, mp2.slot(midx2).position);
+        // The cap is 4 px of lift: the capped spawn is 4 px lower.
+        assert_eq!(
+            pool2.slot(idx2).position.y - pool.slot(idx).position.y,
+            4.0,
+            "the solid-above cap trims the 12 lift to 8"
+        );
     }
 
     /// W4-g14 — the 25/31/696 sapling arm: the mature 31/696 frame

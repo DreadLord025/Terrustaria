@@ -187,7 +187,8 @@ fn wooden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
             if rng.next_max(2) == 0 && flag {
                 num5 = [364, 1104][rng.next_max(2) as usize];
             }
-            quick_spawn(rng, out, num5, range(rng, 4, 16));
+            let stack = range(rng, 4, 16);
+            quick_spawn(rng, out, num5, stack);
             flag3 = false;
         } else if rng.next_max(8) == 0 {
             // `:8145-8172` — Next(4) over the eight-case switch: only
@@ -206,20 +207,23 @@ fn wooden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
         if rng.next_max(7) == 0 {
             let num7 = [288, 290, 292, 299, 298, 304, 291, 2322, 2323, 2329]
                 [rng.next_max(10) as usize];
-            quick_spawn(rng, out, num7, range(rng, 1, 4));
+            let stack = range(rng, 1, 4);
+            quick_spawn(rng, out, num7, stack);
             flag3 = false;
         }
     }
     // `:8243-8256` — the 1/3 healing-potion tail: 28/110 pick, 5-15.
     if rng.next_max(3) == 0 {
         let num8 = [28, 110][rng.next_max(2) as usize];
-        quick_spawn(rng, out, num8, range(rng, 5, 16));
+        let stack = range(rng, 5, 16);
+        quick_spawn(rng, out, num8, stack);
     }
     // `:8257-8260` — the 1/3 bait tail: 2/3 Apprentice 2674, else
     // Journeyman 2675, 1-4.
     if rng.next_max(3) == 0 {
         let bait = if rng.next_max(3) != 0 { 2674 } else { 2675 };
-        quick_spawn(rng, out, bait, range(rng, 1, 5));
+        let stack = range(rng, 1, 5);
+        quick_spawn(rng, out, bait, stack);
     }
 }
 
@@ -255,7 +259,8 @@ fn iron_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec<B
         }
         // `:8299-8303` — the 1/4 gold 5-10.
         if rng.next_max(4) == 0 {
-            quick_spawn(rng, out, 73, range(rng, 5, 11));
+            let stack = range(rng, 5, 11);
+            quick_spawn(rng, out, 73, stack);
             flag4 = false;
         }
         // `:8304-8397` — the 1/6 bars, else the 1/4 ores.
@@ -264,7 +269,8 @@ fn iron_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec<B
             if rng.next_max(2) == 0 && flag {
                 num9 = [364, 1104, 365, 1105][rng.next_max(4) as usize];
             }
-            quick_spawn(rng, out, num9, range(rng, 12, 22));
+            let stack = range(rng, 12, 22);
+            quick_spawn(rng, out, num9, stack);
             flag4 = false;
         } else if rng.next_max(4) == 0 {
             let mut num10 = [20, 703, 22, 704, 21, 705][rng.next_max(6) as usize];
@@ -280,18 +286,23 @@ fn iron_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec<B
         // `:8398-8430` — the 1/4 potion arm.
         if rng.next_max(4) == 0 {
             let num12 = [288, 296, 304, 305, 2322, 2323, 2324, 2327][rng.next_max(8) as usize];
-            quick_spawn(rng, out, num12, range(rng, 2, 5));
+            let stack = range(rng, 2, 5);
+            quick_spawn(rng, out, num12, stack);
             flag4 = false;
         }
     }
     // `:8432-8435` — the 1/2 Lesser Healing/Mana tail: Next(188, 190), 5-15.
     if rng.next_max(2) == 0 {
-        quick_spawn(rng, out, range(rng, 188, 190), range(rng, 5, 16));
+        let stack = range(rng, 5, 16);
+        let item = range(rng, 188, 190);
+        let stack = stack;
+        quick_spawn(rng, out, item, stack);
     }
     // `:8436-8439` — the 1/2 bait tail: 2/3 Journeyman 2675, else Master 2676, 2-4.
     if rng.next_max(2) == 0 {
         let bait = if rng.next_max(3) != 0 { 2675 } else { 2676 };
-        quick_spawn(rng, out, bait, range(rng, 2, 5));
+        let stack = range(rng, 2, 5);
+        quick_spawn(rng, out, bait, stack);
     }
 }
 
@@ -315,7 +326,8 @@ fn golden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
         }
         // `:8463-8467` — the 1/3 gold 8-20.
         if rng.next_max(3) == 0 {
-            quick_spawn(rng, out, 73, range(rng, 8, 21));
+            let stack = range(rng, 8, 21);
+            quick_spawn(rng, out, 73, stack);
             flag2 = false;
         }
         // `:8468-8551` — the 1/5 bars, ELSE the 1/3-gated ores with the
@@ -325,7 +337,8 @@ fn golden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
             if rng.next_max(2) == 0 && flag {
                 num = [365, 1105, 366, 1106][rng.next_max(4) as usize];
             }
-            quick_spawn(rng, out, num, range(rng, 25, 35));
+            let stack = range(rng, 25, 35);
+            quick_spawn(rng, out, num, stack);
             flag2 = false;
         } else {
             // `:8510-8512` — the 2/3 miss CONTINUES (the next pass).
@@ -336,22 +349,28 @@ fn golden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
             if rng.next_max(3) != 0 && flag {
                 num2 = [382, 391, 1191, 1198][rng.next_max(4) as usize];
             }
-            quick_spawn(rng, out, num2, range(rng, 8, 12));
+            let stack = range(rng, 8, 12);
+            quick_spawn(rng, out, num2, stack);
             flag2 = false;
         }
     }
     // `:8553-8575` — the 1/3 potion tail: 5-way pick, 2-5.
     if rng.next_max(3) == 0 {
         let num3 = [288, 296, 305, 2322, 2323][rng.next_max(5) as usize];
-        quick_spawn(rng, out, num3, range(rng, 2, 6));
+        let stack = range(rng, 2, 6);
+        quick_spawn(rng, out, num3, stack);
     }
     // `:8576-8579` — the 1/2 Lesser Healing/Mana tail: 5-20.
     if rng.next_max(2) == 0 {
-        quick_spawn(rng, out, range(rng, 188, 190), range(rng, 5, 21));
+        let stack = range(rng, 5, 21);
+        let item = range(rng, 188, 190);
+        let stack = stack;
+        quick_spawn(rng, out, item, stack);
     }
     // `:8580-8583` — the 2/3 Master Bait tail: 3-7.
     if rng.next_max(3) != 0 {
-        quick_spawn(rng, out, 2676, range(rng, 3, 8));
+        let stack = range(rng, 3, 8);
+        quick_spawn(rng, out, 2676, stack);
     }
     // `:8584-8591` — the two SEPARATE Enchanted Sword gates:
     // pre-hardmode 1/30, hardmode 1/15 (the draw always happens).
@@ -410,11 +429,13 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 3085, 1);
             flag5 = false;
             if rng.next_max(2) == 0 {
-                quick_spawn(rng, out, 149, range(rng, 5, 16)); // Book
+                let stack = range(rng, 5, 16);
+                quick_spawn(rng, out, 149, stack); // Book
             }
             if rng.next_max(2) == 0 {
                 let item = [134, 137, 139][rng.next_max(3) as usize];
-                quick_spawn(rng, out, item, range(rng, 25, 51));
+                let stack = range(rng, 25, 51);
+                quick_spawn(rng, out, item, stack);
             }
         }
         // `:8653-8663` — the Sky weapon pick.
@@ -456,11 +477,13 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
                 flag5 = false;
             }
             if rng.next_max(4) == 0 {
-                quick_spawn(rng, out, 4423, range(rng, 4, 7)); // Magic Conch
+                let stack = range(rng, 4, 7);
+                quick_spawn(rng, out, 4423, stack); // Magic Conch
                 flag5 = false;
             }
             if rng.next_max(2) == 0 {
-                quick_spawn(rng, out, 3380, range(rng, 10, 17)); // Sturdy Fossil
+                let stack = range(rng, 10, 17);
+                quick_spawn(rng, out, 3380, stack); // Sturdy Fossil
                 flag5 = false;
             }
             if rng.next_max(35) == 0 {
@@ -491,7 +514,8 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 4879, 1); // `:8756` — no gate
             flag5 = false;
             if rng.next_max(3) == 0 {
-                quick_spawn(rng, out, 4824, range(rng, 7, 11)); // `:8760`
+                let stack = range(rng, 7, 11);
+                quick_spawn(rng, out, 4824, stack); // `:8760`
                 flag5 = false;
             }
             if rng.next_max(2) == 0 {
@@ -502,7 +526,8 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
         }
         // `:8788-8792` — the shared 1/4 gold 5-12.
         if rng.next_max(4) == 0 {
-            quick_spawn(rng, out, 73, range(rng, 5, 13));
+            let stack = range(rng, 5, 13);
+            quick_spawn(rng, out, 73, stack);
             flag5 = false;
         }
         // `:8793-8854` — the shared 1/7 bars (8-way pick; the lava
@@ -515,7 +540,8 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
             if rng.next_max(2) == 0 && flag {
                 num18 = [364, 1104, 365, 1105, 366, 1106][rng.next_max(6) as usize];
             }
-            quick_spawn(rng, out, num18, range(rng, 20, 36));
+            let stack = range(rng, 20, 36);
+            quick_spawn(rng, out, num18, stack);
             flag5 = false;
         }
         // `:8855-8858` — the 3/4 miss CONTINUES (skips the ore arm).
@@ -552,16 +578,21 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
     // `:8915-8941` — the 1/4 potion tail: 6-way pick, 2-4.
     if rng.next_max(4) == 0 {
         let num21 = [288, 296, 304, 305, 2322, 2323][rng.next_max(6) as usize];
-        quick_spawn(rng, out, num21, range(rng, 2, 5));
+        let stack = range(rng, 2, 5);
+        quick_spawn(rng, out, num21, stack);
     }
     // `:8942-8945` — the 1/2 Lesser Healing/Mana tail: 5-17.
     if rng.next_max(2) == 0 {
-        quick_spawn(rng, out, range(rng, 188, 190), range(rng, 5, 18));
+        let stack = range(rng, 5, 18);
+        let item = range(rng, 188, 190);
+        let stack = stack;
+        quick_spawn(rng, out, item, stack);
     }
     // `:8946-8949` — the 1/2 bait tail: 1/2 Journeyman/Master, 2-6.
     if rng.next_max(2) == 0 {
         let bait = if rng.next_max(2) != 0 { 2675 } else { 2676 };
-        quick_spawn(rng, out, bait, range(rng, 2, 7));
+        let stack = range(rng, 2, 7);
+        quick_spawn(rng, out, bait, stack);
     }
     // `:8950-8968` — the Ocean tails.
     if crate_kind == 5002 || crate_kind == 5003 {
@@ -569,7 +600,8 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 5527, 1);
         }
         if rng.next_max(3) == 0 {
-            quick_spawn(rng, out, 4090, range(rng, 20, 51));
+            let stack = range(rng, 20, 51);
+            quick_spawn(rng, out, 4090, stack);
         }
         if rng.next_max(10) == 0 {
             quick_spawn(rng, out, 4460, 1);
@@ -589,7 +621,8 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
     // `:9052-9062` — the Jungle tails.
     if crate_kind == 3208 || crate_kind == 3987 {
         if rng.next_max(3) == 0 {
-            quick_spawn(rng, out, 4564, range(rng, 20, 51));
+            let stack = range(rng, 20, 51);
+            quick_spawn(rng, out, 4564, stack);
         }
         if rng.next_max(20) == 0 {
             quick_spawn(rng, out, 753, 1);
@@ -613,7 +646,8 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, num24, 1);
         }
         if rng.next_max(2) == 0 {
-            quick_spawn(rng, out, 751, range(rng, 50, 101)); // Cloud
+            let stack = range(rng, 50, 101);
+            quick_spawn(rng, out, 751, stack); // Cloud
         }
         if rng.next_max(40) == 0 {
             quick_spawn(rng, out, 4978, 1);
@@ -651,7 +685,8 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
     // `:9225-9233` — the 1/2 souls of night/light: 521, hallowed 520.
     if rng.next_max(2) == 0 {
         let item2 = if crate_kind == 3986 { 520 } else { 521 };
-        quick_spawn(rng, out, item2, range(rng, 2, 6));
+        let stack = range(rng, 2, 6);
+        quick_spawn(rng, out, item2, stack);
     }
     // `:9234-9249` — the 1/2 second soul row: 522 / crimson 1332 /
     // hallowed 502 (the stack RE-DRAWN 4-10, the first draw discarded).
@@ -935,7 +970,8 @@ mod tests {
                         _ => 1104,
                     };
                 }
-                spawn_replay(&mut r, &mut w, n5, r.next_range(4, 16));
+                let sr_stack = r.next_range(4, 16);
+                spawn_replay(&mut r, &mut w, n5, sr_stack);
                 f3_ = false;
             } else if r.next_max(8) == 0 {
                 let mut n6 = match r.next_max(4) {
@@ -976,7 +1012,8 @@ mod tests {
                     8 => 2323,
                     _ => 2329,
                 };
-                spawn_replay(&mut r, &mut w, n7, r.next_range(1, 4));
+                let sr_stack = r.next_range(1, 4);
+                spawn_replay(&mut r, &mut w, n7, sr_stack);
                 f3_ = false;
             }
         }
@@ -985,11 +1022,13 @@ mod tests {
                 0 => 28,
                 _ => 110,
             };
-            spawn_replay(&mut r, &mut w, n8, r.next_range(5, 16));
+            let sr_stack = r.next_range(5, 16);
+            spawn_replay(&mut r, &mut w, n8, sr_stack);
         }
         if r.next_max(3) == 0 {
             let bait = if r.next_max(3) != 0 { 2674 } else { 2675 };
-            spawn_replay(&mut r, &mut w, bait, r.next_range(1, 5));
+            let sr_stack = r.next_range(1, 5);
+            spawn_replay(&mut r, &mut w, bait, sr_stack);
         }
         (w, r)
     }
@@ -1042,7 +1081,8 @@ mod tests {
                 f4 = false;
             }
             if r.next_max(4) == 0 {
-                spawn_replay(&mut r, &mut w, 73, r.next_range(5, 11));
+                let sr_stack = r.next_range(5, 11);
+                spawn_replay(&mut r, &mut w, 73, sr_stack);
                 f4 = false;
             }
             if r.next_max(6) == 0 {
@@ -1062,7 +1102,8 @@ mod tests {
                         _ => 1105,
                     };
                 }
-                spawn_replay(&mut r, &mut w, n9, r.next_range(12, 22));
+                let sr_stack = r.next_range(12, 22);
+                spawn_replay(&mut r, &mut w, n9, sr_stack);
                 f4 = false;
             } else if r.next_max(4) == 0 {
                 let mut n10 = match r.next_max(6) {
@@ -1097,16 +1138,20 @@ mod tests {
                     6 => 2324,
                     _ => 2327,
                 };
-                spawn_replay(&mut r, &mut w, n12, r.next_range(2, 5));
+                let sr_stack = r.next_range(2, 5);
+                spawn_replay(&mut r, &mut w, n12, sr_stack);
                 f4 = false;
             }
         }
         if r.next_max(2) == 0 {
-            spawn_replay(&mut r, &mut w, r.next_range(188, 190), r.next_range(5, 16));
+            let sr_item = r.next_range(188, 190);
+            let sr_stack = r.next_range(5, 16);
+            spawn_replay(&mut r, &mut w, sr_item, sr_stack);
         }
         if r.next_max(2) == 0 {
             let bait = if r.next_max(3) != 0 { 2675 } else { 2676 };
-            spawn_replay(&mut r, &mut w, bait, r.next_range(2, 5));
+            let sr_stack = r.next_range(2, 5);
+            spawn_replay(&mut r, &mut w, bait, sr_stack);
         }
         (w, r)
     }
@@ -1130,7 +1175,8 @@ mod tests {
                 f2 = false;
             }
             if r.next_max(3) == 0 {
-                spawn_replay(&mut r, &mut w, 73, r.next_range(8, 21));
+                let sr_stack = r.next_range(8, 21);
+                spawn_replay(&mut r, &mut w, 73, sr_stack);
                 f2 = false;
             }
             if r.next_max(5) == 0 {
@@ -1148,7 +1194,8 @@ mod tests {
                         _ => 1106,
                     };
                 }
-                spawn_replay(&mut r, &mut w, n, r.next_range(25, 35));
+                let sr_stack = r.next_range(25, 35);
+                spawn_replay(&mut r, &mut w, n, sr_stack);
                 f2 = false;
             } else {
                 if r.next_max(3) != 0 {
@@ -1168,7 +1215,8 @@ mod tests {
                         _ => 1198,
                     };
                 }
-                spawn_replay(&mut r, &mut w, n2, r.next_range(8, 12));
+                let sr_stack = r.next_range(8, 12);
+                spawn_replay(&mut r, &mut w, n2, sr_stack);
                 f2 = false;
             }
         }
@@ -1180,13 +1228,17 @@ mod tests {
                 3 => 2322,
                 _ => 2323,
             };
-            spawn_replay(&mut r, &mut w, n3, r.next_range(2, 6));
+            let sr_stack = r.next_range(2, 6);
+            spawn_replay(&mut r, &mut w, n3, sr_stack);
         }
         if r.next_max(2) == 0 {
-            spawn_replay(&mut r, &mut w, r.next_range(188, 190), r.next_range(5, 21));
+            let sr_item = r.next_range(188, 190);
+            let sr_stack = r.next_range(5, 21);
+            spawn_replay(&mut r, &mut w, sr_item, sr_stack);
         }
         if r.next_max(3) != 0 {
-            spawn_replay(&mut r, &mut w, 2676, r.next_range(3, 8));
+            let sr_stack = r.next_range(3, 8);
+            spawn_replay(&mut r, &mut w, 2676, sr_stack);
         }
         if r.next_max(30) == 0 && !flag {
             spawn_replay(&mut r, &mut w, 989, 1);
@@ -1456,7 +1508,8 @@ mod tests {
                 spawn_replay(&mut r, &mut w, 3085, 1);
                 f5 = false;
                 if r.next_max(2) == 0 {
-                    spawn_replay(&mut r, &mut w, 149, r.next_range(5, 16));
+                    let sr_stack = r.next_range(5, 16);
+                    spawn_replay(&mut r, &mut w, 149, sr_stack);
                 }
                 if r.next_max(2) == 0 {
                     let item = match r.next_max(3) {
@@ -1464,7 +1517,8 @@ mod tests {
                         1 => 137,
                         _ => 139,
                     };
-                    spawn_replay(&mut r, &mut w, item, r.next_range(25, 51));
+                    let sr_stack = r.next_range(25, 51);
+                    spawn_replay(&mut r, &mut w, item, sr_stack);
                 }
             }
             if (kind == 3206 || kind == 3985) && f5 && r.next_max(max_value) == 0 {
@@ -1518,11 +1572,13 @@ mod tests {
                     f5 = false;
                 }
                 if r.next_max(4) == 0 {
-                    spawn_replay(&mut r, &mut w, 4423, r.next_range(4, 7));
+                    let sr_stack = r.next_range(4, 7);
+                    spawn_replay(&mut r, &mut w, 4423, sr_stack);
                     f5 = false;
                 }
                 if r.next_max(2) == 0 {
-                    spawn_replay(&mut r, &mut w, 3380, r.next_range(10, 17));
+                    let sr_stack = r.next_range(10, 17);
+                    spawn_replay(&mut r, &mut w, 3380, sr_stack);
                     f5 = false;
                 }
                 if r.next_max(35) == 0 {
@@ -1555,7 +1611,8 @@ mod tests {
                 spawn_replay(&mut r, &mut w, 4879, 1);
                 f5 = false;
                 if r.next_max(3) == 0 {
-                    spawn_replay(&mut r, &mut w, 4824, r.next_range(7, 11));
+                    let sr_stack = r.next_range(7, 11);
+                    spawn_replay(&mut r, &mut w, 4824, sr_stack);
                     f5 = false;
                 }
                 if r.next_max(2) == 0 {
@@ -1571,7 +1628,8 @@ mod tests {
                 }
             }
             if r.next_max(4) == 0 {
-                spawn_replay(&mut r, &mut w, 73, r.next_range(5, 13));
+                let sr_stack = r.next_range(5, 13);
+                spawn_replay(&mut r, &mut w, 73, sr_stack);
                 f5 = false;
             }
             if r.next_max(7) == 0 {
@@ -1598,7 +1656,8 @@ mod tests {
                         _ => 1106,
                     };
                 }
-                spawn_replay(&mut r, &mut w, n18, r.next_range(20, 36));
+                let sr_stack = r.next_range(20, 36);
+                spawn_replay(&mut r, &mut w, n18, sr_stack);
                 f5 = false;
             }
             if r.next_max(4) != 0 {
@@ -1651,21 +1710,26 @@ mod tests {
                 4 => 2322,
                 _ => 2323,
             };
-            spawn_replay(r, w, n21, r.next_range(2, 5));
+            let sr_stack = r.next_range(2, 5);
+            spawn_replay(r, w, n21, sr_stack);
         }
         if r.next_max(2) == 0 {
-            spawn_replay(r, w, r.next_range(188, 190), r.next_range(5, 18));
+            let sr_item = r.next_range(188, 190);
+            let sr_stack = r.next_range(5, 18);
+            spawn_replay(r, w, sr_item, sr_stack);
         }
         if r.next_max(2) == 0 {
             let bait = if r.next_max(2) != 0 { 2675 } else { 2676 };
-            spawn_replay(r, w, bait, r.next_range(2, 7));
+            let sr_stack = r.next_range(2, 7);
+            spawn_replay(r, w, bait, sr_stack);
         }
         if kind == 5002 || kind == 5003 {
             if r.next_max(5) == 0 {
                 spawn_replay(r, w, 5527, 1);
             }
             if r.next_max(3) == 0 {
-                spawn_replay(r, w, 4090, r.next_range(20, 51));
+                let sr_stack = r.next_range(20, 51);
+                spawn_replay(r, w, 4090, sr_stack);
             }
             if r.next_max(10) == 0 {
                 spawn_replay(r, w, 4460, 1);
@@ -1706,7 +1770,8 @@ mod tests {
         }
         if kind == 3208 || kind == 3987 {
             if r.next_max(3) == 0 {
-                spawn_replay(r, w, 4564, r.next_range(20, 51));
+                let sr_stack = r.next_range(20, 51);
+                spawn_replay(r, w, 4564, sr_stack);
             }
             if r.next_max(20) == 0 {
                 spawn_replay(r, w, 753, 1);
@@ -1747,7 +1812,8 @@ mod tests {
                 spawn_replay(r, w, n24, 1);
             }
             if r.next_max(2) == 0 {
-                spawn_replay(r, w, 751, r.next_range(50, 101));
+                let sr_stack = r.next_range(50, 101);
+                spawn_replay(r, w, 751, sr_stack);
             }
             if r.next_max(40) == 0 {
                 spawn_replay(r, w, 4978, 1);
@@ -1792,7 +1858,8 @@ mod tests {
         }
         if r.next_max(2) == 0 {
             let item2 = if kind == 3986 { 520 } else { 521 };
-            spawn_replay(r, w, item2, r.next_range(2, 6));
+            let sr_stack = r.next_range(2, 6);
+            spawn_replay(r, w, item2, sr_stack);
         }
         if r.next_max(2) == 0 {
             let mut item3 = 522;

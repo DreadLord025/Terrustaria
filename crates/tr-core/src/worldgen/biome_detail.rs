@@ -1516,10 +1516,13 @@ mod tests {
     #[test]
     fn w4_g42_the_mushroom_arm_grows_the_giant_tree() {
         let mut w = World::new("t".into(), 40, 80);
-        // A 5-wide mushroom-grass row at y=60 (the side-70 neighbours exist),
-        // centred at x=20; the cells above are free. worldSurface=50 so the
-        // arm is live (j=60 >= 50).
-        for dx in -2i32..=2 {
+        // A 3-wide mushroom-grass row at y=60 (the side-70 neighbours exist),
+        // starting at x=20 — the pass scans x ascending, so x=20 is the FIRST
+        // mushroom cell and the first `GrowTree` attempt grows its trunk
+        // there. (A row starting at x=18 would grow the first tree at 18 and
+        // the x=20 column would only receive that tree's branches.)
+        // worldSurface=50 so the arm is live (j=60 >= 50).
+        for dx in 0i32..=2 {
             let idx = w.index(20 + dx, 60);
             w.tiles[idx].kind = TILE_MUSHROOM_GRASS;
             w.tiles[idx].flags |= FLAG_ACTIVE;

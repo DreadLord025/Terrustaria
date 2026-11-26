@@ -2147,7 +2147,8 @@ mod tests {
             assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
         }
         for (x, y) in cells {
-            world.tiles[world.index(x, y)] = Tile::default(); // the edit
+            let idx = world.index(x, y);
+            world.tiles[idx] = Tile::default(); // the edit
         }
         let mut q = MapUpdateQueue::default();
         q.add_tile(&mut m, 101, 70); // FIFO: second column first
@@ -2204,7 +2205,8 @@ mod tests {
             assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
         }
         for (x, y) in [(99, 69), (111, 81)] {
-            world.tiles[world.index(x, y)] = Tile::default();
+            let idx = world.index(x, y);
+            world.tiles[idx] = Tile::default();
         }
         let mut q = MapUpdateQueue::default();
         q.add_range_frame(&mut m, 100, 70, 110, 80);
@@ -2231,7 +2233,8 @@ mod tests {
             t.kind = 1;
             t.flags |= FLAG_ACTIVE;
             assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
-            world.tiles[world.index(x, y)] = Tile::default();
+            let idx = world.index(x, y);
+            world.tiles[idx] = Tile::default();
         }
         let mut q = MapUpdateQueue::default();
         q.add_range_frame(&mut m, 4, 4, 6, 6);

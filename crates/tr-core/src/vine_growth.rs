@@ -462,7 +462,8 @@ mod tests {
     fn w4_g83_the_flower_wall_pick_grows_382() {
         let mut w = world();
         put(&mut w, 100, 100, 2);
-        w.tiles[w.index(100, 100)].wall = 65; // living-wood wall
+        let __bi = w.index(100, 100);
+        w.tiles[__bi].wall = 65; // living-wood wall
         let mut grew382 = 0;
         for seed in 1u64..200 {
             let mut w = w.clone();
@@ -616,7 +617,8 @@ mod tests {
         let mut w = world();
         put(&mut w, 100, 100, 69);
         put(&mut w, 100, 101, 60);
-        w.tiles[w.index(100, 101)].set_slope(1); // top slope hides the down slot
+        let __bi = w.index(100, 101);
+        w.tiles[__bi].set_slope(1); // top slope hides the down slot
         let f = thorn_down_merge_frame(&w, 100, 100, 0).unwrap();
         assert_eq!(f, (162, 54), "sloped grass below: down hidden, no merge");
     }

@@ -1190,9 +1190,12 @@ mod tests {
     fn cleanup_the_shimmerator_floods_the_pool() {
         let build = || {
             let mut w = cleanup_world(600, 900, 300, 300);
-            // A water pool (non-shimmer) in the anniversary band, below cy+40.
+            // A water pool (non-shimmer) in the anniversary band, below
+            // cx+40 and OUTSIDE the ±150 ShimmerRemoveWater disc (which
+            // zeroes non-shimmer liquid before the anniversary tail), but
+            // inside `[cy+40, height-430)` = [340, 470).
             for x in 290..=310 {
-                for y in 350..=360 {
+                for y in 460..=468 {
                     let i = w.index(x, y);
                     w.tiles[i] = Tile::default();
                     w.tiles[i].liquid = 200;
@@ -1207,7 +1210,7 @@ mod tests {
         shimmer_clean_up(&mut b, Some((300, 300)), true, &mut Rng(11));
         assert_eq!(a.tiles, b.tiles, "a == b — the flood replays");
         // The pool cells turned to shimmer-255 (the Shimmerator write).
-        let t = a.tile(300, 355).unwrap();
+        let t = a.tile(300, 464).unwrap();
         assert_eq!(t.liquid_kind(), LiquidKind::Shimmer, "the pool shimmerated");
         assert_eq!(t.liquid, 255, "filled to 255");
     }

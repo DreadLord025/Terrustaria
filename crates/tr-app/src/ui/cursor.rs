@@ -118,16 +118,6 @@ pub fn draw(r: &mut SpriteRenderer, lookups: &assets::Lookups, state: &CursorSta
 /// `gamepadHintText` Lang.misc[75] "Sell" string rides the gamepad-only
 /// `BuildCommand` chain, `ItemSlot.cs:4446`, unported).
 pub fn draw_override(
-/// `Main.DrawThickCursor`'s non-gamepad half (`Main.cs:48064-48134`): while
-/// `Main.ThickMouse` (`MouseBorderColor != Color.Transparent`, `Main.cs:2599`)
-/// four `Cursors[11]` ring sprites sit at the cursor plus the offsets
-/// `(0,1), (1,0), (0,-1), (-1,0)` each `+ Vector2.One * 2` (`:48094-48107`),
-/// origin `(2, 2)` (`:48108`), scale `cursorScale * 1.1` (`:48110`), tinted
-/// `MouseBorderColor`. Returns the bonus `(2, 2)` the caller adds to the
-/// cursor sprite (`:48131`); a transparent border colour returns zero and
-/// draws nothing (`:48133`). The gamepad branches (`ShowGamepadCursor`,
-/// `UILinkPointNavigator`) have no port counterpart — keyboard/mouse only.
-pub fn draw_thick(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     state: &CursorState,
@@ -152,6 +142,22 @@ pub fn draw_thick(
         [1.0, 1.0, 1.0, 1.0],
     );
     true
+}
+
+/// `Main.DrawThickCursor`'s non-gamepad half (`Main.cs:48064-48134`): while
+/// `Main.ThickMouse` (`MouseBorderColor != Color.Transparent`, `Main.cs:2599`)
+/// four `Cursors[11]` ring sprites sit at the cursor plus the offsets
+/// `(0,1), (1,0), (0,-1), (-1,0)` each `+ Vector2.One * 2` (`:48094-48107`),
+/// origin `(2, 2)` (`:48108`), scale `cursorScale * 1.1` (`:48110`), tinted
+/// `MouseBorderColor`. Returns the bonus `(2, 2)` the caller adds to the
+/// cursor sprite (`:48131`); a transparent border colour returns zero and
+/// draws nothing (`:48133`). The gamepad branches (`ShowGamepadCursor`,
+/// `UILinkPointNavigator`) have no port counterpart — keyboard/mouse only.
+pub fn draw_thick(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &CursorState,
+    mouse: Vec2,
     border_color: [u8; 4],
 ) -> Vec2 {
     let bonus = thick_cursor_bonus(border_color);
@@ -349,6 +355,8 @@ mod tests {
         // cursor — the `draw_override` false arm).
         lk.cursor_overrides[5] = None;
         assert!(lk.cursor_override(10).is_none(), "the sell sheet absent");
+    }
+
     /// W4-e18 residual census (written, not run - code-only): the thick
     /// cursor's gate and bonus (`Main.cs:2599`, `:48066-48133`). A fully
     /// transparent `MouseBorderColor` draws nothing and returns zero; any

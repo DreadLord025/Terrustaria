@@ -2658,86 +2658,19 @@ mod tests {
             tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
             at += 4;
         }
-        // W4-f45: the pet-license trio at 2021..2023 (`:1392-1394`, v217+).
+        // W4-f39: the force-today pair at base 2003/2004 (right after the
+        // 56-byte tree-top table; `WorldFile.cs:1386-1387`).
+        tail[2003 + d] = u8::from(world.force_halloween_for_today);
+        tail[2004 + d] = u8::from(world.force_xmas_for_today);
+        // W4-f45: the pet-license trio at base 2021..2023 (`:1392-1394`, v217+).
         tail[2021 + d] = u8::from(world.bought_cat);
         tail[2022 + d] = u8::from(world.bought_dog);
         tail[2023 + d] = u8::from(world.bought_bunny);
-        // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
-        tail[2024] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-d125)
-        // The pets (WorldFile.cs:1392-1394) sit at 2021/2022/2023 (W4-a6).
-        tail[2021] = u8::from(world.bought_cat);
-        tail[2022] = u8::from(world.bought_dog);
-        tail[2023] = u8::from(world.bought_bunny);
-        tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
-        // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
-        // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
-        // cat@2021, dog@2022, bunny@2023 (the empress byte follows at 2024).
-        tail[2021] = u8::from(world.bought_cat); // boughtCat (`:1392`)
-        tail[2022] = u8::from(world.bought_dog); // boughtDog (`:1393`)
-        tail[2023] = u8::from(world.bought_bunny); // boughtBunny (`:1394`)
-        // W4-f39: the force-today pair sits right after the tree-top array
-        // (1939 combatBook + 7 lantern + 4+52 treeTops = 2002; the quartet
-        // ends at 2021, so the pair is at 2002..2003 — `WorldFile.cs:1386-1387`).
-        tail[2002] = u8::from(world.force_halloween_for_today);
-        tail[2003] = u8::from(world.force_xmas_for_today);
-        // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
-        // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
-        tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
-        tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
-        // combatBookVolumeTwoWasUsed (`:1407`): princess + 1 (W4-g89e).
-        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
-        // W4-g90 lane 7: satchel at 2037 (`WorldFile.cs:1408`, v260).
-        tail[2037] = u8::from(world.peddlers_satchel_was_used);
-        tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
-        // W4-f43b: the blue slime byte (WorldFile.cs:1398) sits between the
-        // deerclops and the merchant-unlock run.
-        tail[2027] = u8::from(world.unlocked_slime_blue_spawn);
-        // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
-        // green/old/purple, then rainbow@2041, red@2042, yellow@2043,
-        // copper@2044 (gate V3, i35; copper W4-g15 lane 5).
-        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
-        tail[2042] = u8::from(world.unlocked_slime_red_spawn);
-        // green@2038, old@2039, purple@2040, rainbow@2041, red@2042,
-        // yellow@2043, copper@2044 (gate V3, i35; old/copper W4-g51 id-140).
-        tail[2039] = u8::from(world.unlocked_slime_old_spawn);
-        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
-        tail[2042] = u8::from(world.unlocked_slime_red_spawn);
-        // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
-        // W4-f43b: the other five owned too (green@2038, old@2039,
-        // purple@2040, yellow@2043, copper@2044).
-        tail[2038] = u8::from(world.unlocked_slime_green_spawn);
-        tail[2040] = u8::from(world.unlocked_slime_purple_spawn);
-        tail[2043] = u8::from(world.unlocked_slime_yellow_spawn);
-        tail[2044] = u8::from(world.unlocked_slime_copper_spawn);
-        // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
-        // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
-        // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
-        // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
-        // = tail offset 1939 (gate V3, i35).
-        tail[1939] = u8::from(world.combat_book_was_used);
-        // W4-d124: `DD2Event.Save`'s three tier flags (`WorldFile.cs:1374-1375`,
-        // `DD2Event.cs:153-155`) sit right behind savedBartender@1930 (unowned,
-        // stays the table's 0): T1@1931, T2@1932, T3@1933 — the combat book's
-        // 1939 minus the 5 BG bytes (1934..1938) and the book byte itself.
-        tail[1931] = u8::from(world.dd2_downed_t1); // DownedInvasionT1
-        tail[1932] = u8::from(world.dd2_downed_t2); // DownedInvasionT2
-        tail[1933] = u8::from(world.dd2_downed_t3); // DownedInvasionT3
-        // combatBookVolumeTwoWasUsed (`WorldFile.cs:1407`): the unlocks end
-        // at princess@2035, +1 (W4-a6); the satchel (`:1408`) follows at 2037.
-        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
-        tail[2037] = u8::from(world.peddlers_satchel_was_used);
-        tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
-        tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
-        // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
-        // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
-        // cat@2021, dog@2022, bunny@2023 (the empress byte follows at 2024).
-        // The batch-M owner above writes them with the `d` version delta;
-        // this is the g87 marker, not a second (non-offset) write.
-        tail[2024 + d] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-f45)
+        // The post-1.4 bosses: empress@2024, queen@2025, deerclops@2026.
+        tail[2024 + d] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-d125)
         tail[2025 + d] = u8::from(world.downed_queen_slime); // (`:1396`)
-        // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
-        // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
-        // W4-f45 Ph4: the six arrival unlocks + slime-blue join the owned set.
+        tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // The unlocks: slimeBlue@2027, merchant@2028 .. princess@2035.
         tail[2027 + d] = u8::from(world.unlocked_slime_blue_spawn); // (`:1398`)
         tail[2028 + d] = u8::from(world.unlocked_merchant_spawn); // (`:1399`)
         tail[2029 + d] = u8::from(world.unlocked_demolitionist_spawn); // (`:1400`)
@@ -2750,18 +2683,7 @@ mod tests {
         // W4-f45: the booster pair at 2036/2037 (`:1407-1408`, v259/260).
         tail[2036 + d] = u8::from(world.combat_book_volume_two_was_used);
         tail[2037 + d] = u8::from(world.peddlers_satchel_was_used);
-        tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
-        // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
-        // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
-        // W4-g71 wiring: the five remaining BG styles (mushroom/underworld/
-        // tree2-4) at tail 1934..1938 + d, just before combatBookWasUsed@1939+d
-        // (the book byte itself is patched above with the f45 + d offsets).
-        tail[1934 + d] = world.mushroom_bg_style; // setBG(8) (`:1375`)
-        tail[1935 + d] = world.underworld_bg_style; // setBG(9) (`:1374`)
-        tail[1936 + d] = world.forest_bg_styles[1]; // treeBG2 (`:1376`)
-        tail[1937 + d] = world.forest_bg_styles[2]; // treeBG3 (`:1377`)
-        tail[1938 + d] = world.forest_bg_styles[3]; // treeBG4 (`:1378`)
-        // W4-f45: the five remaining slime-colour unlocks join the owned set.
+        // The seven slime-colour unlocks at 2038..2045 (`:1409-1415`).
         tail[2038 + d] = u8::from(world.unlocked_slime_green_spawn);
         tail[2039 + d] = u8::from(world.unlocked_slime_old_spawn);
         tail[2040 + d] = u8::from(world.unlocked_slime_purple_spawn);
@@ -2769,26 +2691,36 @@ mod tests {
         tail[2042 + d] = u8::from(world.unlocked_slime_red_spawn);
         tail[2043 + d] = u8::from(world.unlocked_slime_yellow_spawn);
         tail[2044 + d] = u8::from(world.unlocked_slime_copper_spawn);
-        tail[2045 + d] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
-        tail[2046 + d] = world.moondial_cooldown; // moondialCooldown (`:1417`)
-        // W4-f45: the eight secret-seed bytes — the `InitializeSecretSeeds`
-        // mirrors of `World.micro_seeds` (`WorldGen.cs:553-587`).
+        // W4-g71/W4-d124: the five remaining BG styles at base 1934..1938
+        // (`:1374-1378`) and the DD2 tier flags at base 1931..1933
+        // (`DD2Event.cs:153-155`), at their `+d` positions. combatBookWasUsed
+        // @1939 and the lantern snapshot @1940..1946 are patched above.
+        tail[1931 + d] = u8::from(world.dd2_downed_t1); // DownedInvasionT1
+        tail[1932 + d] = u8::from(world.dd2_downed_t2); // DownedInvasionT2
+        tail[1933 + d] = u8::from(world.dd2_downed_t3); // DownedInvasionT3
+        tail[1934 + d] = world.mushroom_bg_style; // setBG(8) (`:1375`)
+        tail[1935 + d] = world.underworld_bg_style; // setBG(9) (`:1374`)
+        tail[1936 + d] = world.forest_bg_styles[1]; // treeBG2 (`:1376`)
+        tail[1937 + d] = world.forest_bg_styles[2]; // treeBG3 (`:1377`)
+        tail[1938 + d] = world.forest_bg_styles[3]; // treeBG4 (`:1378`)
+        // The moondial pair at base 2045/2046 (`:1416-1417`).
+        tail[2045 + d] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk
+        tail[2046 + d] = world.moondial_cooldown; // moondialCooldown
+        // The eight secret-seed bytes — the `InitializeSecretSeeds` mirrors of
+        // `World.micro_seeds` (`WorldGen.cs:553-587`) — and the starfall pair.
         let ms = world.micro_seeds;
         tail[2047 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`:1418`)
         tail[2048 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:1419`)
         tail[2049 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:1420`)
         tail[2050 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:1421`)
-        // W4-f45: the starfall pair at 2051..2059 (`:1422-1423`).
-        tail[2051 + d..2055 + d].copy_from_slice(&world.meteor_shower_count.to_le_bytes());
-        tail[2055 + d..2059 + d].copy_from_slice(&world.coin_rain.to_le_bytes());
+        tail[2051 + d..2055 + d].copy_from_slice(&world.meteor_shower_count.to_le_bytes()); // `:1422`
+        tail[2055 + d..2059 + d].copy_from_slice(&world.coin_rain.to_le_bytes()); // `:1423`
         tail[2059 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:1424`)
+        // The extra-spawn list: the count byte at base 2060, then `4 * n` pair
+        // bytes inserted before the remaining seed bytes (base 2061..2063).
         tail[2061 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:1426`)
         tail[2062 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:1427`)
         tail[2063 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:1428`)
-        // W4-f45: the extra-spawn-point list is variable-length — the fixture
-        // table carries an empty one (the count byte at 2060), the world's list
-        // inserts `4 * n` pair bytes after it. The three seed bytes before it
-        // (2061..2063) are patched above; the manifest string follows the list.
         let nspawn = world.extra_spawn_points.len();
         tail[2060 + d] = nspawn as u8; // extraSpawnPoints.Length (`:1425`)
         let mut spawn_bytes = Vec::with_capacity(4 * nspawn);
@@ -2816,7 +2748,7 @@ mod tests {
         for s in world.tree_style {
             b.extend_from_slice(&s.to_le_bytes()); // treeStyle
         }
-        for x in world.cave_back_x[..3] {
+        for x in world.cave_back_x[..3].iter() {
             b.extend_from_slice(&x.to_le_bytes()); // caveBackX ([3] never persisted)
         }
         for s in world.cave_back_style {
@@ -4090,7 +4022,10 @@ mod tests {
         // The exact divergence set — the unowned fields, nothing else.
         assert_eq!(
             diffs,
-            vec!["killCount[1]", "claimable[1]", "treeTop[0]", "manifest",],
+            // `killCount` is owned now (W4-f45 claims the BannerSystem kill
+            // counts), so it no longer diverges; the claimable half, the
+            // tree-top table and the manifest are still unowned.
+            vec!["claimable[1]", "treeTop[0]", "manifest",],
             "the header/flags divergences must be exactly the documented unowned fields"
         );
     }
@@ -4468,11 +4403,26 @@ mod tests {
     /// width is version-gated exactly like `header_section`.
     fn flags_start_in_synthetic(data: &[u8], version: i32) -> usize {
         let world = World::new("x".into(), 8, 6);
-        let head = cs_string("TileFixture").len()
-            + if version >= 179 { cs_string("12345").len() + 8 } else { 0 }
-            + if version >= 181 { 16 } else { 0 }
-            + 4 + 6 * 4; // world id + the six bounds/dims
-        tail_offset_in_synthetic(data, version) - flags_tail_prefix(&world).len() - head
+        // The bytes between the world head and `_tempBloodMoon`: GameMode and
+        // the seed bools (each gated), creation/last-played, and the moon-type
+        // byte. `flags_tail_prefix` then covers treeX..moonPhase.
+        let flavour = if version >= 209 {
+            4 + [222, 227, 238, 239, 241, 249, 266, 267, 302]
+                .iter()
+                .filter(|&&v| version >= v)
+                .count()
+        } else if version >= 112 {
+            1 + usize::from(version == 208)
+        } else {
+            0
+        };
+        let times = usize::from(version >= 141) * 8 + usize::from(version >= 284) * 8;
+        let moon = 1;
+        tail_offset_in_synthetic(data, version)
+            - flags_tail_prefix(&world).len()
+            - flavour
+            - times
+            - moon
     }
 
     #[test]
@@ -4713,11 +4663,14 @@ mod tests {
         assert!(w.bought_bunny, "boughtBunny reads from 217");
         // W4-a6: combatBookVolumeTwoWasUsed reads from v259 — below the gate
         // it stays false; at 259 it is the LAST tail byte (the satchel needs
-        // 260, the slime run 261).
+        // 260, the slime run 261). Build a fresh v260 file for the satchel
+        // check (the v217 `data` above is not a v260 layout).
         let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
         assert!(!w.combat_book_volume_two_was_used, "below 259: book2 stays false");
-        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed
-        let w = parse(&data).expect("v260 loads");
+        let mut data260 = synthetic_file(260, &[2, 144], 160, 11);
+        let tail_at260 = tail_offset_in_synthetic(&data260, 260);
+        data260[tail_at260 + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed
+        let w = parse(&data260).expect("v260 loads");
         assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
         // W4-g90 lane 7: the satchel byte now LANDS (v260, `:2405`); the
         // book-two byte ahead of it stays 0.
@@ -4770,6 +4723,7 @@ mod tests {
         let end = flags_tail(261).len();
         data[tail_at + end - 7] = 1; // unlockedSlimeGreenSpawn
         data[tail_at + end - 1] = 1; // unlockedSlimeCopperSpawn
+        let w = parse(&data).expect("v261 loads (green/copper)");
         assert!(w.unlocked_slime_green_spawn, "green reads from 261 (W4-f43b)");
         assert!(w.unlocked_slime_copper_spawn, "copper reads from 261 (W4-f43b)");
         assert!(!w.unlocked_slime_old_spawn, "the untouched bytes stay 0");
@@ -4788,29 +4742,30 @@ mod tests {
         let world = owned_world();
         let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
-        let tail_at = ptr1 - flags_tail(VER).len();
-        assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
-        assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
-        // W4-g15 lane 5: the copper byte at tail 2044 (yellow@2043 stays 0).
-        assert_eq!(buf[tail_at + 2039], 1, "unlockedSlimeOldSpawn at tail 2039");
-        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036 (W4-a6)");
-        assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037 (W4-a6)");
-        assert_eq!(buf[tail_at + 2021], 1, "boughtCat at tail 2021 (W4-a6)");
-        assert_eq!(buf[tail_at + 2022], 1, "boughtDog at tail 2022 (W4-a6)");
-        assert_eq!(buf[tail_at + 2023], 1, "boughtBunny at tail 2023 (W4-a6)");
-        // W4-f43b: the six slime bytes at their pinned offsets.
-        assert_eq!(buf[tail_at + 2027], 1, "unlockedSlimeBlueSpawn at tail 2027");
-        assert_eq!(buf[tail_at + 2038], 1, "unlockedSlimeGreenSpawn at tail 2038");
-        assert_eq!(buf[tail_at + 2040], 1, "unlockedSlimePurpleSpawn at tail 2040");
-        assert_eq!(buf[tail_at + 2043], 1, "unlockedSlimeYellowSpawn at tail 2043");
-        assert_eq!(buf[tail_at + 2044], 1, "unlockedSlimeCopperSpawn at tail 2044");
         let block = expected_flags_block(&world);
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
+        // Every field below sits past the party block, so add the `d` shift.
         assert_eq!(buf[tail_at + 1939 + d], 1, "combatBookWasUsed at tail 1939+d");
         assert_eq!(buf[tail_at + 2042 + d], 1, "unlockedSlimeRedSpawn at tail 2042+d");
+        // W4-g15 lane 5: the copper byte at tail 2044 (yellow@2043 stays 0).
+        assert_eq!(buf[tail_at + 2039 + d], 1, "unlockedSlimeOldSpawn at tail 2039+d");
+        assert_eq!(buf[tail_at + 2036 + d], 1, "combatBookVolumeTwoWasUsed at tail 2036+d");
+        assert_eq!(buf[tail_at + 2037 + d], 1, "peddlersSatchelWasUsed at tail 2037+d");
+        assert_eq!(buf[tail_at + 2021 + d], 1, "boughtCat at tail 2021+d");
+        assert_eq!(buf[tail_at + 2022 + d], 1, "boughtDog at tail 2022+d");
+        assert_eq!(buf[tail_at + 2023 + d], 1, "boughtBunny at tail 2023+d");
+        // W4-f43b: the six slime bytes at their pinned offsets.
+        assert_eq!(buf[tail_at + 2027 + d], 1, "unlockedSlimeBlueSpawn at tail 2027+d");
+        assert_eq!(buf[tail_at + 2038 + d], 1, "unlockedSlimeGreenSpawn at tail 2038+d");
+        assert_eq!(buf[tail_at + 2040 + d], 1, "unlockedSlimePurpleSpawn at tail 2040+d");
+        assert_eq!(buf[tail_at + 2043 + d], 1, "unlockedSlimeYellowSpawn at tail 2043+d");
+        assert_eq!(buf[tail_at + 2044 + d], 1, "unlockedSlimeCopperSpawn at tail 2044+d");
     }
 
     /// W4-f45 — the downed-flag census lands at its C# byte offsets and
@@ -4845,7 +4800,10 @@ mod tests {
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let block = expected_flags_block(&world);
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         assert_eq!(buf[tail_at + 26], 1, "downedClown at tail 26");
@@ -4909,11 +4867,18 @@ mod tests {
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let block = expected_flags_block(&world);
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
+        let s = 4 * world.extra_spawn_points.len();
         for off in [2047, 2048, 2049, 2050, 2059, 2061, 2062, 2063] {
-            assert_eq!(buf[tail_at + off + d], 1, "seed byte at tail {off}+d");
+            // Bases at/after 2061 follow the inserted spawn list, so they shift
+            // by `d + s`; the earlier seed bytes only by `d`.
+            let shift = d + if off >= 2061 { s } else { 0 };
+            assert_eq!(buf[tail_at + off + shift], 1, "seed byte at tail {off}");
         }
         // v286: none of the eight exists yet — the moondial pair ends the tail.
         let w = parse(&synthetic_file(286, &[2, 144], 160, 11)).expect("v286 loads");
@@ -5137,7 +5102,10 @@ mod tests {
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let block = expected_flags_block(&world);
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         assert_eq!(
@@ -5205,21 +5173,23 @@ mod tests {
         data[at..at + 4].copy_from_slice(&2i32.to_le_bytes());
         let w = parse(&data).expect("the patched fixture parses");
         assert_eq!(w.game_mode, 2, "GameMode i32 at the flags head");
-        // v209: the i32 exists, Journey (3) reads.
-        let mut data = synthetic_file(209, &[2, 144], 160, 11);
+        // v209: the i32 exists, Journey (3) reads. A v209 file carries pointers
+        // 0..8 (bestiary/creative are gated off below 210/220), so the footer
+        // follows pointer 8 — `present` must be 9.
+        let mut data = synthetic_file(209, &[2, 144], 160, 9);
         let at = flags_start(&data, 209);
         data[at..at + 4].copy_from_slice(&3i32.to_le_bytes());
         let w = parse(&data).expect("v209 loads");
         assert_eq!(w.game_mode, 3, "the i32 reads from 209");
         // v208: the expert bool + the master byte. bool 1 + master 1 -> 2.
-        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let mut data = synthetic_file(208, &[2, 144], 160, 9);
         let at = flags_start(&data, 208);
         data[at] = 1; // GameMode as bool (expert)
         data[at + 1] = 1; // the v208 master byte
         let w = parse(&data).expect("v208 loads");
         assert_eq!(w.game_mode, 2, "the v208 master byte upgrades to 2");
         // v208 with the master byte down stays expert (1).
-        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let mut data = synthetic_file(208, &[2, 144], 160, 9);
         let at = flags_start(&data, 208);
         data[at] = 1;
         let w = parse(&data).expect("v208 expert loads");
@@ -5268,7 +5238,7 @@ mod tests {
         let w = parse(&data).expect("the patched fixture parses");
         assert_eq!(w.tree_x, [100, 200, 300], "treeX");
         assert_eq!(w.tree_style, [1, 2, 3, 4], "treeStyle");
-        assert_eq!(w.cave_back_x, [110, 210, 310], "caveBackX");
+        assert_eq!(&w.cave_back_x[..3], &[110, 210, 310], "caveBackX");
         assert_eq!(w.cave_back_style, [5, 6, 7, 0], "caveBackStyle");
         assert_eq!(w.ice_back_style, 3, "iceBackStyle");
         assert_eq!(w.jungle_back_style, 1, "jungleBackStyle");
@@ -5304,7 +5274,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         assert_eq!(
             i32::from_le_bytes(buf[tail_at + 96..tail_at + 100].try_into().unwrap()),
@@ -5345,7 +5318,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         assert_eq!(buf[tail_at + 37], 1, "afterPartyOfDoom round-trips");
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
@@ -5374,7 +5350,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         assert_eq!(
@@ -5415,14 +5394,25 @@ mod tests {
         // v296: the list does not exist yet — stays empty.
         let w = parse(&synthetic_file(296, &[2, 144], 160, 11)).expect("v296 loads");
         assert!(w.extra_spawn_points.is_empty(), "below 297: extraSpawnPoints empty");
-        // v297: the count byte + pairs land. The 304/323 seed bytes come AFTER
-        // the spawn list, so the count byte stays at tail 2060 (the 289
-        // claimable array is present from 297, before it).
+        // v297: the count byte + pairs land. The v297 tail ends at the count
+        // byte (the dual/more/no seeds need 304/323, the manifest 299), so the
+        // count is the last tail byte. The pair is part of the flags section —
+        // splice it at pointer 1 (the header/tiles boundary) and shift pointers
+        // 1.. by the 4 inserted bytes.
         let mut data = synthetic_file(297, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 297);
-        data[tail_at + 2060] = 1; // one anchor
-        data[tail_at + 2061..tail_at + 2063].copy_from_slice(&7i16.to_le_bytes());
-        data[tail_at + 2063..tail_at + 2065].copy_from_slice(&9i16.to_le_bytes());
+        data[tail_at + flags_tail(297).len() - 1] = 1; // one anchor
+        let ptr_at = 4 + 20 + 2; // v297 >= 135: version + metadata + count
+        let ptr1 = i32::from_le_bytes(data[ptr_at + 4..ptr_at + 8].try_into().unwrap()) as usize;
+        let mut pair = Vec::new();
+        pair.extend_from_slice(&7i16.to_le_bytes());
+        pair.extend_from_slice(&9i16.to_le_bytes());
+        data.splice(ptr1..ptr1, pair);
+        for i in 1..11 {
+            let at = ptr_at + 4 * i;
+            let p = i32::from_le_bytes(data[at..at + 4].try_into().unwrap());
+            data[at..at + 4].copy_from_slice(&(p + 4).to_le_bytes());
+        }
         let w = parse(&data).expect("v297 loads");
         assert_eq!(w.extra_spawn_points, vec![(7, 9)], "extraSpawnPoints reads from 297");
     }
@@ -5441,16 +5431,18 @@ mod tests {
         assert!(w.bought_cat, "boughtCat at tail 2021");
         assert!(!w.bought_dog, "the dog byte between stays 0");
         assert!(w.bought_bunny, "boughtBunny at tail 2023");
-        // v216: the trio does not exist yet — all stay false.
-        let w = parse(&synthetic_file(216, &[2, 144], 160, 11)).expect("v216 loads");
+        // v216: the trio does not exist yet — all stay false. A v216 file has
+        // no creative-powers section (gate 220), so it carries 10 pointers.
+        let w = parse(&synthetic_file(216, &[2, 144], 160, 10)).expect("v216 loads");
         assert!(!w.bought_cat && !w.bought_dog && !w.bought_bunny, "below 217: false");
-        // v217: the trio lands. The v217 tail lacks the 223 empress/queenSlime
-        // (2), 240 deerclops (1), 250 slimeBlue (1), 251 unlocks (8), 257
-        // afterPartyOfDoom (1), 259/260 books (2), 261 slimes (7), 264 moondial
-        // (2), 287+ seeds — all AFTER the pets, so the pet offsets stay 2021.
-        let mut data = synthetic_file(217, &[2, 144], 160, 11);
+        // v217: the trio lands and is the LAST three tail bytes (the post-1.4
+        // bosses need 223). The 289 claimable array is absent below 289, so
+        // the absolute v326 offset 2021 does not apply — anchor from the end:
+        // cat = len-3, dog = len-2, bunny = len-1.
+        let mut data = synthetic_file(217, &[2, 144], 160, 10);
         let tail_at = tail_offset_in_synthetic(&data, 217);
-        data[tail_at + 2022] = 1; // boughtDog
+        let end = flags_tail(217).len();
+        data[tail_at + end - 2] = 1; // boughtDog
         let w = parse(&data).expect("v217 loads");
         assert!(w.bought_dog, "boughtDog reads from 217");
         assert!(!w.bought_cat, "the cat byte before it stays 0");
@@ -5460,7 +5452,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         for off in [2021, 2022, 2023] {
@@ -5486,19 +5481,19 @@ mod tests {
         let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
         assert!(!w.combat_book_volume_two_was_used, "below 259: combatBookTwo false");
         assert!(!w.peddlers_satchel_was_used, "below 260: satchel false");
-        // v259: the book lands, the satchel does not. The v259 tail lacks the
-        // 260 satchel (1), 261 slimes (7), 264 moondial (2), 287+ seeds — all
-        // AFTER the book, so the book offset stays 2036.
+        // v259: the book lands and is the LAST tail byte (the satchel needs
+        // 260). Below 289 the claimable array is absent, so the absolute v326
+        // offset 2036 does not apply — anchor from the tail end.
         let mut data = synthetic_file(259, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 259);
-        data[tail_at + 2036] = 1;
+        data[tail_at + flags_tail(259).len() - 1] = 1;
         let w = parse(&data).expect("v259 loads");
         assert!(w.combat_book_volume_two_was_used, "combatBookTwo reads from 259");
         assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
-        // v260: the satchel lands at 2037.
+        // v260: the satchel lands — the LAST byte of the v260 tail.
         let mut data = synthetic_file(260, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 260);
-        data[tail_at + 2037] = 1;
+        data[tail_at + flags_tail(260).len() - 1] = 1;
         let w = parse(&data).expect("v260 loads");
         assert!(w.peddlers_satchel_was_used, "peddlersSatchel reads from 260");
         // The writer's own block carries the owned world's pair (d=8 shift).
@@ -5507,7 +5502,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         assert_eq!(buf[tail_at + 2036 + d], 1, "combatBookTwo round-trips");
@@ -5539,12 +5537,15 @@ mod tests {
         let w = parse(&synthetic_file(260, &[2, 144], 160, 11)).expect("v260 loads");
         assert!(!w.unlocked_slime_green_spawn, "below 261: green stays false");
         assert!(!w.unlocked_slime_copper_spawn, "below 261: copper stays false");
-        // v261: the run lands. The v261 tail lacks the 264 moondial (2) + the
-        // 287+ seeds — all AFTER the slime run, so the offsets stay 2038..2044.
+        // v261: the run lands and ends the tail (the moondial needs 264, the
+        // seeds 287+). Below 289 the claimable array is absent, so anchor from
+        // the tail end: green/old/purple/rainbow/red/yellow/copper are the
+        // last seven bytes → old = len-6, yellow = len-2.
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 261);
-        data[tail_at + 2039] = 1; // old
-        data[tail_at + 2043] = 1; // yellow
+        let end = flags_tail(261).len();
+        data[tail_at + end - 6] = 1; // old
+        data[tail_at + end - 2] = 1; // yellow
         let w = parse(&data).expect("v261 loads");
         assert!(w.unlocked_slime_old_spawn, "old reads from 261");
         assert!(w.unlocked_slime_yellow_spawn, "yellow reads from 261");
@@ -5555,7 +5556,10 @@ mod tests {
         let block = expected_flags_block(&world);
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
         let flags_at = ptr1 - block.len();
-        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * world.party_celebrants.len()
+            - 4 * world.extra_spawn_points.len();
         let tail_at = flags_at + prefix_len;
         let d = 4 * world.party_celebrants.len();
         for off in [2038, 2039, 2040, 2043, 2044] {
@@ -5669,9 +5673,23 @@ mod tests {
         assert_eq!(w.rain_time, 5_184_000);
         assert_eq!(w.max_raining, 0.5);
         // W4-g90 lane 7: the book-two/satchel bytes at their pinned offsets
-        // (2036/2037 — between the princess 2035 and the slime run 2038).
-        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036");
-        assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037");
+        // (2036/2037 — between the princess 2035 and the slime run 2038). The
+        // synthetic `spliced` file leaves the flags at their defaults, so the
+        // positive pin comes from the owned world's writer block (the `+d`
+        // shift covers its 2-slot celebrant list).
+        let owned = owned_world();
+        let buf = to_bytes(&owned, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&owned);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len()
+            - flags_tail(VER).len()
+            - 4 * owned.party_celebrants.len()
+            - 4 * owned.extra_spawn_points.len();
+        let w_tail = flags_at + prefix_len;
+        let d = 4 * owned.party_celebrants.len();
+        assert_eq!(buf[w_tail + 2036 + d], 1, "combatBookVolumeTwoWasUsed at tail 2036");
+        assert_eq!(buf[w_tail + 2037 + d], 1, "peddlersSatchelWasUsed at tail 2037");
     }
 
     /// W4-g89e — `combatBookVolumeTwoWasUsed` follows its v259 gate

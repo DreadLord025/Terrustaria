@@ -76,7 +76,8 @@ pub fn open_present<R: PrefixRandom + ?Sized>(
     } else if rng.next_max(150) == 0 {
         // `:7046-7050` — the Red Ryder + 30-60 Musket Balls.
         quick_spawn(rng, out, 1870, 1);
-        quick_spawn(rng, out, 97, range(rng, 30, 61));
+        let stack = range(rng, 30, 61);
+        quick_spawn(rng, out, 97, stack);
     } else if rng.next_max(150) == 0 {
         quick_spawn(rng, out, 1909, 1); // Candy Cane Sword (`:7051-7054`)
     } else if rng.next_max(150) == 0 {
@@ -128,15 +129,17 @@ pub fn open_present<R: PrefixRandom + ?Sized>(
         }
         quick_spawn(rng, out, num, 1);
     } else if rng.next_max(8) == 0 {
-        quick_spawn(rng, out, 1912, range(rng, 1, 4)); // Eggnog (`:7127-7130`)
+        let stack = range(rng, 1, 4);
+        quick_spawn(rng, out, 1912, stack); // Eggnog (`:7127-7130`)
     } else if rng.next_max(9) == 0 {
-        quick_spawn(rng, out, 1913, range(rng, 20, 41)); // Star Anise (`:7131-7134`)
+        let stack = range(rng, 20, 41);
+        quick_spawn(rng, out, 1913, stack); // Star Anise (`:7131-7134`)
     } else {
         // `:7135-7149` — the candy-cane block tail: 20-49 each.
         match rng.next_max(3) {
-            0 => quick_spawn(rng, out, 1872, range(rng, 20, 50)), // Pine Tree Block
-            1 => quick_spawn(rng, out, 586, range(rng, 20, 50)),  // Candy Cane Block
-            _ => quick_spawn(rng, out, 591, range(rng, 20, 50)),  // Green Candy Cane Block
+            0 => { let stack = range(rng, 20, 50); quick_spawn(rng, out, 1872, stack) }, // Pine Tree Block
+            1 => { let stack = range(rng, 20, 50); quick_spawn(rng, out, 586, stack) },  // Candy Cane Block
+            _ => { let stack = range(rng, 20, 50); quick_spawn(rng, out, 591, stack) },  // Green Candy Cane Block
         }
     }
 }
@@ -154,9 +157,11 @@ pub fn open_legacy_present<R: PrefixRandom + ?Sized>(
     if num == 0 && hard_mode {
         quick_spawn(rng, out, 602, 1);
     } else if num <= 7 {
-        quick_spawn(rng, out, 586, range(rng, 20, 50));
+        let stack = range(rng, 20, 50);
+        quick_spawn(rng, out, 586, stack);
     } else {
-        quick_spawn(rng, out, 591, range(rng, 20, 50));
+        let stack = range(rng, 20, 50);
+        quick_spawn(rng, out, 591, stack);
     }
 }
 
@@ -176,12 +181,14 @@ pub fn open_goodie_bag<R: PrefixRandom + ?Sized>(rng: &mut R, out: &mut Vec<BagG
     }
     // `:9515-9519` — the 1/4 Rotten Egg ×10-40.
     if rng.next_max(4) == 0 {
-        quick_spawn(rng, out, 1809, range(rng, 10, 41));
+        let stack = range(rng, 10, 41);
+        quick_spawn(rng, out, 1809, stack);
         return;
     }
     // `:9520-9524` — the 1/10 five-way painting pick.
     if rng.next_max(10) == 0 {
-        quick_spawn(rng, out, range(rng, 1846, 1851), 1);
+        let item = range(rng, 1846, 1851);
+        quick_spawn(rng, out, item, 1);
         return;
     }
     // `:9525-9584` — the 19-way costume switch (the CostumeSet helpers
@@ -427,7 +434,8 @@ mod tests {
             spawn_replay(&mut r, &mut w, 1927, 1);
         } else if r.next_max(150) == 0 {
             spawn_replay(&mut r, &mut w, 1870, 1);
-            spawn_replay(&mut r, &mut w, 97, r.next_range(30, 61));
+            let sr_stack = r.next_range(30, 61);
+            spawn_replay(&mut r, &mut w, 97, sr_stack);
         } else if r.next_max(150) == 0 {
             spawn_replay(&mut r, &mut w, 1909, 1);
         } else if r.next_max(150) == 0 {
@@ -477,14 +485,16 @@ mod tests {
             }
             spawn_replay(&mut r, &mut w, num, 1);
         } else if r.next_max(8) == 0 {
-            spawn_replay(&mut r, &mut w, 1912, r.next_range(1, 4));
+            let sr_stack = r.next_range(1, 4);
+            spawn_replay(&mut r, &mut w, 1912, sr_stack);
         } else if r.next_max(9) == 0 {
-            spawn_replay(&mut r, &mut w, 1913, r.next_range(20, 41));
+            let sr_stack = r.next_range(20, 41);
+            spawn_replay(&mut r, &mut w, 1913, sr_stack);
         } else {
             match r.next_max(3) {
-                0 => spawn_replay(&mut r, &mut w, 1872, r.next_range(20, 50)),
-                1 => spawn_replay(&mut r, &mut w, 586, r.next_range(20, 50)),
-                _ => spawn_replay(&mut r, &mut w, 591, r.next_range(20, 50)),
+                0 => { let sr_stack = r.next_range(20, 50); spawn_replay(&mut r, &mut w, 1872, sr_stack) },
+                1 => { let sr_stack = r.next_range(20, 50); spawn_replay(&mut r, &mut w, 586, sr_stack) },
+                _ => { let sr_stack = r.next_range(20, 50); spawn_replay(&mut r, &mut w, 591, sr_stack) },
             }
         }
         (w, r)
@@ -503,11 +513,13 @@ mod tests {
             return (w, r);
         }
         if r.next_max(4) == 0 {
-            spawn_replay(&mut r, &mut w, 1809, r.next_range(10, 41));
+            let sr_stack = r.next_range(10, 41);
+            spawn_replay(&mut r, &mut w, 1809, sr_stack);
             return (w, r);
         }
         if r.next_max(10) == 0 {
-            spawn_replay(&mut r, &mut w, r.next_range(1846, 1851), 1);
+            let sr_item = r.next_range(1846, 1851);
+            spawn_replay(&mut r, &mut w, sr_item, 1);
             return (w, r);
         }
         let pieces: &[i32] = match r.next_max(19) {
@@ -557,9 +569,11 @@ mod tests {
                 if num == 0 && hard {
                     spawn_replay(&mut lr2, &mut lwant, 602, 1);
                 } else if num <= 7 {
-                    spawn_replay(&mut lr2, &mut lwant, 586, lr2.next_range(20, 50));
+                    let sr_stack = lr2.next_range(20, 50);
+                    spawn_replay(&mut lr2, &mut lwant, 586, sr_stack);
                 } else {
-                    spawn_replay(&mut lr2, &mut lwant, 591, lr2.next_range(20, 50));
+                    let sr_stack = lr2.next_range(20, 50);
+                    spawn_replay(&mut lr2, &mut lwant, 591, sr_stack);
                 }
                 assert_eq!(lout, lwant, "legacy seed {seed} hard {hard}");
                 assert_eq!(lr, lr2, "legacy seed {seed} hard {hard} stream");

@@ -52,14 +52,57 @@ pub(crate) struct CaptureWorld<'a> {
     pub tile_anim: &'a tr_core::drawdata_anim::TileAnimator,
     pub player_assets: &'a crate::render::entities::PlayerAssets,
     pub npc_assets: &'a crate::render::entities::NpcAssets,
-    pub leaf_spawns: &'a mut Vec<crate::render::foliage::LeafSpawn>,
+    /// W4-g68: the `EmitTreeLeaves` spawns go straight into the gore pool
+    /// (`Main.gore`) — the retired 400-cap `LeafSpawn` Vec channel is gone.
+    /// `main_rand` is the bare `Main.rand` stand-in the `NewGore*` internals
+    /// roll on; the tile-draw emission runs outside every SwapRandom block.
+    pub gore: &'a mut tr_core::gore::GorePool,
+    pub main_rand: &'a mut tr_core::UnifiedRandom,
+    /// `TileDrawing._isActiveAndNotPaused` (`TileDrawing.cs:469`).
+    pub emit_effects: bool,
+    /// `LiquidRenderer._animationFrame` / `_waterfallAnimationFrame`
+    /// (`LiquidRenderer.cs:844-845`): the capture threads the live clock's
+    /// current pair (the C# DrawCapture reads the live statics).
+    pub liquid_frames: (i32, i32),
+    /// `Main.cloudAlpha` (`rain.visual_alpha()`) — the case-83 herb gate.
+    pub rain_cloud_alpha: f32,
+    /// `Main.critterCage` (`Main.cs:1445`) — the tile pass clears/sets it.
+    pub critter_cage: &'a mut bool,
+    /// `Main.chest[]` (`Main.cs:66994`).
+    pub chests: &'a [crate::chest::WorldChest],
+    /// `Main.*CageFrame` animator (`Main.cs:66902-66972`).
+    pub cage_anim: &'a mut tr_core::drawdata_cages::CritterCageAnimator,
+    /// `LiquidRenderer._random` (`LiquidRenderer.cs:132`).
+    pub liquid_rand: &'a mut tr_core::UnifiedRandom,
+    /// `Main.dust` — the orb-family emit pool.
+    pub dust: &'a mut tr_core::particles::DustPool,
+    /// `Dust.NewDust`'s cull inputs.
+    pub spawn_ctx: &'a tr_core::particles::SpawnCtx,
+    /// `Main.martianLight` (`Main.cs:1231`).
+    pub martian_light: f32,
+    /// `world.frame_rng` snapshot (the orb-family `NewDust` stream).
+    pub orb_main_rand: &'a mut tr_core::UnifiedRandom,
+    /// The orb-family's `NewDust` cull inputs.
+    pub orb_ctx: &'a tr_core::particles::SpawnCtx,
+    /// `Main.gamePaused` (`Main.cs:38427`).
+    pub game_paused: bool,
+    /// `MoonLordScreenShaderData.LatestFilterStrength`.
+    pub latest_filter_strength: f32,
     /// The capture's biome background-index override inputs
     /// (`Main.cs:56675-56680`): the surface chains' texture-id tables read
-    /// the world's per-biome styles; the clouds ride the live frame's
-    /// sprites (the C# scales their positions for the capture camera,
-    /// `:56822-56828` — the port draws them at the chunk camera unscaled,
-    /// a documented approximation).
-    pub clouds: &'a [crate::render::sky::CloudSprite],
+    /// the world's per-biome styles; the cloud field is the live frame's
+    /// (`Main.cloud[200]`; the C# scales its positions for the capture
+    /// camera, `:56822-56828` — the port draws them at the chunk camera
+    /// unscaled, a documented approximation).
+    pub cloud_field: &'a crate::cloud::CloudField,
+    /// The live `PartySky` balloon field (`EventSkies`); the capture threads
+    /// the frame's state like the other `Main.*` statics (`Main.cs:56675`).
+    pub event_skies: &'a crate::event_skies::EventSkies,
+    /// The live `Main.treeMntBGSet1..4` hill ids (`DrawSurfaceBG`'s forest
+    /// change overlays read them, `Main.cs:59527-59718`).
+    pub forest_hills: &'a [[i32; 2]; 4],
+    /// The live `LanternSky` field, drawn at the capture's depth boundaries.
+    pub lantern_sky: &'a crate::render::lantern_sky::LanternSky,
     /// `Main.GameUpdateCount` — the animated background sheets' counter.
     pub counter: u32,
     /// `Main.mouseTextColor` — the Mushroom glow's pulse.
@@ -197,6 +240,7 @@ impl CaptureRenderer for GpuCaptureRenderer<'_> {
             settings.biome.background_index,
             cw.world.jungle_bg_style as i32,
             cw.world.hallow_bg_style as i32,
+            &cw.world.desert_bg_set(),
             1.0,
         );
         // GATE RNG fix: one leaf-roll stream per chunk render — the C#
@@ -358,8 +402,8 @@ fn render_capture_layer(
             let (x0, y0, x1, y1) = capture_view_rect(cw.world, layer_cam, layer_screen);
             let draws = tr_core::liquid_draw::build(cw.world, x0, y0, x1, y1);
             crate::render::liquids::draw_waters(
-                renderer, cw.lookups, cw.light, cw.style, cw.anim_time,
-                &draws, pass, ws, liquid_alpha,
+                renderer, cw.world, cw.lookups, cw.atlas, cw.light, cw.style,
+                cw.anim_time, cw.liquid_frames, &draws, pass, ws, liquid_alpha,
             );
             renderer.render_world_only(gpu, view, layer_cam.to_array(), cam.zoom, cw.anim_time, None);
         }
@@ -377,7 +421,10 @@ fn render_capture_layer(
                 // (the C# draws none — the ambient entities are a DoDraw
                 // pass, not a DrawCapture one).
                 let tint = crate::render::sky::color_of_the_skies(
-                    cw.world.time, cw.world.day_time, cw.world.moon_phase,
+                    cw.world.time,
+                    cw.world.day_time,
+                    cw.world.moon_phase,
+                    cw.world.blood_moon,
                 );
                 let amb_ctx = crate::ambience::SkyDrawCtx {
                     camera: layer_cam,
@@ -387,17 +434,57 @@ fn render_capture_layer(
                     atmo: 1.0,
                     bg_alpha_front: bg_front,
                     background_enabled: true,
+                    world_surface: cw.world.world_surface,
                 };
                 let mut amb_last = f32::INFINITY;
+                // `Main.worldSurface * 16` — the same surface pixel line the
+                // live frame hands `draw_sky` (`TILE_PX` in sky.rs).
+                let surface_px = cw.world.world_surface as f32 * 16.0;
+                // `Main.hellBlackBoxBottom`: the capture threads the same
+                // live-ish floor line into the surface chains and the
+                // underground backdrop below.
+                let mut hell_bottom = 0.0;
                 crate::render::sky::draw_surface_bg(
-                    renderer, layer_cam, 1.0, layer_screen, cw.world, cw.sky,
-                    cw.clouds, bg_front, bg_far, tint, 0.0, true, cw.anim_time,
-                    cw.counter, cw.mouse_text_color, &[], cw.lookups,
-                    &amb_ctx, &mut amb_last,
+                    renderer,
+                    layer_cam,
+                    1.0,
+                    layer_screen,
+                    cw.world,
+                    cw.sky,
+                    cw.cloud_field,
+                    surface_px,
+                    tint,
+                    1.0,
+                    false,
+                    None,
+                    cw.event_skies,
+                    cw.forest_hills,
+                    [0.0; 4],
+                    None,
+                    0.0,
+                    &*cw.light,
+                    0.0,
+                    &mut hell_bottom,
+                    cw.metrics,
+                    &mut *cw.ug_back,
+                    0.0,
+                    cw.lantern_sky,
+                    cw.anim_time % 3600.0,
+                    bg_front,
+                    bg_far,
+                    tint,
+                    0.0,
+                    true,
+                    cw.anim_time,
+                    cw.counter,
+                    cw.mouse_text_color,
+                    &[],
+                    &*cw.lookups,
+                    &amb_ctx,
+                    &mut amb_last,
                 );
                 // `DrawBackground()` (`Main.cs:56924`): the underground
                 // backdrop under the surface chains.
-                let mut hell_bottom = 0.0;
                 // W4-g72 closeout delta 64d §2: the 10→14-arg append —
                 // the `TR_SHOW_INVISIBLE` env pin (the bg wall gate reads
                 // the same pin as the tile flag), the frame's scene
@@ -444,6 +531,7 @@ fn draw_capture_tiles(
         cw.style,
         cw.entity_lights,
         cw.anim_time,
+        cw.liquid_frames,
         cw.waterfall,
         None,
         cw.player_assets,
@@ -455,18 +543,33 @@ fn draw_capture_tiles(
         &[],
         None,
         liquid_alpha,
+        cw.metrics.active_fountain_color,
         0,
         cw.wind,
         cw.grass_wind_counter,
         cw.tree_wind_counter,
         cw.sunflower_wind_counter,
-        cw.leaf_spawns,
+        cw.gore,
+        cw.main_rand,
+        cw.emit_effects,
         cw.vine_wind_counter,
         cw.wiring,
         cw.party_is_up,
         false,
+        cw.rain_cloud_alpha,
         cw.tile_anim,
+        cw.critter_cage,
+        cw.chests,
         filter,
+        cw.cage_anim,
+        cw.liquid_rand,
+        cw.dust,
+        cw.spawn_ctx,
+        cw.martian_light,
+        cw.orb_main_rand,
+        cw.orb_ctx,
+        cw.game_paused,
+        cw.latest_filter_strength,
     )
 }
 

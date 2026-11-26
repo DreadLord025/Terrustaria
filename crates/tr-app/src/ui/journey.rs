@@ -680,6 +680,9 @@ pub fn search_fits(
             flags: super::tooltip_lines2::HoverFlags { context: -1, ..Default::default() },
             difficulty: journey_difficulty,
             research: Some(tracker),
+            // The search-entry probe draws no shop/inventory/world context
+            // (a fresh `new Item()`, `ItemFilters.cs:37`).
+            ..Default::default()
         },
     );
     let needle = search.to_lowercase();
@@ -1016,6 +1019,13 @@ fn draw_research_page(
         false,
         INVENTORY_SCALE,
         [1.0; 4],
+        super::UiPulse::default(),
+        // ctx 30 draws no background and takes no CoinSlot state; the cursor
+        // is treated as air (no dim) and carries no dye.
+        None,
+        -1,
+        true,
+        false,
     );
     // The progress text (`:255-264`): scale 0.8, Top 10, centred in the
     // panel's inner rect.
@@ -1165,6 +1175,11 @@ fn draw_duplication_page(
             false,
             GRID_SCALE,
             grid_tint(ctx),
+            super::UiPulse::default(),
+            None,
+            -1,
+            true,
+            false,
         );
     }
     r.pop_clip();
@@ -2101,16 +2116,16 @@ mod tests {
         m.anim_left = 57;
         m.research_complete = true;
         let mut rng = tr_core::UnifiedRandom::new(7);
-        let mut cues: Vec<String> = Vec::new();
-        let mut play = |c: &str| cues.push(c.to_string());
+        let cues = std::cell::RefCell::new(Vec::new());
+        let mut play = |c: &str| cues.borrow_mut().push(c.to_string());
         // 57 → 56: no cue yet (the check reads the pre-decrement value).
         tick_animation(&mut m, true, &mut rng, &mut play);
-        assert!(cues.is_empty());
+        assert!(cues.borrow().is_empty());
         assert_eq!(m.anim_left, 56);
         // 56: the thunk (one of Research_1..3) + 15 sparks.
         tick_animation(&mut m, true, &mut rng, &mut play);
-        assert_eq!(cues.len(), 1);
-        assert!(["Research_1", "Research_2", "Research_3"].contains(&cues[0].as_str()));
+        assert_eq!(cues.borrow().len(), 1);
+        assert!(["Research_1", "Research_2", "Research_3"].contains(&cues.borrow()[0].as_str()));
         assert_eq!(m.sparks.len(), 15);
         // Every spark starts at scale 0.6 - 1/60 after the first integration
         // and carries the -2 y bias.
@@ -2122,13 +2137,13 @@ mod tests {
         while m.anim_left > 39 {
             tick_animation(&mut m, true, &mut rng, &mut play);
         }
-        assert!(cues.iter().any(|c| c == "Research_0"));
+        assert!(cues.borrow().iter().any(|c| c == "Research_0"));
         assert!(!m.research_complete);
         // Off the research page the timer still decrements, no cues.
         m.anim_left = 56;
-        let n = cues.len();
+        let n = cues.borrow().len();
         tick_animation(&mut m, false, &mut rng, &mut play);
-        assert_eq!(cues.len(), n);
+        assert_eq!(cues.borrow().len(), n);
         assert_eq!(m.anim_left, 55);
     }
 

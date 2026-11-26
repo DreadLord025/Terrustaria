@@ -3554,28 +3554,28 @@ mod tests {
         // Top-left cell: frames (0,0) → no steps.
         set_framed(&mut w, 12, 12, 283, 0, 0);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12),
+            try_get_tile_bounds(&w, 12, 12).map(|b| (b.x, b.y, b.width, b.height)),
             Some((12, 12, 3, 3))
         );
         // Bottom-right cell: frames (36,36) → :5177-5181 two column steps
         // (36→20→4), :5183-5190 two row steps (36→20→4).
         set_framed(&mut w, 12, 12, 283, 36, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12),
+            try_get_tile_bounds(&w, 12, 12).map(|b| (b.x, b.y, b.width, b.height)),
             Some((10, 10, 3, 3))
         );
         // Padding column/row (frame 18 = 16+2): the C# while/for still step
         // once — the remainder 18 >= 16 (:5177/:5185), padding is NOT skipped.
         set_framed(&mut w, 12, 12, 283, 18, 18);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12),
+            try_get_tile_bounds(&w, 12, 12).map(|b| (b.x, b.y, b.width, b.height)),
             Some((11, 11, 3, 3))
         );
         // A second style column (frameX 54 = one CFW): the remainder resets,
         // the walk is style-independent (:5172-5175 divides first).
         set_framed(&mut w, 12, 12, 283, 54, 0);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12),
+            try_get_tile_bounds(&w, 12, 12).map(|b| (b.x, b.y, b.width, b.height)),
             Some((12, 12, 3, 3))
         );
     }
@@ -3589,7 +3589,7 @@ mod tests {
         // (:5177-5181), 36 → two row steps → top-left (15,10).
         set_framed(&mut w, 20, 12, 275, 90, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 20, 12),
+            try_get_tile_bounds(&w, 20, 12).map(|b| (b.x, b.y, b.width, b.height)),
             Some((15, 10, 6, 3))
         );
     }
@@ -3604,7 +3604,7 @@ mod tests {
         // (row 0), remainder 4 < 18 (row 1) → one row step.
         set_framed(&mut w, 11, 11, 21, 18, 20);
         assert_eq!(
-            try_get_tile_bounds(&w, 11, 11),
+            try_get_tile_bounds(&w, 11, 11).map(|b| (b.x, b.y, b.width, b.height)),
             Some((10, 10, 2, 2))
         );
         // C# quirk pinned: frameY 36 is row 1's PADDING (row 1 spans 18..36);
@@ -3612,7 +3612,7 @@ mod tests {
         // one tile above the true top. Faithful, not "fixed" (:5183-5190).
         set_framed(&mut w, 11, 11, 21, 18, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 11, 11),
+            try_get_tile_bounds(&w, 11, 11).map(|b| (b.x, b.y, b.width, b.height)),
             Some((10, 9, 2, 2))
         );
     }
@@ -3624,12 +3624,13 @@ mod tests {
         let mut w = world();
         set_framed(&mut w, 10, 11, 270, 0, 18);
         assert_eq!(
-            try_get_tile_bounds(&w, 10, 11),
+            try_get_tile_bounds(&w, 10, 11).map(|b| (b.x, b.y, b.width, b.height)),
             Some((10, 10, 1, 2))
         );
         // Inactive tile: the seam's :5198-5201 gate → None.
         set_framed(&mut w, 10, 11, 270, 0, 18);
-        w.tiles[w.index(10, 11)].flags &= !FLAG_ACTIVE;
+        let bi = w.index(10, 11);
+        w.tiles[bi].flags &= !FLAG_ACTIVE;
         assert_eq!(try_get_tile_bounds(&w, 10, 11), None);
         // Unregistered kind (stone 1): `_data[type]` null (:5208-5211).
         set_framed(&mut w, 10, 11, 1, 0, 0);
@@ -3640,7 +3641,7 @@ mod tests {
         // remainder -1 < 16 → no steps (:5172-5175, both languages agree).
         set_framed(&mut w, 10, 11, 270, -1, -1);
         assert_eq!(
-            try_get_tile_bounds(&w, 10, 11),
+            try_get_tile_bounds(&w, 10, 11).map(|b| (b.x, b.y, b.width, b.height)),
             Some((10, 11, 1, 2))
         );
     }

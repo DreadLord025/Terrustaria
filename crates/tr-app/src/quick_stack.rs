@@ -73,13 +73,6 @@ fn is_air(s: &ItemSlot) -> bool {
 /// One source slot: its vanilla inventory index (grid 0..50, coins 50..54,
 /// ammo 54..58, void vault 58+) and the item snapshot.
 #[derive(Clone, Copy)]
-struct SourceSlot {
-    /// The `PlayerItemSlotID.SlotReference.SlotId` — the port keeps the vanilla
-    /// grid/coin/ammo numbering; the void vault rows start at 58.
-    slot_id: usize,
-    item: ItemSlot,
-    /// `SourceInventory.transferBlocked[i]` (`:195`).
-    blocked: bool,
 pub(crate) struct SourceSlot {
     /// The `PlayerItemSlotID.SlotReference.SlotId` — the port keeps the vanilla
     /// grid/coin/ammo numbering; the void vault rows start at 58.
@@ -91,7 +84,6 @@ pub(crate) struct SourceSlot {
 
 /// `QuickStacking.DestinationHelper` (`QuickStacking.cs:14-98`): one non-empty
 /// destination chest with its free-slot queue and per-category scores.
-struct Dest<'a> {
 pub(crate) struct Dest<'a> {
     slots: &'a mut [ItemSlot],
     item_count: usize,
@@ -114,7 +106,6 @@ pub(crate) struct Dest<'a> {
 impl<'a> Dest<'a> {
     /// `Reset` (`:49-64`) + the `BuildDestinationMetricsAndStackItems` free-slot
     /// and category-score pre-pass (`:476-484`).
-    fn new(slots: &'a mut [ItemSlot], locked: bool, position: (f32, f32), chest_index: i32) -> Self {
     pub(crate) fn new(slots: &'a mut [ItemSlot], locked: bool, position: (f32, f32), chest_index: i32) -> Self {
         let item_count = slots.len();
         let mut free_slots = Vec::new();
@@ -139,8 +130,6 @@ impl<'a> Dest<'a> {
             category_scores,
             position,
             chest_index,
-        }
-    }
             changed: Vec::new(),
         }
     }
@@ -316,7 +305,6 @@ fn best_for_category(c: usize, dests: &[Dest<'_>]) -> Option<usize> {
 /// `QuickStacking.Transfer` (`:404-459`): the matching-type merge pass, then the
 /// smart-stack category pass. Returns the blocked world-chest indices
 /// (`_blockedChests`, `:450-458`).
-fn transfer(source: &mut [SourceSlot], dests: &mut [Dest<'_>], smart_stack: bool) -> Vec<i32> {
 pub(crate) fn transfer(source: &mut [SourceSlot], dests: &mut [Dest<'_>], smart_stack: bool) -> Vec<i32> {
     let mut matching: Vec<(u16, usize)> = Vec::new();
     for (d, dest) in dests.iter_mut().enumerate() {
@@ -362,7 +350,7 @@ pub(crate) fn transfer(source: &mut [SourceSlot], dests: &mut [Dest<'_>], smart_
 fn restore_to_player(
     source: &[SourceSlot],
     grid: &mut [ItemSlot; crate::item::INV],
-    vault: Option<&mut [ItemSlot]>,
+    mut vault: Option<&mut [ItemSlot]>,
 ) {
     for s in source {
         if s.slot_id < 50 {

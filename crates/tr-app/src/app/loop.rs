@@ -627,11 +627,13 @@ impl ApplicationHandler for App {
                         if self.menu.is_some() {
                             self.front_mouse_down = false;
                         }
-                        if let Some(m) = self.menu.as_mut() {
+                        if self.menu.is_some() {
                             // `Main.mouseLeft` (`Main.cs:51101`): the value
                             // bars drag off this flag (`Main.cs:51533-51576`),
                             // held between the press and release events.
-                            m.mouse_down = pressed;
+                            if let Some(m) = self.menu.as_mut() {
+                                m.mouse_down = pressed;
+                            }
                             if !pressed {
                                 // `UIScrollbar.LeftMouseUp` — the achievements
                                 // bar's drag latch clears on release in the
@@ -665,8 +667,11 @@ impl ApplicationHandler for App {
                                 if pressed && self.issue_indicator_click() {
                                     return;
                                 }
-                                m.update_hover(self.mouse_pos);
-                                let action = m.click();
+                                let action = {
+                                    let m = self.menu.as_mut().unwrap();
+                                    m.update_hover(self.mouse_pos);
+                                    m.click()
+                                };
                                 // W4-g22 — the per-site cue the activation
                                 // queued (`Main.DrawMenu`'s inline plays:
                                 // 10 forward / 11 Back / 12 toggles, the
@@ -677,7 +682,7 @@ impl ApplicationHandler for App {
                                 // is silent). The hover tick above stays:
                                 // it is `DoStatefulTickSound` (`:3244`/
                                 // `:3256`), g21's site.
-                                if let Some(cue) = m.take_cue() {
+                                if let Some(cue) = self.menu.as_mut().unwrap().take_cue() {
                                     self.audio.play(cue);
                                 }
                                 // Bug 17: the legacy menu's click tick —
@@ -1370,27 +1375,28 @@ impl App {
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `SoundEngine.PlaySound(11)` (`:24973`), the port's 11 cue.
                     self.audio.play("Menu_Close");
-                    if let Some(m) = self.map.as_mut() {
-                        let open = !m.open;
-                        if open {
-                            // W4-e10 gap census — the open prologue
-                            // (`TryOpeningFullscreenMap`,
-                            // `Player.cs:29107-29110`): the inventory
-                            // closes, `CloseSign(quiet: true)` (NO cue),
-                            // the talk latch + the chat text clear — then
-                            // the `PlaySound(10)` (`:29111`).
-                            self.inventory_open = false;
-                            crate::signs::close_sign(self, true); // `:29108`
-                            self.talk_npc = None;
-                            self.npc_chat_text.clear();
-                        }
-                        m.set_open(open);
-                        // W4-e10 — the close arm plays 11
-                        // (`Player.cs:24973`); the open arm rides
-                        // `TryOpeningFullscreenMap`'s `PlaySound(10)`
-                        // (`Player.cs:29111`).
-                        self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
+                    // The toggle's target, read before the mutable borrow below.
+                    let open = self.map.as_ref().is_some_and(|m| !m.open);
+                    if open {
+                        // W4-e10 gap census — the open prologue
+                        // (`TryOpeningFullscreenMap`,
+                        // `Player.cs:29107-29110`): the inventory
+                        // closes, `CloseSign(quiet: true)` (NO cue),
+                        // the talk latch + the chat text clear — then
+                        // the `PlaySound(10)` (`:29111`).
+                        self.inventory_open = false;
+                        crate::signs::close_sign(self, true); // `:29108`
+                        self.talk_npc = None;
+                        self.npc_chat_text.clear();
                     }
+                    if let Some(m) = self.map.as_mut() {
+                        m.set_open(open);
+                    }
+                    // W4-e10 — the close arm plays 11
+                    // (`Player.cs:24973`); the open arm rides
+                    // `TryOpeningFullscreenMap`'s `PlaySound(10)`
+                    // (`Player.cs:29111`).
+                    self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
                 } else {
                     self.try_open_fullscreen_map();
                 }

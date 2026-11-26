@@ -258,6 +258,21 @@ impl std::ops::BitOrAssign<u16> for SeedFlags {
     }
 }
 
+impl std::ops::BitOr<SeedFlags> for SeedFlags {
+    type Output = SeedFlags;
+    fn bitor(self, rhs: SeedFlags) -> SeedFlags {
+        SeedFlags {
+            bits: self.bits | rhs.bits,
+        }
+    }
+}
+
+impl std::ops::BitOrAssign<SeedFlags> for SeedFlags {
+    fn bitor_assign(&mut self, rhs: SeedFlags) {
+        self.bits |= rhs.bits;
+    }
+}
+
 impl From<u16> for SeedFlags {
     fn from(bits: u16) -> Self {
         SeedFlags { bits }

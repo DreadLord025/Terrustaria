@@ -126,7 +126,7 @@ impl Projectile {
         if self.sound_delay == 0 {
             self.sound_delay = -1;
             let (cx, cy) = self.center();
-            self.wants_sound = Some((2, 82, cx, cy, 0.0));
+            self.wants_sound = Some((2, 82, cx, cy, 0.0, 1.0));
         }
         // `:36010-36014` — the age tick + the cap kill.
         self.ai[0] += 1.0;

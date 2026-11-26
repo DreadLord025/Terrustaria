@@ -504,7 +504,7 @@ mod tests {
             oracle.next_range(-2, 10);
             oracle.next_range(-6, 6);
         }
-        assert_eq!(rng.peek(), oracle.peek(), "the burst draw order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the burst draw order");
         assert_eq!(out.shots.len(), count as usize);
         for s in &out.shots {
             assert_eq!(s.projectile_type, 836);

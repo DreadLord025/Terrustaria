@@ -149,13 +149,10 @@ pub struct RegenInputs {
     /// research/138 §2 — pre-summing 0.2+1.0 into `extra_time` reorders
     /// the f32 adds).
     pub aegis_crystal: bool,
-    /// (`:19117-19120`) in `extra_time`, the C#'s f32 accumulation order
-    /// (W4-g90 lane 7).
-    pub aegis_crystal: bool,
-    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 permanent
-    /// mana-regen boost — `manaRegenDelay -= 0.05f` inside the positive-
-    /// delay block (`:19430-19433`) and `manaRegen += statManaMax2 / 50`
-    /// after the still/grapple doubling (`:19453-19456`) (W4-g90 lane 7).
+    /// W4-g90-lane-7 alias of [`RegenInputs::used_arcane_crystal`] (same
+    /// `Player.usedArcaneCrystal` flag, `Player.cs:856`; the g90 lane renamed
+    /// the input to `arcane_crystal` — both spellings stay live so every
+    /// caller keeps compiling, and the engine ORs them below).
     pub arcane_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
@@ -495,11 +492,9 @@ pub fn update_mana_regen(
             state.mana_regen_delay -= 1.0;
         }
         // `:19430-19433` — the Arcane Crystal's permanent −0.05 per delay
-        // tick (inside the `> 0` guard, after the still/grapple extra).
-        if in_.used_arcane_crystal {
-        // `:19430-19433` — the Arcane Crystal's −0.05, INSIDE the positive-
-        // delay block after the still/grapple/buff decrement (W4-g90 lane 7).
-        if in_.arcane_crystal {
+        // tick (inside the `> 0` guard, after the still/grapple extra;
+        // W4-g90 lane 7 keeps the `arcane_crystal` alias live via the OR).
+        if in_.used_arcane_crystal || in_.arcane_crystal {
             state.mana_regen_delay -= 0.05;
         }
     }
@@ -520,12 +515,9 @@ pub fn update_mana_regen(
             state.mana_regen += num5;
         }
         // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` extra
-        // (integer division), after the still/grapple double.
-        if in_.used_arcane_crystal {
-        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` (integer
-        // division), after the still/grapple doubling, before the num10
-        // bar-ratio scale (W4-g90 lane 7).
-        if in_.arcane_crystal {
+        // (integer division), after the still/grapple double (W4-g90 lane 7
+        // keeps the `arcane_crystal` alias live via the OR).
+        if in_.used_arcane_crystal || in_.arcane_crystal {
             state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;

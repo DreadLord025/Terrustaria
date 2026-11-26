@@ -64,7 +64,7 @@ pub fn kill312_gores(
         let scale = if pass == 1 { 0.8 } else { 0.4 };
         for (sx, sy) in signs {
             let ty = rng.next_range(61, 64);
-            let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+            let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
             let g = gore.slot_mut(idx);
             g.velocity *= scale;
             g.velocity.x += sx;
@@ -94,7 +94,7 @@ pub fn kill249_gore(
     world: &World,
 ) {
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity *= 0.2;
     g.velocity.x += rng.next_range(-1, 2) as f32;
@@ -132,7 +132,7 @@ pub fn duck_gores(
         } else {
             (331, rng.next_range(40, 141) as f32 * 0.01)
         };
-        let idx = gore.new_gore(rng, world, c + dir * 10.0, vel, ty, scale);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, c + dir * 10.0, vel, ty, scale);
         gore.slot_mut(idx).sticky = false;
     }
 }

@@ -724,7 +724,13 @@ pub(super) fn try_replacing_tiles(app: &mut App, tx: i32, ty: i32, can_use: bool
         };
         for (id, count, dx, dy) in drops {
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-            super::spawn_item_drop(&mut app.items, rng, id, count, dx, dy);
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut app.items,
+                rng,
+                id,
+                count,
+                glam::Vec2::new(dx, dy),
+            );
         }
         app.request_edit(*kx, *ky, 0, 0);
     }

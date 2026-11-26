@@ -82,7 +82,7 @@ pub fn pirate_jump_small_gores(
     let pos = center(p) + Vec2::new(-p.direction as f32 * 8.0, 0.0);
     for _ in 0..2 {
         let ty = rng.next_range(11, 14);
-        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity /= 3.0;
         g.velocity.x = -g.velocity.x.abs() * p.direction as f32;
@@ -108,7 +108,7 @@ pub fn pirate_idle_gore(
     }
     let ty = rng.next_range(580, 583);
     let pos = center(p) + Vec2::new(-p.direction as f32 * 8.0, 0.0);
-    let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity /= 2.0;
     g.velocity.y = g.velocity.y.abs();
@@ -134,7 +134,7 @@ pub fn rope_spawn_gore(
     }
     let vector = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 8.0);
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore_direct(rng, world, vector, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, vector, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity = next_vector2_circular(rng, 1.5, 0.8);
     g.velocity.x += 0.1 * if g.velocity.x > 0.0 { 1.0 } else { -1.0 };
@@ -158,7 +158,7 @@ pub fn toilet_pop_gores(
     for _ in 0..count {
         let vel = Vec2::new(0.0, -3.0) + next_vector2_circular(rng, 1.0, 1.0);
         let ty = rng.next_range(580, 583);
-        let idx = gore.new_gore_direct(rng, world, c, vel, ty, 1.0);
+        let idx = gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, c, vel, ty, 1.0);
         gore.slot_mut(idx).velocity.y = -gore.slot(idx).velocity.y.abs();
     }
 }
@@ -181,7 +181,7 @@ pub fn celeb2_gore(
         (p.h * rng.next_max(100) as f32) / 100.0,
     );
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore(rng, world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos + off - Vec2::splat(10.0), Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity *= 0.3;
     g.velocity.x += rng.next_range(-10, 11) as f32 * 0.05;

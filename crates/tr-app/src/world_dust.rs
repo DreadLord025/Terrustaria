@@ -14,24 +14,6 @@
 //! census oracle ADAPTED to replay the gore argument draws g14
 //! consumes. WRITTEN NOT RUN (code-only).
 
-#[cfg(test)]
-mod tests {
-    //! Each mirror replays the C# draw census on a probe
-    //! `UnifiedRandom` and compares `peek()` against the ported
-    //! body's stream, then checks the post-spawn field writes.
-
-    use tr_core::particles::{Color, DustPool, SpawnCtx};
-    use tr_core::worldgen_dust::{
-        coating_color, kill_actuator_dust, kill_wire_dust, paint_coat_effect_dust,
-        paint_effect_dust, tree_grow_fx_ash_shake, unlock_door_dust,
-    };
-    use tr_core::{UnifiedRandom, World};
-    use glam::Vec2;
-
-    /// A permissive whole-world ctx (the d52 `dust_ctx` house pattern):
-    /// the pool never culls, so every spawn lands and the draw census
-    /// matches the live empty-pool path.
-    fn dust_ctx(w: &World) -> SpawnCtx {
 //! W4-f6 batch 4 — the small world-file dust sites (13): the chest unlock
 //! (`Chest.cs:420`), `Utils.PoofOfSmoke` (`Utils.cs:1089`), the pylon
 //! teleport dust (`TeleportPylonsSystem.cs:390`), the void-lens pair
@@ -183,7 +165,7 @@ pub fn pylon_spawn_dust(
     world: &World,
 ) {
     // `:329-389` — the colour switch (default white).
-    let (r, g, b) = match tile_style {
+    let (r, g, b): (f32, f32, f32) = match tile_style {
         0 => (0.05, 0.8, 0.3),   // SurfacePurity
         1 => (0.7, 0.8, 0.05),   // Jungle
         2 => (0.5, 0.3, 0.7),    // Hallow
@@ -442,7 +424,7 @@ pub fn rain_splash(
     ctx: &SpawnCtx,
     world: &World,
 ) -> bool {
-    if !(rng.next_max(100) as f32 < gfx_quality * 100.0) {
+    if !((rng.next_max(100) as f32) < gfx_quality * 100.0) {
         return false; // `:120` — the gate draw still ran.
     }
     let idx = dust.new_dust(
@@ -519,7 +501,29 @@ pub fn nebula_levelup_beam(
 
 #[cfg(test)]
 mod tests {
+    //! Each mirror replays the C# draw census on a probe
+    //! `UnifiedRandom` and compares `peek()` against the ported
+    //! body's stream, then checks the post-spawn field writes.
+
     use super::*;
+    use tr_core::worldgen_dust::{
+        coating_color, kill_actuator_dust, kill_wire_dust, paint_coat_effect_dust,
+        paint_effect_dust, tree_grow_fx_ash_shake, unlock_door_dust,
+    };
+
+    /// A permissive whole-world ctx (the d52 `dust_ctx` house pattern):
+    /// the pool never culls, so every spawn lands and the draw census
+    /// matches the live empty-pool path.
+    fn dust_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
 
     fn world() -> World {
         World::new("f6-world".into(), 200, 200)
@@ -531,7 +535,6 @@ mod tests {
             game_paused: false,
             generating: false,
             screen_position: Vec2::ZERO,
-            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
             screen_size: Vec2::new(3200.0, 3200.0),
             max_dust_to_draw: 6000,
         }
@@ -642,13 +645,13 @@ mod tests {
         let ctx = dust_ctx(&w);
         let mut rng = UnifiedRandom::new(54);
         let mut probe = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut gen_probe = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
         let mut saw_big = false;
         let mut saw_small = false;
         for i in 0..100 {
-            paint_effect_dust(10, 20, 9, 0, &mut rng, &mut gen, &mut dust, &ctx, &w);
+            paint_effect_dust(10, 20, 9, 0, &mut rng, &mut gen_rng, &mut dust, &ctx, &w);
             for _ in 0..10 {
                 block(&mut probe, 143, 16, 16);
                 if gen_probe.next_max(2) == 0 {
@@ -658,7 +661,7 @@ mod tests {
                 }
             }
             assert_eq!(rng.peek(), probe.peek(), "paint main stream @{i}");
-            assert_eq!(gen.peek(), gen_probe.peek(), "paint gen stream @{i}");
+            assert_eq!(gen_rng.peek(), gen_probe.peek(), "paint gen stream @{i}");
             drain(&mut dust);
         }
         assert!(saw_big && saw_small, "both Next(2) arms exercised");
@@ -673,9 +676,9 @@ mod tests {
         let w = World::new("t".into(), 200, 200);
         let ctx = dust_ctx(&w);
         let mut rng = UnifiedRandom::new(54);
-        let mut gen = UnifiedRandom::new(7);
+        let mut gen_rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
-        paint_effect_dust(10, 20, 0, 30, &mut rng, &mut gen, &mut dust, &ctx, &w);
+        paint_effect_dust(10, 20, 0, 30, &mut rng, &mut gen_rng, &mut dust, &ctx, &w);
         // Replay the first spawn: the block's scale roll is the LAST
         // Next(-20,21); re-derive it.
         let mut replay2 = UnifiedRandom::new(54);
@@ -713,11 +716,11 @@ mod tests {
         for coat in [0u8, 1, 2, 3] {
             let mut rng = UnifiedRandom::new(54);
             let mut probe = UnifiedRandom::new(54);
-            let mut gen = UnifiedRandom::new(7);
+            let mut gen_rng = UnifiedRandom::new(7);
             let mut gen_probe = UnifiedRandom::new(7);
             let mut dust = DustPool::new();
             for i in 0..50 {
-                paint_coat_effect_dust(10, 20, coat, &olds, &mut rng, &mut gen, &mut dust, &ctx, &w);
+                paint_coat_effect_dust(10, 20, coat, &olds, &mut rng, &mut gen_rng, &mut dust, &ctx, &w);
                 for _ in 0..10 {
                     if coat == 0 {
                         probe.next_max(2); // Next(oldColors.Count)
@@ -726,7 +729,7 @@ mod tests {
                     gen_probe.next_max(2);
                 }
                 assert_eq!(rng.peek(), probe.peek(), "coat {coat} main @{i}");
-                assert_eq!(gen.peek(), gen_probe.peek(), "coat {coat} gen @{i}");
+                assert_eq!(gen_rng.peek(), gen_probe.peek(), "coat {coat} gen @{i}");
                 drain(&mut dust);
             }
         }
@@ -841,6 +844,8 @@ mod tests {
             assert!((d.velocity.x - vel.x).abs() < 1e-5);
             assert!((d.velocity.y - vel.y).abs() < 1e-5);
         }
+    }
+
     fn active(pool: &DustPool) -> Vec<usize> {
         (0..6000).filter(|&i| pool.slot(i).active).collect()
     }
@@ -1123,10 +1128,10 @@ mod tests {
             spawned += 1;
         }
         assert_eq!(n, spawned);
-        assert_eq!(active(&pool).len(), spawned);
+        assert_eq!(active(&pool).len(), spawned as usize);
         // The big bubble (last spawned) mirrors the velocity chain.
-        let big = &pool.slot(spawned - 1);
-        let mbig = &mpool.slot(spawned - 1);
+        let big = &pool.slot(spawned as usize - 1);
+        let mbig = &mpool.slot(spawned as usize - 1);
         assert_eq!(big.velocity, mbig.velocity);
         assert!(big.no_gravity);
         assert_eq!(rng.next(), mirror.next());

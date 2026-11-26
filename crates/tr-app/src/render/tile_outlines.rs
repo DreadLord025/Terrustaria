@@ -228,6 +228,9 @@ pub(crate) fn draw_tile_outlines(
     player_center_x: Option<f32>,
     global_time: f32,
     weather_vane_bobframe: i32,
+    // The `GetTileDrawData` world corrections' weather inputs (the same
+    // `WeatherCtx` the fused tile pass builds from `Main.raining`/cloudAlpha).
+    weather: &tr_core::growth::WeatherCtx,
 ) -> u32 {
     if state.coords.is_empty() {
         return 0;
@@ -292,6 +295,7 @@ pub(crate) fn draw_tile_outlines(
             tile.frame_x,
             tile.frame_y,
             anim_row,
+            weather,
         );
         if let Some(cased) = crate::drawdata_cases_b::case_draw_data(
             tile.kind,
@@ -315,9 +319,19 @@ pub(crate) fn draw_tile_outlines(
             (cell[1] * 255.0).min(255.0) as u8,
             (cell[2] * 255.0).min(255.0) as u8,
         ];
+        // The glow result is discarded here (the outline pass draws none), so
+        // the disco/tile-frame inputs are the neutral/first-frame values.
         let _glow = crate::drawdata_cases_a::apply_cases_a(
-            &mut dd, world, tile, x, y, [cell_bytes[0], cell_bytes[1], cell_bytes[2], 255],
-            255, 0.0,
+            &mut dd,
+            world,
+            tile,
+            x,
+            y,
+            [cell_bytes[0], cell_bytes[1], cell_bytes[2], 255],
+            255,
+            0.0,
+            [255, 0, 0],
+            anim_row,
         );
         let fx = dd.frame_x_override.unwrap_or(tile.frame_x) as i32;
         let fy = dd.frame_y_override.unwrap_or(tile.frame_y) as i32;

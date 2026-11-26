@@ -74,14 +74,14 @@ pub fn coin_pile_gores(
         for _ in 0..10 {
             let vx = -5.0 + 10.0 * rng.next_float();
             let vy = (0.0 - rng.next_float()) * 5.0;
-            gore.new_gore_direct(rng, world, c, Vec2::new(vx, vy), ty, 1.0);
+            gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, c, Vec2::new(vx, vy), ty, 1.0);
         }
     }
     // `:72768-72771` — the 20-loop, Lerp(-0.5,0.5) / Y ×2.
     for _ in 0..20 {
         let vx = -0.5 + 1.0 * rng.next_float();
         let vy = (0.0 - rng.next_float()) * 2.0;
-        gore.new_gore_direct(rng, world, c, Vec2::new(vx, vy), 1026, 1.0);
+        gore.new_gore_direct(&mut crate::projectile::DynGoreRng(rng), world, c, Vec2::new(vx, vy), 1026, 1.0);
     }
 }
 
@@ -102,7 +102,7 @@ pub fn cursed_flame_gores(
             p.pos.y + rng.next_max(p.h as i32) as f32,
         );
         let ty = rng.next_range(435, 438);
-        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, pos, Vec2::ZERO, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity *= 0.5;
         // `:72892-72910` — the switch; index 4 takes the default (-,-).
@@ -156,7 +156,7 @@ pub fn kill483_gore(
     world: &World,
 ) {
     let ty = rng.next_range(61, 64);
-    let idx = gore.new_gore(rng, world, p.pos, Vec2::ZERO, ty, 1.0);
+    let idx = gore.new_gore(&mut crate::projectile::DynGoreRng(rng), world, p.pos, Vec2::ZERO, ty, 1.0);
     let g = gore.slot_mut(idx);
     g.velocity *= 0.3;
     g.velocity.x += rng.next_range(-1, 2) as f32;

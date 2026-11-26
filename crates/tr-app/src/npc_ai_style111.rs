@@ -924,7 +924,7 @@ mod tests {
         oracle.next_range(-20, 21);
         oracle.next_range(-20, 21);
         oracle.next_range(-20, 21);
-        assert_eq!(rng.peek(), oracle.peek(), "the bolt draw order");
+        assert_eq!(env.rng.peek(), oracle.peek(), "the bolt draw order");
         let shot = out.shot.expect("the 5-tick fire");
         assert_eq!(shot.projectile_type, 682);
         assert_eq!(shot.damage, 50);
