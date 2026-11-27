@@ -1006,6 +1006,91 @@ were deferred for exactly the pixel-identity reason). A5 (zoom LOD), D4 (light
 LOD), C6 (light one frame ahead) and F2 (temporal cycle) stay rejected for
 their original reasons.
 
+## S2-7 — Crate adoption plan (2026-11-27)
+
+Owner rule: adopt a crate when it **either** makes the code easier to read and
+maintain without costing frame time, **or** buys even ~0.1 ms in the tick or
+render (a little code growth is acceptable). Reject it when it changes
+behaviour — RNG streams, float evaluation order, pixels, iteration order — or
+buys neither. Stage 2 starts after the 1.4.6.1 port and its C# DIFF: the
+1.4.5.8 numbers are not the baseline to optimise.
+
+**Already transitive in `Cargo.lock`** — using the API costs no extra build:
+`naga`, `png`, `bytes`, `memmap2`, `parking_lot`, `smallvec`,
+`raw-window-handle`, `bytemuck`.
+
+### S2-7a — Clarity / maintainability (adopt)
+
+| crate | role | note |
+| --- | --- | --- |
+| `dirs` | standard folder resolution | replaces the hand-rolled `Documents/My Games/...` (`app/mod.rs`, `ui/world_creation.rs`, `ui/save_list.rs`); survives an OneDrive-redirected Documents. `directories` only if a config/cache split is needed |
+| `unicode-segmentation` | grapheme-correct text editing | Backspace/Delete/cursor in the name/seed/chat fields |
+| `static_assertions` | compile-time layout guards | `assert_eq_size!` on `Tile` (12 B), the vertex/instance structs, `NpcRecord` |
+| `naga` | WGSL validation in tests/build | pin the exact naga version wgpu 30 resolves; catches shader errors before launch |
+| `num_enum` | `TryFromPrimitive` for **new** enums | never the 688-variant roster or the 512-entry `ALL_KINDS` table |
+| `thiserror` | typed error enums | library seams; `anyhow` stays for application code |
+| `indexmap` | insertion-ordered maps | only where the order is observable (UI lists, registries) |
+| `bitflags` | new flag words | the 12-byte `Tile` keeps its hand accessors |
+| `gilrs` | gamepad input | the port has no gamepad today; vanilla supports axes, hot-plug and rumble |
+| `clap` | dedicated-server CLI | `TerrariaServer`-shaped flags when the server lands |
+| `euclid` | typed tile/pixel coordinates | gradual only: new modules first, never a mass refactor |
+
+Dev-only: `insta` (world/state snapshots), `proptest`/`arbitrary` (binary
+round-trips), `divan` (micro-benchmarks), `pretty_assertions` (diffs),
+`puffin`/`puffin_egui` (in-frame profile), `dhat` (zero-allocation proof),
+`wgpu-profiler` (GPU passes).
+
+### S2-7b — Measured performance (adopt on the 0.1 ms rule)
+
+The order is the S2-0 profile order, not a wish list.
+
+| crate | use | expected |
+| --- | --- | --- |
+| `mimalloc` | global allocator | cheap tick/render win; A/B with `TR_BENCH=600` |
+| `parking_lot` | locks already in the graph | 15 `Mutex` sites; the `lang` manager mutex is the first candidate |
+| `rustc-hash` | `FxHashMap`/`FxHashSet` | 81/61 std maps today, mostly numeric-id lookups |
+| `smallvec`/`arrayvec` | per-tick scratch lists | collisions, light queue, packet buffers |
+| `wide` | portable SIMD | independent lanes (RGB light, dust); prove per-lane bit-equality |
+| `pulp` | runtime AVX2/AVX-512 dispatch | only after `wide` plateaus |
+| `bytes` | ref-counted packet buffers | zero-copy slicing in `net.rs` |
+| `lexical-core` | number formatting without heap | HUD damage/FPS/coords; or `ryu`/`itoa` |
+| `memmap2` | memory-mapped loads | large `.wld`/asset load time, not FPS |
+| `slotmap`/`slab` | pooled entity ids | only if it removes a hot scan/rebuild |
+| `bumpalo` | per-frame arena | only if the profile shows per-frame allocations |
+| `bitvec` | dense masks | only where a mask is genuinely hot (`.map` is already 4 B/tile) |
+| `crossbeam-channel`/`rtrb` | worker/audio queues | only if a hot channel appears (3 `mpsc` sites today) |
+| `socket2` | server socket buffers | `set_nodelay` already exists; measure buffers/keepalive |
+| `hashbrown`/`ahash` | string-key maps | only if FxHash is insufficient |
+
+### S2-7c — Rejected (behaviour/risk or no gain)
+
+`byteorder`, `binrw` (there is `binio`; byte-exact `.wld`/`.plr` + goldens),
+`lz4_flex` (XNB is XCompress/LZX; Terraria ships mostly uncompressed),
+`fontdue`/`ab_glyph` (the retail fonts are bitmap `DynamicSpriteFont`),
+`cosmic-text` (the port has its own pixel-exact layout), `lyon`, `colorgrad`,
+`half` (would change light/pixel bytes), `fixed` (C# uses float/double),
+`ordered-float` (`f32::total_cmp`), `num-traits`/`backtrace` (std),
+`cbc` (the 15-line CBC with goldens), `encoding_rs` (only if Windows-125x
+appears), `phf`/`paste`/`const_format`/`fast-float` (no hot string/table path),
+`bresenham`/`line_drawing`, `noise-functions`, `bracket-noise`, `delaunator`,
+`spline`/`kurbo`, `rstar` (all either change worldgen/gameplay output or have no
+Terraria use), `ddsfile`/`ktx2` (not the game's formats), `toml`/`ron` (the port
+reads JSON / generated Rust tables), `zerocopy` (`bytemuck` suffices),
+`bitfield-struct` for `Tile` (the save layout is the hand-packed one),
+`quinn`/`renet` (the protocol is Terraria TCP), `palette`,
+`etagere`/`guillotiere` (atlas pages are the retail ones), `tokio` (until a
+dedicated server needs it).
+
+**Deferred:** `steamworks` (achievements/Cloud/Workshop/P2P),
+`discord-rich-presence`, `rfd` (import dialogs), `open` (shell links), `sysinfo`
+(crash reports), `notify` (hot reload, dev-only), `tracy-client`, `soa_derive`
+(only if the tile scan dominates), `aligned-vec` (with the SIMD step),
+`raw-window-handle` (already transitive; only for overlays).
+
+**Order:** S2-0 baseline → `mimalloc` + `puffin`/`dhat` → S2-7a clarity set →
+S2-7b in profile order → re-run the invariants after each step (RNG streams,
+save layout, world hashes, SHA256 screenshots).
+
 ---
 
 # Verification protocol
@@ -1061,7 +1146,9 @@ A task is done when its row's **verify** column is satisfied. The house rules
 9. **Save/load** — S1-J-1…J-3 (byte parity + the golden fixture), then the
    Stage-2 compression.
 10. **Stage 2** — S2-0 measurements, then the engine design doc, then the
-    network design doc, then implementation.
+    network design doc, then implementation. The S2-7 crate set is
+    interleaved: the clarity crates after the baseline, the performance
+    crates strictly behind the profile.
 
 Two-agent rule (AGENTS.md): `git fetch --prune` and check `git branch -a`
 before claiming a row; push the task branch as the claim.
