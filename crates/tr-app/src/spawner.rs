@@ -7438,6 +7438,9 @@ mod tests {
         let mut c = UnifiedRandom::new(5);
         let bad = tr_core::loot::roll_only_bad_luck(&mut c, -1.0, 300);
         let mut d = UnifiedRandom::new(5);
+        // `Luck.RollOnlyBadLuck` (Luck.cs:30-37) draws the gate FIRST:
+        // `if (luck < 0f && Main.rand.NextFloat() < 0f - luck)`.
+        let _gate = d.next_float();
         let inner = d.next_range(150, 300);
         let want = d.next_range(0, inner);
         assert_eq!(bad, want);

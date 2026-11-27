@@ -1197,8 +1197,18 @@ mod tests {
         }
         let tail_idx = if mirror.next_max(3) != 0 && ai1 < 150.0 {
             let idx = mpool.new_dust(&mut mirror, &dc, &w, Vec2::new(dx, dy + hi as f32 / 2.0), wi, hi / 2, 241, 0.0, 0.0, 0, Color::default(), 1.0);
-            mirror.next_double(); mirror.next_double();
-            mirror.next_float();
+            // `:39052-39055` — the custom position/velocity overwrite (the
+            // 4π/3 ellipse, NO 0.8 outer factor). The mirror must apply it
+            // too, or it compares the raw NewDust position.
+            let (rx, ry) = rotated_unit_y_random(&mut mirror, 4.188790321350098);
+            let k = 0.8 + mirror.next_float() * 0.2;
+            let md = mpool.slot_mut(idx);
+            md.position = Vec2::new(
+                dx + wi as f32 * 0.5 + rx * (wi / 2) as f32 * k,
+                dy + hi as f32 * 0.5 + ry * (hi / 2) as f32 * k,
+            );
+            md.velocity.x = 0.0;
+            md.velocity.y = md.velocity.y.abs() * 0.25;
             Some(idx)
         } else { None };
         assert_eq!(rng, mirror, "the tail tick's full census");

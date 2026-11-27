@@ -909,6 +909,7 @@ mod tests {
         assert_eq!(out.damage, 40);
         n.ai[0] = 3.2;
         n.ai[1] = 1.0;
+        n.ai[2] = 0.0; // the 3.2 ramp starts from a clean counter
         let out = style88_step(&mut n, &mut e);
         assert_eq!(out.damage, 104);
         assert_eq!(n.vx, (16.0 + 1.0 / 30.0) * 1.0);

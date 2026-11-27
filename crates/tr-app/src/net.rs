@@ -276,7 +276,9 @@ pub mod id {
     pub const UNUSED_83: u8 = 83;
     /// `93 SocialHandshake` (W4-g50, S1-I-4): deprecated (`MessageID.cs:200`),
     /// no writer arm; the reader's ignore group (`MessageBuffer.cs:4483-4490`).
-    pub const UNUSED_93: u8 = 93;
+    /// Alias of `SOCIAL_HANDSHAKE` — one wire id, two port names; the decode
+    /// arm returns the canonical `SocialHandshake` variant.
+    pub const UNUSED_93: u8 = SOCIAL_HANDSHAKE;
     /// `85 QuickStackChests` (W4-g50, S1-I-4): the client's quick-stack ask —
     /// `(int)` slot count + `(short)` slot ids + `(byte)` smartStack
     /// (`MessageID.cs:184`, `NetMessage.cs:1205-1210`,
@@ -395,7 +397,9 @@ pub mod id {
     /// the reader adds the team-spawn tail (`MessageBuffer.cs:2355-2363`:
     /// `teamBasedSpawnsSeed` + an extra spawn point → `CheckSection` +
     /// `158 ExtraSpawnSectionLoaded`).
-    pub const TEAM_CHANGE_UI: u8 = 157;
+    /// Alias of `TEAM_CHANGE_FROM_UI` — one wire id, two port names; the decode
+    /// arm returns the canonical `TeamChangeFromUi` variant.
+    pub const TEAM_CHANGE_UI: u8 = TEAM_CHANGE_FROM_UI;
 
     // ---- S1-I-1 wave E: the event/misc tail (W4-d99) ----
     // The census after the d89-d98 lanes' named regions: the weather-adjacent
@@ -2069,14 +2073,19 @@ pub struct PlayerInfo {
 impl PlayerInfo {
     /// The defaults the port sends: the name is the only field with a home
     /// today (`App.player_name`); every appearance field rides the wire as
-    /// vanilla-zero until the character milestone lands. Note the read side
-    /// clamps `voiceVariant` into 1..4 (`MessageBuffer.cs:300`), so a decoded
-    /// `with_name` carries `voice_variant = 1`, not the written 0.
+    /// vanilla-zero until the character milestone lands, except the voice
+    /// variant — C# defaults it to 1 and clamps it into 1..4 on read
+    /// (`Player.cs:56045`, `:55831`; `MessageBuffer.cs:300`), so 0 would not
+    /// be a legal player value.
     pub fn with_name(player_id: u8, name: &str) -> Self {
         Self {
             player_id,
             skin_variant: 0,
-            voice_variant: 0,
+            // `Player.voiceVariant` is 1 on a fresh player (`Player.cs:56045`)
+            // and load clamps it into 1..4 (`Player.cs:55831`); the reader
+            // clamps the same way (`MessageBuffer.cs:300`), so 0 would make
+            // every decoded frame differ from the one sent.
+            voice_variant: 1,
             voice_pitch_offset: 0.0,
             hair: 0,
             name: name.to_string(),
@@ -5553,11 +5562,9 @@ impl C2s {
                 y: r.i16()?,
                 damage: r.u8()?,
             }),
-            // `MessageBuffer.cs:2325-2333` — 157 shares 45's reader arm.
-            id::TEAM_CHANGE_UI => Self::TeamChangeUi(TeamChange {
-                player_id: r.u8()?,
-                team: r.u8()?,
-            }),
+            // `MessageBuffer.cs:2325-2333` — 157's canonical variant
+            // (`TeamChangeFromUI`, `MessageID.cs:328`); `TeamChangeUi` is the
+            // duplicate port alias and has no decode arm (one id, one variant).
             // `MessageBuffer.cs:4460`: two ReadUInt16 (the writer wrote
             // shorts — the non-negative section indices are the same bytes).
             id::SECTION_REQUEST => Self::SectionRequest {
@@ -7089,6 +7096,13 @@ impl S2c {
                 body: r.rest()?.to_vec(),
             },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
+            // `MessageBuffer.cs:1825-1850`: the host relays the kill to the
+            // other peers, so the client decoder reads the same key + Vector2.
+            id::PROJECTILE_DEAD => Self::ProjectileDead {
+                key: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            },
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
             // `MessageBuffer.cs:1819-1824`: no body.
             id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
@@ -7574,6 +7588,15 @@ impl S2c {
                 x: r.i16()?,
                 y: r.i16()?,
             }),
+            // `MessageBuffer.cs:4060-4064`: the host relays the cup landing to
+            // the other peers — owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
+            }),
             // `MessageBuffer.cs:3235-3242` — float pair, RGB, NetworkText.
             id::COMBAT_TEXT_STRING => Self::CombatTextString(CombatTextString {
                 x: r.f32()?,
@@ -7791,8 +7814,6 @@ impl S2c {
             }),
             // `MessageBuffer.cs:4488` — the deprecated ignore group, no body.
             id::UNUSED_83 => Self::Unused83,
-            // `MessageBuffer.cs:4489` — the deprecated ignore group, no body.
-            id::UNUSED_93 => Self::Unused93,
             // `MessageBuffer.cs:3269` / `QuickStacking.cs:332-341`: int count,
             // the ushort chest indices.
             id::QUICK_STACK_CHESTS => {
@@ -7910,10 +7931,12 @@ impl S2c {
                 wire_slot: r.u8()?,
                 item: TeItem::read_slot(r)?,
             }),
-            // `25/26/44/67/83` — the reader's ignore group reads nothing
+            // `25/26/44/67/83/93` — the reader's ignore group reads nothing
             // (`MessageBuffer.cs:4483-4490`); bare frames decode.
             id::UNUSED_25 => Self::Unused25,
             id::UNUSED_26 => Self::Unused26,
+            // `MessageID.cs:200` — 93's canonical name; `Unused93` is the
+            // duplicate port alias and has no decode arm (one id, one variant).
             id::SOCIAL_HANDSHAKE => Self::SocialHandshake,
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -9788,7 +9811,8 @@ mod tests {
         assert_eq!(back.hair, 0);
         assert_eq!(back.name, "Rusty");
         // voiceVariant 0 clamps UP to 1 (`Utils.Clamp(voiceVariant, 1, 4)`).
-        let zero = PlayerInfo::with_name(3, "Ann");
+        let mut zero = PlayerInfo::with_name(3, "Ann");
+        zero.voice_variant = 0;
         let body = zero.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
         let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
         assert_eq!(back.voice_variant, 1);
@@ -11856,10 +11880,14 @@ mod tests {
             let f = half_unpack(bits);
             assert_eq!(half_pack(f), bits, "half round trip {bits:#06x}");
         }
-        // Inf/NaN expand to the exact float bit patterns.
-        assert_eq!(half_unpack(0x7c00).to_bits(), f32::INFINITY.to_bits());
-        assert_eq!(half_unpack(0xfc00).to_bits(), f32::NEG_INFINITY.to_bits());
-        assert!(half_unpack(0x7e00).is_nan());
+        // Exponent 31: FNA's `HalfTypeHelper.Convert(ushort)` has no special
+        // case — it computes `(((value >> 10) & 0x1f) - 15 + 127) << 23`, so
+        // 31 becomes exponent 143 (2^16) with the mantissa shifted 13, i.e.
+        // 0x7c00 -> 65536.0f and 0x7e00 -> 98304.0f, NOT inf/NaN. Port that
+        // verbatim (Terraria writes these via `HalfVector2`).
+        assert_eq!(half_unpack(0x7c00).to_bits(), 0x4780_0000); // 65536.0
+        assert_eq!(half_unpack(0xfc00).to_bits(), 0xc780_0000); // -65536.0
+        assert_eq!(half_unpack(0x7e00).to_bits(), 0x47c0_0000); // 98304.0
     }
 
     fn w4_g49_place_object_round_trips_both_directions() {
@@ -11883,7 +11911,8 @@ mod tests {
         body.push(1);
         let f = C2s::PlaceObject(b).encode();
         assert_eq!(f[2], 79);
-        assert_eq!(f.len(), 3 + 12);
+        // eight bytes of shorts + alt + random + direction = 11 body bytes.
+        assert_eq!(f.len(), 3 + 11);
         assert_eq!(&f[3..], &body);
         let mut r = NetReader::new(&f[3..]);
         match C2s::decode(f[2], &mut r).expect("decode") {
@@ -13099,19 +13128,19 @@ mod tests {
     }
 
     #[test]
-    fn s1_i_1b_team_change_ui_shares_the_45_body() {
+    fn s1_i_1b_team_change_from_ui_shares_the_45_body() {
         // `NetMessage.cs:970-974` — 157 shares 45's writer case: (byte)player
         // + (byte)team. The reader tail (`MessageBuffer.cs:2355-2363`) is the
         // dispatcher's job (S1-I-4).
         let t = TeamChange { player_id: 3, team: 2 };
-        let c = C2s::TeamChangeUi(t).encode();
+        let c = C2s::TeamChangeFromUi(t).encode();
         assert_eq!(c[2], 157);
         assert_eq!(&c[3..], &[3, 2]);
         // Byte-identical body to the 45 codec, only the id byte differs.
         let plain = C2s::TeamChange(t).encode();
         assert_eq!(&c[3..], &plain[3..]);
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
-            C2s::TeamChangeUi(d) => assert_eq!(d, t),
+            C2s::TeamChangeFromUi(d) => assert_eq!(d, t),
             other => panic!("expected 157, got {:?}", other.msg_id()),
         }
     }
@@ -14298,6 +14327,9 @@ mod tests {
         body.extend_from_slice(&9u32.to_le_bytes());
         body.extend_from_slice(&80i32.to_le_bytes());
         body.extend_from_slice(&100i32.to_le_bytes());
+        // Then the port's two-client extension: team (int) + dead (bool).
+        body.extend_from_slice(&0i32.to_le_bytes());
+        body.push(0);
         let c = C2s::PlayerState(ps).encode();
         assert_eq!(c[2], 13);
         assert_eq!(&c[3..], &body);
@@ -14590,7 +14622,7 @@ mod tests {
         body.extend_from_slice(&900.75f32.to_le_bytes());
         body.extend_from_slice(&[255, 160, 80]);
         body.push(0); // NetworkText literal mode (`NetworkText.cs:65-70`)
-        body.push(20); // the 7-bit length of "Belsin was slain..."
+        body.push(19); // BinaryWriter's 7-bit length of "Belsin was slain..."
         body.extend_from_slice(b"Belsin was slain...");
         assert_eq!(&f[3..], &body);
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
@@ -15550,11 +15582,11 @@ mod tests {
     /// frame; the reader's ignore group (`MessageBuffer.cs:4483-4490`).
     #[test]
     fn w4_g50_unused_93_is_a_bare_no_op_frame() {
-        let f = S2c::Unused93.encode();
+        let f = S2c::SocialHandshake.encode();
         assert_eq!(f[2], 93);
         assert_eq!(f.len(), 3, "id 93 has no body");
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
-            S2c::Unused93 => {}
+            S2c::SocialHandshake => {}
             other => panic!("expected 93, got {:?}", other.msg_id()),
         }
     }
@@ -16051,8 +16083,8 @@ mod tests {
         assert_eq!(f.len(), 3 + 1 + 4 + 1 + 1 + 1);
         assert_eq!(f[3], 3);
         assert_eq!(&f[4..8], &77i32.to_le_bytes());
-        assert_eq!(f[10], 2);
-        assert_eq!(f[11], 5);
+        assert_eq!(f[9], 2);
+        assert_eq!(f[10], 5);
         match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
             C2s::DisplayDollSync(d) => assert_eq!(d, pose),
             other => panic!("expected 121, got {:?}", other.msg_id()),
@@ -16484,6 +16516,12 @@ mod tests {
         assert_eq!(drained_ids(&mut socks[1]), vec![id::NPC_STRIKE]);
         server.relay_strike(&strike, 3, live, 1001);
         assert!(drained_ids(&mut socks[1]).is_empty());
+        // Client 1's section was checked at 1000, so it still received the
+        // 1000 and 1001 relays above; drain them before the death case.
+        assert_eq!(
+            drained_ids(&mut socks[0]),
+            vec![id::NPC_STRIKE, id::NPC_STRIKE]
+        );
         // Death bypasses the section filter for everyone but the sender.
         let dead = RelayCtx::Strike {
             dead: true,
@@ -16642,8 +16680,26 @@ mod tests {
             }
             assert_eq!(r.remaining(), 0);
         }
-        // C2s-only: the reader arm is host-gated, no S2c variant exists.
-        assert!(S2c::decode(52, &mut NetReader::new(&[1, 0, 0, 0, 0])).is_none());
+        // Both directions: the client applies these arms and the host relays
+        // them (`MessageBuffer.cs:2531-2563`), so S2c must decode 52 too.
+        let s = S2c::LockAndUnlock(LockAndUnlock {
+            action: 1,
+            x: 0,
+            y: 0,
+        });
+        let sf = s.encode();
+        assert_eq!(sf[2], 52);
+        match S2c::decode(52, &mut NetReader::new(&sf[3..])).expect("decode") {
+            S2c::LockAndUnlock(d) => assert_eq!(
+                d,
+                LockAndUnlock {
+                    action: 1,
+                    x: 0,
+                    y: 0,
+                }
+            ),
+            other => panic!("expected 52, got {:?}", other.msg_id()),
+        }
         // A truncated y must not decode.
         assert!(C2s::decode(52, &mut NetReader::new(&[1, 0, 0, 0])).is_none());
     }
@@ -16810,7 +16866,8 @@ mod tests {
         body.push(1);
         let f = C2s::PlaceObject(b).encode();
         assert_eq!(f[2], 79);
-        assert_eq!(f.len(), 3 + 12);
+        // eight bytes of shorts + alt + random + direction = 11 body bytes.
+        assert_eq!(f.len(), 3 + 11);
         assert_eq!(&f[3..], &body);
         let mut r = NetReader::new(&f[3..]);
         match C2s::decode(f[2], &mut r).expect("decode") {

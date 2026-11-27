@@ -439,9 +439,11 @@ mod tests {
 
     #[test]
     fn the_faded_tint_is_the_multiply_rgba() {
-        // `Main.cs:47507`: grey (127) × 0.66 → (127*168/255) = 83.6 → 83.
+        // `Main.cs:47507`: `color2.MultiplyRGBA(new Color(0.66f, ...))` -
+        // every channel, alpha included: 255*168/255 = 168. Grey 127*168/255
+        // = 83.6 → 83.
         let c = row_color(4, 2);
-        assert_eq!(c, [83, 83, 83, 83]);
+        assert_eq!(c, [83, 83, 83, 168]);
         // The Normal grey keeps alpha 255 (the C# `new Color(127,127,127)`).
         assert_eq!(row_color(4, 1), [127, 127, 127, 255]);
         assert_eq!(row_color(4, 0), [255, 255, 255, 255]);

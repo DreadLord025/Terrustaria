@@ -5114,6 +5114,16 @@ mod tests {
         World::new("test".into(), 64, 64)
     }
 
+    /// `Dust.NewDust`'s default-block scale (`Dust.cs:155-160`):
+    /// `scale = (1 + Next(-20, 21) * 0.01) * Scale`, so the argument only
+    /// lands on a 41-step grid around itself. Test the quantum, not an
+    /// exact float.
+    fn scale_from(actual: f32, scale: f32) -> bool {
+        let k = (actual / scale - 1.0) * 100.0;
+        let q = k.round();
+        (k - q).abs() < 0.02 && (-20.0..=20.0).contains(&q)
+    }
+
     /// The plain bursts spawn the C# count of the right dust type at the
     /// corpse position, and the 31/42/39/71/179/40/109 arms carry the
     /// velocity ×0.6 write. With a fresh pool every spawn takes a real slot
@@ -6051,10 +6061,12 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 172);
         assert!(active.iter().all(|d| d.dust_type == 4));
-        assert!(active[..12].iter().all(|d| d.alpha == 100 && d.scale == 1.1 && !d.no_gravity));
+        assert!(active[..12]
+            .iter()
+            .all(|d| d.alpha == 100 && scale_from(d.scale, 1.1) && !d.no_gravity));
         assert_eq!(active[12..].iter().filter(|d| d.no_gravity).count(), 80);
-        assert!(active[12..].iter().filter(|d| d.no_gravity).all(|d| d.scale == 1.2));
-        assert!(active[12..].iter().filter(|d| !d.no_gravity).all(|d| d.scale == 0.8));
+        assert!(active[12..].iter().filter(|d| d.no_gravity).all(|d| scale_from(d.scale, 1.2)));
+        assert!(active[12..].iter().filter(|d| !d.no_gravity).all(|d| scale_from(d.scale, 0.8)));
     }
 
     /// The 614: 10 dust-229, all noGravity.
@@ -6219,9 +6231,10 @@ mod tests {
         assert!(active[4..].iter().all(|d| d.no_gravity));
     }
 
-    /// The 585/587 pair bursts: 40 dust each (20 pairs), all noGravity;
-    /// the 585 alternates 26/27 (scale 1.3 / 2), the 587 is all 76 with
-    /// the hsl colour A=200 (scale 0.9 / 1.1).
+    /// The 585/587 pair bursts: the 585 is 40 dust (20 pairs), all
+    /// noGravity, alternating 26 (scale 1.3) / 27 (scale-2 arg); the 587 is
+    /// 20 dust (10 pairs) of 76 with the hsl colour A=200 (scale 0.9 /
+    /// 1.1-arg).
     #[test]
     fn w4_g65_the_585_587_pairs() {
         let w = world();
@@ -6238,10 +6251,11 @@ mod tests {
         let mut dust = DustPool::new();
         drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
-        assert_eq!(active.len(), 40);
+        // `:72655-72667` — TEN pairs (20 dust), not 20 pairs.
+        assert_eq!(active.len(), 20);
         assert!(active.iter().all(|d| d.dust_type == 76 && d.no_gravity && d.color.a == 200));
-        assert_eq!(active.iter().filter(|d| d.scale == 0.9).count(), 20);
-        assert_eq!(active.iter().filter(|d| d.scale == 1.1).count(), 20);
+        assert_eq!(active.iter().filter(|d| d.scale == 0.9).count(), 10);
+        assert_eq!(active.iter().filter(|d| scale_from(d.scale, 1.1)).count(), 10);
     }
 
     /// The 590 shadowflame: 10 dust, type 165 default / 31 when ai[2]==1;
@@ -6253,7 +6267,7 @@ mod tests {
         drain(&[snap(590)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 10);
-        assert!(active.iter().all(|d| d.dust_type == 165 && d.no_gravity && d.scale == 1.5));
+        assert!(active.iter().all(|d| d.dust_type == 165 && d.no_gravity && scale_from(d.scale, 1.5)));
         let mut s = snap(590);
         s.ai2 = 1.0;
         let mut dust = DustPool::new();
@@ -6316,7 +6330,7 @@ mod tests {
         drain(&[snap(501)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 20);
-        assert!(active.iter().all(|d| d.dust_type == 188 && !d.no_gravity && d.scale == 1.5));
+        assert!(active.iter().all(|d| d.dust_type == 188 && !d.no_gravity && scale_from(d.scale, 1.5)));
     }
 
     /// The 452/454: 84/127 dust; the 452 = 4 dust-31 (gravity) + 80
@@ -6459,7 +6473,7 @@ mod tests {
             drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), count as usize, "kind {kind}");
-            assert!(active.iter().all(|d| d.dust_type == 220 && d.no_gravity && d.scale == 0.5));
+            assert!(active.iter().all(|d| d.dust_type == 220 && d.no_gravity && scale_from(d.scale, 0.5)));
         }
     }
 
@@ -6471,7 +6485,7 @@ mod tests {
         drain(&[snap(682)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 22);
-        assert!(active.iter().all(|d| d.dust_type == 272 && !d.no_gravity && d.scale == 0.5));
+        assert!(active.iter().all(|d| d.dust_type == 272 && !d.no_gravity && scale_from(d.scale, 0.5)));
     }
 
     /// The 449: Next(3,7) dust-228, noGravity scale 2.1.
@@ -6484,7 +6498,9 @@ mod tests {
         drain(&[snap(449)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), count as usize);
-        assert!(active.iter().all(|d| d.dust_type == 228 && d.no_gravity && d.scale == 2.1));
+        // type 228 takes the `:214-252` `scale *= 0.7` tweak, so the grid is
+        // around 2.1 * 0.7 = 1.47.
+        assert!(active.iter().all(|d| d.dust_type == 228 && d.no_gravity && scale_from(d.scale, 2.1 * 0.7)));
     }
 
     /// The 448/616: 84 dust each (4× 31 gravity + 80× 228/229 noGravity);
@@ -6515,12 +6531,13 @@ mod tests {
         drain(&[snap(836)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 3);
-        assert!(active.iter().all(|d| d.dust_type == 31 && d.no_gravity && d.color == Color::WHITE && d.scale == 0.8));
+        assert!(active.iter().all(|d| d.dust_type == 31 && d.no_gravity && d.color == Color::WHITE && scale_from(d.scale, 0.8)));
         let mut dust = DustPool::new();
         drain(&[snap(1092)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 6);
-        assert!(active.iter().all(|d| d.dust_type == 269 && d.no_light && d.color == Color::WHITE && d.scale == 1.2));
+        // dust-269 also takes the `scale *= 0.7` tweak: grid around 0.84.
+        assert!(active.iter().all(|d| d.dust_type == 269 && d.no_light && d.color == Color::WHITE && scale_from(d.scale, 1.2 * 0.7)));
     }
 
     /// The 424-426: 8 + 64 + 5 = 77 dust; 8 dust-31 gravity, 64 dust-6
@@ -6658,7 +6675,9 @@ mod tests {
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), 40, "kind {kind}");
             assert_eq!(active.iter().filter(|d| d.dust_type == 26).count(), 20);
-            assert!(active.iter().filter(|d| d.dust_type == second_type).all(|d| d.scale == second_scale && d.no_gravity));
+            // The 837's dust-6 takes the `scale *= 0.7` tweak; dust-5 does not.
+            let effective = if kind == 837 { second_scale * 0.7 } else { second_scale };
+            assert!(active.iter().filter(|d| d.dust_type == second_type).all(|d| scale_from(d.scale, effective) && d.no_gravity));
         }
     }
 
@@ -6884,12 +6903,14 @@ mod tests {
         assert!(active.iter().all(|d| d.dust_type == 329 && d.scale >= 0.49 && d.scale <= 1.21));
     }
 
-    /// The 1038/1036/756/961 Perfect rings: 4/3/40/4 dust, all noGravity
-    /// (the 756/961 alpha 100 scale 1).
+    /// The 1038/1036/756/961 Perfect rings: 4/3/40+1/4 dust, all noGravity
+    /// (the 756/961 alpha 100 scale 1). The 756's `num += 0.025f` f32
+    /// accumulation lands 40 steps at 0.99999994 < 1, so the loop takes the
+    /// 41st iteration (`:71077-71087`).
     #[test]
     fn w4_g65_the_perfect_rings() {
         let w = world();
-        for (kind, count, dust_type) in [(1038u16, 4, 166), (1036, 3, 5), (756, 40, 5), (961, 4, 16)] {
+        for (kind, count, dust_type) in [(1038u16, 4, 166), (1036, 3, 5), (756, 41, 5), (961, 4, 16)] {
             let mut dust = DustPool::new();
             drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
@@ -6916,7 +6937,9 @@ mod tests {
             assert_eq!(active.len(), 15, "kind {kind}");
             assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
             let mut s = snap(kind);
-            s.ai0 = 8.0; // the AoeExplosion bit
+            // `AoeExplosion` is bit 3 of the `FloatIntUnion` word (`:75439`,
+            // `FloatIntUnion.cs:14-16`) — NOT the float value 8.0.
+            s.ai0 = f32::from_bits(crate::projectile::GemStaffFeatures::AOE_EXPLOSION);
             let mut dust = DustPool::new();
             drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
@@ -7327,29 +7350,46 @@ mod tests {
         s
     }
 
-    /// The trail-ring arms with a ZERO ring spawn nothing (the C#'s break
-    /// on the first empty entry); with a filled ring they spawn dust-267
-    /// (+ clones) and the tail bursts.
+    /// The trail-ring arms: a ZERO ring breaks before any ring dust, but
+    /// the UNCONDITIONAL tail after the ring loop still runs — 14 dust-66
+    /// for the 1047/79 rainbow arms (`:71284-71292` / `:71317-71325`),
+    /// 40 dust-15 for the 16 (`:71391-71405`) and 40 dust-6 for the 34
+    /// (`:71473-71488`). Only 931/1039 are ring-only.
     #[test]
     fn w4_g65_the_trail_rings() {
         let w = world();
-        for kind in [931u16, 1039, 1047, 79, 16, 34] {
-            // The empty ring: nothing.
+        for kind in [931u16, 1039] {
+            // The empty ring: nothing at all.
             let mut dust = DustPool::new();
             drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
             assert!(dust.slots().iter().all(|d| !d.active), "kind {kind} empty");
-            // The filled ring: dust spawns, determinism holds.
+        }
+        for (kind, dust_type, count) in [(1047u16, 66, 14), (79, 66, 14), (16, 15, 40), (34, 6, 40)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} empty: the tail only");
+            assert!(active.iter().all(|d| d.dust_type == dust_type), "kind {kind}");
+        }
+        for kind in [931u16, 1039, 1047, 79, 16, 34] {
+            // The filled ring: dust spawns and determinism holds.
             let mut dust = DustPool::new();
             let mut rng = UnifiedRandom::new(7);
             drain(&[trail_snap(kind)], &mut dust, &mut rng, &ctx(), &w);
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert!(!active.is_empty(), "kind {kind} filled");
-            assert!(active.iter().any(|d| d.dust_type == 267), "kind {kind} has 267");
             let mut dust2 = DustPool::new();
             let mut rng2 = UnifiedRandom::new(7);
             drain(&[trail_snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
             assert_eq!(dust.slots(), dust2.slots());
             assert_eq!(rng, rng2);
+        }
+        for kind in [931u16, 1039, 1047, 79] {
+            // The rainbow rings spawn dust-267 UNCONDITIONALLY per entry.
+            let mut dust = DustPool::new();
+            drain(&[trail_snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert!(active.iter().any(|d| d.dust_type == 267), "kind {kind} has 267");
         }
     }
 

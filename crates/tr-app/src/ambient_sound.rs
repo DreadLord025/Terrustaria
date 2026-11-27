@@ -1966,11 +1966,13 @@ mod tests {
         );
         assert!(!w.playing);
         assert_eq!(w.volume_pan, None);
-        // The case-35 re-volume arm's pitch is -0f (`:1298`).
+        // The case-35 re-volume arm's pitch is -0f (`:1298`). The play
+        // position must clear the `:1257` sentinel, so keep the pooled-lava
+        // triple farther than the lavafall (`:13488-13496`).
         let again = liquid_loop_update(
             1,
             (20.0, 100.0, 0.0),
-            (0.0, -1.0, -1.0),
+            (30.0, 1000.0, 0.0),
             (0.0, 0.0),
             (0.0, 0.0),
             1.0,
@@ -1978,6 +1980,8 @@ mod tests {
             true,
             0.0,
         );
+        assert!(again.playing);
+        assert_eq!((again.x, again.y), (100, 0));
         assert_eq!(again.pitch, Some(0.0));
     }
 
@@ -2590,7 +2594,8 @@ mod tests {
         assert_eq!(voice.slot, 10);
         assert_eq!(voice.asset, "Zombie_10");
         assert_eq!(voice.volume_mult, 0.75);
-        assert_eq!(voice.pitch, -0.4);
+        // `:1117` — `(float)Next(-70, 1) * 0.01f`: f32 multiply, not /100.
+        assert_eq!(voice.pitch, -40.0f32 * 0.01);
         assert_eq!(state.calls, 3, "slot + Next(300) + pitch");
         // Case 30 re-target: Next(300) == 0, slot 12 free → the pitch
         // range flips to Next(-40, 21).
@@ -2607,7 +2612,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(voice.slot, 12);
-        assert_eq!(voice.pitch, 0.05);
+        assert_eq!(voice.pitch, 5.0f32 * 0.01);
         assert_eq!(state.calls, 3);
         // Case 30 re-target blocked: slot 12 busy → None, NO pitch draw.
         let mut state = Rolls::new();

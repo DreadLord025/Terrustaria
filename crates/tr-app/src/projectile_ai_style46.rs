@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(p.local_ai[0], 1.0);
         assert_eq!(p.time_left, 2400);
         assert_eq!(p.vel, Vec2::new(10.0 * 0.98, 0.0));
-        assert_eq!(p.alpha, 0, "2400 is not > 2390 — the else arm");
+        assert_eq!(p.alpha, 255, "timeLeft 2400 > 2390 -> the fade-in arm (`:28190`)");
         // The fade-in arm: 2400 − 2395 = 5 → 255 − (int)(255×5/10) = 128.
         let mut p = back();
         p.local_ai[0] = 1.0;

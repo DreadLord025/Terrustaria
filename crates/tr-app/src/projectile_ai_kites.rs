@@ -660,7 +660,11 @@ mod w4_d16_160_tests {
         // numUpdates 59 (the FIRST sub-step): the rewind, no settle.
         kite_step(&mut p, &w, Some(&mut pl), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 59, 3);
         assert_eq!(p.extra_updates, 60, "only numUpdates==1 settles");
-        assert_eq!(p.pos, pos0 - p.vel, "the rewind");
+        // `:48542-48546` rewinds (`position -= velocity`) and the SAME
+        // sub-step's `HandleMovement` integrates `position += velocity`
+        // (`:17015`/`:20445`, which the arm always runs), so the dry move is
+        // NET-ZERO.
+        assert_eq!(p.pos, pos0, "the rewind is canceled by the same sub-step's integrate");
         assert_eq!(p.ai[0], 250.0, "the reel counter is gated on extraUpdates==0");
         // numUpdates 1: the settle.
         let mut p2 = kite(&w, &pl);
@@ -682,10 +686,13 @@ mod w4_d16_160_tests {
         // threshold (1−0.5)*10 = 5 — the counter must exceed 5.
         p.frame_counter = 5;
         let mut rng = census();
+        // The held-shoot kill gate compares `selectedItem.shoot` to the
+        // projectile kind (`:48431`), so the 824 kite needs its own ctx.
+        let ctx824 = KiteContext { selected_shoot: 824, ..ctx() };
         // The kite must be in a wind-blown place: above worldSurface
         // (the test world's surface is height*0.25 = 50 rows = 800 px;
         // the kite hovers at pcy−100, well above).
-        kite_step(&mut p, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut rng, 0, 3, 3);
+        kite_step(&mut p, &w, Some(&mut pl), &ctx824, (0.5, 0.0, 0.0, 0.0), &mut rng, 0, 3, 3);
         assert_eq!(rng.ranges, vec![(0, 4)], "the Next(4) frame roll");
         assert_eq!(p.frame, 0, "census min 0");
         assert_eq!(p.frame_counter, 0, "the wrap resets the counter");
@@ -693,7 +700,7 @@ mod w4_d16_160_tests {
         let mut p2 = kite(&w, &pl);
         p2.kind = 824;
         let mut rng2 = census();
-        kite_step(&mut p2, &w, Some(&mut pl), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut rng2, 0, 3, 3);
+        kite_step(&mut p2, &w, Some(&mut pl), &ctx824, (0.0, 0.0, 0.0, 0.0), &mut rng2, 0, 3, 3);
         assert_eq!(p2.frame, 0);
         assert_eq!(rng2.ranges, Vec::new(), "the calm flap draws nothing");
         // The default ladder: speed < 3 → frame 0 (the 766 kite).
@@ -748,35 +755,38 @@ mod w4_d16_160_tests {
     fn w4_d16_160_the_wind_lift_arm() {
         let w = world();
         let mut pl = crate::player::Player::spawn(&w);
-        // Windy: localAI[0] counts UP toward 300, the velocity leans
-        // toward the wind target and the Y lifts. GlobalTime −π/2 →
-        // sin = −1: the bob target sits 25 px ABOVE the kite, so the
-        // below-target catch-up (`:48558-48561`) does not fire and the
-        // raw lift/gravity pair shows (−num7 + 0.02 + num7·0.25).
+        // Windy: the counter DRAINS (`localAI[0] - value.ToDirectionInt()`,
+        // `:48528`), the velocity leans toward the wind target and the Y
+        // lifts. GlobalTime −π/2 → sin = −1: the bob target sits 25 px
+        // ABOVE the kite, so the below-target catch-up (`:48558-48561`)
+        // does not fire and the raw lift/gravity pair shows
+        // (−num7 + 0.02 + num7·0.25).
         let mut p = kite(&w, &pl);
         p.vel = Vec2::ZERO;
+        p.local_ai[0] = 10.0;
         kite_step(
             &mut p, &w, Some(&mut pl), &ctx(),
             (0.5, 0.0, 0.0, -std::f32::consts::FRAC_PI_2), &mut census(), 0, 3, 3,
         );
-        assert_eq!(p.local_ai[0], 1.0, "the |wind| >= 0.2 counter +1 (`:48528`)");
+        assert_eq!(p.local_ai[0], 9.0, "the |wind| >= 0.2 counter -1 (`:48528`)");
         assert!(p.vel.x > 0.0, "the wind steers +X: {}", p.vel.x);
         assert!(p.vel.y < 0.0, "the num7 lift beats gravity: {}", p.vel.y);
-        // The counter caps at 300.
+        // The counter caps at 300: CALM increments it (`-(-1)`), so 300
+        // stays clamped at the cap.
         p.local_ai[0] = 300.0;
         kite_step(
             &mut p, &w, Some(&mut pl), &ctx(),
-            (0.5, 0.0, 0.0, -std::f32::consts::FRAC_PI_2), &mut census(), 0, 3, 3,
+            (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3,
         );
         assert_eq!(p.local_ai[0], 300.0, "the 300 cap");
-        // Calm: the counter drains, num7 = 0 zeroes the steer, the
-        // +0.02 gravity sinks the kite (the below-target catch-up may
-        // add num7 + 0.01 = 0.01 × 0.75 — still positive).
+        // Calm: the counter RISES, num7 = 0 zeroes the steer, the +0.02
+        // gravity sinks the kite (the below-target catch-up may add
+        // num7 + 0.01 = 0.01 × 0.75 — still positive).
         let mut p2 = kite(&w, &pl);
         p2.vel = Vec2::ZERO;
         p2.local_ai[0] = 10.0;
         kite_step(&mut p2, &w, Some(&mut pl), &ctx(), (0.0, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p2.local_ai[0], 9.0, "the calm counter −1");
+        assert_eq!(p2.local_ai[0], 11.0, "the calm counter +1");
         assert_eq!(p2.vel.x, 0.0, "num7 == 0 zeroes the wind steer (`:48538-48541`)");
         assert!(p2.vel.y > 0.0, "the calm gravity: {}", p2.vel.y);
         // The ±2 clamp: a fast-falling calm kite clamps to +2.
@@ -815,42 +825,51 @@ mod w4_d16_160_tests {
         pl.x = 30.0;
         let p0 = kite(&w, &pl);
         let (tx, ty) = ((p0.pos.x / 16.0) as i32, (p0.pos.y / 16.0) as i32);
+        // The counter witness: `localAI[0] - value.ToDirectionInt()` (`:48528`)
+        // DECREMENTS under a successful wind read and INCREMENTS on the calm
+        // lane, so seed 10 and read 9 (wind) / 11 (refused).
         // The baseline: open air above the surface — the wind reads.
         let mut p = kite(&w, &pl);
+        p.local_ai[0] = 10.0;
         kite_step(&mut p, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p.local_ai[0], 1.0, "the open-air wind");
+        assert_eq!(p.local_ai[0], 9.0, "the open-air wind");
         // A liquid cell refuses (`:86875`).
         let i = w.index(tx, ty);
         w.tiles[i].liquid = 100;
         let mut p2 = kite(&w, &pl);
+        p2.local_ai[0] = 10.0;
         kite_step(&mut p2, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p2.local_ai[0], 0.0, "the liquid refusal");
+        assert_eq!(p2.local_ai[0], 11.0, "the liquid refusal");
         w.tiles[i].liquid = 0;
         // A wind-blocking wall refuses; the AllowsWind glass (13) is
         // NOT in the set — use 150 (the set's first non-zero entry).
         w.tiles[i].wall = 1;
         let mut p3 = kite(&w, &pl);
+        p3.local_ai[0] = 10.0;
         kite_step(&mut p3, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p3.local_ai[0], 0.0, "the wall refusal");
+        assert_eq!(p3.local_ai[0], 11.0, "the wall refusal");
         w.tiles[i].wall = 150;
         let mut p4 = kite(&w, &pl);
+        p4.local_ai[0] = 10.0;
         kite_step(&mut p4, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p4.local_ai[0], 1.0, "the AllowsWind wall passes (`WallID.cs:95`)");
+        assert_eq!(p4.local_ai[0], 9.0, "the AllowsWind wall passes (`WallID.cs:95`)");
         w.tiles[i].wall = 0;
         // Below the surface: DoesWindBlowAtThisHeight refuses.
         let mut p5 = kite(&w, &pl);
+        p5.local_ai[0] = 10.0;
         p5.pos.y = (w.world_surface as f32 + 10.0) * 16.0;
         kite_step(&mut p5, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p5.local_ai[0], 0.0, "the height gate");
+        assert_eq!(p5.local_ai[0], 11.0, "the height gate");
         // The out-of-world skip: a kite whose box reaches past the left
-        // edge (x = −2 → tile −1) still reads the wind — the C# InWorld
-        // guard skips the outside cell instead of refusing. The player
+        // edge (x = −17 → tile −2) still reads the wind — the C# InWorld
+        // guard skips the outside cells instead of refusing. The player
         // stands near the edge (pl.x = 30) so the kite stays inside the
         // 2000-px leash (the kill gate runs ahead of the wind read).
         let mut p6 = kite(&w, &pl);
-        p6.pos.x = -2.0;
+        p6.local_ai[0] = 10.0;
+        p6.pos.x = -17.0;
         kite_step(&mut p6, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
-        assert_eq!(p6.local_ai[0], 1.0, "the out-of-world cells skip (`:86868`)");
+        assert_eq!(p6.local_ai[0], 9.0, "the out-of-world cells skip (`:86868`)");
     }
 
     /// The dispatch wiring: a spawned kite with the context fed runs the

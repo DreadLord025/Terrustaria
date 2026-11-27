@@ -291,14 +291,21 @@ mod tests {
         let mut app = builder_app(0);
         let i = app.world.index(10, 19);
         app.world.tiles[i].kind = 1;
-        app.world.tiles[i].flags |= FLAG_ACTIVE | tr_core::tile::FLAG_INACTIVE;
+        // The C# snapshot tests `Tile.active()` (`Player.cs:40475`) — the RAW
+        // active flag, NOT `nactive()`: an ACTIVE|INACTIVE cell still
+        // snapshots its kind. The witness's empty cell therefore carries no
+        // ACTIVE bit at all.
         let cache = auto_accessory_cache(&app.world, 10, 19);
         assert_eq!(cache[5][5], CacheCell { kind: -1, frame_x: -1, frame_y: -1 });
         // The floor below is active stone.
         assert_eq!(cache[5][6].kind, 1);
         // A later write never leaks into the snapshot.
-        app.world.tiles[i].flags &= !tr_core::tile::FLAG_INACTIVE;
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
         assert_eq!(cache[5][5].kind, -1);
+        // An ACTIVE|INACTIVE cell keeps its kind: `active()` is raw
+        // (`Player.cs:40475`), so the framed-off flag does not blank it.
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_INACTIVE;
+        assert_eq!(auto_accessory_cache(&app.world, 10, 19)[5][5].kind, 1);
     }
 
     /// The platform-pair quirk (`:40607/:40628`): an UNCHANGED platform cell

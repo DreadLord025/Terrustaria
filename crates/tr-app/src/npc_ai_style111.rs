@@ -860,6 +860,14 @@ mod tests {
         let mut rng = UnifiedRandom::new(111);
         let mut n = bug(100.0, 100.0);
         n.local_ai[1] = 60.0;
+        // `TargetClosestOldOnesInvasion` (`NPCUtils.cs:269-277`) writes
+        // `target`/`targetRect` ONLY on a found target, so a valid player
+        // target from an earlier tick survives a failed re-search. Seed it
+        // here so `GetTargetData` reads the far player's centre (a fresh
+        // NPC's default 255 reads the `default` (0,0) and takes the short
+        // hover arm instead of the far blend).
+        n.target = 0;
+        n.target_rect = (100000, 100000, 20, 42);
         let mut env = Style111Env {
             world: &w,
             dust: &mut pool,

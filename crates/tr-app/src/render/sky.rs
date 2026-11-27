@@ -2940,12 +2940,11 @@ mod cloud_star_tests {
     fn w4_g69_draw_star_color_replays_the_byte_chain() {
         let black = [0.0; 3];
         // Black night sky, twinkle 1: (255-0-100)*1 = 155 per channel,
-        // avg 155, (int)(155.0 * 1.4) = 216 (the f64 1.4 is
-        // 1.39999999999999991…, so 216.99999… truncates to 216 — the C#
-        // `(int)((double)num3 * 1.4)` lands the same byte).
+        // avg 155, (int)(155.0 * 1.4) = 217 (the double product rounds to
+        // exactly 217, so the C# `(int)((double)num3 * 1.4)` lands 217).
         assert_eq!(
             draw_star_color(black, 1.0, 1.0, 0.0, 0),
-            Some([216; 3])
+            Some([217; 3])
         );
         // twinkle 0.6 (the f32 0.6 is 0.60000002384…): 155*0.6 =
         // 93.0000036 -> (int) 93, (int)(93*1.4) = 130 (130.19999… truncates).
@@ -2956,10 +2955,10 @@ mod cloud_star_tests {
         // Bright sky kills the star: (255-200-100) < 0 -> n3 <= 0 -> None
         // (`:63072-63074`).
         assert_eq!(draw_star_color([200.0 / 255.0; 3], 1.0, 1.0, 0.0, 0), None);
-        // Graveyard opacity 0.65 (intensity 0.25): (byte)(216 * 0.65) = 140.
+        // Graveyard opacity 0.65 (intensity 0.25): (byte)(217 * 0.65) = 141.
         assert_eq!(
             draw_star_color(black, 1.0, 0.65, 0.0, 0),
-            Some([140; 3])
+            Some([141; 3])
         );
         // Shimmer 0.5, twinkle 0.8, i%3 == 1 tints B: base (int)(124*1.4) =
         // 173; the B channel takes twinkle² = 0.64: (byte)(173*0.64) = 110;

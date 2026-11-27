@@ -475,11 +475,12 @@ mod tests {
         let ok = WorkshopPublishPackRow::new(1, true);
         assert_eq!(ok.background_color, REST_BG);
         assert_eq!(ok.publish_click(true), Some(false), "pack -> publish info");
-        // inner (10, 50, 500, 70), icon 72, button 100x41:
-        // num2 = (500 - 22 - 72 - 100)/2 = 153; y = 50 + 70 - 41 = 79.
+        // inner (10, 50, 500, 70), icon area Left 4 + 72, button 100x41:
+        // num = 10 + 4 + 72 = 86; num2 = (500 - 22 - 72 - 100)/2 = 153;
+        // y = 50 + 70 - 41 = 79; the name/panels start at num + 8 = 94.
         let l = WorkshopPublishPackRow::info_layout([10.0, 50.0, 500.0, 70.0], 72.0, [100.0, 41.0]);
-        assert_eq!(l.name_pos, [90.0, 53.0]);
-        assert_eq!(l.author_panel, [90.0, 79.0, 153.0, 41.0]);
-        assert_eq!(l.version_panel, [248.0, 79.0, 153.0, 41.0]);
+        assert_eq!(l.name_pos, [94.0, 53.0]);
+        assert_eq!(l.author_panel, [94.0, 79.0, 153.0, 41.0]);
+        assert_eq!(l.version_panel, [252.0, 79.0, 153.0, 41.0]);
     }
 }

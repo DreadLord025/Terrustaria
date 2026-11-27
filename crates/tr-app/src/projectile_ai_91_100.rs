@@ -1736,6 +1736,14 @@ pub(crate) fn ai_medusa_head(
                     let mana_amount = crate::registry::item(pl.channel_item)
                         .map_or(0, |item| item.mana);
                     let pl = player.as_deref_mut().unwrap();
+                    // `Player.cs:52588-52609` — the shared manaFlower arm: a
+                    // short pay owes the QuickMana drink. The raw item.mana
+                    // is captured BEFORE the pool-side check (whose ManaV2
+                    // empty arm zeroes the mana) and rides the pass-tail
+                    // intent; the world sim re-runs the FULL CheckMana.
+                    // The ai_last_prism lane's identical push.
+                    let scaled = (mana_amount as f32 * pl.mana_cost) as i32;
+                    let short = pl.mana < scaled;
                     let mana_ok = crate::regen::check_mana(
                         &mut pl.mana,
                         &mut pl.slow_magic_use,
@@ -1743,6 +1751,9 @@ pub(crate) fn ai_medusa_head(
                         pl.mana_cost,
                         true,
                     );
+                    if short && pl.mana_flower {
+                        p.wants_prism_flower_drink = Some(mana_amount);
+                    }
                     if mana_ok {
                         // `:44569-44570` — the damage snapshot + the
                         // scan origin moves to the head centre.
@@ -2046,7 +2057,13 @@ mod tests {
         slots[0] = proj(1007);
         let c0 = Vec2::from(slots[0].center());
         let mut rng = CensusRng::default();
-        let mut npcs = [crate::npc::Npc::new(crate::npc::NpcKind::Zombie, c0.x + 10.0, c0.y, 1, 0.0)];
+        let mut npcs = [crate::npc::Npc::new(crate::npc::NpcKind::Zombie, c0.x, c0.y, 1, 0.0)];
+        // `NPC.Center` is `position + size/2`, so pin the CENTRE onto c0: the
+        // 1/80-tick Poisoned radius is only 11.25 px (`:32790-32795`), and a
+        // corner-anchored zombie would sit outside it.
+        let (nw, nh) = npcs[0].size();
+        npcs[0].x = c0.x - nw * 0.5;
+        npcs[0].y = c0.y - nh * 0.5;
         npcs[0].hp = 40;
         npcs[0].max_hp = 40;
         ai_clouds(&mut slots, 0, &w, &mut npcs, None, 0, &mut rng);
@@ -2075,10 +2092,12 @@ mod tests {
         ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
         assert_eq!(rng.ranges, vec![(0, 5)], "Next(projFrames[1128])");
         assert_eq!(slots[0].frame, 0, "CensusRng returns min");
-        // tick 1: fromValue 1/220 = 0.004545 < 0.1 → the ramp clamps at
-        // 0.25 (`:32612`), the box (int)(30*0.25/1.1) = 6.
-        assert!((slots[0].scale - 0.25).abs() < 1e-6, "the ramp's clamped start");
-        assert_eq!(slots[0].w, 6.0);
+        // tick 1: fromValue 1/220 = 0.004545 < 0.1 → the linear ramp maps it
+        // to 0.25 + (0.004545/0.1)*(1.1 - 0.25) = 0.2886364 (no clamp at the
+        // low end — `Utils.Remap` is linear, `:32612-32621`), so the box is
+        // (int)(30*0.2886364/1.1) = 7.
+        assert!((slots[0].scale - 0.2886364).abs() < 1e-5, "the ramp's start");
+        assert_eq!(slots[0].w, 7.0);
         // The hit-armed lifetime reads ai[1] (`:32592`).
         slots[0].ai[1] = 100.0;
         slots[0].ai[0] = 99.0;
@@ -2103,12 +2122,14 @@ mod tests {
         ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
         assert!(slots[0].vel.x < 0.0, "the left cloud pushes left");
         assert!(slots[1].vel.x > 0.0, "the sibling got the opposite push");
-        // Exact overlap: the index tie-break (`:32653-32665`).
+        // Exact overlap: the index tie-break (`:32653-32666`) sets the delta
+        // to (1,-1) for j>i, and the BASE subtracts the 0.6-Lerped push, so
+        // the scanning slot ends at (-,+) — the mirror of the sibling.
         slots[1].pos = slots[0].pos;
         slots[0].vel = Vec2::ZERO;
         slots[1].vel = Vec2::ZERO;
         ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
-        assert!(slots[0].vel.x > 0.0 && slots[0].vel.y < 0.0, "j>i → (1,-1)");
+        assert!(slots[0].vel.x < 0.0 && slots[0].vel.y > 0.0, "j>i → base -= (1,-1)");
     }
 
     /// The 514 row (`Projectile.cs:5841-5850`): 10×10, aiStyle 93,
@@ -2194,9 +2215,12 @@ mod tests {
     fn w4_d10_s93_the_wall_block_sticks_the_nail() {
         let mut w = World::new("t".into(), 300, 200);
         let mut p = proj(514);
+        p.pos = Vec2::new(1588.0, 800.0);
         p.vel = Vec2::new(8.0, 0.0);
-        // A wall directly ahead of the 4×4 probe box.
-        let tx = ((p.pos.x + p.w * 0.5 + 2.0 + 8.0) / 16.0) as i32;
+        // A wall one step ahead of the 4×4 probe box (`:19962`): the box is
+        // (pos.x+3, pos.y+3, 4, 4) → 1591..1595, the 8-px step lands it in
+        // the solid tile at 1600 (`MovePosition`, `Collision.cs`).
+        let tx = ((p.pos.x + p.w * 0.5 - 2.0 + 4.0 + 8.0) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
         let i = w.index(tx, ty);
         w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
@@ -2253,9 +2277,10 @@ mod tests {
     }
 
     /// The five-phase machine (`:32893-32952`): the fade-in decays 0.85,
-    /// tick 40 draws ONE Next(3) for the cadence (CensusRng min → 10), the
-    /// hold zeroes the velocity, the fountain drops a coin every ai[1]
-    /// ticks with the 3-draw velocity, the 240 kill.
+    /// the tail gate draws Next(3) every tick once alpha < 90 (`:32953`),
+    /// tick 40 adds ONE cadence Next(3) (CensusRng min → 10), the hold
+    /// zeroes the velocity, the fountain drops a coin every ai[1] ticks
+    /// with the 3-draw velocity, the 240 kill.
     #[test]
     fn w4_d10_s94_the_portal_phases_and_fountain() {
         let mut p = proj(518);
@@ -2267,13 +2292,24 @@ mod tests {
         assert_eq!(p.ai[0], 40.0);
         assert_eq!(p.alpha, 55, "255 - 5*40");
         assert!((p.vel.x - 4.0 * 0.85f32.powi(40)).abs() < 1e-4);
-        assert_eq!(rng.ranges, vec![(0, 3)], "the tick-40 cadence pick");
+        // Ticks 34-40 already sit at alpha < 90 (255-5n), so the tail gate
+        // (`:32953-32961`) draws Next(3) on each — CensusRng's min makes it
+        // taken, adding the 2-float RotatedByRandom pair — plus the ONE
+        // tick-40 cadence pick (`:32905`): 8 ranges / 14 floats.
+        assert_eq!(rng.ranges, vec![(0, 3); 8], "7 tail gates + the cadence");
+        assert_eq!(rng.floats, 14, "7 taken tail dusts x 2 rotation floats");
         assert_eq!(p.ai[1], 10.0, "CensusRng min → case 0");
-        assert_eq!(p.frame, 0, "40 ticks / 4 = 10 wraps");
-        // The hold: 41-60 zeroes the velocity.
-        ai_coin_portal(&mut p, &mut rng);
+        assert_eq!(p.frame, 2, "10 frameCounter wraps mod projFrames 4");
+        // The hold: 41-60 zeroes the velocity. Alpha stays 55 and keeps the
+        // tail gate armed, so pin it high to isolate the phase machine
+        // (alpha feeds only the `:32953` gate).
+        p.alpha = 200;
+        for _ in 0..20 {
+            ai_coin_portal(&mut p, &mut rng);
+        }
+        assert_eq!(p.ai[0], 60.0);
         assert_eq!(p.vel, Vec2::ZERO);
-        // The fountain: tick 61 starts the counter; the 10th tick drops.
+        // The fountain: 61-69 count localAI[0] 1..9; the 10th tick drops.
         for _ in 0..9 {
             ai_coin_portal(&mut p, &mut rng);
         }
@@ -2283,7 +2319,8 @@ mod tests {
         assert_eq!((x, y), (1616.0, 816.0), "the truncated centre");
         // CensusRng floats are 0: angle 0, speed 0.5 → UnitY*(3,2)*0.5 - Y.
         assert!((vx - 0.0).abs() < 1e-6 && (vy - (1.0 - 1.0)).abs() < 1e-6);
-        assert_eq!(rng.floats, 3, "TWO rotation + ONE speed");
+        assert_eq!(rng.floats, 17, "14 tail + TWO rotation + ONE speed");
+        assert_eq!(rng.ranges.len(), 8, "the tail gate is pinned off");
         // The 240 kill: the scale shrinks 1/30 per tick past 210.
         p.ai[0] = 239.0;
         p.wants_coin_drop = None;
@@ -2299,7 +2336,7 @@ mod tests {
     #[test]
     fn w4_d10_s94_the_tail_dust_gate_draws_in_order() {
         let mut p = proj(518);
-        p.ai[0] = 100.0; // the hold phase — no other draws
+        p.ai[0] = 50.0; // the hold phase (41-60) — no coin draws
         p.alpha = 200;
         let mut rng = CensusRng::default();
         ai_coin_portal(&mut p, &mut rng);
@@ -2356,10 +2393,11 @@ mod tests {
         assert!((q.vel.y - (-0.05)).abs() < 1e-6);
         assert!((q.vel.x - 4.0 * 0.98).abs() < 1e-5);
         assert!((q.rot - q.vel.x * 0.1).abs() < 1e-6);
-        // The −8 cap.
+        // The −8 guard is `> -8f` (`:32984-32986`), not a clamp: −7.99 takes
+        // the 0.05 step to −8.04 and only then stops.
         q.vel.y = -7.99;
         ai_toxic_bubble(&mut q);
-        assert!(q.vel.y >= -8.0);
+        assert!((q.vel.y - (-8.04)).abs() < 1e-5, "the > -8 gate overshoots by 0.04");
         // The wet arm: the 0.98 fall decay + the −0.2 buoyancy + 0.94 X.
         let mut r = proj(523);
         r.ai[0] = 40.0;
@@ -2451,7 +2489,10 @@ mod tests {
     fn w4_d10_s96_the_splash_bounces_and_ages() {
         let mut w = World::new("t".into(), 300, 200);
         let mut p = proj(524);
+        p.pos = Vec2::new(1588.0, 800.0);
         p.vel = Vec2::new(6.0, 2.0);
+        // The 10×10 box [1588..1598] steps to [1594..1604], crossing the
+        // solid tile at x=1600 (the 524 arm's full-box collision, `:18807`).
         let tx = ((p.pos.x + p.w + 6.0) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5 + 2.0) / 16.0) as i32;
         let i = w.index(tx, ty);
@@ -2494,10 +2535,13 @@ mod tests {
             ai_flying_piggy(&mut slots, 0, Some((1600.0, 800.0)), 0);
             frames.push(slots[0].frame);
         }
-        assert_eq!(&frames[0..4], &[0, 0, 0, 0]);
-        assert_eq!(&frames[4..8], &[1, 1, 1, 1]);
-        assert_eq!(&frames[16..20], &[4, 4, 4, 4]);
-        assert_eq!(&frames[20..24], &[3, 3, 3, 3]);
+        // `:33031-33069`: frameCounter increments FIRST, so each 4-tick
+        // band is shifted by one (counter 4 → frame 1) and the 32nd tick
+        // takes the reset arm.
+        assert_eq!(&frames[0..4], &[0, 0, 0, 1]);
+        assert_eq!(&frames[4..8], &[1, 1, 1, 2]);
+        assert_eq!(&frames[16..20], &[4, 4, 4, 3]);
+        assert_eq!(&frames[20..24], &[3, 3, 3, 2]);
         assert_eq!(&frames[28..32], &[1, 1, 1, 0], "the 32nd tick resets");
         assert_eq!(slots[0].frame_counter, 0);
     }
@@ -2530,10 +2574,11 @@ mod tests {
         slots[0].ai[1] = 89.0;
         ai_flying_piggy(&mut slots, 0, Some((1000.0, 800.0)), 0);
         assert_eq!(slots[0].ai[1], -90.0);
-        // The negative counter drifts down.
+        // The negative counter drifts down: ai[1] -89 is not > 0, so this
+        // tick ADDS 0.005 to the -0.010 the flip tick left (`:33119-33132`).
         ai_flying_piggy(&mut slots, 0, Some((1000.0, 800.0)), 0);
         assert_eq!(slots[0].ai[1], -89.0);
-        assert!((slots[0].vel.y - (-0.005 + 0.005)).abs() < 1e-6);
+        assert!((slots[0].vel.y - (-0.005)).abs() < 1e-6);
     }
 
     /// The dedup (`:33071-33087`): the higher-timeLeft twin kills the
@@ -2708,6 +2753,10 @@ mod tests {
         let w = World::new("t".into(), 300, 200);
         let mut slots = vec![proj(556)];
         slots[0].time_left = 100;
+        // Keep the weight 100 px from the owner: the no-yoyo sweep flips
+        // ai[0] to -1 and the return state's 40-px arrival kill
+        // (`:67695-67730`) would otherwise fire on this same tick.
+        slots[0].pos = Vec2::new(1695.0, 795.0); // centre (1700, 800)
         ai_counterweight(
             &mut slots, 0, &w, &[], Some((1600.0, 800.0)), false, true, (0.0, 0.0), 0, crate::projectile::YoyoInputs::default(),
         );
@@ -3036,6 +3085,9 @@ mod tests {
         let mut first = proj(541);
         first.damage = 9;
         first.knock_back = 2.5;
+        // The scan skips `ai[0] == -2` (the dropped twin, `:12370`), so only
+        // the 555 counts: num2 = 1 < 2 and `num` lands on the 555.
+        first.ai[0] = -2.0;
         let mut last = proj(555); // The Eye of Cthulhu
         last.damage = 30;
         last.knock_back = 5.0;

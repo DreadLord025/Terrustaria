@@ -704,13 +704,16 @@ mod tests {
         let wind = windy();
         let lifted = vine_sway(&wind, &w, 10, 20, 10, 20, 1, 2, 0, 0.0);
         let no_platform = vine_sway(&wind, &vine_world(270, 10, 20, 1, 2), 10, 20, 10, 20, 1, 2, 0, 0.0);
-        // The lift shifts the anchor up 8 → the pivot Y grows by 8.
-        assert_eq!(lifted.origin[1] - no_platform.origin[1], 8.0);
+        // The lift shifts the DRAW position up 8 (`vector.Y -= 8` at
+        // `:9250-9254`); `vector2.Y` shifts by the same amount, so the
+        // rotation pivot (`vector - vector3`) is unchanged.
+        assert_eq!(lifted.pos[1] - no_platform.pos[1], -8.0);
+        assert_eq!(lifted.origin[1], no_platform.origin[1]);
         // A sloped platform does not lift.
         let i = w.index(10, 19);
         w.tiles[i].set_slope(1);
         let sloped = vine_sway(&wind, &w, 10, 20, 10, 20, 1, 2, 0, 0.0);
-        assert_eq!(sloped.origin[1], no_platform.origin[1]);
+        assert_eq!(sloped.pos[1], no_platform.pos[1]);
     }
 
     // W4-g84 witness V5 — the 698 wind-cancel + 10 px left shift

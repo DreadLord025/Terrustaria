@@ -2082,6 +2082,12 @@ mod tests {
     #[test]
     fn w4_d21_the_storm_lightning_dies_at_the_age_cap() {
         let mut p = slot(LIGHTNING_STRIKE_SHOT);
+        // The no-lock sentinel: `UnpackTargetIndex` (`:39898-39910`) reads
+        // ai[0] = -1 as "no target yet"; the row's spawn default carries it
+        // (the `Projectile.NewProjectile` ai0 default), so the acquire scan
+        // (empty here) falls through to the age tick instead of the
+        // lost-target `Kill()`.
+        p.ai[0] = -1.0;
         p.ai[1] = 29.0; // one tick from the 30 cap
         let mut rng = FastRandom::new(7);
         ai_storm_lightning(&mut p, &air(), &[], None, &mut rng);
@@ -2154,7 +2160,10 @@ mod tests {
     #[test]
     fn w4_d21_the_digtoise_appears_then_digs() {
         let mut p = slot(DIGTOISE);
-        p.pos = Vec2::new(160.0, 160.0);
+        // `WorldGen.InWorld(center, fluff: 20)` (`:38464`): the arm kills a
+        // slot inside the 20-tile border, so the witness sits clear of it
+        // (tile 21 of the 200x200 test world).
+        p.pos = Vec2::new(320.0, 320.0);
         p.alpha = 255;
         let mut pl = crate::player::Player::spawn(&air());
         pl.held_item_kind = 5667; // the matching staff keeps it alive
@@ -2226,7 +2235,9 @@ mod tests {
     #[test]
     fn w4_d21_the_digtoise_joy_enters_state_five_and_resets() {
         let mut p = slot(DIGTOISE);
-        p.pos = Vec2::new(200.0, 160.0); // centre right of the player
+        // Clear of the `InWorld(..., 20)` kill border (`:38464`); the pet
+        // centre (tile 21) sits right of the player at x=100.
+        p.pos = Vec2::new(320.0, 320.0); // centre right of the player
         p.alpha = 0;
         let mut pl = crate::player::Player::spawn(&air());
         pl.held_item_kind = 5667;
@@ -2307,7 +2318,15 @@ mod tests {
         assert_eq!(q.local_ai[0], 1.0, ":323 — the 1117 keeps the no-hit state");
         let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
         assert_eq!(qc, Vec2::new(168.0, 168.0), "no re-centre for the 1117");
-        assert!(hb2.points.len() > hb.points.len(), "the phased bolt walks farther");
+        // `SolidTileCollision = false` (`:305-324`) is the witness: the
+        // 1117's walk crosses the row the 1091 stops at. Its configured
+        // Length is SHORTER (750 vs 1000), so the point COUNT is smaller
+        // even untruncated — the faithful check is that the phased bolt
+        // passes BELOW the 1091's truncated last point (the re-centred row).
+        assert!(
+            hb2.points.iter().any(|q| q.y > last.y + 16.0),
+            "the phased bolt walks past the solid row the 1091 stops at"
+        );
     }
 
     /// Folds 3+4 — the liquid centre: localAI[0] = 3 (`:70826-70830`)

@@ -603,9 +603,12 @@ mod tests {
         let mut mirror = rng.clone();
         town_critter_step(&mut n, &w, &ctx(&players), &mut rng);
         assert_eq!(n.vx, 0.0, "the dead-band zeroes");
-        // The idle arm draws only the Next(80) turn when localAI[3] == 0
-        // and the band holds; here localAI[3] > 0 so NO draw fires.
-        assert_eq!(rng, mirror, "a quiet idle tick draws nothing");
+        // `:53782` — `Main.rand.Next(80) == 0 && localAI[3] == 0f`: the
+        // draw is FIRST and fires every in-band idle tick; only the
+        // LATCH is gated by localAI[3] (here it stays > 0, no turn).
+        let _ = mirror.next_max(80);
+        assert_eq!(rng, mirror, "the Next(80) turn roll always draws");
+        assert_eq!(n.local_ai[3], 99.0, "no 200 latch: localAI[3] stays set");
     }
 
     #[test]
@@ -646,7 +649,9 @@ mod tests {
         let base = mirror.next_max(300);
         let crit = mirror.next_max(100);
         assert_eq!(n.ai[1], 300.0 + base as f32 - crit as f32);
-        assert_eq!(n.local_ai[3], 60.0);
+        // `:54037` — the walk tail's drown `else` overwrites the arm's 60
+        // with -1 in the SAME tick when flag22 is false.
+        assert_eq!(n.local_ai[3], -1.0);
     }
 
     #[test]

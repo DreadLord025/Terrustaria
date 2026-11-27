@@ -578,7 +578,9 @@ mod tests {
         };
         let _ = style127_step(&mut n, 695, &mut env);
         assert_eq!(n.ai[0], 2.0);
-        assert_eq!(n.ai[1], 0.0);
+        // The cheer block runs in the same tick (`:42990`, right after the
+        // `:42970` latch) and its `++ai[1]` leaves 1.
+        assert_eq!(n.ai[1], 1.0);
         assert_eq!(n.ai[2], 0.0);
     }
 
@@ -590,15 +592,19 @@ mod tests {
         let players = [cand(100000.0, 100000.0)];
         let mut rng = UnifiedRandom::new(127);
         let mut oracle = UnifiedRandom::new(127);
+        // `:42956` — the wait must hold state 0 so the `:42978` pain block
+        // runs: keep the slot-0 captor alive.
+        let captors = [Some(true)];
         let mut n = pal(100.0, 100.0);
         n.ai[0] = 0.0;
+        n.ai[1] = 1.0; // captor slot 0
         n.sound_delay = 0;
         let mut env = Style127Env {
             world: &w,
             rng: &mut rng,
             players: &players,
             net_mode: 0,
-            captors: &[],
+            captors: &captors,
             ticker: 7,
         };
         let out = style127_step(&mut n, 695, &mut env);
@@ -609,13 +615,14 @@ mod tests {
         // 696 uses the foxparks name.
         let mut n = pal(100.0, 100.0);
         n.ai[0] = 0.0;
+        n.ai[1] = 1.0; // captor slot 0
         n.sound_delay = 0;
         let mut env = Style127Env {
             world: &w,
             rng: &mut rng,
             players: &players,
             net_mode: 0,
-            captors: &[],
+            captors: &captors,
             ticker: 7,
         };
         let out = style127_step(&mut n, 696, &mut env);
@@ -661,7 +668,9 @@ mod tests {
         };
         let out = style127_step(&mut n, 696, &mut env);
         assert_eq!(out.reward.map(|(t, _, _)| t), Some(5664));
-        assert!(out.light.is_some(), "the 696 light");
+        // `:43004-43012` — the 120th cheer returns before the `:43015`
+        // 696 light block, so no light is emitted on the reward tick.
+        assert!(out.light.is_none(), "the 120 reward returns before the light");
     }
 
     /// `:43019-43023` — the X damp + the double-compare zero-snap.

@@ -614,7 +614,9 @@ mod tests {
             let mut s = FrameState { row: 3, counter: 20.0, sprite_dir: 1, rotation: 0.3 };
             let i = FrameInput { direction: 0, ..input(2.0, 0.0) };
             find_frame_extra7c(k, &mut s, &i);
-            assert_eq!((s.row, s.counter, s.sprite_dir, s.rotation), (3, 22.0, 0, 0.0));
+            // `NPC.cs:70010`: `counter += |vx| * 1.1f` -- the exact f32
+            // product (20 + 2 * 1.1f), NOT 22.0.
+            assert_eq!((s.row, s.counter, s.sprite_dir, s.rotation), (3, 20.0 + 2.0 * 1.1, 0, 0.0));
         }
     }
 
@@ -769,10 +771,12 @@ mod tests {
             rows_over(k, input(3.0, 0.0), 12),
             vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4]
         );
-        // The full-sheet wrap: 27 ticks cycle rows 0..8 back to 0.
+        // The full-sheet wrap: `++frameCounter >= 3` (`NPC.cs:70110-70117`)
+        // steps on ticks 3/6/.../24, so row 8 holds ticks 24..26 and
+        // tick 27 wraps to row 0.
         let rows = rows_over(k, input(0.0, 0.0), 28);
-        assert_eq!(rows[26], 8);
-        assert_eq!(rows[27], 0);
+        assert_eq!(rows[25], 8);
+        assert_eq!(rows[26], 0);
         // The mismatch: direction 1 + vx -3 keeps sprite -1.
         let mut s = FrameState { row: 0, counter: 0.0, sprite_dir: -1, rotation: 0.0 };
         find_frame_extra7c(k, &mut s, &input(-3.0, 0.0));

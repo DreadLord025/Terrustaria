@@ -134,6 +134,11 @@ pub(crate) fn ai_spray(
             0 => tr_core::spread::convert_cleanse(world, tx, ty, size, gen_rng),
             1 | 4 => tr_core::spread::convert_sized(world, tx, ty, conversion, size),
             2 => tr_core::spread::convert_sized_hallow(world, tx, ty, size),
+            // `:26805-26808` + g42's type-3 cell (`WorldGen.cs:55337-55358`).
+            3 => tr_core::spread::convert_sized_mushroom(world, tx, ty, size),
+            // `:26813-26824` + f25's type-5/6/7 cells
+            // (`WorldGen.cs:55363-55526`).
+            5..=7 => tr_core::spread::convert_sized_spray(world, tx, ty, conversion, size),
             _ => {}
         }
     }
@@ -1032,17 +1037,40 @@ impl tr_core::gore::GoreRng for BlastRng<'_> {
 pub(crate) fn solar_flare_blast_draws(rng: &mut dyn DropRng) {
     // `RotatedByRandom(π)` = two `NextDouble` (`Utils.cs:1697-1700`).
     fn rotated(rng: &mut dyn DropRng) {
-    // 4× dust 31: RotatedByRandom + NextDouble each.
+        let _ = rng.next_double();
+        let _ = rng.next_double();
+    }
+    // 4× dust 31: RotatedByRandom + the radius NextDouble each.
+    for _ in 0..4 {
         rotated(rng);
+        let _ = rng.next_double(); // the `(float)NextDouble() * width / 2f`
+    }
     // 30× dust-6 pairs: two (RotatedByRandom + NextDouble) each.
+    for _ in 0..30 {
+        rotated(rng);
+        let _ = rng.next_double();
+        rotated(rng);
+        let _ = rng.next_double();
+    }
     // 10× dust 6: RotatedByRandom each (the velocity-rotation draws nothing).
+    for _ in 0..10 {
+        rotated(rng);
+    }
     // 10× dust 31: RotatedByRandom each.
-    // 2× gore: the position pair, the type, the NewGore kicks, the
-    // RotatedByRandom + NextDouble reposition, the two velocity kicks.
+    for _ in 0..10 {
+        rotated(rng);
+    }
+    // 2× gore: the position pair, the type, the RotatedByRandom +
+    // NextDouble reposition and the two velocity kicks (`:72217-72224`).
+    // The `NewGore` internal kicks (`Next(10, 31)`/`Next(-20, 21)`,
+    // `Gore.cs:1327-1328`) are NOT call-site draws — they ride the pool.
+    for _ in 0..2 {
+        let _ = rng.next_range(0, 100);
         let _ = rng.next_range(0, 100);
         let _ = rng.next_range(61, 64);
-        let _ = rng.next_range(10, 31);
-        let _ = rng.next_range(-20, 21);
+        rotated(rng);
+        let _ = rng.next_double();
+        let _ = rng.next_range(-10, 11);
         let _ = rng.next_range(-10, 11);
     }
 }
@@ -1467,7 +1495,7 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         419 => {
             // `:30496-30515` — the yellow: two dust-222, the ±π/2 rotation.
             for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _jet = fountain_jet(jet_speed, 1.5707963705062866, rng);
                 let _ = rng.next_double(); // the dust scale (`:30503`)
                 let _ = rng.next_range(-2, 3); // the position jitter (`:30509`)
             }
@@ -1475,7 +1503,7 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         420 => {
             // `:30516-30541` — the red: two dust-219 (1-in-5 dust-222).
             for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _jet = fountain_jet(jet_speed, 1.5707963705062866, rng);
                 let _ = rng.next_range(0, 5); // the colour pick (`:30522`)
                 let _ = rng.next_double(); // the dust scale (`:30528`)
                 let _ = rng.next_range(-2, 3); // the position jitter (`:30534`)
@@ -1485,7 +1513,7 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
             // `:30542-30582` — the blue: two dust-221 (the ±π/4 rotation),
             // then the timeLeft%10 burst's nine dust-222.
             for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 0.7851111111131433, rng);
+                let _jet = fountain_jet(jet_speed, 0.7853981852531433, rng);
                 let _ = rng.next_double(); // the dust scale (`:30549`)
                 let _ = rng.next_range(-2, 3); // the position jitter (`:30555`)
             }
@@ -1509,7 +1537,7 @@ pub(crate) fn ai_fountain(p: &mut Projectile, world: &World, rng: &mut dyn DropR
         422 => {
             // `:30583-30603` — the rainbow: two dust-(219 + Next(5)).
             for _ in 0..2 {
-                let _jet = fountain_jet(jet_speed, 1.5701111111162866, rng);
+                let _jet = fountain_jet(jet_speed, 1.5707963705062866, rng);
                 let _ = rng.next_range(0, 5); // the colour offset (`:30590`)
                 let _ = rng.next_double(); // the dust scale (`:30592`)
                 let _ = rng.next_range(-2, 3); // the position jitter (`:30598`)
@@ -2095,8 +2123,8 @@ pub(crate) fn ai_mystic_snake_coil(
 /// then the rotation. The rotation is `Utils.RotatedBy`'s float-cos/sin
 /// spin (`Utils.cs:1675-1684`, the [`crate::bow_launch::rotated_by`]
 /// port). `half_turn` is the C# float literal widened to f64: π/2
-/// (1.5701111111162866) for the yellow/red/rainbow, π/4
-/// (0.7851111111131433) for the blue.
+/// (1.5707963705062866) for the yellow/red/rainbow, π/4
+/// (0.7853981852531433) for the blue.
 pub(crate) fn fountain_jet(jet_speed: f32, half_turn: f64, rng: &mut dyn DropRng) -> Vec2 {
     let scale = 0.85 + rng.next_double() as f32 * 0.2;
     let angle = (rng.next_double() - 0.5) * half_turn;
@@ -3848,14 +3876,34 @@ mod tests {
         p.owner = 1;
         ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the owner gate");
-        // The f25/g42-owned kinds stay no-ops here (their cells land at
-        // those merges) — the grass keeps its kind, the machine runs.
-        for kind in [146u16, 148, 1015, 1016, 1017] {
+        // The per-kind cells now all land (the union merge carries f25's
+        // `convert_sized_hallow`/`convert_sized_spray` and g42's
+        // `convert_sized_mushroom`): the 146 type 2 hallows the grass
+        // 2 → 109 (`WorldGen.cs:55176-55260`), the 148 type 3 mushroom arm
+        // leaves a plain grass cell alone (`:55345-55358` — only the jungle
+        // 60 → 70 and the thorns), the 1015 type 5 desertifies 2 → 53
+        // (`:55383-55399`), the 1016 type 6 snows 2 → 147 (`:55429-55436`)
+        // and the 1017 type 7 purify arm leaves it (`:55497-55517` — the
+        // grass is already 2). The machine runs for every kind.
+        for (kind, expected) in [
+            (146u16, 109u16),
+            (148, 2),
+            // The 1015 type 5 desertify turns a grass cell over AIR into the
+            // hardened 397 (`WorldGen.cs:86562-86583` — an inactive cell
+            // below makes hardened sand; `:55383-55399`).
+            (1015, 397),
+            (1016, 147),
+            (1017, 2),
+        ] {
             let mut w = world();
             put(&mut w, 100, 50, 2);
             let mut p = proj(kind);
             ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
-            assert_eq!(w.tile(100, 50).unwrap().kind, 2, "kind {kind} waits for its cell");
+            assert_eq!(
+                w.tile(100, 50).unwrap().kind,
+                expected,
+                "kind {kind} conversion (`:26801-26824`)"
+            );
             assert_eq!(p.ai[0], 1.0, "kind {kind} counter");
         }
     }
@@ -3895,8 +3943,6 @@ mod tests {
         assert_eq!(p.vel.x, 8.0f32 * 0.95, "the first decay at tick 60 (`:41345-41348`)");
         // Tick 61: a second decay; the smoke gate keeps rolling. The C#'s
         // f32 accumulation — repeated * 0.95, not a pow.
-        ai_flamethrower(&mut p, &mut rng, 0);
-        // f32 accumulation тАФ repeated * 0.95, not a pow.
         ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(p.vel.x, 8.0f32 * 0.95 * 0.95, "the second decay at tick 61");
         assert_eq!(rng.floats, 49 * 3 + 12 * 7);
@@ -4454,20 +4500,20 @@ mod tests {
     fn w4_d8_the_fountain_jet_speed_math() {
         let mut rng = census();
         // The full-speed jet (timeLeft ≥ 60): num569 = 2, scale 0.85 →
-        // (0, -1.7) spun by -0.7851111111131433 rad (the C# π/2 literal
+        // (0, -1.7) spun by -0.7853981852531433 rad (the C# π/2 literal
         // widened, × (0 - 0.5)). cos/sin are the f32 casts of the f64.
-        let jet = fountain_jet(2.0, 1.5701111111162866, &mut rng);
-        let a = -0.7851111111131433f64;
+        let jet = fountain_jet(2.0, 1.5707963705062866, &mut rng);
+        let a = -0.7853981852531433f64;
         let (c, s) = (a.cos() as f32, a.sin() as f32);
         // RotatedBy((0, -1.7)): x = 0*c - (-1.7)*s = 1.7*s (negative),
         // y = 0*s + (-1.7)*c = -1.7*c.
         assert!((jet.x - 1.7 * s).abs() < 1e-6, "the spun X (`:30500`)");
         assert!((jet.y - (-1.7 * c)).abs() < 1e-6, "the spun Y (`:30500`)");
         assert_eq!(rng.doubles, 2, "the speed scale + the rotation draw");
-        // The blue's π/4 literal: the angle halves again (-0.3921111111165716).
+        // The blue's π/4 literal: the angle halves again (-0.39269909262657166).
         let mut rng2 = census();
-        let jet_b = fountain_jet(2.0, 0.7851111111131433, &mut rng2);
-        let ab = -0.3921111111165716f64;
+        let jet_b = fountain_jet(2.0, 0.7853981852531433, &mut rng2);
+        let ab = -0.39269909262657166f64;
         let (cb, sb) = (ab.cos() as f32, ab.sin() as f32);
         assert!((jet_b.x - 1.7 * sb).abs() < 1e-6, "the blue's spun X (`:30546`)");
         assert!((jet_b.y - (-1.7 * cb)).abs() < 1e-6, "the blue's spun Y");
@@ -4488,7 +4534,7 @@ mod tests {
         assert_eq!(rng3.ranges, vec![(-2, 3), (-2, 3)], "the jitters");
         // The scaled jet itself: (0, -1.0 * 0.85) spun by -π/4.
         let mut rng4 = census();
-        let jet_s = fountain_jet(1.0, 1.5701111111162866, &mut rng4);
+        let jet_s = fountain_jet(1.0, 1.5707963705062866, &mut rng4);
         assert!((jet_s.x - 0.85 * s).abs() < 1e-6, "the life-scaled X");
         assert!((jet_s.y - (-0.85 * c)).abs() < 1e-6, "the life-scaled Y");
         // The boundary: timeLeft 60 → num570 = 1.0, NOT < 1 → no scale.
@@ -4754,8 +4800,8 @@ mod tests {
     /// explicit draws (in order) PLUS the `NewDust`/`NewGore` internal
     /// draws. The oracle's log is an ordered subsequence of the bodies'
     /// log; the unmatched draws are the 578 internal rolls (14 dust-31 × 6
-    /// + 70 dust-6 × 7 defaults/damps + 2 gore × 2 kicks). Total 830 =
-    /// 252 + 578.
+    /// + 70 dust-6 × 7 defaults/damps + 2 gore × 2 kicks). Total 826 =
+    /// 248 + 578.
     #[test]
     fn w4_f50_the_608_blast_bodies_keep_the_census_stream_order() {
         let w = world();
@@ -4780,8 +4826,8 @@ mod tests {
         solar_flare_blast_draws(&mut census_rng);
         let a = &bodies_rng.log;
         let b = &census_rng.log;
-        assert_eq!(b.len(), 252, "the explicit census draws");
-        assert_eq!(a.len(), 830, "252 explicit + 578 internal");
+        assert_eq!(b.len(), 248, "the explicit census draws");
+        assert_eq!(a.len(), 826, "248 explicit + 578 internal");
         // Greedy ordered-subsequence match: every census draw appears in the
         // bodies log in order. The dust section of the census is pure
         // doubles (the rings), so the internal dust ranges never mis-match;
@@ -5054,7 +5100,15 @@ mod tests {
         p.ai[0] = 25.0;
         p.pos = Vec2::new(1600.0, 800.0);
         p.vel = Vec2::ZERO;
-        let mut n = npc_at(1700.0, 800.0);
+        let mut n = npc_at(0.0, 0.0);
+        // The acquire reads the NPC CENTRE (`npc_center` ≈ `Entity.Center`)
+        // and the blend's `dir` is the unit vector to it (`:40544`), so put
+        // the NPC centre 100 px right of the SHOT's centre (pos + half the
+        // 18×18 box, not pos itself) to make `dir` exactly (1, 0).
+        let pc = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (nw, nh) = n.size();
+        n.x = pc.x + 100.0 - nw * 0.5;
+        n.y = pc.y - nh * 0.5;
         n.hp = 40;
         n.max_hp = 40;
         ai_petal(&mut p, &w, &[n], &mut census());
@@ -5273,9 +5327,11 @@ mod tests {
         put(&mut w, 102, 50, 1); // wall at x 1632..1648
         let mut p = proj(1020);
         p.pos = Vec2::new(1600.0, 800.0);
-        p.vel = Vec2::new(20.0, 0.0); // fast тЖТ reverses
+        // The 12-wide box at 1600 + 24 spans 1624..1636, overlapping the
+        // wall (20 would land flush at 1632 and never intersect).
+        p.vel = Vec2::new(24.0, 0.0); // fast тЖТ reverses
         drone_move(&mut p, &w);
-        assert!((p.vel.x - (-20.0 * 0.25)).abs() < 1e-6, "the ├Ч0.25 reversal");
+        assert!((p.vel.x - (-24.0 * 0.25)).abs() < 1e-6, "the ├Ч0.25 reversal");
         // A slow blocked axis (|last| <= 1) does NOT reverse.
         let mut q = proj(1020);
         q.pos = Vec2::new(1620.0, 800.0); // right edge 1632, +0.5 overlaps wall
@@ -5577,6 +5633,9 @@ mod tests {
         let mut p = proj(973);
         p.ai[1] = 30.0; // lifetime
         p.ai[2] = 1.0; // scale
+        // A live slash carries damage; at damage == 0 the C#'s fast-forward
+        // (`:41663-41666`) adds 6 to localAI[0] below the median.
+        p.damage = 50;
         p.vel = Vec2::new(6.0, 0.0);
         let mut rng = census();
         ai_true_nights_edge(&mut p, &w, None, &mut rng);

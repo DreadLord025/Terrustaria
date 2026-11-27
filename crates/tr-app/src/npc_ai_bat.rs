@@ -859,12 +859,11 @@ pub fn ai_style_8_step(
             // its X-then-Y pairs (`:21140-21141`) and the accepted tile
             // queues the 596 curse (`:21155`, the sim drains
             // `wants_djinn_curse` — damage 0, knockback 1, ai0 = target).
-            if npc.ai[1] % 30.0 == 0.0 && npc.ai[1] / 30.0 < 5.0 {
-                // `:21121` — the window puff (netMode-independent).
-            // 5th (ai[1] = 120/90/60/30/0 after the decrement). W4-f42
-            // wires the search + the 596 spawn (the S1-E-5 wholesale skip
-            // retires); the search helpers ride `npc_ai_caster` (the
-            // faithful re-port's `to_tile`/`solid_tiles`, one copy).
+            // `:21119` — the %30 window below the 5th (ai[1] =
+            // 120/90/60/30/0 AFTER the decrement). W4-g5 draw-parity:
+            // the search consumes its X-then-Y pairs; the accepted tile
+            // queues the 596 curse (`:21155`). The search helper is the
+            // one shared copy (`npc_ai_caster`).
             if npc.ai[1] % 30.0 == 0.0 && npc.ai[1] / 30.0 < 5.0 {
                 // `:21121` — the Item8 puff plays BEFORE the netMode gate
                 // (every qualifying tick, even a client's).
@@ -873,56 +872,6 @@ pub fn ai_style_8_step(
                     x: npc.x,
                     y: npc.y,
                 });
-                // `:21122` — netMode != 1 (the port is single-player/host).
-                let (scx, scy) = npc.center();
-                let (pcx, pcy) = player.center();
-                // `:21124-21125` — ToTileCoordinates (`(int)v >> 4`).
-                let self_pt = (to_tile(scx), to_tile(scy));
-                let tgt_pt = (to_tile(pcx), to_tile(pcy));
-                // `:21126-21136` — the >2000-px length gate draws NOTHING.
-                let (dx, dy) = (pcx - scx, pcy - scy);
-                if (dx * dx + dy * dy).sqrt() <= 2000.0 {
-                    for _ in 0..50 {
-                        // `:21140-21141` — X first, then Y (num90 = 6).
-                        let x = rng.next_range(tgt_pt.0 - 6, tgt_pt.0 + 6 + 1);
-                        let y = rng.next_range(tgt_pt.1 - 6, tgt_pt.1 + 6 + 1);
-                        // `:21142` — outside the target's ±2 box (num92)
-                        // AND the caster's ±6 box (num91), tile !nactive().
-                        let outside_target = y < tgt_pt.1 - 2
-                            || y > tgt_pt.1 + 2
-                            || x < tgt_pt.0 - 2
-                            || x > tgt_pt.0 + 2;
-                        let outside_self = y < self_pt.1 - 6
-                            || y > self_pt.1 + 6
-                            || x < self_pt.0 - 6
-                            || x > self_pt.0 + 6;
-                        if outside_target
-                            && outside_self
-                            && !world
-                                .tile(x, y)
-                                .is_some_and(|t| t.active() && !t.inactive())
-                        {
-                            // `:21145-21152` — no lava, no solid ±2 box
-                            // (num93 = 2).
-                            if world.tile(x, y).is_some_and(|t| {
-                                t.liquid > 0
-                                    && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
-                            }) {
-                                continue;
-                            }
-                            if solid_tiles(world, x - 2, x + 2, y - 2, y + 2) {
-                                continue;
-                            }
-                            // `:21155` — the 596 curse at the tile centre;
-                            // ai0 = this.target, damage 0, knockback 1.
-                            npc.wants_djinn_curse.push((
-                                (x * 16 + 8) as f32,
-                                (y * 16 + 8) as f32,
-                                npc.target as f32,
-                            ));
-                            break;
-                        }
-                    }
                 // `:21122` — single-player/host only (the port's fold).
                 let (scx, scy) = npc.center();
                 let (pcx, pcy) = player.center();
@@ -1077,21 +1026,9 @@ pub fn ai_style_8_step(
                     shot = Some(CasterShot { kind: NpcKind::ChaosBall, x: sx, y: sy, ai3: 0.0 });
                 }
                 NpcKind::Tim => {
-                    // `:21242` — type 665, the ChaosBallTim clone; the port
-                    // folds it into ChaosBall (R4 FINAL, research/322:
-                    // stat-identical SetDefaults `:15699-15713` vs
-                    // `:17403-17417`, the same aiStyle-9 arm `:21519`, the
-                    // same {31} immunity `NPCID.cs:6251-6264`, the same
-                    // "Chaos Ball" display name). The one C# surface that
-                    // differs — the banner (665 → Tim's 177,
-                    // `BannerSystem.cs:864-866`; 30 → the Sorcerer's 39) —
-                    // is UNREACHABLE in the port: both ids are Hide=true
-                    // bestiary exclusions (`NPCID.cs:1443-1456`), no
-                    // ENTRIES row, no kill-credit/banner drain ever fires
-                    // for either. d43's distinct-kind row retires at merge.
-                    shot = Some(CasterShot { kind: NpcKind::ChaosBall, x: sx, y: sy, ai3: 0.0 });
-                    // `:21242` — type 665, the ChaosBallTim clone (W4-d43: its
-                    // own kind now; identical stats, its own bestiary credit).
+                    // `:21242` — `NPC.NewNPC(..., 665)`; the ChaosBallTim
+                    // clone keeps its own kind (W4-d43: identical stats,
+                    // own bestiary credit — `NPCID.cs:1443-1456`).
                     shot = Some(CasterShot { kind: NpcKind::ChaosBallTim, x: sx, y: sy, ai3: 0.0 });
                 }
                 NpcKind::DarkCaster => {
@@ -1167,8 +1104,6 @@ pub fn ai_style_8_step(
             }
         }
         }
-    }
-    }
     // `:21279-21374` — the per-type dust/light tail: the lights are the
     // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5). W4-d52
     // wires the ported kinds' dust arms (the netOffset pair
@@ -1337,6 +1272,76 @@ fn caster_ambient_dust(
         NpcKind::DesertDjinn => {
             // `:21358-21361` — light only, no dust, no draw.
         }
+        NpcKind::LibrarianSkeleton => {
+            // `:21301-21309` — light only (the 693's remap glow), no dust,
+            // no draw.
+        }
+        NpcKind::RuneWizard => {
+            // `:21310-21325` — 172's alpha dust: `num112` iterations
+            // (1, or 2 while fully faded), each rolling `Next(255) >
+            // 255 - alpha`; a pass spawns one type-106 dust + the two
+            // Next(30) velocity scales + the Next(6) scale bump.
+            let alpha = npc.alpha as i32;
+            let iterations = if alpha == 255 { 2 } else { 1 };
+            for _ in 0..iterations {
+                if rng.next_max(255) as i32 > 255 - alpha {
+                    let idx = dust.new_dust(
+                        rng, ctx, world, pos, wi, hi, 106, npc.vx * 0.2, npc.vy * 0.2, 100,
+                        Color::default(), 1.2,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    let kx = 0.1 + rng.next_max(30) as f32 * 0.01;
+                    let ky = 0.1 + rng.next_max(30) as f32 * 0.01;
+                    d.velocity.x *= kx;
+                    d.velocity.y *= ky;
+                    d.scale *= 1.0 + rng.next_max(6) as f32 * 0.1;
+                }
+            }
+        }
+        // `:21329-21336` — 283/284 (Necromancer): Next(2)==0 gates type 173,
+        // box-sized at the NPC's velocity (0/0), then the ×0.5 damp.
+        NpcKind::Necromancer | NpcKind::NecromancerArmored => {
+            if rng.next_max(2) != 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 173, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity.x *= 0.5;
+            d.velocity.y *= 0.5;
+        }
+        // `:21338-21346` — 285/286 (Diabolist): Next(2)==0 gates type 174,
+        // speed ×0.2, alpha 100; then noGravity, ×0.4 and the -0.7 lift.
+        NpcKind::DiabolistRed | NpcKind::DiabolistWhite => {
+            if rng.next_max(2) != 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 174, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 0.4;
+            d.velocity.y -= 0.7;
+        }
+        // `:21348-21358` — 281/282 (Ragged Caster): Next(2)==0 gates type 175,
+        // speed ×0.2, alpha 100, scale 0.1; noGravity, ×0.5, fadeIn 1.2.
+        NpcKind::RaggedCaster | NpcKind::RaggedCasterOpenCoat => {
+            if rng.next_max(2) != 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 175, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 0.1,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 0.5;
+            d.fade_in = 1.2;
+        }
         _ => {
             // `:21366` — the else group (24), Next(6) == 0 gates the dust.
             if rng.next_max(6) != 0 {
@@ -1448,7 +1453,8 @@ mod tests {
             }
         }
         let s = fired.expect("the 25 tick fires");
-        assert_eq!(s.kind, NpcKind::ChaosBall);
+        // `:21242` — `NPC.NewNPC(..., 665)`; the port's ChaosBallTim kind.
+        assert_eq!(s.kind, NpcKind::ChaosBallTim);
         // `:21242` — Bottom = ((int)x + width/2, (int)y - 8).
         assert_eq!(s.x, n.x as i32 as f32 + 9.0);
         assert_eq!(s.y, n.y as i32 as f32 - 8.0);
@@ -1480,16 +1486,10 @@ mod tests {
 
     /// `NPC.cs:21031-21038` + `:21079-21082` — the Djinn's single 180
     /// trigger sets 181 (reads 180 after the same-tick decrement) and the
-    /// 360 wrap resets to 1 via the 650 block. W4-g5 draw-parity: the
-    /// curse volley is LIVE — the 5 window ticks (ai[1] = 120/90/60/30/0)
-    /// draw the search pairs and queue `wants_djinn_curse` (the old
-    /// never-fires witness is superseded by the parity round; the sphere
-    /// list stays empty — the Djinn fires a PROJECTILE, not a sphere).
-    #[test]
-    fn the_djinn_triggers_at_180_wraps_at_360_and_fires_curses() {
     /// 360 wrap resets to 1 via the 650 block. W4-f42: the curse volley
     /// fires on the %30 ticks (ai[1] = 120/90/60/30/0) into the
-    /// hostile-shot-ai lane — never a sphere return.
+    /// hostile-shot-ai lane — never a sphere return. (The duplicated
+    /// merge scaffold of the earlier `fires_curses` copy is removed.)
     #[test]
     fn the_djinn_triggers_at_180_wraps_at_360_and_fires_the_curse_lane() {
         let w = ground_air();
@@ -1847,7 +1847,10 @@ mod tests {
             let mut probe = UnifiedRandom::new(52);
             let mut dust = tr_core::particles::DustPool::new();
             caster_teleport_burst(&n, &mut rng, &mut dust, &ctx, &w);
-            for i in 0..50 {
+            // The helper runs the WHOLE 50-dust loop per call, so replay
+            // all 50 and compare once (a per-dust compare would race the
+            // already-finished burst).
+            for _ in 0..50 {
                 match kind {
                     NpcKind::GoblinSorcerer | NpcKind::Tim => {
                         probe.next_range(1, 3);
@@ -1857,14 +1860,8 @@ mod tests {
                     NpcKind::DesertDjinn => burst_block(&mut probe, 27, bw, bh),
                     _ => burst_block(&mut probe, 6, bw, bh),
                 }
-                assert_eq!(rng.peek(), probe.peek(), "{kind:?} burst stream @{i}");
-                // Drain per dust: the census stays on the empty-pool
-                // path (the live pool's pressure bands are the d50
-                // chain's wiring-wave concern).
-                for s in dust.slots_mut() {
-                    s.active = false;
-                }
             }
+            assert_eq!(rng.peek(), probe.peek(), "{kind:?} burst stream");
             // The post-spawn writes: velocity x3, noGravity (29/45 only
             // when the FINAL scale > 1 — the scale-2 argument always
             // clears it, the scale-1 arm keeps gravity). The drain above
@@ -1909,11 +1906,14 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         let mut mirror = UnifiedRandom::new(7);
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
         for _ in 0..100 {
-            let _ = mirror.next_range(1, 3); // the two bursts' scales
+            let _ = mirror.next_range(1, 3); // the two bursts' scale ARGUMENTS
+            burst_block(&mut mirror, 27, bw, bh); // each NewDust's internals
         }
         let _ = mirror.next_max(5); // the ambient gate
-        assert_eq!(rng, mirror, "exactly 100 Next(1,3) + one Next(5)");
+        assert_eq!(rng, mirror, "100 (Next(1,3) + NewDust) + one Next(5)");
     }
 
     /// `NPC.cs:20874-20879` + `:21292` — the Dark Caster's bursts use the
@@ -1930,9 +1930,14 @@ mod tests {
         n.ai[3] = 120.0;
         let mut rng = UnifiedRandom::new(7);
         ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
         let mut mirror = UnifiedRandom::new(7);
-        let _ = mirror.next_max(3);
-        assert_eq!(rng, mirror, "the 32 bursts draw nothing; one Next(3)");
+        for _ in 0..100 {
+            burst_block(&mut mirror, 172, bw, bh); // both bursts' internals
+        }
+        let _ = mirror.next_max(3); // the ambient gate
+        assert_eq!(rng, mirror, "100 NewDust + one Next(3)");
     }
 
     /// `NPC.cs:21282`/`:21292`/`:21358-21366` — the plain-tick ambient
@@ -1952,11 +1957,25 @@ mod tests {
             let mut n = Npc::new(kind, 96.0 * 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
             n.hp = n.max_hp;
             n.ai[0] = 10.0; // no trigger tick, no 650 search
+            let (bw, bh) = n.size();
+            let (bw, bh) = (bw as i32, bh as i32);
             let mut rng = UnifiedRandom::new(7);
             ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
             let mut mirror = UnifiedRandom::new(7);
             if let Some(max) = gate {
-                let _ = mirror.next_max(max);
+                // The gate draw runs every tick; a pass is `== 0` for the
+                // 29/45/24 arms and `!= 0` for the 32 (`:21282`/`:21292`/
+                // `:21366`). A pass then runs the NewDust internals.
+                let draw = mirror.next_max(max);
+                let pass = if kind == NpcKind::DarkCaster { draw != 0 } else { draw == 0 };
+                if pass {
+                    let ty = match kind {
+                        NpcKind::DarkCaster => 172,
+                        NpcKind::FireImp => 6,
+                        _ => 27,
+                    };
+                    burst_block(&mut mirror, ty, bw, bh);
+                }
             }
             assert_eq!(rng, mirror, "{kind:?}'s ambient gate");
         }
@@ -2014,8 +2033,15 @@ mod tests {
         ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[1], 120.0);
         assert_eq!(n.wants_sound.len(), 1, "the window's Item8 (:21121)");
-        let (cx, cy, ai0) = *n.wants_djinn_curse.first().expect("a curse queued");
-        assert_eq!(ai0, n.target as f32, "ai0 = this.target (:21155)");
+        // The one shared search (`npc_ai_caster::djinn_curse_search`) queues
+        // on the host-shot-ai lane (`:21155`), not the legacy tuple lane.
+        let shot = n
+            .wants_hostile_shot_ai
+            .first()
+            .expect("a curse queued");
+        assert_eq!(shot.kind, crate::projectile::DESERT_DJINN_CURSE);
+        assert_eq!(shot.ai0, n.target as f32, "ai0 = this.target (:21155)");
+        let (cx, cy) = (shot.x, shot.y);
         // The tile centre: (x*16+8, y*16+8).
         assert_eq!((cx as i32 - 8) % 16, 0);
         assert_eq!((cy as i32 - 8) % 16, 0);
@@ -2053,7 +2079,7 @@ mod tests {
         let before = rng.clone();
         ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(rng, before, "the >2000 gate consumes no draws");
-        assert!(n.wants_djinn_curse.is_empty());
+        assert!(n.wants_hostile_shot_ai.is_empty());
         assert_eq!(n.wants_sound.len(), 1, "the puff plays regardless");
     }
 
@@ -2152,12 +2178,23 @@ mod tests {
         n2.hp = n2.max_hp;
         n2.ai[0] = 10.0;
         n2.alpha = 254; // the ramp ++ lands 255: 2 iterations
+        let (bw2, bh2) = n2.size();
+        let (bw2, bh2) = (bw2 as i32, bh2 as i32);
         let mut rng2 = UnifiedRandom::new(7);
         ai_style_8_step_draws(&mut n2, &w, &p, &mut rng2);
         let mut mirror2 = UnifiedRandom::new(7);
-        let _ = mirror2.next_max(255);
-        let _ = mirror2.next_max(255);
-        assert_eq!(rng2, mirror2, "2 Next(255) at alpha 255");
+        // Two gate iterations; each pass (`> 255 - 255 == 0`) then runs
+        // the type-106 NewDust internals + the two Next(30) scales + the
+        // Next(6) bump (`:21310-21325`).
+        for _ in 0..2 {
+            if mirror2.next_max(255) > 0 {
+                burst_block(&mut mirror2, 106, bw2, bh2);
+                let _ = mirror2.next_max(30);
+                let _ = mirror2.next_max(30);
+                let _ = mirror2.next_max(6);
+            }
+        }
+        assert_eq!(rng2, mirror2, "2 gate rolls + the passed dusts at alpha 255");
     }
 
     /// `NPC.cs:20994-21005` + `:21106-21111` — the 693's localAI clock:
@@ -2248,14 +2285,22 @@ mod tests {
         let mut probe = UnifiedRandom::new(52);
         let mut dust = tr_core::particles::DustPool::new();
         ai_style_8_step(&mut n, &w, &p, &mut rng, &mut dust, &ctx);
-        for burst in 0..2 {
-            for i in 0..50 {
-                probe.next_range(1, 3);
-                burst_block(&mut probe, 27, bw, bh);
-                assert_eq!(rng.peek(), probe.peek(), "burst {burst} dust {i}");
-            }
+        // The DarkCaster's burst is type 172 with a CONSTANT scale — no
+        // Next(1,3) argument (`:20874-20879`): 2 × 50 × NewDust only.
+        for _ in 0..100 {
+            burst_block(&mut probe, 172, bw, bh);
         }
-        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 100);
+        // The DarkCaster ambient gate spawns when `Next(3) != 0`; a pass
+        // then runs one extra type-172 NewDust (`:21292-21299`).
+        let ambient_pass = probe.next_max(3) != 0;
+        if ambient_pass {
+            burst_block(&mut probe, 172, bw, bh);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "both bursts + the ambient arm");
+        assert_eq!(
+            dust.slots().iter().filter(|s| s.active).count(),
+            100 + ambient_pass as usize
+        );
         assert_eq!(n.ai[2], 0.0);
         assert_eq!(n.ai[3], 0.0);
     }
@@ -2370,5 +2415,4 @@ mod tests {
             }
         }
     }
-}
 }

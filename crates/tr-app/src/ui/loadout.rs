@@ -178,11 +178,11 @@ mod tests {
     #[test]
     fn w4_g55_the_button_rects_match_the_csharp_layout() {
         let r0 = button_rect(1280.0, 174.0, 0);
-        assert_eq!(r0, [1236.0, 174.0, 32.0, 32.0]);
+        assert_eq!(r0, [1240.0, 174.0, 32.0, 32.0]);
         let r1 = button_rect(1280.0, 174.0, 1);
-        assert_eq!(r1, [1236.0, 210.0, 32.0, 32.0]);
+        assert_eq!(r1, [1240.0, 210.0, 32.0, 32.0]);
         let r2 = button_rect(1280.0, 174.0, 2);
-        assert_eq!(r2, [1236.0, 246.0, 32.0, 32.0]);
+        assert_eq!(r2, [1240.0, 246.0, 32.0, 32.0]);
     }
 
     /// W4-g55 — the hit test picks the button under the pointer and excludes
@@ -193,8 +193,8 @@ mod tests {
         assert_eq!(button_hit(1280.0, 174.0, [1240.0, 215.0]), Some(1));
         assert_eq!(button_hit(1280.0, 174.0, [1240.0, 250.0]), Some(2));
         assert_eq!(button_hit(1280.0, 174.0, [1200.0, 180.0]), None);
-        // The right/bottom edges are excluded.
-        assert_eq!(button_hit(1280.0, 174.0, [1268.0, 180.0]), None);
+        // The right/bottom edges are excluded (the rect is 1240..1272).
+        assert_eq!(button_hit(1280.0, 174.0, [1272.0, 180.0]), None);
         assert_eq!(button_hit(1280.0, 174.0, [1240.0, 206.0]), None);
     }
 

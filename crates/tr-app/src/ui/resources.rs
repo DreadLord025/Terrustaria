@@ -855,7 +855,10 @@ mod s1_e_6_tests {
         p.buffs.buff_time[0] = 3;
         p.owned_projectile_counts[266] = 2;
         assert_eq!(buff_text(&p, 0).as_deref(), Some("x2"));
-        assert!(try_get_buff_time(&p, 0, false).is_some(), "the timer still ticks");
+        // Buff 64 is in `Main.buffNoTimeDisplay` (`Main.cs:43295`), so
+        // `TryGetBuffTime` refuses it even at 3 ticks - the handler text
+        // above is the only row.
+        assert!(try_get_buff_time(&p, 0, false).is_none(), "64 hides its timer");
     }
 
     #[test]
@@ -1154,8 +1157,11 @@ mod s1_e_6_tests {
         // a half-drained budget's 5th flame is full, the 6th empty (num4 = 0).
         assert_eq!(breath_bubble_visual(210, 5, 42), (255, 1.0));
         assert_eq!(breath_bubble_visual(210, 6, 42), (30, 0.75));
-        // A quarter into the 6th flame: num4 = 0.25 → grey 86, scale 0.8125.
-        assert_eq!(breath_bubble_visual(220, 6, 42), (86, 0.8125));
+        // Into the 6th flame: num4 = (220 - 5*42)/42 = 10/42; grey
+        // `(int)(30 + 225*num4)` = 83, scale `num4/4 + 0.75` = 0.8095238.
+        let (g, s) = breath_bubble_visual(220, 6, 42);
+        assert_eq!(g, 83);
+        assert!((s - 0.8095238).abs() < 1e-6);
     }
 
     /// W4-c46 — the breath meter's anchor walk (`Main.cs:43421-43438`): the

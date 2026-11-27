@@ -765,11 +765,16 @@ mod tests {
     #[test]
     fn f27s7_devote_mirrors_the_seven_bands() {
         let rows = rows_over(FindFrameExtra7Kind::CultistDevote, input(0.0, 0.0), 50);
-        let mut want = Vec::new();
-        for b in [0u32, 1, 2, 3, 2, 1, 0] {
+        // `NPC.cs:72000-72014`: `++frameCounter`, band
+        // `(int)counter % 49 / 7` mirrored past 4. Starting at 0, the
+        // first band holds ticks 1..6 (counter 1..6); every later band
+        // holds 7 ticks, and tick 49's `>= 49` reset + tick 50 both
+        // read band 0.
+        let mut want = vec![0u32; 6];
+        for b in [1u32, 2, 3, 2, 1] {
             want.extend(std::iter::repeat(b).take(7));
         }
-        want.push(0); // tick 50: counter 49 resets to 0, band 0.
+        want.extend(std::iter::repeat(0).take(9));
         assert_eq!(rows, want);
         // The chant: +2 a tick — tick 24 lands counter 48 (band 6,
         // mirrored to 0), tick 25's 50 >= 49 resets to band 0.

@@ -250,9 +250,11 @@ mod tests {
         }
         let mut n = Npc::new(NpcKind::TacticalSkeleton, player.x - 200.0, 40.0 * TILE_PX - 40.0, 1, 0.0);
         n.on_ground = true;
-        // Arm the fire: ai[2] > 0 and ai[1] at the half-cooldown (60).
+        // Arm the fire: ai[2] > 0 and ai[1] one ABOVE the half-cooldown —
+        // `:59086-59089` decrements FIRST, so ai[1] == num163 (60) on the
+        // fire test (`:59208`) needs 61 before the tick.
         n.ai[2] = 3.0;
-        n.ai[1] = 60.0;
+        n.ai[1] = 61.0;
         let mut rng = UnifiedRandom::new(11);
         let mut witness = UnifiedRandom::new(11);
         for _ in 0..8 {

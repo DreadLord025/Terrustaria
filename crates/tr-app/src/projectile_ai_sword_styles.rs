@@ -1483,6 +1483,11 @@ mod tests {
         p.ai[1] = 3.0;
         ai_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
         assert_eq!(p.ai[1], -2.0);
+        // The tick that ENTERS with ai[1] > 0 takes the drain arm (so
+        // tileCollide is still false); the NEXT tick hits the else arm and
+        // re-arms collision (`:42798-42805`).
+        assert!(!p.tile_collide, "the drain tick still took the ai[1] > 0 arm");
+        ai_bad_torch_luck(&mut p, Some(&mut pl), 0, &mut rng);
         assert!(p.tile_collide, "the else arm (`:42804`)");
     }
 

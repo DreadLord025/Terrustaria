@@ -343,11 +343,24 @@ mod tests {
     #[test]
     fn w4_d5_s43_the_hue_chain_is_byte_exact_at_spawn() {
         let (piece, value) = leaf_shot_hue(180);
-        // num320 = ((1-1)*-5.1+0.33)%1 = 0.33 (f32: 0.33).
-        let base = crate::ui::color::hsl_to_rgb(0.33f32 as f64, 1.0, 0.5, 255);
+        // `:27876` — the exact f32 expression (the `+1 %1` step rounds
+        // through 1.33f32, so the hue is 0.33000004, NOT the 0.33 literal;
+        // the Red remap is therefore 8.05e-8, not 0, and its per-channel
+        // truncation drops G 255 -> 254 before the LimeGreen/Gold blend).
+        let num320 = (((1.0f32 - 180.0 / 180.0) * -6.0 * 0.85 + 0.33) % 1.0 + 1.0) % 1.0;
+        let base = crate::ui::color::hsl_to_rgb(num320 as f64, 1.0, 0.5, 255);
+        assert_eq!(base, [5, 255, 0, 255], "hslToRgb(0.33000004, 1, 0.5)");
+        let value0 = lerp_rgb(
+            [base[0], base[1], base[2]],
+            [255, 0, 0],
+            get_lerp_value(0.33, 0.7, num320),
+        );
+        assert_eq!(value0, [5, 254, 0], "the Red lerp's truncation");
         let lg = lerp_rgb([50, 205, 50], [255, 215, 0], 0.3);
-        let want = lerp_rgb([base[0], base[1], base[2]], lg, base[0] as f32 / 255.0);
+        let want = lerp_rgb(value0, lg, value0[0] as f32 / 255.0);
         assert_eq!(value, want);
+        // The literal oracle (XNA `Color.Lerp` truncates per channel).
+        assert_eq!(value, [7, 253, 0], "the byte-exact spawn colour");
         let (h, _, _) = crate::ui::color::rgb_to_hsl([want[0], want[1], want[2], 255]);
         assert_eq!(piece, (h as f32 * 255.0) as u8);
     }

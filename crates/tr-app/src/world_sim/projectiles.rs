@@ -1332,16 +1332,26 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // the `place_tile_sound` table's 330-333 arm).
             app.audio.play_place_sound((18, 1), x, y, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
-            // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
-            // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
-            // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
-            // part-4 shape) and ignore the scale (the int overload's own
-            // volume is 1 at every f1 site); the id-2 styles fold it into
-            // `play_use_sound_scaled`'s post-gate multiply
-            // (`LegacySoundPlayer.cs:1411`).
-            app.audio
-                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
+            // ONE play per queued cue (the union left BOTH façades here, so a
+            // single `PlaySound` drew its case-2 pitch twice — the S1-E-21h
+            // frost-bolt/coil stream witnesses caught it). The f1-scaled
+            // façade owns the int routes, the (42, 274) RainbowBoulder row
+            // and the id-2 styles (`:1335`); the older façade alone can
+            // resolve the OTHER id-42 trackables (the scaled one returns
+            // `None` for them without drawing).
+            if id == 42 && style != 274 {
+                app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
+            } else {
+                // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
+                // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
+                // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
+                // part-4 shape) and ignore the scale (the int overload's own
+                // volume is 1 at every f1 site); the id-2 styles fold it into
+                // `play_use_sound_scaled`'s post-gate multiply
+                // (`LegacySoundPlayer.cs:1411`).
+                app.audio
+                    .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, app.rngs.stream(crate::app::RngKey::UpdateProjectiles));
+            }
         }
     }
     // W4-e7 lane 23 — the Snapping Stone strike family's queued cues
@@ -1457,7 +1467,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // write-back rides the current push index (the saucer host-link
     // convention, `world_sim/npcs.rs`'s carrier pre-pass).
     for (slot, npc_type, x, y) in app.projectiles.drain_ritual_npc_spawns() {
-        let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
+        // `NPC.NewNPC(..., 454/521, ...)` takes an NPCID TYPE id, so the
+        // kind resolves through `from_u16` (the 454/521 rows,
+        // `data.rs:1829`/`:2118`, ported from `NPC.cs:15768-15779`); the
+        // bestiary net-id table is the FALLBACK for the protocol-renumbered
+        // ids (the squidhead 521 is not a bestiary entry, so the net-id
+        // table alone dropped it — the w4-d9 drain witness).
+        let Some((kind, slime)) = crate::npc::NpcKind::from_u16(npc_type)
+            .map(|k| (k, crate::npc::SlimeVariant::Blue))
+            .or_else(|| crate::npc::kind_from_net_id(npc_type as i32))
+        else {
             continue;
         };
         let (w, h) = kind.size();
@@ -2378,15 +2397,45 @@ mod w4_d4_death_drop_tests {
         let vy = expect.next_range(-40, -15) as f32 * 0.1;
         assert!((d.vel.x - vx).abs() < 1e-6 && (d.vel.y - vy).abs() < 1e-6);
         assert_eq!(*app.rngs.stream(RngKey::UpdateItems), expect, "exactly two draws");
+        // The unplaced coil's death ALSO plays the Dig thud
+        // (`Projectile.cs:74683`: `if (this.ai[1] == 0f)
+        // SoundEngine.PlaySound(0, (int)base.position.X, ...)` for type 171,
+        // `:74619` for 475/505/506) — the port's id-0 façade draws its
+        // case-0 pair `Next(3)` (the variation) then `Next(-10, 11)` (the
+        // pitch, `LegacySoundPlayer.cs:442`/`:450`) on the `UpdateProjectiles`
+        // stream. Pin it against a MUTED control run of the same death: the
+        // gate refuses before the case draws, so the audible stream must be
+        // exactly the muted state plus those two draws (and no third — a
+        // second Dig play is the double-dispatch bug, not a permit).
+        let mut muted = coil_app(ROPE_COIL, 0.0);
+        muted.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        update_projectiles(&mut muted, 1.0 / 60.0);
+        let mut expect_proj = muted.rngs.stream(RngKey::UpdateProjectiles).clone();
+        let _ = expect_proj.next_range(0, 3);
+        let _ = expect_proj.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            expect_proj,
+            "the coil's one Dig cue: the variation + pitch pair"
+        );
         for key in RngKey::ALL {
-            if key != RngKey::UpdateItems {
-                assert_eq!(
-                    *app.rngs.stream(key),
-                    UnifiedRandom::new(0),
-                    "{} pristine",
-                    key.name()
-                );
+            if key == RngKey::UpdateItems || key == RngKey::UpdateProjectiles {
+                continue;
             }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
         }
         // The partial refund: ai[1] = 4 → 6 vine-rope items (`:77591`).
         let mut app2 = coil_app(VINE_ROPE_COIL, 4.0);
@@ -3569,6 +3618,11 @@ mod f32_lucky_coin_drain_tests {
         // A pre-rolled proc intent (the pool's mid-walk rolls are pinned by
         // `f32_lucky_coin_proj_tests`): silver 72 at (60, 40), vx 4, vy -2.
         app.projectiles.push_lucky_coin_drop_for_test((72, 60.0, 40.0, 4.0, -2.0));
+        // The intent injection only QUEUES the `ItemDrop` (the pool cannot
+        // borrow `app.items`); the pass-tail drain does the spawn
+        // (`Projectile.cs:13685-13697` reached from `Projectile.Update`
+        // under the `Main.cs:17775` swap) — drive one pass to drain it.
+        update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(app.items.len(), 1, "the drain spawned the coin");
         let coin = &app.items[0];
         assert_eq!(coin.kind, 72);

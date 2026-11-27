@@ -468,7 +468,9 @@ mod tests {
         let fx = ai_018_arm(63, &mut n, &w, &ctx(&p, true, false));
         assert!(n.dont_take_damage, "the shield stays armed");
         assert_eq!(n.vx, 1.23, "the early return skips the machine");
-        assert_eq!(fx.light.unwrap().2, [0.075, 0.225, 0.6], "the ×1.5 glow");
+        // `:24225-24228` — the ×1.5 glow on the f32 base triplet.
+        let want = [0.05f32 * 1.5, 0.15 * 1.5, 0.4 * 1.5];
+        assert_eq!(fx.light.unwrap().2, want, "the ×1.5 glow");
         // Not shielded: dontTakeDamage clears.
         n.ai[1] = 0.0;
         ai_018_arm(63, &mut n, &w, &ctx(&p, true, false));

@@ -840,10 +840,11 @@ pub(crate) fn draw_tiles(
         }
     }
 
-    // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
-    // so they appear inside/behind solid tiles (worms, WoF segments). Town
     // NPCs never ride this pass, so the party-hat context is None here.
-    draw_phase("npcs_behind_tiles");
+    // The `npcs_behind_tiles` phase is emitted ONCE, at the C#
+    // `DoDraw_DrawNPCsBehindTiles` site below (`Main.cs:63293/63298`,
+    // `All | ScreenExtras`, between the tile composites); a second emission
+    // here drew every behind-tiles NPC twice.
     // W4-d125: the HallowBoss draw's enrage/expert inputs (the world
     // statics + the player-buff expert mirror, the npc.rs convention).
     let empress_ctx = Some(crate::render::entities::EmpressDrawCtx {
@@ -853,21 +854,6 @@ pub(crate) fn draw_tiles(
         world_surface: world.world_surface,
         expert: player.map_or(false, |p| p.buffs.expert_mode),
     });
-    stats.quads += draw_npcs(
-        r,
-        npc_assets,
-        npcs,
-        light,
-        style,
-        anim_time,
-        camera,
-        zoom,
-        screen,
-        true,
-        empress_ctx,
-        None,
-        latest_filter_strength,
-    );
     // cut into tiles drawn earlier in the row. S1-G-13 consumers: the loop body
     // moved verbatim into `draw_wall_layer` so the wallTarget callback
     // (`Main.RenderWalls`, `Main.cs:58081-58091`) drives the SAME pass; under a
@@ -1231,6 +1217,10 @@ pub(crate) fn draw_tiles(
                     // rides the post-dd flag block below — the port's
                     // fused-pass stand-in, one cell later in the same walk.
                     if tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                        // `Main.critterCage = true` (`TileDrawing.cs:5672`
+                        // etc.) rides the SAME gated case as the rewrite, so
+                        // it is raised BEFORE the cage data is consumed.
+                        cage_anim.critter_cage = true;
                         if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
                             tile.kind,
                             tx,
@@ -2293,6 +2283,19 @@ pub(crate) fn draw_tiles(
             show_invisible_blocks,
         );
     }
+    // `TileDrawing.PostDrawTiles` closes before the entity tail — the
+    // direct-screen extras block stops here; the entity tail rides its own
+    // `TileFilter::Screen` pass after the tile composite.
+    if tile_filter == TileFilter::ScreenExtras {
+        // GATE RNG fix: the extras block consumed the foliage rolls; the
+        // entity tail (`Screen`) draws none, but keep the stream parked.
+        if scratch.leaf_rng_shared {
+            scratch.leaf_rng = Some(leaf_rng);
+        }
+        stats.instances = stats.quads;
+        stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+        return stats;
+    }
     // W4-g31 attach phase (UNION-CONTRACT-tilepass §8): the TR_TILEPASS
     // SHADOW attach — the union's draw_layer/post_draw_tiles drivers run
     // at the C# PostDrawTiles position (after the fused walk + the inline
@@ -2323,19 +2326,6 @@ pub(crate) fn draw_tiles(
             world, wind, light, &shadow_inputs,
         );
         log::info!("TILEPASS shadow: {}", shadow.summary());
-    }
-    // `TileDrawing.PostDrawTiles` closes before the entity tail — the
-    // direct-screen extras block stops here; the entity tail rides its own
-    // `TileFilter::Screen` pass after the tile composite.
-    if tile_filter == TileFilter::ScreenExtras {
-        // GATE RNG fix: the extras block consumed the foliage rolls; the
-        // entity tail (`Screen`) draws none, but keep the stream parked.
-        if scratch.leaf_rng_shared {
-            scratch.leaf_rng = Some(leaf_rng);
-        }
-        stats.instances = stats.quads;
-        stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
-        return stats;
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     if !reverse_vine_roots.is_empty() {
@@ -2582,12 +2572,10 @@ pub(crate) fn draw_wall_layer(
                 stats.walls_culled += 1;
                 continue;
             }
-            // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
-            // Echo Monolith or an Echo item grants sight (the port has
-            // neither yet, so they stay hidden; wall 318 is handled above).
-            if world.invisible_wall(tx, ty) {
-                continue;
-            }
+            // `WallDrawing.cs:91`: the Echo-coated-wall gate is ALREADY the
+            // `wall_visible` test above (coating hides unless sight); no
+            // second unconditional skip may follow or a sight-granted echo
+            // wall would never draw.
             // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
             // fully covered ones into black rectangles.
             if light_is_zero(light.get(tx, ty)) {
@@ -3958,9 +3946,15 @@ mod tests {
         assert!(gate < flag && flag < cage, "the flag set gates the rewrite");
         // The lookup feeds the animator's tables (not a zero stand-in).
         assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
-        // The chest half stays cage-only here (the W4-d58 seam owns :993).
-        let call = &dd_block[cage..(cage + 600).min(dd_block.len())];
-        assert!(call.contains("None,"), "chest_frame stays None (W4-d58 seam)");
+        // The chest half stays unwired here (the W4-d58 seam owns :993):
+        // the post-pass call carries only the cage tables + the animator,
+        // never a chest frame.
+        let post = dd_block.find("furniture_post_pass(").unwrap();
+        let call = &dd_block[post..(post + 400).min(dd_block.len())];
+        assert!(
+            !call.contains("chest"),
+            "the chest half stays unwired here (W4-d58 owns :993)"
+        );
     }
 
     /// W4-f14 flag-clear witness: `Main.critterCage = false` rides the
@@ -4325,8 +4319,16 @@ mod tests {
             &dd,
         )
         .expect("the mature herb frame resolves");
-        let own = lookups.frame_tex(&atlas, 83, 0, 0).expect("Tiles_83 (0,0)");
-        let sheet84 = lookups.frame_tex(&atlas, 84, 0, 0).expect("Tiles_84 (0,0)");
+        // The herb's draw-data arm is 16x20 (`TileDrawing.cs:4978-4987`), so
+        // the resolved source rect is the 16x20 block on the swapped sheet -
+        // not `frame_tex`'s 16x16 grid cell.
+        let (hw, hh) = (dd.width as u32, dd.height as u32);
+        let own = lookups
+            .rect_uv(&atlas, 83, 0, 0, hw, hh)
+            .expect("Tiles_83 (0,0)");
+        let sheet84 = lookups
+            .rect_uv(&atlas, 84, 0, 0, hw, hh)
+            .expect("Tiles_84 (0,0)");
         assert_eq!(mature.uv, sheet84.uv, "the swap samples Tiles_84");
         assert_ne!(mature.uv, own.uv, "not the herb's own sheet");
         // Night: no swap — the same call shape keeps Tiles_83.
@@ -4501,11 +4503,13 @@ mod tests {
         let mut reference = FastRandom::new(seed);
         assert_eq!(first, reference.next_range(0, 500));
         assert_eq!(second, reference.next_range(0, 500));
-        // The pristine re-seed (the pre-fix gated behaviour) diverges.
+        // The pristine re-seed (the pre-fix gated behaviour) repeats the
+        // FIRST draw instead of continuing the stream, so the two draws must
+        // differ for the pin to mean anything.
         let mut pristine = FastRandom::new(seed);
         assert_eq!(pristine.next_range(0, 500), first);
         assert_ne!(
-            pristine.next_range(0, 500),
+            first,
             second,
             "the pre-fix re-seed repeats the first draw — the divergence pin"
         );
@@ -4855,8 +4859,13 @@ mod w4_g75_retire_contract_tests {
         let call = frame
             .find("tile_stats = draw_tiles(")
             .expect("the frame's tile-pass call");
-        let tail = &frame[call..call + 6000];
-        let end = tail.find(");").expect("the call's argument list closes");
+        let tail = &frame[call..call + 20000];
+        // The argument list itself contains nested closures that end in
+        // `);`, so walk to the call's own closing line rather than the first
+        // `);` (the fountain colour is the 26th argument).
+        let end = tail
+            .find("\n                        );")
+            .expect("the call's argument list closes");
         assert!(
             tail[..end].contains("self.scene_metrics.active_fountain_color,"),
             "the frame feeds the scan's flowing-fountain colour"

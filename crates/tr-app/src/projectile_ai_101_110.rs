@@ -1476,7 +1476,9 @@ mod tests {
         let w = world();
         let mut rng = census();
         let mut p = proj(575);
-        p.pos = Vec2::new(1000.0, 1000.0);
+        // The C# homing reads `base.Center` (`:33653`): place the top-left
+        // so the 24x24 box's centre IS (1000, 1000).
+        p.pos = Vec2::new(1000.0 - p.w * 0.5, 1000.0 - p.h * 0.5);
         p.ai[0] = 0.0; // the local player's index
         p.vel = Vec2::ZERO;
         ai_nebula_sphere(&mut p, &w, Some((1200.0, 1000.0)), true, false, &mut rng);
@@ -1485,7 +1487,7 @@ mod tests {
         assert!(rng.ranges.is_empty(), "the 575 draws nothing");
         // Inside the radius: no blend.
         let mut p = proj(575);
-        p.pos = Vec2::new(1000.0, 1000.0);
+        p.pos = Vec2::new(1000.0 - p.w * 0.5, 1000.0 - p.h * 0.5);
         p.ai[0] = 0.0;
         p.vel = Vec2::new(3.0, 0.0);
         ai_nebula_sphere(&mut p, &w, Some((1020.0, 1000.0)), true, false, &mut rng);
@@ -1612,23 +1614,33 @@ mod tests {
         p.local_ai[1] = 6.0;
         ai_mechanic_wrench(&mut p, &w, None);
         assert!(!p.active, "no host -> Kill");
-        let h = host_npc(crate::npc::NpcKind::Mechanic, 1200.0, 1000.0);
         let mut p = proj(582);
         p.pos = Vec2::new(1000.0, 1000.0);
         p.ai[0] = 1.0;
         p.local_ai[1] = 6.0;
         p.vel = Vec2::new(6.0, 0.0);
+        // `:34058` homes from `base.Center`: give the host the same centre
+        // Y so the direction is exactly +X (the box halves otherwise tilt
+        // the lerp).
+        let mut h = host_npc(crate::npc::NpcKind::Mechanic, 1200.0, 0.0);
+        let (_, nh) = h.size();
+        h.y = p.pos.y + p.h * 0.5 - nh * 0.5;
         ai_mechanic_wrench(&mut p, &w, Some(&h));
         assert!(p.active);
         assert!(!p.tile_collide, ":34052");
         // The lerp: vel = lerp((6,0), (6,0), 0.04) = (6,0) (already aimed).
         assert!((p.vel.x - 6.0).abs() < 1e-4);
-        // Inside the latch radius -> Kill.
-        let h = host_npc(crate::npc::NpcKind::Mechanic, 1002.0, 1000.0);
+        // Inside the latch radius -> Kill. The host CENTRE must sit within
+        // the latched 6 px of the projectile centre (`:34053`), so derive
+        // the top-left from the box halves.
         let mut p = proj(582);
         p.pos = Vec2::new(1000.0, 1000.0);
         p.ai[0] = 1.0;
         p.local_ai[1] = 6.0;
+        let mut h = host_npc(crate::npc::NpcKind::Mechanic, 0.0, 0.0);
+        let (nw, nh) = h.size();
+        h.x = p.pos.x + p.w * 0.5 + 2.0 - nw * 0.5;
+        h.y = p.pos.y + p.h * 0.5 - nh * 0.5;
         ai_mechanic_wrench(&mut p, &w, Some(&h));
         assert!(!p.active, "inside the latch radius -> Kill");
     }
@@ -1643,7 +1655,9 @@ mod tests {
         w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let mut p = proj(582);
-        p.pos = Vec2::new(109.0 * 16.0 - 20.0, 50.0 * 16.0);
+        // Flush against the wall's left face (tile 110 starts at x = 1760):
+        // the 20-px box's next +6 move overlaps it.
+        p.pos = Vec2::new(110.0 * 16.0 - p.w - 1.0, 50.0 * 16.0);
         p.vel = Vec2::new(6.0, 0.0);
         ai_mechanic_wrench(&mut p, &w, None);
         assert_eq!(p.vel, Vec2::new(-6.0, 0.0), "the X reversal");
@@ -1756,11 +1770,16 @@ mod tests {
     /// vel.Y)) then ++, the 0.04 lerp, the vel.X*0.05 spin.
     #[test]
     fn w4_d11_110_the_seek_floors_y_and_spins() {
-        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1200.0, 1000.0);
         let mut p = proj(584);
         p.pos = Vec2::new(1000.0, 1000.0);
         p.local_ai[1] = 6.0;
         p.vel = Vec2::new(6.0, 2.0); // a downward vel.Y floor
+        // `:34094` homes from `base.Center`: give the Nurse the same centre
+        // Y so the direction is exactly +X (the box halves otherwise tilt
+        // the lerp).
+        let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1200.0, 0.0);
+        let (_, nh) = nurse.size();
+        nurse.y = p.pos.y + p.h * 0.5 - nh * 0.5;
         ai_nurse_syringe(&mut p, Some(&mut nurse));
         assert!(p.active, "outside the latch radius");
         // dir = (1, 0) * 6 = (6, 0); Y floor: max(0, 2) = 2, then ++ = 3.

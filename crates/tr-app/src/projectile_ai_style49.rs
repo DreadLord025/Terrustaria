@@ -322,9 +322,13 @@ mod tests {
         }
         assert_eq!(p.alpha, 0);
         assert_eq!(p.sound_delay, 3000);
-        assert_eq!(rng.next_range(61, 64), oracle.next_range(61, 64));
-        assert_eq!(rng.next_range(10, 31), oracle.next_range(10, 31));
-        assert_eq!(rng.next_range(-20, 21), oracle.next_range(-20, 21));
+        // The module already spent the three tick-3 draws on `rng`; replay
+        // them on the oracle and compare the FOLLOWING stream state — a
+        // different count or order desynchronises the LCG and fails here.
+        oracle.next_range(61, 64);
+        oracle.next_range(10, 31);
+        oracle.next_range(-20, 21);
+        assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999), "exactly 3");
         // Ticks 4+ draw nothing.
         for _ in 0..10 {
             bunny_step(&mut p, &mut rng);
@@ -426,7 +430,7 @@ mod tests {
             (61, 64), (10, 31), (-20, 21), // gib 4
         ];
         for (lo, hi) in want {
-            assert_eq!(rng.next_range(lo, hi), oracle.next_range(lo, hi));
+            oracle.next_range(lo, hi);
         }
         assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999), "20 only");
         // The released corpse (−3) is silent.

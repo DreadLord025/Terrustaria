@@ -1192,7 +1192,12 @@ mod tests {
         let angle = mirror.next_float() * std::f32::consts::TAU;
         ai_115_step(&mut n, &w, &players, 0.0, 0, &mut rng);
         assert_eq!(n.local_ai[0], timer, ":47591");
-        assert_eq!(n.ai[0], angle, ":47613 — the tail roll");
+        // `:47613` rolls `angle`; the same tick's flight eases vy toward
+        // sin(angle) and, while rising with no ceiling in the 30-tile
+        // scan, `:47644-47665` overwrites ai[0] with -ai[0] (the air
+        // world has no tiles). Keep the exact conditional.
+        let want = if angle.sin() < 0.0 { -angle } else { angle };
+        assert_eq!(n.ai[0], want, ":47613 + the :47644-47665 no-ceiling flip");
         assert_eq!(rng, mirror, "Next(60,181) + Next(5) + NextFloat");
     }
 

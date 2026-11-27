@@ -156,11 +156,12 @@ mod tests {
         let long = "x".repeat(30);
         b.set_text(&long);
         assert_eq!(b.text.len(), 20);
-        // Write past the cap: the text trims but the cursor advances raw
-        // (`:41` runs after the trimming SetText).
+        // Write past the cap: `SetText` clamps the cursor back to the
+        // pre-insert value (4) first, then `:41` adds the raw insert length
+        // (`UITextBox.cs:38-49`) - so the cursor lands at 6, not 22.
         b.write("yy");
         assert_eq!(b.text.len(), 20);
-        assert_eq!(b.cursor, 22, "the C# cursor is not re-clamped by Write");
+        assert_eq!(b.cursor, 6, "SetText's clamp then Write's `+= text.Length`");
     }
 
     /// `Backspace`/cursor walks (`:56-78`): backspace drops the LAST char

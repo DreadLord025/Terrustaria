@@ -1073,7 +1073,7 @@ mod tests {
         let w = open_world();
         let mut rng = RecordRng::default();
         fairy_weapon_tick(&mut p, 0, &w, &[], &[], &mut rng);
-        assert_eq!(p.alpha, 123, "the alpha save/restore (`:45477-45484`)");
+        assert_eq!(p.alpha, 229, "the tail's Opacity (`:45557`): GetLerpValue(240,220,238) = 0.1 -> (int)((1-0.1)*255) = 229");
         let mut expect: Vec<String> = Vec::new();
         for _ in 0..3 {
             expect.push("float".into()); // NextVector2CircularEdge

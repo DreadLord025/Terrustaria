@@ -1934,8 +1934,8 @@ mod tests {
             rain.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(
-            rain.drops.iter().all(|d| (36..=38).contains(&d.kind)),
-            "every drop rides the fountain style 12, not the biome's 13"
+            rain.drops.iter().filter(|d| d.active).all(|d| (36..=38).contains(&d.kind)),
+            "every live drop rides the fountain style 12, not the biome's 13"
         );
     }
     #[test]
@@ -2138,7 +2138,10 @@ mod tests {
         let mut i = inputs();
         i.wind_speed_current = 0.5;
         rain.update(&w, &i, 1.0 / 60.0, None);
-        assert_eq!(rain.drop_count(), 0);
+        // `Rain.cs:36-83` spawns the whole frame batch (`screen/1920 * 25 *
+        // (0.25 + cloudAlpha)` candidates) on every tick at intensity 1 —
+        // the batch is live immediately, not ramped per tick.
+        assert!(rain.drop_count() > 0);
         for _ in 0..600 {
             rain.update(&w, &i, 1.0 / 60.0, None);
         }
@@ -2904,7 +2907,6 @@ mod tests {
         let mut both_slow = Rain::with_forced(fire_at_both, None, false);
         both_slow.update_time(1, &mut w, true, false, 0.0, false, false, false, 0.0, 100);
         assert!(both_fast.is_raining());
-        let mut both_slow = Rain::with_forced(fire_at_both, None, false);
         assert!(
             both_slow.is_raining(),
             "the plain 86400 shape fired at dayRate 1"
@@ -3032,7 +3034,6 @@ mod tests {
         drain.update_time(60, &mut w, false, false, 0.0, false, false, false, 0.0, 100); // no 120-HP player: arms gated
         assert_eq!(drain.lady_bug_rain_boost, 60);
         drain.update_time(60, &mut w, false, false, 0.0, false, false, false, 0.0, 100);
-        assert_eq!(drain.lady_bug_rain_boost, 60);
         assert_eq!(drain.lady_bug_rain_boost, 0, "the `> 0` gate clamps at 0");
 
         let fire = (1..200_000u64)

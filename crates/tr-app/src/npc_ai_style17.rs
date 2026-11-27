@@ -371,8 +371,9 @@ mod tests {
         n.collide_y = true;
         n.old_vy = -1.0; // ×−0.5 = 0.5, inside (0,1) → clamps to 1
         ai_style17(&mut n, &w, &[cand(900.0, 1000.0)], 0);
-        // The approach then pulls vx back toward −3: 2 − 0.1 − 0.1 = 1.8.
-        assert_eq!(n.vx, 1.8, "the clamp then the far-band double-add");
+        // `:24075-24089` — TargetClosest re-faces left; 2 → −0.1 = 1.9,
+        // then the still-positive brake `−0.05` (`:24084`) = 1.85.
+        assert_eq!(n.vx, 1.85, "the clamp then the far-band brake");
         // vy: clamp 1, then the hover (player top 1000 − half 18 = 982;
         // the bird at 1000 is BELOW → −0.05 − 0.01) = 0.94.
         assert!((n.vy - 0.94).abs() < 1e-5, "the Y clamp + hover ({})", n.vy);
@@ -394,7 +395,10 @@ mod tests {
         m.facing = 1;
         m.vx = -0.02;
         ai_style17(&mut m, &w, &[cand(1400.0, 1000.0)], 0);
-        assert!((m.vx - 0.13).abs() < 1e-5, "-0.02 + 0.1 + 0.05 ({})", m.vx);
+        // The near band adds the +0.05 brake ONLY while vx is still
+        // negative (`:24098`): −0.02 + 0.1 = 0.08, then the else-if is
+        // skipped.
+        assert!((m.vx - 0.08).abs() < 1e-5, "-0.02 + 0.1 ({})", m.vx);
     }
 
     /// `:24107-24136` — the hover anchor: >50 px X distance drops the

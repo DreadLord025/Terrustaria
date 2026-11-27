@@ -1416,8 +1416,10 @@ mod tests {
         let out = style112_step(&mut n, 583, &mut env);
         assert!(n.dont_take_damage);
         assert!(out.dont_take_damage_from_hostiles);
-        // The sibling below: vy += 0.05 on top of the -0.025 drift.
-        assert!((n.vy - 0.025).abs() < 1e-6, "vy {}", n.vy);
+        // `:48593` + `:48603-48605` — the state-7 drift is −0.025; the
+        // sibling at y 105 is BELOW the body (y 100), so the `:48603`
+        // branch pushes further UP (−0.05) → −0.075.
+        assert!((n.vy - (-0.075)).abs() < 1e-6, "vy {}", n.vy);
         assert_eq!(n.facing, -1, "vx < 0");
         assert_eq!(n.sprite_dir, 1, "-direction");
         sib.ai_style = 3;

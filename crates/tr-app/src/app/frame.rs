@@ -739,10 +739,11 @@ mod tests {
     /// - `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): wiring → tile
     ///   entities → liquid → growth (`:18105`)
     /// - then the port's environment cluster (weather / rain / scene state /
-    ///   windy day / ambience), the tile-edit pass, the net pass and the map.
+    ///   windy day / ambience / event skies), the tile-edit pass, the net pass
+    ///   and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 23] = [
+    const WORLD_PHASES: [&str; 24] = [
         "players",
         "npcs",
         // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
@@ -768,6 +769,10 @@ mod tests {
         "rain",
         "windy_day",
         "ambience",
+        // `SkyManager.Instance.Update` (`Main.cs:17139`, `SkyManager.cs:24-46`):
+        // the event skies (lantern / party / sandstorm / slime) step after the
+        // ambience cluster and inside the same `!paused` arm.
+        "event_skies",
         "editing",
         "net",
         "map",
@@ -1647,6 +1652,7 @@ mod tests {
                 "rain",
                 "windy_day",
                 "ambience",
+                "event_skies",
                 "map",
                 // `Main.chatMonitor.Update()` (`Main.cs:17282`) sits after
                 // the `DoUpdateInWorld` gate — it ticks on blocked frames.
@@ -1839,7 +1845,7 @@ mod tests {
             "Main.cs:45771-45783",
             "FocusHelper.cs:160-163",
             "SoundEngine.cs:48-68",
-            "Main.cs:13466-13515",
+            "Main.cs:13466-13509",
             "LegacySoundPlayer.cs:383-397",
             // The strength/50 multiplier arm (the class name rides the line
             // above the `:1249-1279` marker).
@@ -2126,9 +2132,11 @@ mod tests {
             "growth_phase",
             "waterfalls_phase",
             "animate_tiles_phase",
+            "animate_backgrounds_phase",
             "weather_cluster",
             "windy_day_phase",
             "ambience_phase",
+            "event_skies_phase",
             "editing_net_phase",
             "map_phase",
             "camera_scene_tail",
@@ -2191,9 +2199,15 @@ mod tests {
                 // at the C#'s position (the waterfall pass stands in for
                 // the walls animator's slot).
                 "animate_tiles_phase",
+                // `Main.DoUpdate_AnimateBackgrounds` (`Main.cs:17052`): the
+                // pre-gate forest-set hill animators.
+                "animate_backgrounds_phase",
                 "weather_cluster",
                 "windy_day_phase",
                 "ambience_phase",
+                // `SkyManager.Instance.Update` (`Main.cs:17139`): the event
+                // skies step right after the ambience cluster.
+                "event_skies_phase",
                 "editing_net_phase",
                 "map_phase",
                 "camera_scene_tail",
@@ -2233,9 +2247,14 @@ mod tests {
             orch.contains(&arm("if !paused", "weather_cluster(dt, screen)")),
             "weather under !paused"
         );
+        // `SkyManager.Instance.Update` (`Main.cs:17139`) rides the same pause
+        // arm, right after `Main.Ambience` (`:17233`).
         assert!(
-            orch.contains(&arm("if !paused", "ambience_phase(dt)")),
-            "ambience under !paused"
+            orch.contains(&format!(
+                "if !paused {{\n            self.ambience_phase(dt);\n            \
+                 self.event_skies_phase(dt);\n        }}"
+            )),
+            "ambience + event skies under !paused"
         );
         assert!(
             orch.contains(&arm("if !paused", "map_phase(dt)")),
@@ -2428,9 +2447,9 @@ mod tests {
             .split("tile_anim: {")
             .nth(1)
             .expect("the tile_anim key arm")
-            .split("net_key: {")
+            .split("chest_frames: {")
             .next()
-            .expect("the net key follows");
+            .expect("the chest key follows");
         assert!(
             key_block.contains("tr_core::drawdata_furniture::is_cage_kind("),
             "the gate probes ALL cage kinds (the union)"
@@ -2443,8 +2462,9 @@ mod tests {
             .nth(1)
             .expect("the view gate");
         assert!(gated.contains("} else {"), "a cage-free view keeps the base key");
-        // The draw call feeds the animator + the proximity flag.
-        assert!(draw.contains("&self.cage_anim,"));
+        // The draw call feeds the animator + the proximity flag (the animator
+        // now rides `self.cages`, draw.rs:2328/5313).
+        assert!(draw.contains("&mut self.cages,"));
         assert!(draw.contains("&mut self.critter_cage,"));
     }
     /// W4-f14 key-gate witness: the G6 `cage_anim` input is the animator's

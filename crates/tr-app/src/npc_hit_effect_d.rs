@@ -8178,6 +8178,12 @@ mod tests {
         for _ in 0..25 {
             twin_dust(&mut twin, 30, 24); // height pinned to 24
         }
+        // The 187 head is skipped but the 4/4/5/5 tail still spawns
+        // (`NPC.cs:87110-87131`), each with the two NewGore kicks.
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
         assert_eq!(rng.peek(), twin.peek(), "the slimed zombie mirrors the C# draws");
     }
 
@@ -8410,7 +8416,7 @@ mod tests {
         let n = mob(100.0, 100.0, 30.0, 44.0);
         for (kind, want) in [
             (132, vec![154, 4, 4, 5, 5]),
-            (186, vec![241, 4, 4, 5, 5]),
+            (186, vec![241, 4, 4, 5, 5, 242]),
             (189, vec![246, 4, 4, 5, 5]),
             (251, vec![372, 4, 4, 5, 5]),
             (3, vec![3, 4, 4, 5, 5]),
@@ -8442,6 +8448,11 @@ mod tests {
             for _ in 0..want.len() {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
+            }
+            // 186's ungated 242 (in `want`) is followed by the Next(2)
+            // gate (`:87132-87138`); a hit adds a 7th 242 (seed 353 misses).
+            if kind == 186 {
+                let _gate = twin.next_max(2);
             }
             assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
         }
@@ -8647,7 +8658,13 @@ mod tests {
             let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
             let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, vec![2, 7, 9, fourth, 2, 7, 9, fourth], "twin {kind}");
-            assert!(!gore.slot(8).active, "exactly eight gores");
+            // `NPC.cs:87308-87338`: the 125/126 tail adds the 10x dust-31,
+            // the 5x dust-6 pairs and FOUR smoke gores (61..63).
+            assert_eq!(gore.slots()[8..12].iter().filter(|g| g.active).count(), 4);
+            for g in &gore.slots()[8..12] {
+                assert!((61..64).contains(&g.gore_type), "tail smoke {}", g.gore_type);
+            }
+            assert!(!gore.slot(12).active, "exactly twelve gores");
             let mut twin = UnifiedRandom::new(397);
             for _ in 0..150 {
                 twin_dust(&mut twin, 50, 50);
@@ -8655,6 +8672,18 @@ mod tests {
             for _ in 0..8 {
                 let _vx = twin.next_range(-30, 31);
                 let _vy = twin.next_range(-30, 31);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            for _ in 0..10 {
+                twin_dust(&mut twin, 50, 50);
+            }
+            for _ in 0..5 {
+                twin_dust6(&mut twin, 50, 50);
+                twin_dust6(&mut twin, 50, 50);
+            }
+            for _ in 0..4 {
+                let _ty = twin.next_range(61, 64);
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
@@ -10146,6 +10175,12 @@ mod tests {
             let oy = (-30.0 + (30.0 * twin.next_float()) as i32 as f32) * 0.5;
             let _ky = twin.next_range(10, 31);
             let _kx = twin.next_range(-20, 21);
+            // `Gore.cs:1391-1401`: SpecialAI 3 (1007/1008) draws
+            // velocity (2 NextFloat) + Frame.CurrentRow + frameCounter.
+            let _gvx = twin.next_float();
+            let _gtheta = twin.next_float();
+            let _row = twin.next_max(8);
+            let _fc = twin.next_max(8);
             assert_eq!(gore.slot(i).position, c + Vec2::new(ox, oy), "gore {i} anchor");
         }
         assert_eq!(rng.peek(), twin.peek(), "the water bolt mimic mirrors the C# draws");
@@ -10533,8 +10568,9 @@ mod tests {
             twin_dust(&mut twin, 30, 30);
         }
         for _ in 0..5 {
-            twin_dust(&mut twin, 30, 30);
-            twin_dust(&mut twin, 30, 30);
+            // `Dust.cs:214-218`: every type-6 dust adds one Next(-10,6).
+            twin_dust6(&mut twin, 30, 30);
+            twin_dust6(&mut twin, 30, 30);
         }
         let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
         for (i, (dx, dy)) in nudges.iter().enumerate() {

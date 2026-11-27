@@ -1021,12 +1021,17 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
         // `:50474-50478` — the <150px approach boost on the NORMALIZED
         // aim ({6, 94, 173, 619}; the BloodSquid's preset carries it).
         if params.close_boost && num7 < 150.0 {
-    // `:50445-50478` — the `num8 | flag4` drift: the ai[0] counter's
-    // ±0.023 nudges (Y by the counter's sign, X by the ±100 band, the 200
-    // wrap), gated on `num7 > 100` for the num8 kinds and unconditional
-    // for flag4; then the num8 kinds' <150 near blend (×0.007 of the
-    // normalized aim). The bees' old stand-in ran the drift BEFORE the
-    // normalize (a zero-distance deviation) — the C# order is restored.
+            npc.vx += aim_x * 0.007;
+            npc.vy += aim_y * 0.007;
+        }
+    }
+    // `:50445-50478` — the `num8 | flag4` drift (the num8 half): the
+    // ai[0] counter's ±0.023 nudges (Y by the counter's sign, X by the
+    // ±100 band, the 200 wrap), gated on `num7 > 100` for the num8 kinds
+    // and unconditional for flag4; then the num8 kinds' <150 near blend
+    // (×0.007 of the normalized aim). The bees' old stand-in ran the
+    // drift BEFORE the normalize (a zero-distance deviation) — the C#
+    // order is restored.
     let drift_runs = match params.drift {
         HoverDrift::None => false,
         HoverDrift::EaterOfSouls => num7 > 100.0,
@@ -1135,8 +1140,6 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
             npc.vy = -2.0;
         }
     }
-}
-}
 }
 
 /// W4-d22: `AI_005`'s dust gate + wet lift (`NPC.cs:50690-50753`) — the

@@ -8408,10 +8408,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-c3 — the Shadowflames bolt's `magic = true`
                 // (`Projectile.cs:3902`).
                 | SHADOWFLAMES
+                // 496 ShadowFlame's `magic = true` (`Projectile.cs:5697`).
+                | SHADOW_FLAME
             // W4-d11 — the 536 MedusaHeadRay sets `magic = true`
             // (`Projectile.cs:6117`); the 591 mech laser does NOT
             // (`:6397-6408` has no such line).
                 | MEDUSA_HEAD_RAY
+                // 535 MedusaHead's `magic = true` (`Projectile.cs:6104`).
+                | MEDUSA_HEAD
                 // W4-d12 F1 — the Killing Deck card (1024, `:9699`).
                 | DEAD_CELLS_KILLING_DECK_CARD
             // W4-d13 — the friendly Sandnado's `magic = true`

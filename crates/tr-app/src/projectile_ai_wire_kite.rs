@@ -235,8 +235,11 @@ mod w4_d13_style125_tests {
         // The cooldown tick: localAI[1] 1 → 0, no second snap.
         p.pos = Vec2::new(50.0, 50.0);
         let _ = p.ai_wire_kite(Some(&mut pl), Some(aim), false, false, 0, 7);
+        assert_eq!(p.local_ai[1], 1.0, "the re-armed cooldown");
+        assert_eq!(p.pos, Vec2::new(195.0, 295.0), "the mouse follow ran again");
+        let _ = p.ai_wire_kite(Some(&mut pl), Some(aim), false, false, 0, 7);
         assert_eq!(p.local_ai[1], 0.0);
-        assert_eq!(p.pos, Vec2::new(50.0, 50.0), "the cooldown holds the move");
+        assert_eq!(p.pos, Vec2::new(195.0, 295.0), "no move on the same point");
     }
 
     /// `:35706-35723` — the three kill gates: dead, the right-click press

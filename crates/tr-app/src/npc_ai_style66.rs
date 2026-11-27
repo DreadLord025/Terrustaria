@@ -1077,7 +1077,9 @@ mod tests {
         assert!(d.active, "the empty pool spawns");
         assert_eq!(d.dust_type, 43);
         assert_eq!(d.alpha, 254);
-        assert_eq!(d.scale, 0.5);
+        // `:92363` + `Dust.cs:190-191` — NewDust jitters scale by
+        // `1 + Next(-20,21)*0.01` and then multiplies the 0.5 arg.
+        assert_eq!(d.scale, e.scale, "the jittered 0.5");
         assert_eq!(d.velocity, Vec2::ZERO, "velocity *= 0f (:92364)");
         assert_eq!(d.position, e.position, "the netOffset-added position");
         assert_eq!(d.color, e.color, "the pure yellow");

@@ -2422,17 +2422,20 @@ mod tests {
     }
 
     /// W4-g62 — the f64 loop bound (`(double)i < dmg / lifeMax * mult`):
-    /// the division happens FIRST, so a half-HP 1-damage hit on a
-    /// 100-HP NPC draws exactly 1 (0.01 × 100), and a 0.5-damage hit
-    /// draws 0 (0.005 × 100 = 0.5 < 1).
+    /// the division happens FIRST, so the integer loop index 0 passes
+    /// while the bound is > 0 — a 1-damage hit on a 100-HP NPC draws
+    /// exactly 1 (0.01 × 100), and a 0.5-damage hit also draws 1
+    /// (0.005 × 100 = 0.5 > 0).
     #[test]
     fn w4_g62_the_live_loop_bound_is_f64_division_first() {
         assert_eq!(hit_count(1.0, 100, 100.0), 1);
-        assert_eq!(hit_count(0.5, 100, 100.0), 0);
+        assert_eq!(hit_count(0.5, 100, 100.0), 1);
         assert_eq!(hit_count(10.0, 100, 100.0), 10);
-        // The bat ×30 and skeleton ×50 multipliers.
-        assert_eq!(hit_count(1.0, 100, 30.0), 0);
-        assert_eq!(hit_count(4.0, 100, 30.0), 1);
+        // The bat ×30 and skeleton ×50 multipliers: the bound is a
+        // real fraction, so the integer index 0 still passes.
+        assert_eq!(hit_count(1.0, 100, 30.0), 1); // 0.3
+        assert_eq!(hit_count(4.0, 100, 30.0), 2); // 1.2
+        assert_eq!(hit_count(2.0, 100, 50.0), 1); // 1.0
         assert_eq!(hit_count(2.0, 100, 50.0), 1);
         // An overkill on a live snapshot still counts (the C# does not
         // clamp dmg to life).
@@ -2699,14 +2702,14 @@ mod tests {
         let world = air();
         let ctx = ctx();
         let mut gore = GorePool::new();
-        let mut s = snap(59, 50, 50, 1.0); // ×80 → 1
+        let mut s = snap(59, 50, 50, 1.0); // 1/50*80 = 1.6 -> 2 iterations
         s.alpha = 50;
         let mut rng = UnifiedRandom::new(23);
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(23);
         let mut twin = DustPool::new();
-        for _ in 0..1 {
+        for _ in 0..2 {
             let idx = twin.new_dust(
                 &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 6,
                 2.0, -1.0, 50, Color::default(), 1.5,
@@ -2732,12 +2735,17 @@ mod tests {
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
-        assert_eq!(live.len(), 2);
-        assert_eq!(live[0].dust_type, 76);
-        assert!(live[0].no_gravity);
-        assert_eq!(live[1].dust_type, 4);
-        assert_eq!(live[1].alpha, 100);
-        assert_eq!(live[1].color, Color::new(97, 200, 255, 100));
+        // `NPC.cs:85341`: dmg 1 / lifeMax 30 * 50 = 1.67 -> two pairs.
+        assert_eq!(live.len(), 4);
+        for (i, d) in live.iter().enumerate() {
+            assert_eq!(d.dust_type, if i % 2 == 0 { 76 } else { 4 });
+            if i % 2 == 0 {
+                assert!(d.no_gravity);
+            } else {
+                assert_eq!(d.alpha, 100);
+                assert_eq!(d.color, Color::new(97, 200, 255, 100));
+            }
+        }
     }
 
     /// W4-g62 batch 2 — the Burning Sphere's every-strike burst
@@ -3019,12 +3027,13 @@ mod tests {
         let ctx = ctx();
         let mut gore = GorePool::new();
         for t in [382, 390, 383, 385, 386, 389, 388, 399] {
-            let s = snap(t, 300, 300, 300.0); // 300/(300·50) = 0.02 → 0
+            let s = snap(t, 300, 300, 300.0); // 0.02 bound -> 1 (index 0 < 0.02)
             let mut rng = UnifiedRandom::new(71);
-            let twin = UnifiedRandom::new(71);
             let mut dust = DustPool::new();
             replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
-            assert_eq!(rng, twin, "type {t}: a full-life hit draws nothing");
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 1, "type {t}: the 0.02 bound still runs once");
+            assert!(live.iter().all(|d| d.dust_type == 227), "type {t}");
             let big = snap(t, 300, 300, 15000.0); // 15000/15000 = 1 → 1
             let mut rng2 = UnifiedRandom::new(71);
             let mut dust2 = DustPool::new();
@@ -3044,7 +3053,10 @@ mod tests {
         let ctx = ctx();
         let mut gore = GorePool::new();
         for (t, mult) in [(384, 50.0), (387, 20.0), (520, 20.0)] {
-            let s = snap(t, 1000, 1000, 40.0 * mult); // → 40 dusts
+            // 40 dusts: 384 `dmg/lifeMax*50`, 387/520 `dmg/lifeMax*20`
+            // (`NPC.cs:84346` / `:84406` / `:84429`).
+            let dmg = 40.0 * 1000.0 / mult;
+            let s = snap(t, 1000, 1000, dmg);
             let mut rng = UnifiedRandom::new(73);
             let mut dust = DustPool::new();
             replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);

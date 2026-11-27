@@ -649,7 +649,9 @@ mod tests {
     fn w4_d47_the_trapper_chomps_and_the_exact_reset_is_a_quirk() {
         let rows = rows_over(FindFrameMid2Kind::AngryTrapper, input(0.0, 0.0), 24);
         assert_eq!(&rows[..6], &[0, 0, 0, 0, 0, 1]);
-        assert_eq!(&rows[11..18], &[1, 2, 2, 2, 2, 2, 1]);
+        // Index 11 is tick 12: counter 12 -> the 12..18 band's row 2
+        // (`NPC.cs:74973-74993`); tick 18 is the first row-1 tick.
+        assert_eq!(&rows[11..18], &[2, 2, 2, 2, 2, 2, 1]);
         assert_eq!(rows[22], 1, "tick 23 resets the counter");
         assert_eq!(rows[23], 0, "the cycle restarts");
         // The overshoot: counter 22.5 + 1 = 23.5 misses `== 23`, the

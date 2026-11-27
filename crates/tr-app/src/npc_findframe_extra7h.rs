@@ -401,9 +401,12 @@ mod tests {
     #[test]
     fn f26s7h_the_squirrel_walk_wrap_to_one() {
         for k in SQUIRRELS {
+            // `NPC.cs:76490-76497`: +|vx|*0.5 then ++ = +2/tick with the
+            // STRICT > 6 step -- rows 0 (3 ticks), 1 (4), 2 (4), 3 (4),
+            // 4 (tick 16).
             assert_eq!(
                 rows_over(k, input(2.0, 0.0), 16),
-                vec![0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 1, 1]
+                vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4]
             );
             // The wrap edge: row 4 + counter 6 → +2 = 8 > 6 → row 5
             // → >= 5 → 1, counter 0.
@@ -419,9 +422,12 @@ mod tests {
     #[test]
     fn f26s7h_the_squirrel_half_step_cadence() {
         let k = FindFrameExtra7hKind::GemSquirrelAmethyst;
+        // `NPC.cs:76490-76497`: +1.5/tick with the strict > 6 step (the
+        // 6.0 tick does NOT step) -- row 0 holds ticks 1..4, row 1
+        // ticks 5..9, row 2 ticks 10..12.
         assert_eq!(
             rows_over(k, input(1.0, 0.0), 12),
-            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3]
+            vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2]
         );
         // The strict edge: counter 4.5 + 1.5 = 6.0 does NOT step.
         let mut s = FrameState { row: 2, counter: 4.5, ..Default::default() };

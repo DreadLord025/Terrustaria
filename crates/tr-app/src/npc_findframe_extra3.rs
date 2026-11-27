@@ -710,7 +710,9 @@ mod tests {
             let rows = rows_over(k, input(1.0, 0.0), 13);
             assert_eq!(
                 rows,
-                vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+                // `NPC.cs:74579-74588`: `++frameCounter >= 6` steps on the
+                // 6th tick (not after it), so row 1 holds ticks 6..11.
+                vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
                 "type {}",
                 k.vanilla_type()
             );

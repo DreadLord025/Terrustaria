@@ -645,10 +645,6 @@ pub fn item_tooltip_rows(
         lines.push((crate::lang::tip(33), [1.0, 1.0, 1.0, 1.0]));
     } else if tooltip_lines2::ammo_row_active(d, kind) {
         lines.push((crate::lang::tip(34), [1.0, 1.0, 1.0, 1.0]));
-    } else if d.consumable && !tr_core::extract::chlorophyte_extractinator_consumable(kind) {
-        // `Main.cs:20932` — `item.consumable && !item.chlorophyteExtractinatorConsumable`:
-        // the extractinator-only consumables (Shadow Scale / Tissue Sample /
-        // the junk trio) print no "Consumable" row (W4-f47).
     } else if tooltip_lines2::consumable_row_active(d, kind) {
         lines.push((crate::lang::tip(35), [1.0, 1.0, 1.0, 1.0]));
     }
@@ -695,6 +691,10 @@ pub fn item_tooltip_rows(
         kind == 0,
         &mut lines,
     );
+    // `Main.cs:21334-21342` — the bestiary notes the drop line stamped onto
+    // the hover's item (`UIBestiaryInfoItemLine.cs:137-156`) print as the
+    // tooltip's final white rows (the e23 writer half).
+    lines.extend(bestiary_note_rows(ctx.bestiary_notes));
     (lines, yoyo_logo)
 }
 
@@ -1490,6 +1490,8 @@ mod tests {
 
     #[test]
     fn s1_e_20_the_heal_and_mana_rows_appear() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // `Main.cs:20876-20910`: the life / mana restore rows and the buff
         // row.
         let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");

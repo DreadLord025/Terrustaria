@@ -896,10 +896,11 @@ pub fn ammo_row_active(d: &ItemDef, kind: u16) -> bool {
 }
 
 pub fn consumable_row_active(d: &ItemDef, kind: u16) -> bool {
-    !places(d, kind)
-        && !(d.ammo > 0 && !d.not_ammo)
-        && d.consumable
-        && !d.extractinator_consumable
+    // The C# ladder is an if/else-if chain (`Main.cs:20919-20936`): the
+    // Ammo arm only fires for `ammo > 0 && !notAmmo`, so a `notAmmo`
+    // consumable (the ale 353) falls through to this row. The
+    // extractinator-only family (`:20932`) is the only consumable exclusion.
+    !places(d, kind) && d.consumable && !d.extractinator_consumable
 }
 
 /// The social row (`Main.cs:20664-20668`): a context-9/11 hover whose item

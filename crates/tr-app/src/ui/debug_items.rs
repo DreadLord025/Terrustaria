@@ -200,7 +200,8 @@ mod tests {
     #[test]
     fn the_loadout_bands_spread_their_icons() {
         let (c, a) = position_items(5, 0.1, 0.3, 0.75);
-        assert_eq!(c, [0.1, 0.2, 0.75]);
+        // `0.3f - 0.1f` is 0.20000002 in f32 (the C# float subtraction too).
+        assert_eq!(c, [0.1, 0.3 - 0.1, 0.75]);
         assert_eq!(a, vec![0.0, 0.25, 0.5, 0.75, 1.0]);
         // A single icon centres (`:105`).
         let (_, single) = position_items(1, 0.65, 0.75, 0.25);

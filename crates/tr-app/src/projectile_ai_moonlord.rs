@@ -464,8 +464,10 @@ mod tests {
         let mut p = shot(MOONLORD_ARROW_TRAIL);
         p.vel = Vec2::ZERO;
         p.local_ai[1] = 2.0;
+        p.time_left = 90; // the row's stock life (the Kill() capture)
+        // The live pool shifts the ring per update; this direct-step fixture
+        // seeds the settled ring by hand (every entry equal to the centre).
         p.old_pos = [Vec2::new(1600.0, 800.0); 80];
-        step(&mut p, &w, &[], &[]);
         p.old_pos[..p.trail_len].fill(Vec2::new(1600.0, 800.0));
         step(&mut p, &w, &[], &[]);
         assert!(!p.active, "the all-equal Kill (`:55450`)");

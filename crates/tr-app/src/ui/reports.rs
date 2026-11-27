@@ -212,7 +212,11 @@ pub fn go_to_bottom(view_h: f32, content_h: f32) -> f32 {
 /// Whether the scrollbar attaches (`Recalculate`'s `CanScroll` arm,
 /// `:190-201` — `UIScrollbar.CanScroll` is `maxView != view`).
 pub fn scrollbar_attaches(view_h: f32, content_h: f32) -> bool {
-    content_h != view_h
+    // `UIScrollbar.SetView` (`:74`) clamps the view into `[0, maxViewSize]`
+    // before `CanScroll` (`:49`) compares it with the max: a short log
+    // (content < view) pins the view to the content, so the bar detaches.
+    let view = view_h.clamp(0.0, content_h);
+    content_h != view
 }
 
 // --- The issue indicator (`IssueReportsIndicator.cs:10-80`) ------------------

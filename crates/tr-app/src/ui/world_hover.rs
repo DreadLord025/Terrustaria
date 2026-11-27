@@ -257,9 +257,10 @@ mod tests {
     fn g53_the_drop_hover_rect_is_bottom_centred_on_the_box() {
         let lookups = assets::Lookups::default();
         let drop = ItemDrop::new(5, 3, 0, 100.0, 200.0, 0.0, 0.0, 0.0);
-        // Bottom = (100 + 7, 200 + 14) = (107, 214); the 16x16 rect's
-        // top-left = (107 − 8, 214 − 16) = (99, 198).
-        assert_eq!(drop_hover_rect(&drop, &lookups), [99.0, 198.0, 16.0, 16.0]);
+        // `WorldItem` is a 16x16 box (`WorldItem.cs:138`), so `Bottom` =
+        // (100 + 8, 200 + 16) = (108, 216); the 16x16 rect's top-left =
+        // (108 − 8, 216 − 16) = (100, 200).
+        assert_eq!(drop_hover_rect(&drop, &lookups), [100.0, 200.0, 16.0, 16.0]);
         // The walk picks the first hit (`:42910`'s break).
         let items = vec![drop];
         assert!(hovered_drop(&items, &lookups, Vec2::new(107.0, 210.0)).is_some());

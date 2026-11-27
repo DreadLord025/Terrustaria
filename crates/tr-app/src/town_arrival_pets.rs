@@ -1149,14 +1149,17 @@ mod tests {
     }
 
     /// The `TAIL_KINDS` map is the g10 roster at the vanilla ids; every
-    /// kind is a town pet and NOT a resident (the ladder's resident-count
-    /// exclusion, g10's `is_town_resident` note).
+    /// kind is a town pet. Vanilla raises `townNPC` for the pets too
+    /// (`NPC.cs:17209` for 637/638, `:17308`/`:17494`/`:17607` for the
+    /// rest), so the resident-count exclusion this ladder relies on is the
+    /// 24-type Princess roster (`Main.cs:65944`), which carries none of
+    /// them (`resident_count_by_id` walks the explicit ids, not a flag).
     #[test]
     fn the_tail_kinds_map_to_the_g10_roster() {
         for (id, kind) in TAIL_KINDS {
             assert_eq!(kind.net_id(), id, "{kind:?}");
             assert!(kind.is_town_pet());
-            assert!(!kind.is_town_resident());
+            assert!(!PRINCESS_ROSTER.contains(&id), "not a resident-count type");
             assert_eq!(tail_kind(id), Some(kind));
         }
         assert_eq!(tail_kind(142), None, "no ported Santa kind");

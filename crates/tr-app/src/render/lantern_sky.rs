@@ -429,6 +429,12 @@ mod tests {
     fn w4_f40_update_walks_the_opacity_and_decays_the_float_timer() {
         let mut sky = LanternSky::new(0);
         sky.activate(800, 1200, 5000.0, 720.0, 400.0);
+        // Park every lantern well below the 300-px ceiling: a spawn above it
+        // hits the reset branch on the first tick (`LanternSky.cs:137-149`)
+        // and would re-roll its timer, which is not what this witness pins.
+        for l in &mut sky.lanterns {
+            l.position.y = 1000.0;
+        }
         // 100 up-ticks reach full opacity.
         for _ in 0..100 {
             sky.update(true, 0.0, 800, 400.0);

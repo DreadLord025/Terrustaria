@@ -288,6 +288,19 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     })
 }
 
+/// The `maxTilesY - 40` bottom guard of `Collision.SolidCollision`
+/// (`Collision.cs:2700-2733`). Real worlds are >= 1200 rows, so the bound is
+/// well inside the map; the tiny unit-test worlds (32 rows) would otherwise
+/// produce `max < min` and panic in `clamp`, or an empty scan that misses the
+/// ground row. Fall back to the last row there.
+fn scan_bottom(height: i32) -> i32 {
+    if height >= 41 {
+        height - 40
+    } else {
+        (height - 1).max(0)
+    }
+}
+
 /// `Collision.SolidCollision(position, width, height)`
 /// (`Collision.cs:2700-2733`): the padded ±1/+2 tile scan (clamped to the
 /// world, Y to `maxTilesY - 40`), solid-not-top tiles with the half-brick
@@ -296,8 +309,8 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
 fn solid_collision(world: &World, x: f32, y: f32, w: i32, h: i32) -> bool {
     let x0 = ((x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((x + w as f32) / 16.0) as i32 + 2).clamp(0, world.width - 1);
-    let y0 = ((y / 16.0) as i32 - 1).clamp(0, world.height - 40);
-    let y1 = (((y + h as f32) / 16.0) as i32 + 2).clamp(0, world.height - 40);
+    let y0 = ((y / 16.0) as i32 - 1).clamp(0, scan_bottom(world.height));
+    let y1 = (((y + h as f32) / 16.0) as i32 + 2).clamp(0, scan_bottom(world.height));
     for i in x0..x1 {
         for j in y0..y1 {
             let Some(t) = world.tile(i, j) else { continue };
@@ -348,8 +361,8 @@ pub fn wet_collision(world: &World, x: f32, y: f32, w: i32, h: i32) -> (bool, bo
     let py = y + (h / 2) as f32 - (num2 / 2) as f32;
     let x0 = ((x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((x + w as f32) / 16.0) as i32 + 2).clamp(0, world.width - 1);
-    let y0 = ((y / 16.0) as i32 - 1).clamp(0, world.height - 40);
-    let y1 = (((y + h as f32) / 16.0) as i32 + 2).clamp(0, world.height - 40);
+    let y0 = ((y / 16.0) as i32 - 1).clamp(0, scan_bottom(world.height));
+    let y1 = (((y + h as f32) / 16.0) as i32 + 2).clamp(0, scan_bottom(world.height));
     for i in x0..x1 {
         for j in y0..y1 {
             let Some(t) = world.tile(i, j) else { continue };

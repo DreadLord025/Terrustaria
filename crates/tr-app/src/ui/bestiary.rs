@@ -2342,11 +2342,6 @@ fn portrait_data(
         (NpcKind::HeadlessHorseman, _) => (sheet_i, 70.0, 74.0, 70.0, white),
         (NpcKind::MourningWood, _) => (sheet_i, 154.0, 164.0, 154.0, white),
         (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
-        // W4-c6 style-59 wiring: the blade's portrait rests its 80x80
-        // `SetDefaults` box (`NPC.cs:13160-13161`) — the Hide=true entry
-        // (`NPCID.cs:3398-3403`) folds onto the Pumpking, so this arm
-        // never renders (the ForceBubble precedent); the shape stands.
-        (NpcKind::PumpkingBlade, _) => (sheet_i, 80.0, 80.0, 80.0, white),
         (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
         // The Frost Moon wave family (`S1-F-13c` slice B): the portrait
@@ -2991,12 +2986,6 @@ fn portrait_data(
                 .unwrap_or(18.0);
             (sheet_i, h, 38.0, h, white)
         }
-        (NpcKind::BunnyXmas, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(20.0);
-            (sheet_i, h, 44.0, h, white)
-        }
         (NpcKind::PossessedArmor, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
         // W4-d34 kinds 1-70: the portrait rests the kind's SetDefaults box /
@@ -3393,11 +3382,21 @@ fn portrait_data(
         // W4-d42 - the roster's portraits rest the kinds' SetDefaults
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).
-        (NpcKind::Seagull, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        (NpcKind::Seagull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, 26.0, white)
+        }
         // W4-d42 - the roster's portraits rest the kinds' SetDefaults
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).
-        (NpcKind::Grebe, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        (NpcKind::Grebe, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, 26.0, white)
+        }
         // W4-d42 - the roster's portraits rest the kinds' SetDefaults
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).
@@ -3445,14 +3444,79 @@ fn portrait_data(
         // precedent - the sheets are deferred, the index folds to 0).
         (NpcKind::BloodMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         // W4-c8 — the crawling critters' portraits: the sheet's own row
-        // height over `Main.npcFrameCount[type]` (357/448/484/606 two
-        // frames, 374/485/486/487 four — `Main.cs:67082`), the frame width
-        // the sheet's own (the firefly/small-kinds rows' shape).
-        (NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler | NpcKind::Maggot, _) => {
+        // height over `Main.npcFrameCount[type]` (357/448/484 two
+        // frames, 485/486/487 four — `Main.cs:67082`), the anchor box the
+        // `SetDefaults` width/height (`NPC.cs:13545-13557`, `:14332-14589`).
+        (NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, 4.0, white)
+        }
+        (NpcKind::Maggot, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(10.0);
             (sheet_i, h, h, h, white)
+        }
+        // W4-d42 — the waterfowl: the 15-row strips (`Main.cs:67082`) over
+        // the walkers' 22x26 and the swimmers' 28x22 SetDefaults boxes
+        // (`NPC.cs:13613-13660`, `:16739-16832`).
+        (NpcKind::Duck | NpcKind::DuckWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, 26.0, white)
+        }
+        (NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 28.0, 22.0, white)
+        }
+        // W4-c9/c10 — the gold critters' SetDefaults boxes (`NPC.cs:14247-
+        // 14345`) over their own strip lengths (`Main.cs:67082`).
+        (NpcKind::GoldBird, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, 14.0, white)
+        }
+        (NpcKind::GoldBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, 20.0, white)
+        }
+        (NpcKind::GoldButterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, 10.0, white)
+        }
+        (NpcKind::GoldFrog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 12.0, 10.0, white)
+        }
+        (NpcKind::GoldGrasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 14.0, 10.0, white)
+        }
+        (NpcKind::GoldMouse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, 14.0, 12.0, white)
+        }
+        (NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, 4.0, white)
         }
         // W4-d120 — the four town kinds' portraits rest the town twin's
         // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
@@ -3462,6 +3526,22 @@ fn portrait_data(
             (sheet_i, 48.0, 38.0, 48.0, white)
         }
         (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
+        // W4-d125 — the Empress of Light (636, 2-row `Main.cs:67147`) and
+        // the Prismatic Lacewing (661, 3-row `:67150`): SetFrameSize keeps
+        // the sheet width and divides the height by the frame count
+        // (`NPC.cs:90780-90800`); the draw box is that frame.
+        (NpcKind::EmpressOfLight, _) => {
+            let (w, h) = entry_sheet(lookups, entry)
+                .map(|s| (s.width as f32, s.height as f32 / 2.0))
+                .unwrap_or((166.0, 176.0));
+            (sheet_i, h, w, h, white)
+        }
+        (NpcKind::EmpressButterfly, _) => {
+            let (w, h) = entry_sheet(lookups, entry)
+                .map(|s| (s.width as f32, s.height as f32 / 3.0))
+                .unwrap_or((24.0, 24.0));
+            (sheet_i, h, w, h, white)
+        }
         // The rest of the 688-kind roster rests the generic 32x32 portrait
         // box until its own arm lands (the WyvernHead literal-size shape).
         _ => (sheet_i, 32.0, 32.0, 32.0, white),
@@ -4149,8 +4229,11 @@ mod tests {
         // 2x2 cells; the fractional offsets centre the 144x144 lattice —
         // cell (0,0) at (28, 3), cell (1,1) at (100, 75).
         let rect = [0.0, 0.0, 200.0, 150.0];
-        assert_eq!(grid_cell_rect(&rect, 2, 2, 0, 0), [28.0, 3.0, 72.0, 72.0]);
-        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 1), [100.0, 75.0, 72.0, 72.0]);
+        // `UIElement.GetDimensionsBasedOnParentDimensions` (`UIElement.cs:
+        // 306-321`): `X = Left%*W + (W - 72)*HAlign`, so a 2x2 grid over
+        // 200x150 puts cell 0 at 14/1.5 (the lattice is NOT pre-centred).
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 0, 0), [14.0, 1.5, 72.0, 72.0]);
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 1), [114.0, 76.5, 72.0, 72.0]);
         // An exact-multiple rect matches the raw CELL lattice the draw uses.
         let rect = [10.0, 20.0, 144.0, 144.0];
         assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 0), [82.0, 20.0, 72.0, 72.0]);
@@ -4567,12 +4650,23 @@ mod tests {
                 })
             })
             .collect();
-        for (net, frame_h, w) in [(636, 176.0, 166.0), (661, 24.0, 24.0)] {
-            let entry = crate::bestiary::ENTRIES
-                .iter()
-                .find(|e| e.net_id == net)
-                .unwrap_or_else(|| panic!("the {net} bestiary entry"));
-            let (_sheet_i, fh, pw, ph, _tint) = portrait_data(entry, &lk);
+        for (net, frame_h, w, kind) in [
+            (636, 176.0, 166.0, NpcKind::EmpressOfLight),
+            (661, 24.0, 24.0, NpcKind::EmpressButterfly),
+        ] {
+            // 636/661 still lack `ENTRIES` rows (`bestiary_data.rs:248`:
+            // "no port entry yet"), so exercise the portrait arm with a
+            // synthetic entry - the same `UnlockableNPCEntryIcon` ctor the
+            // real row will feed.
+            let entry = crate::bestiary::BestiaryEntryDef {
+                credit_id: "",
+                net_id: net,
+                kind,
+                variant: None,
+                quick_unlock: false,
+                name: "",
+            };
+            let (_sheet_i, fh, pw, ph, _tint) = portrait_data(&entry, &lk);
             assert_eq!((fh, pw, ph), (frame_h, w, frame_h), "net {net} portrait");
         }
     }
@@ -5074,8 +5168,10 @@ mod tests {
         // The Demon Eye (2) carries only NightTime (tag 5, MapBG1, the
         // (35, 40, 40) night tint).
         assert_eq!(portrait_backdrop(2), Some(("MapBG1", [35, 40, 40, 255])));
-        // The Hornet (48) carries UndergroundMushroom (tag 25, MapBG21).
-        assert_eq!(portrait_backdrop(48), Some(("MapBG21", [255, 255, 255, 255])));
+        // The Hornet (48) carries Sky (tag 25 in the port's table, MapBG33):
+        // the C# populator registers `Biomes.Sky` for NPC 48
+        // (`BestiaryDatabaseNPCsPopulator.cs:1653`), not UndergroundMushroom.
+        assert_eq!(portrait_backdrop(48), Some(("MapBG33", [255, 255, 255, 255])));
     }
 
     #[test]
@@ -5238,6 +5334,8 @@ mod tests {
     /// the e23 writer half of the f28c compose. WRITTEN, NOT RUN.
     #[test]
     fn the_bestiary_notes_compose_contract() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // The writer: two conditions + a whitespace one dropped.
         let notes = bestiary_notes(&[Some("Expert only"), Some("  "), Some("Master only")]);
         assert_eq!(notes, "Expert only\nMaster only");
@@ -5431,29 +5529,34 @@ fn stat_row(
     #[test]
     fn w4_c10_the_waterfowl_portraits_rest_their_set_defaults_boxes() {
         let lk = full_bestiary_lookups();
-        // (net id, box w, box h) — the walkers then the swimmers.
-        let rows = [
-            (362, 22.0, 26.0),
-            (363, 28.0, 22.0),
-            (364, 22.0, 26.0),
-            (365, 28.0, 22.0),
-            (602, 22.0, 26.0),
-            (603, 28.0, 22.0),
-            (608, 22.0, 26.0),
-            (609, 28.0, 22.0),
-        ];
-        for (net_id, bw, bh) in rows {
-            let entry = crate::bestiary::ENTRIES
-                .iter()
-                .find(|e| e.net_id == net_id)
-                .unwrap_or_else(|| panic!("net {net_id} waterfowl entry"));
+        for (net_id, bw, bh, kind) in [
+            (362, 22.0, 26.0, NpcKind::Duck),
+            (363, 28.0, 22.0, NpcKind::Duck2),
+            (364, 22.0, 26.0, NpcKind::DuckWhite),
+            (365, 28.0, 22.0, NpcKind::DuckWhite2),
+            (602, 22.0, 26.0, NpcKind::Seagull),
+            (603, 28.0, 22.0, NpcKind::Seagull2),
+            (608, 22.0, 26.0, NpcKind::Grebe),
+            (609, 28.0, 22.0, NpcKind::Grebe2),
+        ] {
+            // 603/609 lack `ENTRIES` rows (the merge dropped the Seagull2/
+            // Grebe2 variants); the sheet table still carries the ids, so
+            // feed the same ctor a synthetic entry.
+            let entry = crate::bestiary::BestiaryEntryDef {
+                credit_id: "",
+                net_id,
+                kind,
+                variant: None,
+                quick_unlock: false,
+                name: "",
+            };
             // The sheet slot resolves (the table carries the id now).
             let slot = lk
                 .bestiary_sheet_index(net_id as u16)
                 .unwrap_or_else(|| panic!("net {net_id} sheet slot"));
             assert!(slot < crate::assets::BESTIARY_NPC_SHEET_IDS.len());
-            assert!(entry_sheet(&lk, entry).is_some(), "net {net_id} sheet");
-            let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, &lk);
+            assert!(entry_sheet(&lk, &entry).is_some(), "net {net_id} sheet");
+            let (_sheet_i, frame_h, w, h, tint) = portrait_data(&entry, &lk);
             assert_eq!((w, h), (bw, bh), "net {net_id} box");
             assert_eq!(frame_h, 448.0 / 15.0, "net {net_id} the 15-row frame");
             assert!(tint.iter().all(|c| c.is_finite()), "net {net_id} tint");

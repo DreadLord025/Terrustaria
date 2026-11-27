@@ -1039,11 +1039,10 @@ mod tests {
         // the world-chest panel (3) is `Inventory_Back5` (`ItemSlot.cs:2215-2218`).
         assert_eq!(context_texture_index(3, 0), 8);
         assert_eq!(context_texture_index(3, 39), 8);
-        // The bank contexts (4/32) map to `Inventory_Back2` in the C#
-        // (`ItemSlot.cs:2219-2221`) — M3-STORE-1's; deliberately left on the
-        // default like contexts 22/34 below.
-        assert_eq!(context_texture_index(4, 0), 0);
-        assert_eq!(context_texture_index(32, 0), 0);
+        // W4-g56 — the bank (4) / void-vault (32) slots are `Inventory_Back2`
+        // (`ItemSlot.cs:2219-2221`), index 11.
+        assert_eq!(context_texture_index(4, 0), 11);
+        assert_eq!(context_texture_index(32, 0), 11);
     }
 
     #[test]
@@ -1230,11 +1229,11 @@ mod tests {
             assert_eq!(context_texture_index(c, 0), 7, "context {c}");
             assert_eq!(context_texture_index(c, 5), 7, "context {c} slot 5");
         }
-        // Contexts 22/34 are out of P3 scope -- deliberately left on the default,
-        // even though the C# maps 22 -> `Inventory_Back4` (`ItemSlot.cs:2264-2267`)
-        // and 34 -> `Inventory_Back18` (`:2257-2259`).
+        // Context 22 is out of P3 scope — deliberately left on the default,
+        // even though the C# maps 22 -> `Inventory_Back4` (`ItemSlot.cs:2264-2267`).
         assert_eq!(context_texture_index(22, 0), 0);
-        assert_eq!(context_texture_index(34, 0), 0);
+        // 34 rides `Inventory_Back18` (`ItemSlot.cs:2253-2259`).
+        assert_eq!(context_texture_index(34, 0), 7);
     }
 
     #[test]

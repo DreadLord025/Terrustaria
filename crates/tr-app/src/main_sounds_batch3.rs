@@ -471,11 +471,12 @@ mod tests {
     #[test]
     fn g23_the_color_button_ids_are_row_times_channel_plus_ten() {
         // :51386/:51390 — (num70+1)*(num71+10): minus row 10/11/12, plus
-        // row 20/21/22. The tick fires only when the id differs.
+        // row 20/22/24 (num71 is the 0..2 channel index, not a 0..2 addend).
+        // The tick fires only when the id differs.
         assert!(color_button_hover_tick(0, 0, 0)); // id 10, was 0
         assert!(!color_button_hover_tick(10, 0, 0)); // already focused 10
-        assert!(color_button_hover_tick(10, 1, 2)); // id 22, was 10
-        assert!(!color_button_hover_tick(22, 1, 2)); // id 22 unchanged
+        assert!(color_button_hover_tick(10, 1, 2)); // id 24, was 10
+        assert!(!color_button_hover_tick(24, 1, 2)); // id 24 unchanged
     }
 
     #[test]

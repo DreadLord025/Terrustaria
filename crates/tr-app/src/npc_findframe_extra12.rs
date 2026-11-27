@@ -832,6 +832,107 @@ pub fn find_frame_extra12(kind: FindFrameExtra12Kind, s: &mut FrameState, i: &Fr
     }
 }
 
+// ---------------------------------------------------------------------------
+// W4-d42 - the Owl 611 / OwlMimic 689 `FindFrame` (`NPC.cs:73681-73715`, the
+// shared `case 611 : case 689`). The d42 wave shipped these kinds' SetDefaults
+// rows and the d127 AI, but the FindFrame arm stayed unported; this is that arm.
+//
+// `rotation = velocity.X * 0.1f` is the FIRST write, before the branch. The
+// idle roost reads `Main.rand.Next(80)` on the `(int)frameCounter % 40 == 0`
+// ticks and `Main.rand.Next(3)` on the `(frameCounter + 1) % 40 == 39` wrap;
+// the pure machine takes those resolved rolls as inputs so the caller keeps
+// the C# draw ORDER (the draws are consumed only on the cited ticks).
+// ---------------------------------------------------------------------------
+
+/// `Main.npcFrameCount[611]` / `[689]` = 13 (`Main.cs:67145`, row 610-619).
+pub const OWL_FRAME_COUNT: u32 = 13;
+
+/// The four `NPC` fields the Owl `FindFrame` reads/writes.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct OwlFrameState {
+    /// `frame.Y / num` - the sheet row.
+    pub row: u32,
+    /// `NPC.frameCounter`.
+    pub counter: f32,
+    /// `NPC.spriteDirection` - the arm writes `-direction` unconditionally.
+    pub sprite_dir: i32,
+    /// `NPC.rotation` - `velocity.X * 0.1f`, every tick.
+    pub rotation: f32,
+}
+
+/// The per-tick inputs: velocity/direction plus the two resolved roost rolls.
+#[derive(Clone, Copy, Debug)]
+pub struct OwlFrameInput {
+    pub vx: f32,
+    pub vy: f32,
+    pub direction: i32,
+    /// `Main.rand.Next(80)`, read only when `(int)frameCounter % 40 == 0`.
+    pub rand80: u32,
+    /// `Main.rand.Next(3)`, read only on the `(counter + 1) % 40 == 39` wrap.
+    pub rand3: u32,
+}
+
+impl Default for OwlFrameInput {
+    fn default() -> Self {
+        Self { vx: 0.0, vy: 0.0, direction: 1, rand80: 0, rand3: 0 }
+    }
+}
+
+/// The wiring seam: 611 and 689 are the one machine.
+pub fn is_owl_611_689(vanilla_type: i16) -> bool {
+    matches!(vanilla_type, 611 | 689)
+}
+
+/// `NPC.FindFrame`'s `case 611 : case 689` (`NPC.cs:73681-73715`) - one tick.
+pub fn find_frame_owl(s: &mut OwlFrameState, i: &OwlFrameInput) {
+    // `:73683-73684`.
+    s.sprite_dir = -i.direction;
+    s.rotation = i.vx * 0.1;
+    if i.vx == 0.0 && i.vy == 0.0 {
+        // `:73686-73706` - the roost idle.
+        if s.row >= 8 {
+            s.row = 0;
+        }
+        // `:73690`: the counter holds on every 40th tick unless the
+        // caller's Next(80) rolled 0.
+        if (s.counter as i32) % 40 != 0 || i.rand80 == 0 {
+            s.counter += 1.0;
+        }
+        // `:73694-73697`: the 39-edge re-roll.
+        if (s.counter + 1.0) % 40.0 == 39.0 {
+            s.counter = 40.0 * i.rand3 as f32;
+        }
+        // `:73698-73705`: the phase map.
+        let num112 = (s.counter as i32) % 40 / 10;
+        let num113 = (s.counter as i32) / 40;
+        let num114 = match num113 {
+            0 => {
+                let n = if num112 == 3 { 1 } else { num112 };
+                n as u32
+            }
+            1 => {
+                let n = if num112 == 3 { 1 } else { num112 };
+                if n != 0 { (2 + n) as u32 } else { 0 }
+            }
+            2 => {
+                if num112 != 0 { (4 + num112) as u32 } else { 0 }
+            }
+            _ => 0,
+        };
+        s.row = num114;
+    } else {
+        // `:73707-73714` - the flap.
+        s.counter += 1.0;
+        if s.counter >= 5.0 {
+            s.row += 1;
+            s.counter = 0.0;
+        }
+        if s.row >= OWL_FRAME_COUNT || s.row < 8 {
+            s.row = 8;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1159,8 +1260,12 @@ mod tests {
             // The hover walk (ai0 0), still: +1.0/tick exact, the
             // (int)(counter/8) row 0-4, the >= 40 reset tick shows 0.
             let rows = rows_over(k, input(0.0, 0.0), 40);
-            let mut expect = Vec::new();
-            for r in 0u32..5 {
+            // `NPC.cs:68410-68416`: counter += 1, then `(int)(counter/8)`.
+            // The counter starts at 0, so ticks 1..7 read row 0; each
+            // later band holds 8 ticks (8..15 -> 1 ... 32..39 -> 4) and
+            // tick 40's `>= 40` reset shows row 0.
+            let mut expect = vec![0u32; 7];
+            for r in 1u32..5 {
                 expect.extend(std::iter::repeat(r).take(8));
             }
             expect.push(0);
@@ -1269,5 +1374,79 @@ mod tests {
             find_frame_extra12(k, &mut s, &i);
             assert_eq!((s.row, s.sprite_dir), (1, -1));
         }
+    }
+
+    /// W4-d42 - the Owl 611 / OwlMimic 689 `FindFrame`
+    /// (`NPC.cs:73681-73715`): the unconditional
+    /// `spriteDirection = -direction` + `rotation = vx * 0.1f`, the
+    /// 5-tick flap band 8..12, and the roost idle's 40-tick phases
+    /// (the `0/1/2/3->1` and `4/5/6` bands) with the Next(80) hold
+    /// and the Next(3) re-roll.
+    #[test]
+    fn w4_d42_the_owl_find_frame_tilts_and_roosts() {
+        assert!(is_owl_611_689(611) && is_owl_611_689(689));
+        assert!(!is_owl_611_689(610) && !is_owl_611_689(442));
+
+        // The flap: vx 2 tilts 0.2 and flips the sprite; tick 1 pins
+        // row 8 (below the band), ticks 2..4 hold, tick 5 steps to 9.
+        let i = OwlFrameInput { vx: 2.0, vy: 0.0, direction: 1, ..Default::default() };
+        let mut s = OwlFrameState::default();
+        let mut rows = Vec::new();
+        for _ in 0..6 {
+            find_frame_owl(&mut s, &i);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, vec![8, 8, 8, 8, 9, 9]);
+        assert_eq!((s.sprite_dir, s.rotation), (-1, 2.0 * 0.1));
+
+        // The direction copy is unconditional: 0 -> 0, -1 -> +1.
+        let mut s = OwlFrameState::default();
+        find_frame_owl(&mut s, &OwlFrameInput { direction: 0, ..i });
+        assert_eq!(s.sprite_dir, 0);
+        find_frame_owl(&mut s, &OwlFrameInput { direction: -1, ..i });
+        assert_eq!(s.sprite_dir, 1);
+
+        // The flap wraps at the 13-row sheet back to 8.
+        let mut s = OwlFrameState { row: 12, counter: 4.0, ..Default::default() };
+        find_frame_owl(&mut s, &i);
+        assert_eq!((s.row, s.counter), (8, 0.0));
+
+        // The roost: vx/vy 0. The row outside 0..7 snaps to 0 first.
+        let idle = OwlFrameInput { vx: 0.0, vy: 0.0, direction: 1, rand80: 0, rand3: 0 };
+        let mut s = OwlFrameState { row: 12, counter: 0.0, ..Default::default() };
+        find_frame_owl(&mut s, &idle);
+        assert_eq!((s.row, s.counter, s.rotation), (0, 1.0, 0.0));
+
+        // The 40-tick phase map (`counter % 40 / 10`, `counter / 40`).
+        for (ctr, row) in [
+            (9.0f32, 1u32),
+            (19.0, 2),
+            (29.0, 1),        // band 3 folds to 1 in phase 0
+            (48.0, 0),        // phase 1, band 0
+            (50.0, 3),        // phase 1, band 1 -> 2 + 1
+            (79.0, 0),        // phase 2, band 0
+            (89.0, 5),        // phase 2, band 1 -> 4 + 1
+            (109.0, 7),       // phase 2, band 3 -> 4 + 3
+        ] {
+            let mut s = OwlFrameState { row: 0, counter: ctr, ..Default::default() };
+            find_frame_owl(&mut s, &idle);
+            assert_eq!(s.row, row, "counter {ctr}");
+        }
+
+        // The Next(80) hold: on a 40th counter tick the counter only
+        // advances when the roll is 0 (`:73690`).
+        let hold = OwlFrameInput { rand80: 1, ..idle };
+        let mut s = OwlFrameState { row: 3, counter: 40.0, ..Default::default() };
+        find_frame_owl(&mut s, &hold);
+        assert_eq!((s.row, s.counter), (0, 40.0), "the counter holds");
+        let mut s = OwlFrameState { row: 3, counter: 40.0, ..Default::default() };
+        find_frame_owl(&mut s, &idle);
+        assert_eq!((s.row, s.counter), (0, 41.0), "the zero roll advances");
+
+        // The Next(3) re-roll on the (counter + 1) % 40 == 39 edge.
+        let reroll = OwlFrameInput { rand80: 1, rand3: 2, ..idle };
+        let mut s = OwlFrameState { row: 0, counter: 37.0, ..Default::default() };
+        find_frame_owl(&mut s, &reroll);
+        assert_eq!((s.row, s.counter), (0, 80.0), "40 * Next(3)");
     }
 }

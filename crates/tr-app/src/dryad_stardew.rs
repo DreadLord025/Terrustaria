@@ -112,7 +112,10 @@ pub fn have_dryad_do_stardew_animation(app: &mut App) {
     let px = (anchor_x / 16.0) as i32;
     let py = (bottom_y / 16.0) as i32;
     // `:19203` — `p.Y = Clamp(p.Y - 10, 10, maxTilesY - 10)`.
-    let mut py = (py - 10).clamp(10, app.world.height - 10);
+    // Saturating max: tiny test worlds (< 20 rows) would otherwise give
+    // max < min and panic; production worlds keep the exact bound.
+    let max_y = app.world.height.saturating_sub(10).max(10);
+    let mut py = (py - 10).clamp(10, max_y);
     let start_y = py;
     let end_y = py + 15;
     // `:19206-19219` — the 15-row ground scan; the first solid row stops it

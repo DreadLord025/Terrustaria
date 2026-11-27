@@ -241,14 +241,15 @@ mod tests {
     /// The cog speed + the sound schedule (`:332-340`, `:347-370`).
     #[test]
     fn the_cogs_speed_up_and_the_sounds_fire_on_schedule() {
-        // At progress 0 the lerp is 0 → base step 0.05.
+        // At progress 0 (rest) the lerp saturates high: num = 0.05*3, so the
+        // small pair is 0.3 and the big pair -0.15.
         let [s, m, b] = cog_rotation_offsets(0.0);
-        assert!((s - 0.1).abs() < 1e-6);
-        assert!((m - 0.05714286).abs() < 1e-5);
-        assert!((b + 0.05).abs() < 1e-6);
-        // At progress 1 the lerp is 1 → step 0.05 * 3 = 0.15.
+        assert!((s - 0.3).abs() < 1e-6);
+        assert!((m - 0.17142858).abs() < 1e-6);
+        assert!((b + 0.15).abs() < 1e-6);
+        // At progress 1 (the animation's end) the lerp is 0 → 2*0.05 = 0.1.
         let [s1, _, _] = cog_rotation_offsets(1.0);
-        assert!((s1 - 0.3).abs() < 1e-6);
+        assert!((s1 - 0.1).abs() < 1e-6);
         let mut pair = [0.0, 0.0];
         offset_pair(&mut pair, 0.1);
         assert_eq!(pair, [0.1, -0.1]);

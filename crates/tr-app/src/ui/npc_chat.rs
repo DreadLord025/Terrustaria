@@ -310,7 +310,12 @@ pub(crate) fn draw_panel(
     stardew: bool,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
-    let panel = panel_rect(lookups, screen, chat_text, interaction_count(sign_open));
+    // `PrepareInteractions`' live count (`NPCChatPanel.cs:164-175`): Close +
+    // the sign's Edit/Save + Purify + Happiness, in registration order.
+    let live = interactions(sign_open, edit_sign).len()
+        + usize::from(stardew)
+        + usize::from(happiness);
+    let panel = panel_rect(lookups, screen, chat_text, live);
     let (x, y, _w, h) = (panel[0], panel[1], panel[2], panel[3]);
     // `:71-72` — the top splice (source `(0, 0, ChatBack.Width(), h−30)`)
     // and the bottom 30 px (`(0, Height−30, Width, 30)`), both at scale 1:
@@ -387,6 +392,7 @@ pub(crate) fn draw_panel(
         sign_open,
         edit_sign,
         stardew,
+        happiness,
     );
     super::in_rect(mouse, panel)
 }
@@ -408,14 +414,20 @@ fn draw_interactions(
     sign_open: bool,
     edit_sign: bool,
     stardew: bool,
+    happiness: bool,
 ) {
-    // W4-f30 + W4-f22 union: ONE interaction row. The Dryad Purify button
-    // (index 0) joins while the Stardew bit shows and shifts Close right by
-    // its width + 30 (`NPCChatPanel.cs:135`); the sign's Edit/Save toggle
-    // follows Close. `interaction_rects` lays the row out left-to-right.
+    // W4-f30 + W4-f22 union: ONE interaction row. `NPCChatPanel.
+    // PrepareInteractions` (`:164-175`) preserves `NPCInteractions.All`'s
+    // registration order: CloseChat (`NPCInteractions.cs:515`), OpenSign
+    // (`:516`), StardewValleyBit (`:517`), ... ReportHappiness (`:529`).
+    // `DrawButtons` (`:98-156`) walks that list left-to-right, so this row is
+    // Close, then the sign's Edit/Save, then Purify, then Happiness.
     let mut labels = interactions(sign_open, edit_sign);
     if stardew {
-        labels.insert(0, crate::dryad_stardew::give_cola_button_text());
+        labels.push(crate::dryad_stardew::give_cola_button_text());
+    }
+    if happiness {
+        labels.push(happiness_label());
     }
     let rects = interaction_rects(lookups, screen, chat_text, &labels);
     for (label, rect) in labels.iter().zip(rects.iter()) {
@@ -871,6 +883,13 @@ mod tests {
             x: 2,
             y: 2,
         });
+        // `Sign.TextSign` (`Sign.cs:29-38`) only writes when the record's tile
+        // is a live sign (`Main.tileSign`); otherwise it KillSigns. Give the
+        // record its tile (55 = Sign) so the submit exercises the write arm.
+        if let Some(t) = app.world.tile_mut(2, 2) {
+            t.kind = 55;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
         app.player = Some(crate::player::Player::spawn(&app.world));
         if let Some(p) = app.player.as_mut() {
             p.sign = 0;

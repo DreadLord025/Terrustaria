@@ -2078,13 +2078,14 @@ mod tests {
         assert_eq!(piston_frame(54), 2); // progress 0.1 >= 1/15
         assert_eq!(piston_frame(6), 8); // progress 0.9
         assert_eq!(piston_frame(1), 8);
-        // The cog step at rest: 0.05 base (`:332-340`).
+        // The cog step at the animation's END (progress 1): lerp 0 -> base 0.05.
         let step = cog_step(0);
         assert!((step[0] - 0.1).abs() < 1e-6);
         assert!((step[1] - 0.05 * 1.1428572).abs() < 1e-6);
         assert!((step[2] + 0.05).abs() < 1e-6);
-        // At progress 1 the lerp saturates: num = 0.05*3.
-        let fast = cog_step(1); // progress ~0.983 > 0.7
+        // At REST (timeLeft 60 -> progress 0) `GetLerpValue(1, .7, 0)` is 1:
+        // num = 0.05*3, so the small pair spins at 0.3.
+        let fast = cog_step(60);
         assert!((fast[0] - 0.3).abs() < 1e-6);
     }
 
@@ -2159,8 +2160,10 @@ mod tests {
         assert_eq!(items, vec![97, 8, 2]);
         // The filter narrows (`UpdateContents`' FitsFilter, `:542`).
         let mut f = FilterBoard::default();
-        f.click(0); // Weapon — none of the three
-        assert!(grid_items(&t, &f, "", None, 3).is_empty());
+        f.click(0); // Weapon
+        // `ItemFilters.Weapon.FitsFilter` is `damage > 0` (`ItemFilters.cs:
+        // 193-196`); the Musket Ball (97) carries damage, so only it survives.
+        assert_eq!(grid_items(&t, &f, "", None, 3), vec![97]);
     }
 
     /// `ItemFilters.BySearch` (`ItemFilters.cs:28-48`): the tooltip-line

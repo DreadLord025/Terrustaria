@@ -441,7 +441,9 @@ mod bg_target_tests {
         // value > max, min for value < min, else value — NOT a panic.
         assert_eq!(utils_clamp(200, 100, 50), 50);
         assert_eq!(utils_clamp(20, 100, 50), 100);
-        assert_eq!(utils_clamp(75, 100, 50), 75);
+        // `value > max` is checked FIRST (`Utils.cs:223-234`), so an inverted
+        // band answers `max` for every value above it - 75 -> 50.
+        assert_eq!(utils_clamp(75, 100, 50), 50);
         assert_eq!(utils_clamp(5, 0, 10), 5);
         assert_eq!(utils_clamp(15, 0, 10), 10);
         assert_eq!(utils_clamp(-5, 0, 10), 0);

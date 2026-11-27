@@ -557,14 +557,17 @@ mod tests {
     /// LEFT frame to 1 (and 5→6), ai3=-1 the RIGHT.
     #[test]
     fn the_dash_arms_swap_on_the_ai3_sign() {
-        // ai1=25 → num9=5; ai3=1 → left 1, right 5.
-        assert_eq!(hallow_boss_arm_frame(8.0, 25.0, 1.0, false), (7, 1, 5));
-        // ai3=-1 → left 5, right 1.
-        assert_eq!(hallow_boss_arm_frame(9.0, 25.0, -1.0, false), (7, 5, 1));
+        // ai1=25 → num9=2 (neither <10 nor <20, and `!(num8<30)` is false,
+        // so the else = num3 = 2; `Main.cs:26690-26696`); ai3=1 → left 1.
+        assert_eq!(hallow_boss_arm_frame(8.0, 25.0, 1.0, false), (7, 1, 2));
+        // ai3=-1 → left 2, right 1.
+        assert_eq!(hallow_boss_arm_frame(9.0, 25.0, -1.0, false), (7, 2, 1));
         // ai3=0 → no swap.
-        assert_eq!(hallow_boss_arm_frame(8.0, 25.0, 0.0, false), (7, 5, 5));
-        // ai1 ≥ 30 → num9=5 regardless; the <30 swap gate is off.
-        assert_eq!(hallow_boss_arm_frame(8.0, 30.0, 1.0, false), (7, 5, 5));
+        assert_eq!(hallow_boss_arm_frame(8.0, 25.0, 0.0, false), (7, 2, 2));
+        // ai1 ≥ 30 → num9=5 (`!(num8 < 30)` true), so the <30 SWAP gate is
+        // off; the 5→6 promotion is NOT gated, so ai3=1 still lifts the right
+        // arm (num13==5 → 6, `Main.cs:26705-26714`).
+        assert_eq!(hallow_boss_arm_frame(8.0, 30.0, 1.0, false), (7, 5, 6));
         // ai1=5 → num9=2; ai3=1 → left 1 (not 5, so no 5→6 promotion).
         assert_eq!(hallow_boss_arm_frame(8.0, 5.0, 1.0, false), (7, 1, 2));
     }

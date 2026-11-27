@@ -403,12 +403,16 @@ mod tests {
         assert_eq!(n.knock_back_resist(), 1.0, "no kb row — the class default");
     }
 
-    /// The vanish gate: a Hallow player far away raises ai[2] by +1 per
-    /// tick; at 60 the critter deactivates WITHOUT the tail (`:44919`).
+    /// The vanish gate: with the FULL 60-tick window (`num4 = num3` for a
+    /// non-Remix player outside the Hallow) a far target raises ai[2] by
+    /// +1 per tick; at 60 the critter deactivates WITHOUT the tail
+    /// (`:44919`). Inside the Hallow `num4 = 50` clamps the counter, so
+    /// the death row is unreachable there — the `:44913` gate.
     #[test]
     fn the_vanish_gate_counts_up_and_deactivates_at_60() {
         let w = air();
-        let p = player_at(4000.0, 1000.0); // > 300 px away
+        let mut p = player_at(4000.0, 1000.0); // > 300 px away
+        p.zones.hallow = false; // `:44913` — num4 = 60, not the 50 clamp
         let mut n = lacewing(100.0, 100.0);
         let mut rng = UnifiedRandom::new(42);
         n.ai[3] = 1.0; // skip the scale latch draw for the count pin
@@ -485,7 +489,12 @@ mod tests {
         assert_eq!(n.local_ai[3], 1.0, "the scatter latches localAI[3]");
         let len = ((dx * dx + dy * dy) as f32).sqrt();
         assert_eq!(n.ai[0], dx as f32 * (speed / len));
-        assert_eq!(n.ai[1], dy as f32 * (speed / len));
+        // `:45019-45056` — the vertical probes flip num2 when the probe
+        // band holds no solid tile. This air world is clear in both the
+        // 3-down and 30-up bands, so a downward aim (num2 < 0) flips
+        // positive; an upward aim is untouched.
+        let want_y = dy.abs() as f32 * (speed / len);
+        assert_eq!(n.ai[1], want_y);
         assert_eq!(rng.next(), probe.next(), "the streams stayed in lockstep");
     }
 

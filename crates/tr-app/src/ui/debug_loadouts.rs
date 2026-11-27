@@ -441,9 +441,10 @@ mod tests {
         // Group 0: [10, 30] wide 20, vertical 0.75 → y = 52.5 + 16.
         let (x, y) = icon_center(&row, 0, 0, 1);
         assert_eq!((x, y), (20.0, 68.5));
-        // Two icons: HAlign 0 → x = 10 + 16 = 26; HAlign 1 → 30 - 32 + 16 = 14.
+        // Two icons: HAlign 0 → x = 10 + 16 = 26; HAlign 1 → 30 - 32 + 16
+        // = 14, with `(0.3f - 0.1f) * 100` = 20.000002 in f32.
         assert_eq!(icon_center(&row, 0, 0, 2).0, 26.0);
-        assert_eq!(icon_center(&row, 0, 1, 2).0, 14.0);
+        assert_eq!(icon_center(&row, 0, 1, 2).0, 10.0 + (0.3f32 - 0.1f32) * 100.0 - 32.0 + 16.0);
         // Group 2 (armor): vertical 0.25 → y = 17.5 + 16 = 33.5.
         assert_eq!(icon_center(&row, 2, 0, 1).1, 33.5);
     }

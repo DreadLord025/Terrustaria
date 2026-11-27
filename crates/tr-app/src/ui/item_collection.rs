@@ -234,21 +234,22 @@ mod tests {
         assert_eq!(item_slot_hitbox(102, 0, 0, 10, 9), [146, 44, 44, 44]);
     }
 
-    /// The budget walk (`:44-70`): 3 columns, all loaded → 3 draws, no loads;
-    /// an unloaded slot costs one extra, and the prefetch costs 4 per load.
+    /// The budget walk (`:44-70`): the budget only DROPS on an unloaded
+    /// texture, so a fully loaded 12-slot page draws every slot (no break);
+    /// the prefetch pass charges 4 per load from the starting budget.
     #[test]
     fn the_draw_budget_charges_loads() {
         let loaded = [true; 12];
         let (drawn, to_load) = draw_plan(&loaded, 0, 12, 3);
-        assert_eq!(drawn, vec![0, 1, 2]);
+        assert_eq!(drawn, (0..12).collect::<Vec<_>>());
         assert!(to_load.is_empty());
-        // Slot 1 unloaded: budget 3 → draw 0 (3), the extra charge drops it to
-        // 2 then draw 1, draw 2 leaves 1 (>0, no break); the loop ends at 12.
+        // Slot 1 unloaded: budget 3 → 2 at slot 1, never <= 0, so all draw;
+        // the prefetch starts at end_index=12 → wraps to 0 and queues slot 1
+        // (4 off the remaining 2).
         let mut l2 = [true; 12];
         l2[1] = false;
         let (d2, t2) = draw_plan(&l2, 0, 12, 3);
-        assert_eq!(d2, vec![0, 1, 2]);
-        // Prefetch starts at end_index=12 → wraps to 0; slot 1 costs 4 → -3.
+        assert_eq!(d2, (0..12).collect::<Vec<_>>());
         assert_eq!(t2, vec![1]);
     }
 }

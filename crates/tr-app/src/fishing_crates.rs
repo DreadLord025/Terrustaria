@@ -292,10 +292,11 @@ fn iron_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec<B
         }
     }
     // `:8432-8435` — the 1/2 Lesser Healing/Mana tail: Next(188, 190), 5-15.
+    // `QuickSpawnItem(source, Next(188,190), Next(5,16))` evaluates its
+    // arguments left-to-right: the ITEM draw comes first.
     if rng.next_max(2) == 0 {
-        let stack = range(rng, 5, 16);
         let item = range(rng, 188, 190);
-        let stack = stack;
+        let stack = range(rng, 5, 16);
         quick_spawn(rng, out, item, stack);
     }
     // `:8436-8439` — the 1/2 bait tail: 2/3 Journeyman 2675, else Master 2676, 2-4.
@@ -361,10 +362,11 @@ fn golden_crate<R: PrefixRandom + ?Sized>(flag: bool, rng: &mut R, out: &mut Vec
         quick_spawn(rng, out, num3, stack);
     }
     // `:8576-8579` — the 1/2 Lesser Healing/Mana tail: 5-20.
+    // `QuickSpawnItem(source, Next(188,190), Next(5,21))` evaluates its
+    // arguments left-to-right: the ITEM draw comes first.
     if rng.next_max(2) == 0 {
-        let stack = range(rng, 5, 21);
         let item = range(rng, 188, 190);
-        let stack = stack;
+        let stack = range(rng, 5, 21);
         quick_spawn(rng, out, item, stack);
     }
     // `:8580-8583` — the 2/3 Master Bait tail: 3-7.
@@ -582,10 +584,11 @@ fn shared_crate_tails<R: PrefixRandom + ?Sized>(
         quick_spawn(rng, out, num21, stack);
     }
     // `:8942-8945` — the 1/2 Lesser Healing/Mana tail: 5-17.
+    // `QuickSpawnItem(source, Next(188,190), Next(5,18))` evaluates its
+    // arguments left-to-right: the ITEM draw comes first.
     if rng.next_max(2) == 0 {
-        let stack = range(rng, 5, 18);
         let item = range(rng, 188, 190);
-        let stack = stack;
+        let stack = range(rng, 5, 18);
         quick_spawn(rng, out, item, stack);
     }
     // `:8946-8949` — the 1/2 bait tail: 1/2 Journeyman/Master, 2-6.
@@ -846,9 +849,12 @@ mod tests {
         let stacks: Vec<u32> = out.iter().map(|g| g.stack).collect();
         assert_eq!(stacks, vec![1, 5, 12, 2, 5, 2]);
         // 2501 Ginger Beard is a VANITY accessory — no prefix draws.
+        // The `Next(5,11)` gold stack is its own draw (`range` records the
+        // span `6`), so three 6s precede the potion arm: gold stack, bars
+        // gate, bars pick (`Player.cs:8310-8320`).
         assert_eq!(
             rng.ranges,
-            vec![25, 4, 6, 6, 2, 10, 4, 8, 3, 2, 2, 11, 2, 3, 3],
+            vec![25, 4, 6, 6, 6, 2, 10, 4, 8, 3, 2, 2, 11, 2, 3, 3],
             "the iron pre-hardmode draw census"
         );
     }
@@ -887,9 +893,11 @@ mod tests {
         // The 1/10 saddle gate SKIPS (flag2 false after the crystal).
         // The 989 Enchanted Sword IS a melee weapon: its Prefix(-1)
         // adds one Next(4) between the 30 and the 15.
+        // `QuickSpawnItem(source, Next(188,190), Next(5,21))` draws the ITEM
+        // span `2` before the stack span `16` (`Player.cs:8576-8579`).
         assert_eq!(
             rng.ranges,
-            vec![8, 3, 13, 5, 4, 2, 10, 3, 5, 4, 2, 16, 3, 30, 4, 15],
+            vec![8, 3, 13, 5, 4, 2, 10, 3, 5, 4, 2, 2, 16, 3, 30, 4, 15],
             "the golden pre-hardmode draw census"
         );
     }

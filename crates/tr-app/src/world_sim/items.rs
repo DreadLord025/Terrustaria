@@ -1919,25 +1919,31 @@ mod shimmer_tests {
     use tr_core::tile::{FLAG_ACTIVE, Tile};
     use tr_core::world::World;
 
-    /// A 40x40 world with a stone floor at y = 20 and a shimmer pool on top of
-    /// it (y = 19), the player standing beside it.
+    /// A 100x100 world with a stone floor at y = 60 and a shimmer pool on top
+    /// of it (rows 58-59), the player standing beside it. The world is wide
+    /// and deep enough for `CheckInWorld`'s 20-tile fluff
+    /// (`WorldGen.InWorld(pos, 20)`, `WorldItem.cs:573-588`): the old 40x40
+    /// fixture put the drop at y = 19 / x = 30, inside the top/side fluff
+    /// bands, so every drop was aired out on its first tick and the pool was
+    /// empty. The geometry relative to the pool is unchanged (floor +1 row,
+    /// pool rows −1/−2, drop flush on the floor).
     fn shimmer_world() -> App {
-        let mut w = World::new("sh".into(), 40, 40);
+        let mut w = World::new("sh".into(), 100, 100);
         w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
         w.compute_column_surface();
         w.compute_chunks();
-        // The floor row 20 (solid) with the two-row shimmer pool 18-19 on top
+        // The floor row 60 (solid) with the two-row shimmer pool 58-59 on top
         // (a drop resting in the liquid has shimmer both in its box and in the
         // tile above it — `CanShimmerAtPosition`'s `position.Y/16 - 1`,
         // `WorldItem.cs:762`).
-        for x in 0..40 {
-            let i = w.index(x, 20);
+        for x in 0..100 {
+            let i = w.index(x, 60);
             w.tiles[i] = Tile {
                 kind: 1,
                 ..Default::default()
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
-            for y in 18..=19 {
+            for y in 58..=59 {
                 let j = w.index(x, y);
                 w.tiles[j] = Tile::default();
                 w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
@@ -1948,28 +1954,24 @@ mod shimmer_tests {
         app.world = w;
         let mut player = Player::spawn(&app.world);
         player.x = 9.0 * TILE_PX;
-        player.y = 17.0 * TILE_PX;
+        player.y = 57.0 * TILE_PX;
         app.player = Some(player);
-        app.camera = Vec2::new(9.0 * TILE_PX, 17.0 * TILE_PX);
+        app.camera = Vec2::new(9.0 * TILE_PX, 57.0 * TILE_PX);
         app
     }
 
-    /// A drop resting on the pool's floor, the 16x16 box overlapping the
-    /// shimmer row (pos y = 19*16, flush on the 20-row floor — keep-one
-    /// 144), parked at x = 30 tiles — outside the
-    /// 42 px pickup magnet of the player at x = 9 (`ItemUpdate`'s magnet,
-    /// `item.rs:176-188`) but inside the coin-luck 1000 px window.
-    /// shimmer row (pos y = 19*16, flush on the 20-row floor), parked at
-    /// x = 30 tiles — outside the 42 px pickup magnet of the player at x = 9
-    /// (`ItemUpdate`'s magnet, `item.rs:176-188`) but inside the coin-luck
-    /// 1000 px window.
+    /// A drop resting on the pool's floor, the box overlapping the shimmer
+    /// row (pos y = 59*16, flush on the 60-row floor — keep-one 144), parked
+    /// at x = 30 tiles — outside the 42 px pickup magnet of the player at
+    /// x = 9 (`ItemUpdate`'s magnet, `item.rs:176-188`) but inside the
+    /// coin-luck 1000 px window.
     fn resting_drop(kind: u16, count: u32) -> ItemDrop {
         let mut d = ItemDrop::new(
             kind,
             count,
             0,
             30.0 * TILE_PX,
-            19.0 * TILE_PX,
+            59.0 * TILE_PX,
             0.0,
             0.0,
             0.0,
@@ -2018,13 +2020,13 @@ mod shimmer_tests {
     #[test]
     fn the_ramp_decays_out_of_shimmer() {
         let mut app = shimmer_world();
-        // Park the drop above the pool (y = 12), so it is dry.
+        // Park the drop above the pool (y = 52), so it is dry.
         app.items.push(ItemDrop::new(
             11,
             1,
             0,
             30.0 * TILE_PX,
-            12.0 * TILE_PX,
+            52.0 * TILE_PX,
             0.0,
             0.0,
             0.0,
@@ -2195,12 +2197,12 @@ mod shimmer_tests {
         // The full dust budget (the flow_app default is 0 — every spawn
         // would hit the >90% pressure band's Next(4) refusal).
         app.gfx_quality.max_dust_to_draw = 6000;
-        // Above the pool (rows 18-19), dry, falling — parked at x = 30
+        // Above the pool (rows 58-59), dry, falling - parked at x = 30
         // tiles (outside the player's grab magnet).
         app.items.push(ItemDrop::new(
-            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+            2, 1, 0, 30.0 * TILE_PX, 56.0 * TILE_PX, 0.0, 2.0, 0.0,
         ));
-        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        app.camera = Vec2::new(30.0 * TILE_PX, 58.0 * TILE_PX);
         let mut entered = false;
         for _ in 0..30 {
             update_items(&mut app, 1.0 / 60.0);
@@ -2237,7 +2239,7 @@ mod shimmer_tests {
         app.gfx_quality.max_dust_to_draw = 6000;
         // Resting IN the pool (the entry burst fires on tick 1).
         app.items.push(resting_drop(2, 1));
-        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        app.camera = Vec2::new(30.0 * TILE_PX, 58.0 * TILE_PX);
         update_items(&mut app, 1.0 / 60.0);
         assert!(app.items[0].wet, "the entry latched");
         let after_entry = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
@@ -2246,7 +2248,7 @@ mod shimmer_tests {
             update_items(&mut app, 1.0 / 60.0);
         }
         assert_eq!(app.items[0].wet_count, 0, "the cooldown drained");
-        app.items[0].pos.y = 10.0 * TILE_PX; // high above the pool — dry
+        app.items[0].pos.y = 50.0 * TILE_PX; // high above the pool — dry
         update_items(&mut app, 1.0 / 60.0);
         assert!(!app.items[0].wet, "the exit cleared wet");
         let after_exit = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
@@ -2261,13 +2263,13 @@ mod shimmer_tests {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
         app.items.push(resting_drop(2, 1));
-        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        app.camera = Vec2::new(30.0 * TILE_PX, 58.0 * TILE_PX);
         update_items(&mut app, 1.0 / 60.0); // entry burst
         let n0 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
         // Out and back in within the cooldown window.
-        app.items[0].pos.y = 10.0 * TILE_PX;
+        app.items[0].pos.y = 50.0 * TILE_PX;
         update_items(&mut app, 1.0 / 60.0); // exit edge, wetCount > 0 → no burst
-        app.items[0].pos.y = 19.0 * TILE_PX;
+        app.items[0].pos.y = 59.0 * TILE_PX;
         update_items(&mut app, 1.0 / 60.0); // re-entry, wetCount > 0 → no burst
         let n1 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
         assert_eq!(n1, n0, "the cooldown suppressed both edges");
@@ -2280,16 +2282,16 @@ mod shimmer_tests {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
         // Replace the shimmer pool with water.
-        for x in 0..40 {
-            for y in 18..=19 {
+        for x in 0..100 {
+            for y in 58..=59 {
                 let j = app.world.index(x, y);
                 app.world.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Water);
             }
         }
         app.items.push(ItemDrop::new(
-            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+            2, 1, 0, 30.0 * TILE_PX, 56.0 * TILE_PX, 0.0, 2.0, 0.0,
         ));
-        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        app.camera = Vec2::new(30.0 * TILE_PX, 58.0 * TILE_PX);
         for _ in 0..30 {
             update_items(&mut app, 1.0 / 60.0);
             if app.items[0].wet {
@@ -2343,6 +2345,11 @@ mod shimmer_tests {
     fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
         // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
         let mut app = shimmer_world();
+        // The full dust budget (the flow_app default is 0 — every spawn
+        // would hit the >90% pressure band's `Next(4)` refusal, leaving only
+        // the lucky few; the sibling splash witnesses set the same budget).
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.camera = Vec2::new(30.0 * TILE_PX, 58.0 * TILE_PX);
         app.items.push(resting_drop(11, 3));
         for _ in 0..120 {
             update_items(&mut app, 1.0 / 60.0);
@@ -2402,12 +2409,16 @@ mod rand_light_witness {
     use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::world::World;
 
-    /// A dry 40x40 world, stone floor at y = 20, the player parked at x = 10
-    /// tiles — the drops sit at x = 28..32 tiles, outside the pickup magnet.
+    /// A dry 100x100 world, stone floor from row 60 down, the player parked
+    /// at x = 10 tiles — the drops sit at x = 28..34 tiles, outside the pickup
+    /// magnet. The world clears `CheckInWorld`'s 20-tile fluff
+    /// (`WorldGen.InWorld(pos, 20)`, `WorldItem.cs:573-588`); the old 40x40
+    /// fixture put the drops at y = 19, inside the top band, so the items pass
+    /// aired them out before the flicker arms ran.
     fn dry_world() -> App {
-        let mut w = World::new("rl".into(), 40, 40);
-        for x in 0..40 {
-            for y in 20..40 {
+        let mut w = World::new("rl".into(), 100, 100);
+        for x in 0..100 {
+            for y in 60..100 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
                     kind: 1,
@@ -2422,13 +2433,13 @@ mod rand_light_witness {
         app.world = w;
         let mut player = Player::spawn(&app.world);
         player.x = 10.0 * TILE_PX;
-        player.y = 18.0 * TILE_PX;
+        player.y = 58.0 * TILE_PX;
         app.player = Some(player);
         app
     }
 
     fn resting(kind: u16, tx: f32) -> ItemDrop {
-        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 59.0 * TILE_PX, 0.0, 0.0, 0.0);
         d.vel = Vec2::ZERO;
         d
     }
@@ -3213,10 +3224,16 @@ mod pickup_tests {
     use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::world::World;
 
+    /// A grounded 100x100 world; the stone floor starts at row 60 and the
+    /// player stands mid-world just above it. The world is deep/wide enough
+    /// for `CheckInWorld`'s 20-tile fluff (`WorldGen.InWorld(pos, 20)`,
+    /// `WorldItem.cs:573-588`) on BOTH axes — a 40x40 fixture put the player
+    /// (x = 10, y = 18) and every drop at x/y inside the fluff bands, so the
+    /// items pass aired them out before the assertions could see them.
     fn pickup_world() -> App {
-        let mut w = World::new("pickup".into(), 40, 40);
-        for x in 0..40 {
-            for y in 20..40 {
+        let mut w = World::new("pickup".into(), 100, 100);
+        for x in 0..100 {
+            for y in 60..100 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
                     kind: 1,
@@ -3230,8 +3247,8 @@ mod pickup_tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = w;
         let mut player = Player::spawn(&app.world);
-        player.x = 10.0 * TILE_PX;
-        player.y = 18.0 * TILE_PX;
+        player.x = 50.0 * TILE_PX;
+        player.y = 58.0 * TILE_PX;
         app.player = Some(player);
         app.inventory = std::array::from_fn(|_| EMPTY_SLOT);
         app
@@ -3417,10 +3434,10 @@ mod pickup_tests {
     #[test]
     fn nearby_world_drops_merge_in_the_items_pass() {
         let mut app = pickup_world();
-        // Park the player far away (x = 10 tiles); the drops at x = 30.
-        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
+        // Park the player far away (x = 50 tiles); the drops at x = 30.
+        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 59.0 * TILE_PX, 0.0, 0.0, 0.0);
         a.vel = Vec2::ZERO;
-        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 59.0 * TILE_PX, 0.0, 0.0, 0.0);
         b.vel = Vec2::ZERO;
         app.items.push(a);
         app.items.push(b);

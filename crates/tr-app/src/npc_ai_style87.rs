@@ -920,7 +920,7 @@ mod tests {
 
     /// `:37725-37768` — the charge hop: the six stacked height kicks
     /// fire when the player's bottom is 200+ px above the centre
-    /// (−4 −1.25 −1.5 −1.75 −2 −2.25 −2.5 = −15), vx = 12·direction.
+    /// (−4 −1.25 −1.5 −1.75 −2 −2.25 −2.5 = −15.25), vx = 12·direction.
     #[test]
     fn w4_d32_s87_the_charge_hop_stacks_the_six_height_kicks() {
         let w = air();
@@ -934,7 +934,7 @@ mod tests {
         let _ = style87_step(&mut n, 473, &mut e);
         // cy = 122; p_bottom = −358 < 122−200 = −78 → all six fire.
         // LOS in the air world is clear → no extra −2.
-        assert_eq!(n.vy, -15.0);
+        assert_eq!(n.vy, -15.25);
         assert_eq!(n.vx, 12.0 * n.facing as f32);
         assert_eq!(n.ai[2], 1.0);
     }

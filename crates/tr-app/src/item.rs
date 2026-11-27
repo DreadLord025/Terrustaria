@@ -848,6 +848,10 @@ const FRICTION_EPSILON: f32 = 0.1;
 /// 0.08/5/0.5. `UpdateShimmer` zeroes the gravity for a shimmered drop
 /// (`:483`) — the caller applies that override after this pair.
 pub fn item_gravity_ladder(wet: bool, shimmer_wet: bool, honey_wet: bool) -> (f32, f32, f32) {
+    // `WorldItem.cs:379-396`: the carried wet-family flags are read BEFORE
+    // the current-tick probe, so `shimmerWet`/`honeyWet` win even when the
+    // drop reads dry this tick (the e19 witness pins the 0.065/4 carried
+    // flag). `wet` is only the fallback arm.
     if shimmer_wet {
         (0.065, 4.0, 0.375) // :380-385
     } else if honey_wet {
@@ -1938,9 +1942,10 @@ impl ItemDrop {
                 d.alpha = alpha;
             }
             d.no_gravity = true;
-            if s.shimmer {
-                // `:897-911` / `:976-990` — the colour pick rides AFTER the
-                // spawn (one Next(6) per dust, sentinel included).
+            if !s.lava && s.shimmer {
+                // `:897-911` / `:976-990` — the colour pick belongs to the
+                // SHIMMER arm; the lava arm (which also sets `shimmer` via
+                // the sticky flags) wins the gate and draws no colour.
                 d.color = match rng.next_max(6) {
                     0 => Color { r: 255, g: 255, b: 210, a: 255 },
                     1 => Color { r: 190, g: 245, b: 255, a: 255 },
@@ -2126,8 +2131,10 @@ pub(crate) fn shimmer_fade_color(lit: [f32; 3], shimmered: bool, shimmer_time: f
         let v = (255.0 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
         [v, v, v, v]
     } else if shimmer_time > 0.0 {
+        // The port's tint keeps A = 1: the `item.alpha`/GetAlpha family is
+        // unported (see the doc above), so only the lit RGB channels ramp.
         let mut col = [lit[0], lit[1], lit[2], 1.0];
-        for ch in col.iter_mut() {
+        for ch in col[..3].iter_mut() {
             let b = (*ch * 255.0) as u8;
             *ch = (b as f32 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
         }
@@ -2342,9 +2349,14 @@ mod tests {
         // A plain drop: no echoes.
         assert!(aura_echo_offsets(2, 0, 0.0).is_empty());
         // The pulse triangle: gtw=2 → 2%4/2 = 1 → folded 2-1 = 1 →
-        // 1*0.5+0.5 = 1.0, so the k=0 copy sits at (0, 8).
+        // 1*0.5+0.5 = 1.0, so the k=0 copy sits at radius (0, 8); the
+        // phase also carries `gtw*0.04` (`Main.cs:38669`), so the copy is
+        // rotated — the length, not the y, is the pulse peak.
         let e = aura_echo_offsets(3318, 0, 2.0);
-        assert!((e[0].0[1] - 8.0).abs() < 1e-4, "the pulse peak");
+        assert!(
+            (e[0].0[0].hypot(e[0].0[1]) - 8.0).abs() < 1e-4,
+            "the pulse peak"
+        );
         // The age phase: age_ticks=240 → phase 1.0 → the k=0 copy wraps
         // the full turn back to (0, 4) at gtw=0.
         let e = aura_echo_offsets(3318, 240, 0.0);
@@ -2836,8 +2848,11 @@ mod tests {
         assert_eq!(item_gravity_ladder(true, false, true), (0.05, 3.0, 0.25));
         assert_eq!(item_gravity_ladder(true, false, false), (0.08, 5.0, 0.5));
         assert_eq!(item_gravity_ladder(false, false, false), (0.1, 7.0, 0.5));
-        // Dry flags → air even if the kind flags are stale.
-        assert_eq!(item_gravity_ladder(false, true, true), (0.1, 7.0, 0.5));
+        // The carried wet-family flags are read BEFORE the current probe
+        // (`WorldItem.cs:380-385`), so a set `shimmerWet` wins even when the
+        // drop reads dry this tick — the e19 carried-flag witness pins the
+        // same 0.065/4 arm.
+        assert_eq!(item_gravity_ladder(false, true, true), (0.065, 4.0, 0.375));
     }
 
     /// `ItemID.cs:1320` — the NoGravity set membership.
@@ -4138,6 +4153,7 @@ mod s1_p_i47_tests {
         assert!((land.vel.y - 1.0).abs() < 1e-4, "the dry residual: {}", land.vel.y);
         // The next tick: gravity 0.1, the collision re-blocks at residual 0 —
         // the drop lies flush, vel 0 (no bounce, no drift).
+        land.update(&w, 1.0 / 60.0);
         assert!((land.pos.y - 304.0).abs() < 1e-4, "flush rest: {}", land.pos.y);
         assert_eq!(land.vel.y, 0.0, "the rest residual is zero");
     }

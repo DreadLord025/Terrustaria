@@ -1157,6 +1157,7 @@ mod tests {
     fn the_walker_drain_runs_the_full_spawn_per_request() {
         let mut w = ground();
         build_furnished_room(&mut w, 60, 100, 12, 9);
+        build_furnished_room(&mut w, 90, 100, 12, 9);
         let mut npcs: Vec<Npc> = Vec::new();
         let mut rooms = TownRooms::new();
         let mut state = ArrivalState::new();
@@ -1173,15 +1174,18 @@ mod tests {
         assert_eq!(nohobo, 1);
         assert_eq!(npcs.len(), 1);
         assert_eq!(npcs[0].kind, NpcKind::Guide);
-        // A second request with the prioritized slot now empty: the house is
-        // found but nobody spawns — LastFoundHouse writes, NO_HOBO stays 0.
+        // A second request at the OTHER room with the prioritized slot now
+        // empty: the house is found but nobody spawns — LastFoundHouse
+        // writes, NO_HOBO stays 0. (The first room would be `Blocked`: an
+        // occupied same-category room scores -1, `WorldGen.cs:5868-5873`
+        // -> `:5436-5439`, which never reaches the `:5613` write.)
         let nohobo = drain_town_spawn_requests(
-            &[(65, 105)],
+            &[(95, 105)],
             &mut w, &mut npcs, &mut rooms, &mut state, &mut statics,
             None, false, &mut chat,
         );
         assert_eq!(nohobo, 0);
-        assert_eq!(statics.last_found_house, (65, 105));
+        assert_eq!(statics.last_found_house, (95, 105));
         assert_eq!(npcs.len(), 1, "no second copy spawned");
     }
 

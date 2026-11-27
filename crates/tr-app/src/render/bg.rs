@@ -2302,18 +2302,26 @@ mod underground_bg_tests {
         // parallax counts the horizontal neighbours' wall light (`:55152`); zero
         // parallax only the cell itself (`:55157`).
         let mut w = world();
-        // A light wall at x=11, the probe cell x=10 has none.
+        // A light wall at x=11, the probe cell x=10 carries the NON-light
+        // wall 1 (wall 0 transmits: `wallLight[0] = true`, `Main.cs:10578`).
+        w.tile_mut(10, 10).unwrap().wall = 1;
         w.tile_mut(11, 10).unwrap().wall = 21;
         // Parallax on: the right neighbour keeps the cell drawn.
         assert!(should_draw_background_tile_at(&w, 10, 10, 0.88, false));
-        // Parallax off: only the cell's own (absent) wall light counts.
+        // Parallax off: only the cell's own (non-light) wall counts.
         assert!(!should_draw_background_tile_at(&w, 10, 10, 0.0, false));
         // The left neighbour counts too (`:55152`'s `i - 1` arm).
         let mut w2 = world();
+        w2.tile_mut(10, 10).unwrap().wall = 1;
         w2.tile_mut(9, 10).unwrap().wall = 21;
         assert!(should_draw_background_tile_at(&w2, 10, 10, 0.88, false));
         // The Echo coating on a neighbour spreads the same way under parallax.
         let mut w3 = world();
+        // Both neighbours and the probe carry non-transmitting walls so the
+        // parallax spread is the ONLY candidate the shown-coating gate can
+        // see (wall 0 would transmit, `Main.cs:10578`).
+        w3.tile_mut(9, 10).unwrap().wall = 1;
+        w3.tile_mut(10, 10).unwrap().wall = 1;
         w3.tile_mut(11, 10).unwrap().wall = 1;
         w3.set_invisible_wall(11, 10, true);
         assert!(should_draw_background_tile_at(&w3, 10, 10, 0.88, false));

@@ -4166,6 +4166,8 @@ mod tests {
 
     #[test]
     fn difficulty_tables_map_the_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // `MakeInfoMenu` (`:889-910`) + `UpdateDifficultyDescription`
         // (`:946-965`) — the build order is Journey, Classic, Mediumcore,
         // Hardcore; the description index is the difficulty byte.
@@ -4361,8 +4363,11 @@ mod tests {
         assert_eq!(click_at(&l, 1, at(l.voice_button)), Click::VoicePlay);
         let (_, hit) = voice_pitch_rects(l.voice_pitch);
         assert_eq!(click_at(&l, 1, at(hit)), Click::VoicePitch);
-        // The voice row is only live over ClothStyles (category 1).
-        assert_eq!(click_at(&l, 0, at(l.voice_button)), Click::None);
+        // The voice row is only live over ClothStyles (category 1); over
+        // Info that point falls on the overlapping Mediumcore difficulty
+        // row (the two menus share the column, `UIElement.GetElementAt`'s
+        // tree walk only sees the live page).
+        assert_eq!(click_at(&l, 0, at(l.voice_button)), Click::Difficulty(1));
     }
 
     #[test]
@@ -4383,16 +4388,21 @@ mod tests {
         assert!(cues.menu_tick);
         assert_eq!(s.draft.voice_pitch_offset, 0.0); // mid -> 0.5 -> 0.0
         assert!(!s.pitch_changed);
-        // The debounce counts down over the next held frames; the preview
-        // fires only if the offset actually changed. Drag to the right end.
+        // The debounce counts down over the next updates; the preview fires
+        // only if the offset actually changed. Drag to the right end.
         let far = Vec2::new(hit[0] + hit[2] + 40.0, hit[1] + 1.0);
+        // The held frame re-arms the cooldown (`SetPitchSlider_Keyboard`
+        // sets 3 unconditionally, `UICharacterCreation.cs:691`), so the
+        // preview fires once the drag stops.
+        let held = voice_pitch_update(&l, &mut s, far, true);
+        assert!(!held.menu_tick, "the first aimed frame already played the usage tick");
+        assert_eq!(s.draft.voice_pitch_offset, 1.0);
         let mut preview_seen = false;
-        for _ in 0..6 {
-            let c = voice_pitch_update(&l, &mut s, far, true);
+        for _ in 0..4 {
+            let c = voice_pitch_update(&l, &mut s, far, false);
             preview_seen |= c.preview;
         }
-        assert_eq!(s.draft.voice_pitch_offset, 1.0);
-        assert!(preview_seen, "the debounce fires the preview after the change");
+        assert!(preview_seen, "the debounce fires after the drag ends (`:649-656`)");
         // Releasing clears the latch.
         voice_pitch_update(&l, &mut s, far, false);
         assert!(!s.pitch_grab);

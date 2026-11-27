@@ -732,7 +732,10 @@ mod tests {
         assert_eq!(g0, lerp_rgb(base, [0, 128, 0, 255], 0.18));
         let r0 = row_color(0);
         assert_eq!(r0[0], ((g0[0] as u32 * 111) / 255) as u8);
-        assert_eq!(r0[3], ((204u32 * 111) / 255) as u8);
+        // `Color.Lerp` lerps alpha too (`UIManageControls.cs:340`): 204 →
+        // 213, so the row alpha is 213*111/255 = 92.
+        assert_eq!(r0[3], ((g0[3] as u32 * 111) / 255) as u8);
+        assert_eq!(r0[3], 92);
         // An unknown index keeps the base (the switch has no default arm).
         assert_eq!(group_panel_color(9), base);
     }

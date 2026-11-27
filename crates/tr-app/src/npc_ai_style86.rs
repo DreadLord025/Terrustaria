@@ -196,6 +196,24 @@ fn normalize_xna(x: f32, y: f32) -> (f32, f32) {
     (x * num, y * num)
 }
 
+/// `Main.player[this.target].Center` with the target-slot guard. The
+/// C# states read the slot directly (`NPC.cs:37374`, `:37388`,
+/// `:37392`, `:37439`) after a `TargetClosest`; vanilla's
+/// `Main.player` always holds slot 0 and `target` defaults to 0, so
+/// the read is safe even with no live player. The port's slice may be
+/// shorter/empty, so an out-of-range sentinel (`< 0`, the `-1` fixture
+/// default, or the `255` "no target" sentinel) returns `None` and the
+/// caller skips the target reads (the no-target branch) instead of
+/// indexing out of bounds.
+fn player_center(npc: &Npc, players: &[TargetCandidate]) -> Option<(f32, f32)> {
+    let t = npc.target;
+    if t < 0 || t as usize >= players.len() {
+        return None;
+    }
+    let p = &players[t as usize];
+    Some((p.x + (p.width / 2) as f32, p.y + (p.height / 2) as f32))
+}
+
 /// One fixed step of the aiStyle-86 arm (`NPC.cs:37221-37470`), in
 /// C# order. `npcs` is the slot-aligned pool, `me` this NPC's slot
 /// (`whoAmI`), `types` the slot-aligned vanilla type table (the
@@ -379,14 +397,11 @@ pub fn style86_step(
             npcs[me].y -= npcs[me].net_offset.y;
         }
     }
-    // `:37343-37457` — the four-state hover.
-    let (pcx, pcy) = {
-        let p = &env.players[npcs[me].target as usize];
-        (
-            p.x + (p.width / 2) as f32,
-            p.y + (p.height / 2) as f32,
-        )
-    };
+    // `:37343-37457` — the four-state hover. The C# reads
+    // `Main.player[this.target]` only inside the arms that run after a
+    // `TargetClosest` (`:37374`, `:37388`, `:37392`, `:37439`); the
+    // shared `player_center` guard skips those reads when the port's
+    // target is the invalid sentinel (no live player modelled).
     let (cx, cy) = npcs[me].center();
     if npcs[me].ai[0] == 0.0 {
         // `:37343-37348`.
@@ -396,33 +411,35 @@ pub fn style86_step(
     } else if npcs[me].ai[0] == 1.0 {
         // `:37349-37401` — the strafe.
         target_closest(&mut npcs[me], env.world, env.players, true, 86, env.ticker);
-        let (num1210, num1211, num1212, num1213, mut num1214) = if ty == 521 {
-            (0.7f32, 14.0f32, 6.0f32, 500.0f32, 3.0f32)
-        } else {
-            (0.3, 7.0, 4.0, 660.0, 4.0)
-        };
-        npcs[me].vx += npcs[me].ai[1] * num1210;
-        if npcs[me].vx > num1211 {
-            npcs[me].vx = num1211;
-        }
-        if npcs[me].vx < 0.0 - num1211 {
-            npcs[me].vx = 0.0 - num1211;
-        }
-        let mut num1215 = pcy - cy;
-        if num1215.abs() > num1212 {
-            num1214 = 15.0;
-        }
-        if num1215 > num1212 {
-            num1215 = num1212;
-        } else if num1215 < 0.0 - num1212 {
-            num1215 = 0.0 - num1212;
-        }
-        npcs[me].vy = (npcs[me].vy * (num1214 - 1.0) + num1215) / num1214;
-        if (npcs[me].ai[1] > 0.0 && pcx - cx < 0.0 - num1213)
-            || (npcs[me].ai[1] < 0.0 && pcx - cx > num1213)
-        {
-            npcs[me].ai[0] = 2.0;
-            npcs[me].ai[1] = if cy + 20.0 > pcy { -1.0 } else { 1.0 };
+        if let Some((pcx, pcy)) = player_center(&npcs[me], env.players) {
+            let (num1210, num1211, num1212, num1213, mut num1214) = if ty == 521 {
+                (0.7f32, 14.0f32, 6.0f32, 500.0f32, 3.0f32)
+            } else {
+                (0.3, 7.0, 4.0, 660.0, 4.0)
+            };
+            npcs[me].vx += npcs[me].ai[1] * num1210;
+            if npcs[me].vx > num1211 {
+                npcs[me].vx = num1211;
+            }
+            if npcs[me].vx < 0.0 - num1211 {
+                npcs[me].vx = 0.0 - num1211;
+            }
+            let mut num1215 = pcy - cy;
+            if num1215.abs() > num1212 {
+                num1214 = 15.0;
+            }
+            if num1215 > num1212 {
+                num1215 = num1212;
+            } else if num1215 < 0.0 - num1212 {
+                num1215 = 0.0 - num1212;
+            }
+            npcs[me].vy = (npcs[me].vy * (num1214 - 1.0) + num1215) / num1214;
+            if (npcs[me].ai[1] > 0.0 && pcx - cx < 0.0 - num1213)
+                || (npcs[me].ai[1] < 0.0 && pcx - cx > num1213)
+            {
+                npcs[me].ai[0] = 2.0;
+                npcs[me].ai[1] = if cy + 20.0 > pcy { -1.0 } else { 1.0 };
+            }
         }
     } else if npcs[me].ai[0] == 2.0 {
         // `:37402-37424` — the dive.
@@ -442,26 +459,33 @@ pub fn style86_step(
             npcs[me].ai[1] = npcs[me].facing as f32;
         }
     } else if npcs[me].ai[0] == 3.0 {
-        // `:37425-37457` — the climb-back.
-        let (num1219, num1220, num1221, num1222) = if ty == 521 {
-            (0.6f32, 0.3f32, 7.0f32, 0.9f32)
-        } else {
-            (0.4, 0.2, 5.0, 0.95)
-        };
-        npcs[me].vx += npcs[me].ai[1] * num1219;
-        if cy > pcy {
-            npcs[me].vy -= num1220;
-        } else {
-            npcs[me].vy += num1220;
-        }
-        if sqrt_f32(npcs[me].vx, npcs[me].vy) > num1221 {
-            npcs[me].vx *= num1222;
-            npcs[me].vy *= num1222;
-        }
-        if npcs[me].vy > -1.0 && npcs[me].vy < 1.0 {
+        // `:37425-37457` — the climb-back. The C# reads the player here
+        // without an entry retarget; when the sentinel is still invalid
+        // (the port has no modelled slot), pick one first.
+        if player_center(&npcs[me], env.players).is_none() {
             target_closest(&mut npcs[me], env.world, env.players, true, 86, env.ticker);
-            npcs[me].ai[0] = 0.0;
-            npcs[me].ai[1] = npcs[me].facing as f32;
+        }
+        if let Some((pcx, pcy)) = player_center(&npcs[me], env.players) {
+            let (num1219, num1220, num1221, num1222) = if ty == 521 {
+                (0.6f32, 0.3f32, 7.0f32, 0.9f32)
+            } else {
+                (0.4, 0.2, 5.0, 0.95)
+            };
+            npcs[me].vx += npcs[me].ai[1] * num1219;
+            if cy > pcy {
+                npcs[me].vy -= num1220;
+            } else {
+                npcs[me].vy += num1220;
+            }
+            if sqrt_f32(npcs[me].vx, npcs[me].vy) > num1221 {
+                npcs[me].vx *= num1222;
+                npcs[me].vy *= num1222;
+            }
+            if npcs[me].vy > -1.0 && npcs[me].vy < 1.0 {
+                target_closest(&mut npcs[me], env.world, env.players, true, 86, env.ticker);
+                npcs[me].ai[0] = 0.0;
+                npcs[me].ai[1] = npcs[me].facing as f32;
+            }
         }
     }
     // `:37458-37469` — the 521 every-tick tail dust.

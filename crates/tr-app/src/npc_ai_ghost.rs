@@ -139,7 +139,9 @@ pub fn ghost_ai(npc: &mut Npc, world: &World, player: &Player, rng: &mut Unified
     let num292 = ((npc.x + w * 0.5) / 16.0) as i32 + npc.facing * 2;
     let num293 = ((npc.y + h) / 16.0) as i32;
     let mut fall = true;
-    let mut near_floor = false;
+    // `:25039-25071` — flag35 is computed (kept 1:1) but the Ghost's
+    // generic rise arm never reads it.
+    let mut _near_floor = false;
     let num294 = 3;
     if npc.y + h > player.y {
         for num317 in num293..num293 + num294 {
@@ -151,7 +153,7 @@ pub fn ghost_ai(npc: &mut Npc, world: &World, player: &Player, rng: &mut Unified
             });
             if blocked {
                 if num317 <= num293 + 1 {
-                    near_floor = true;
+                    _near_floor = true;
                 }
                 fall = false;
                 break;
@@ -162,21 +164,22 @@ pub fn ghost_ai(npc: &mut Npc, world: &World, player: &Player, rng: &mut Unified
     // flee −0.05 lift (`:25060-25062`).
     if fall {
         npc.vy += 0.1;
-        if flee {
+        // `:25058-25071` — the 316 flee arm caps at 6; the plain arm at 3.
+        // (The two arms are exclusive in the C#; merging them into one
+        // ladder would cap the fleeing body at 3.)
+        if npc.kind == NpcKind::Ghost && flee {
             npc.vy -= 0.05;
-        }
-        if npc.vy > 6.0 {
-            npc.vy = 6.0;
+            if npc.vy > 6.0 {
+                npc.vy = 6.0;
+            }
         } else if npc.vy > 3.0 {
             npc.vy = 3.0;
         }
     } else {
-        // `:25094-25101` — the rise brake: −0.1 while rising against the
-        // vertical facing OR near the floor, the −4 floor.
+        // `:25094-25101` — the generic rise brake: −0.1 while rising
+        // against the vertical facing, the −4 floor. (flag35 is the
+        // 75/169 arms only; the Ghost has no floor term here.)
         if npc.direction_y < 0 && npc.vy > 0.0 {
-            npc.vy -= 0.1;
-        }
-        if near_floor {
             npc.vy -= 0.1;
         }
         if npc.vy < -4.0 {
@@ -207,8 +210,9 @@ pub fn ghost_ai(npc: &mut Npc, world: &World, player: &Player, rng: &mut Unified
             npc.vx = max_x;
         }
     }
-    // The Y approach (num320 = 2: 0.04 accel, 0.05 double-add, 0.03 brake).
-    let max_y = 2.0;
+    // The Y approach (`:25222` — num320 = 1.5 for everything but type 490:
+    // 0.04 accel, 0.05 double-add, 0.03 brake).
+    let max_y = 1.5;
     if npc.direction_y == -1 && npc.vy > -max_y {
         npc.vy -= 0.04;
         if npc.vy > max_y {
@@ -263,10 +267,23 @@ mod tests {
         n.vx = 0.0;
         let mut rng = UnifiedRandom::new(3);
         let mut witness = UnifiedRandom::new(3);
-        let _ = witness.next_range(-1, 2);
+        let drift = witness.next_range(-1, 2) as f32 * 1.5;
         ghost_ai(&mut n, &w, &player, &mut rng);
         assert_eq!(rng.peek(), witness.peek(), "the one flee draw");
-        assert!(n.vx == -1.5 || n.vx == 0.0 || n.vx == 1.5, "the ±1.5 drift");
+        // `:24714-24721` drifts ±1.5; the same tick's X approach
+        // (`:25135-25222`, facing 1 toward the far player) then adds
+        // +0.1 and, when still negative, the 0.05 brake. The drift does
+        // NOT survive verbatim as the final velocity.
+        assert_eq!(n.facing, 1, "TargetClosest faces the player to the right");
+        let want = if drift > 0.0 {
+            drift + 0.1
+        } else if drift < 0.0 {
+            // The exact f32 sequence of the two C# writes.
+            (drift + 0.1) - 0.05
+        } else {
+            0.1
+        };
+        assert_eq!(n.vx, want, "the ±1.5 drift then the X approach");
     }
 
     /// The Ghost's FindFrame (`NPC.cs:74834-74885`): the vx-sign flip +

@@ -1114,7 +1114,8 @@ pub fn draw(
 /// left — the base walk is play 4, favorite 28 (`:94-112`).
 #[allow(dead_code)] // parked: the screen skips both slots until the data lands
 pub fn conditional_button_lefts(has_cloud: bool, has_seed: bool) -> (Option<f32>, Option<f32>, f32, f32) {
-    let mut num = 4.0 + 24.0; // after play + favorite (`:103`, `:112`)
+    // `:94-112`: play at 4, favorite at 28; the conditional slots start at 52.
+    let mut num = 4.0 + 24.0 + 24.0;
     let cloud = has_cloud.then(|| {
         let left = num;
         num += 24.0; // `:123`

@@ -198,17 +198,19 @@ mod tests {
 
     #[test]
     fn go_back_to_the_current_state_still_pops_but_fires_nothing() {
-        // A, B, A: GoBack targets B... but A, A: target A == current, so
-        // SetState early-returns (`:278`) AFTER the RemoveRange — the history
-        // shrinks with no events. The C# order makes this observable.
+        // A, B, A: GoBack targets history[len-2] = B (NOT A). `RemoveRange`
+        // drops the last two, leaving [A], then SetState(B) re-appends it
+        // (`UserInterface.cs:305-313`, `:282-284`) - B activates, so the
+        // effects are not empty and the history ends [A, B].
         let mut stack = StateStack::default();
         stack.set_state(Some(CHAR_SELECT));
         stack.set_state(Some(CHAR_CREATE));
         stack.set_state(Some(CHAR_SELECT));
         let effects = stack.go_back();
-        assert!(effects.is_empty());
-        assert_eq!(stack.current(), Some(CHAR_SELECT));
-        assert_eq!(stack.history(), &[CHAR_SELECT]);
+        assert!(effects.contains(&StateChange::Deactivate(CHAR_SELECT)));
+        assert!(effects.contains(&StateChange::Activate(CHAR_CREATE)));
+        assert_eq!(stack.current(), Some(CHAR_CREATE));
+        assert_eq!(stack.history(), &[CHAR_SELECT, CHAR_CREATE]);
     }
 
     #[test]

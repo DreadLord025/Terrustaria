@@ -2018,7 +2018,6 @@ mod tests {
         let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
         assert_eq!(click_at(&l, centre(l.random_name_icon)), Click::RandomName);
         assert_eq!(click_at(&l, centre(l.seed_button)), Click::AdvancedSeed);
-        assert_eq!(click_at(&l, centre(l.seed_button)), Click::SeedIcon);
         assert_eq!(click_at(&l, centre(l.name_button)), Click::Name);
         assert_eq!(click_at(&l, centre(l.seed_plate)), Click::Seed);
         assert_eq!(click_at(&l, centre(l.size_buttons[0])), Click::Size(0));

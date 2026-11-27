@@ -1015,7 +1015,9 @@ mod tests {
         let mut w = leaf_world();
         place(&mut w, 10, 10, 192);
         let mut hit = None;
-        for seed in 0..64u64 {
+        // The LCG's first draw from a small seed is itself small, so the
+        // high half only appears once the seed passes ~5.5k; scan wider.
+        for seed in 0..10_000u64 {
             let mut probe = FastRandom::new(seed);
             if probe.next_range(0, 2) == 1 {
                 hit = Some(seed);
@@ -1041,7 +1043,9 @@ mod tests {
         let mut main_rand = UnifiedRandom::new(7);
         // Force the sideways roll to miss so only the below arm is tested.
         let mut miss = None;
-        for seed in 0..64u64 {
+        // Same wide scan: the small-seed first draw cannot reach the high
+        // half of `Next(2)`.
+        for seed in 0..10_000u64 {
             let mut probe = FastRandom::new(seed);
             if probe.next_range(0, 2) == 1 {
                 miss = Some(seed);

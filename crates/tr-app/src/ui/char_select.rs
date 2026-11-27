@@ -1336,6 +1336,8 @@ mod tests {
 
     #[test]
     fn button_labels_match_the_hover_table() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // `:140-194`.
         assert_eq!(button_label(BUTTON_PLAY, false), "Play");
         assert_eq!(button_label(BUTTON_FAVORITE, false), "Favorite");

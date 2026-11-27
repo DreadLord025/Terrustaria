@@ -2331,6 +2331,24 @@ impl NpcKind {
                 | NpcKind::Princess
                 | NpcKind::DyeTrader
                 | NpcKind::TownCat
+                // The town pets + released town slimes carry vanilla
+                // `townNPC = true` too (they are residents for the housing /
+                // resident-count witnesses): the pets 637/638
+                // (`NPC.cs:17207-17224`, flag at `:17209`), the TownBunny 656
+                // (`:17295-17308`, flag at `:17297`), the TownSlimeBlue 670
+                // (`:17481-17494`, flag at `:17483`) and the town slimes
+                // 678-684 (`:17594-17607`, flag at `:17596`). The Bound*
+                // slime items (685/687) do NOT set it.
+                | NpcKind::TownDog
+                | NpcKind::TownBunny
+                | NpcKind::TownSlimeBlue
+                | NpcKind::TownSlimeGreen
+                | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
                 | NpcKind::PartyGirl
                 // W4-d120 — the four town kinds' `townNPC = true` rows
                 // (`NPC.cs:10793`/`:11005`/`:11254`/`:11684`): the
@@ -4860,7 +4878,6 @@ impl NpcKind {
             NpcKind::CursedSkull => "NPC_Killed_2",
             NpcKind::Demon => "NPC_Killed_24",
             NpcKind::GiantBat | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox => "NPC_Killed_4",
-            NpcKind::Slimer => "NPC_Killed_1",
             NpcKind::IlluminantBat | NpcKind::VampireBat => "NPC_Killed_6",
             // W4-g8 lane 1 batch 4 — the `DeathSound` rows: 221/48
             // NPCDeath1 (`NPC.cs:11850`/`:9370`), 156 NPCDeath24 (`:10985`).
@@ -5454,6 +5471,9 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             | NpcKind::CultistDragonTail
+            | NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody4
             | NpcKind::AncientCultistSquidhead => true,
             // W4-d39: the Butterfly's `noGravity` row (`NPC.cs:13542`).
             NpcKind::Butterfly => true,
@@ -5579,6 +5599,20 @@ impl NpcKind {
                 | NpcKind::LeechBody
                 | NpcKind::LeechHead
                 | NpcKind::LeechTail
+                // The plants write noTileCollide=true (`NPC.cs:9295-9296`
+                // ManEater 43, `:9476-9477` Snatcher 56) alongside noGravity.
+                | NpcKind::ManEater
+                | NpcKind::Snatcher
+                // The Vile Spit 112 spitter (`NPC.cs:10337`).
+                | NpcKind::VileSpit
+                // The Cultist Dragon chain writes noTileCollide=true
+                // (`NPC.cs:14416` head, `:14454` bodies/tail) + noGravity.
+                | NpcKind::CultistDragonHead
+                | NpcKind::CultistDragonBody1
+                | NpcKind::CultistDragonBody2
+                | NpcKind::CultistDragonBody3
+                | NpcKind::CultistDragonBody4
+                | NpcKind::CultistDragonTail
                 | NpcKind::MartianDrone
                 | NpcKind::MartianSaucer
                 | NpcKind::MartianSaucerCannon
@@ -8151,6 +8185,10 @@ impl NpcKind {
             NpcKind::SleepingAngler => 376,
             NpcKind::Wizard => 108,
             NpcKind::BoundWizard => 106,
+            // The BoundGoblin's vanilla `NPCID` (=105): `NPC.cs:10243-10256`
+            // (friendly, 18x34, aiStyle 0, 250 HP). The port's protocol id
+            // (63) is port-local, not the C# type.
+            NpcKind::BoundGoblin => 105,
             NpcKind::Mechanic => 124,
             NpcKind::BoundMechanic => 123,
             NpcKind::Stylist => 353,
@@ -8171,6 +8209,8 @@ impl NpcKind {
             NpcKind::Truffle => 160,
             NpcKind::Steampunker => 178,
             NpcKind::Cyborg => 209,
+            // `NPCID.HallowBoss` = 636 (the Empress; `NPC.cs:17138-17205`).
+            NpcKind::EmpressOfLight => 636,
             NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
             // The Destroyer head keeps its vanilla type; the body/tail/Probe
             // have NO hand row — like every folded segment family (Devourer/
@@ -8270,6 +8310,12 @@ impl NpcKind {
             NpcKind::GoldBird => 442,
             NpcKind::GoldBunny => 443,
             NpcKind::GoldButterfly => 444,
+            // The Prismatic Lacewing's vanilla `NPCID` (=661) — the critter's
+            // FindFrame case (`NPC.cs:72739-72772`) and the catchable
+            // whitelist (`Main.cs:9411`, `NPC.cs:17364`) both key on it.
+            // Without the explicit row the bestiary fallback has no entry
+            // (no lacewing credit) and cs_id read `u16::MAX`.
+            NpcKind::PrismaticLacewing => 661,
             NpcKind::GoldFrog => 445,
             NpcKind::GoldGrasshopper => 446,
             NpcKind::GoldMouse => 447,
@@ -8725,6 +8771,35 @@ impl NpcKind {
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
             NpcKind::Moth => 205,
+            // W4-d40 (NPCID 421-490) + W4-d38 (281-292): the Hide=true
+            // variants' TRUE `NPC.type` rows. The bestiary CREDIT folds onto
+            // the twin (`entry_for_npc`), but the AI/type gates read
+            // `cs_id` — so the explicit row stays the C# type (the Duck2 /
+            // LihzahrdCrawler precedent). The `s1_f_3` gate exempts the
+            // folds (entry.kind != kind), so these do not re-open it.
+            NpcKind::PumpkingBlade => 328,
+            NpcKind::VileSpit => 112,
+            NpcKind::ArmedZombie => 430,
+            NpcKind::ArmedZombieEskimo => 431,
+            NpcKind::ArmedZombiePincussion => 432,
+            NpcKind::ArmedZombieSlimed => 433,
+            NpcKind::ArmedZombieSwamp => 434,
+            NpcKind::ArmedZombieTwiggy => 435,
+            NpcKind::ArmedZombieCenx => 436,
+            NpcKind::CultistTablet => 437,
+            NpcKind::CultistDevote => 438,
+            NpcKind::CultistBossClone => 440,
+            NpcKind::BoneThrowingSkeleton => 449,
+            NpcKind::SkeletonMerchant => 453,
+            NpcKind::CultistDragonHead => 454,
+            NpcKind::CultistDragonBody1 => 455,
+            NpcKind::CultistDragonBody2 => 456,
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::Mothron => 477,
+            NpcKind::MothronEgg => 478,
+            NpcKind::MothronSpawn => 479,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative

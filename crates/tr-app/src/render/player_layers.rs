@@ -1018,6 +1018,10 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         match s.head_armor {
             101 => a.armor_head_spectre_hood,
             156 => a.armor_head_spectre_mask,
+            // W4-f41 - the Party Hat vanity (`ArmorHead[195]`,
+            // `AssetInitializer.cs:164-166`; hatHair -> the ALT hair under
+            // it, `Player.cs:16880/16902`, `PlayerDrawLayers.cs:2104-2281`).
+            195 => a.armor_head_party_hat,
             _ => a.armor_head.get(s.head_armor as usize).copied().flatten(),
         },
         |t| flip_uv(helmet_uv(t, s.body_frame), flip),
@@ -2567,6 +2571,7 @@ mod tests {
             armor_legs: [None; 5],
             armor_head_spectre_hood: None,
             armor_head_spectre_mask: None,
+            armor_head_party_hat: Some(sheet()),
             acc_neck: [None; 15],
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
@@ -3681,6 +3686,7 @@ mod player_draw_tests {
             armor_legs: [None; 5],
             armor_head_spectre_hood: None,
             armor_head_spectre_mask: None,
+            armor_head_party_hat: dummy(40.0, 1120.0),
             acc_neck: [None; 15],
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
@@ -3997,6 +4003,10 @@ mod player_draw_tests {
             shield: 1,
             shield_raised: true,
             shield_parry_time_left: 10,
+            // `hold_style != 0` keeps the item in the hand at rest
+            // (`PlayerDrawLayers.cs:3084-3086`); without it the held-item
+            // layer is empty and the slot order has nothing to compare.
+            hold_style: 1,
             item_uv: Some([0.0, 0.0, 1.0, 1.0]),
             item_size: [16.0, 16.0],
             ..state(0, 1.0)

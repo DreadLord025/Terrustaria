@@ -766,7 +766,11 @@ mod tests {
     fn batch_l_s2_pet_animal_snaps_to_the_proj_bottom() {
         let w = floor_world();
         let mut p = resting_player(&w);
-        // A digtoise-like proj bottom at (400, 470), offset -48 → 352.
+        // A digtoise-like proj bottom on the floor at (400, 480), offset -48
+        // → 352. (`Player.PetAnimal`'s gate is
+        // `SolidTileAllowBottomSlope((int)vector.X / 16, (int)vector.Y / 16)`,
+        // `Player.cs:33368` — the tile AT the snapped bottom must be solid,
+        // so the target bottom sits on the floor top 30*16, not 470.)
         let info = PettingInfo::from_projectile(0, 1098, (-48.0, 0.0), true);
         assert_eq!(
             p.pet_animal(&w, &[], info, None),
@@ -774,11 +778,11 @@ mod tests {
             "no live proj target refuses"
         );
         assert_eq!(
-            p.pet_animal(&w, &[], info, Some((400.0, 470.0))),
+            p.pet_animal(&w, &[], info, Some((400.0, 480.0))),
             PetAnimalOutcome::Started
         );
         assert_eq!(p.x + p.width * 0.5, 352.0);
-        assert_eq!(p.y + p.height, 470.0);
+        assert_eq!(p.y + p.height, 480.0);
         assert_eq!(p.facing, 1, "sign(-offset.X) toward the proj");
         assert!(p.petting.is_petting);
         assert_eq!(p.petting.proj, 0);
@@ -846,21 +850,21 @@ mod tests {
         let mut p = resting_player(&w);
         let info = PettingInfo::from_projectile(0, 1098, (-48.0, 0.0), true);
         assert_eq!(
-            p.pet_animal(&w, &[], info, Some((400.0, 470.0))),
+            p.pet_animal(&w, &[], info, Some((400.0, 480.0))),
             PetAnimalOutcome::Started
         );
         let _ = p.take_pet_achievement();
         // The live proj target keeps it — talk_npc None is NOT a stop
         // (the talk gate is NPC-only).
-        p.update_petting_animal(&[], None, Some((400.0, 470.0)));
+        p.update_petting_animal(&[], None, Some((400.0, 480.0)));
         assert!(p.petting.is_petting, "the proj lane has no talk gate");
         // The drift gate applies to the proj target too.
         p.x += 3.0;
-        p.update_petting_animal(&[], None, Some((400.0, 470.0)));
+        p.update_petting_animal(&[], None, Some((400.0, 480.0)));
         assert!(!p.petting.is_petting, "the 2 px drift stops the proj lane");
         // Re-latch; the gone target stops it.
         assert_eq!(
-            p.pet_animal(&w, &[], info, Some((403.0, 470.0))),
+            p.pet_animal(&w, &[], info, Some((403.0, 480.0))),
             PetAnimalOutcome::Started
         );
         p.update_petting_animal(&[], None, None);

@@ -1015,7 +1015,7 @@ mod w4_d70_screen_effect_tests {
             team: 1,
             has_paladin_shield: true,
             dead: false,
-            hp: 100,
+            hp: 400,
             max_hp: 400,
         };
         assert!(peer.can_defend(1), "matching team, full life");

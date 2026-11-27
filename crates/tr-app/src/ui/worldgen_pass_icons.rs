@@ -237,10 +237,11 @@ mod tests {
         assert_eq!(get_step_icon("evil"), IconSpec::Bestiary(7), "Corruption");
         assert_eq!(get_step_icon("liquids"), IconSpec::Bestiary(28), "Lakes");
         assert_eq!(
-            get_step_icon("granite and marble"),
+            get_step_icon("marble"),
             IconSpec::Bestiary(29),
             "the Marble slot (:330) — the step's vanilla key"
         );
+        assert_eq!(get_step_icon("granite"), IconSpec::Bestiary(30));
         assert_eq!(get_step_icon("slopes"), IconSpec::Bestiary(1), "Smooth World");
         assert_eq!(get_step_icon("trees"), IconSpec::Bestiary(0), "Planting Trees");
         assert_eq!(
@@ -257,34 +258,21 @@ mod tests {
         assert_eq!(get_step_icon("world tail"), IconSpec::Bestiary(64));
         assert_eq!(get_step_icon("seed finish"), IconSpec::Bestiary(64));
         assert_eq!(get_step_icon("not a step"), IconSpec::Bestiary(64));
-        // Totality: every named vanilla pass of the executed pipeline
-        // resolves to a real PASS_ICONS row — no named step falls back.
-        for step in [
-            "terrain height map", "terrain fill", "dunes", "ocean sand",
-            "micro grass", "jungle", "mud caves to grass", "full desert",
-            "mushroom patches", "cave fields", "granite and marble",
-            "stone-in-dirt blobs", "dirt-in-stone blobs", "surface caves",
-            "wavy caves", "dirt to mud", "ash blobs", "ores and gems",
-            "evil", "liquids", "dungeon", "beaches", "gravitating sand",
-            "ocean caves", "fragile ice", "underground jungle trees",
-            "exposed gems", "jungle shrines", "chests", "spider caves",
-            "gem caves", "moss", "altars", "wet jungle", "pyramids",
-            "pots", "beehives", "lihzahrd temple", "temple part 2",
-            "cave houses", "thin ice", "campsites", "spike pits",
-            "sword shrines", "mining explosives", "mahogany trees",
-            "webs and honey", "mushroom and jungle plants", "jungle plants",
-            "vines", "muds walls in jungle", "floating islands",
-            "remove water", "shell piles", "slopes", "living trees",
-            "trees", "surface flora", "cacti", "lihzahrd altar",
-            "water plants",
-        ] {
-            let pass = tr_core::worldgen::pipeline::pass_name_id(step)
-                .unwrap_or_else(|| panic!("'{step}' is a named step"));
+        // Totality: every executed step with a vanilla pass resolves to a
+        // real PASS_ICONS row - no named step falls back. Driven by the
+        // pipeline itself so a split/rename cannot leave a stale literal
+        // (the `granite and marble` split into `marble`/`granite` did).
+        for s in tr_core::worldgen::pipeline::executed_steps(Default::default()) {
+            if s.vanilla.is_empty() {
+                continue; // a port-only step ("" vanilla) takes the fallback
+            }
+            let pass = s.vanilla;
             assert!(
                 PASS_ICONS.iter().any(|(k, _)| *k == pass),
-                "'{step}' -> '{pass}' has no icon row"
+                "'{}' -> '{pass}' has no icon row",
+                s.name
             );
-            assert_eq!(get_step_icon(step), get_pass_icon(pass), "{step}");
+            assert_eq!(get_step_icon(s.name), get_pass_icon(pass), "{}", s.name);
         }
     }
 }

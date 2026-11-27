@@ -1525,7 +1525,11 @@ mod tests {
         assert_eq!(bar[2], 20.0);
         assert_eq!(bar[1], list[1]);
         assert_eq!(bar[3], list[3]);
-        assert_eq!(bar[0] + bar[2], inner_panel(&p)[0] + inner_panel(&p)[2]);
+        // The bar is appended to the UIPanel (`UIAchievementsMenu.cs:86`),
+        // so its HAlign=1 resolves against the panel's PADDED inner rect
+        // (`UIElement.cs:319`; padding 12), not the raw panel box.
+        let inner = uistate::inner(inner_panel(&p), PANEL_PADDING);
+        assert_eq!(bar[0] + bar[2], inner[0] + inner[2]);
         // The `Width -25` gutter is 25 px; the 20 px bar hugs its right edge,
         // leaving a 5 px gap between the list and the bar.
         assert_eq!(bar[0] - (list[0] + list[2]), 5.0);

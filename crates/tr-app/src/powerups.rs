@@ -748,12 +748,17 @@ mod tests {
     fn life_crystals_stop_at_four_hundred() {
         let mut app = rig(29, 20);
         for _ in 0..20 {
-            // A fresh press each use: release, idle, press.
+            // A fresh press each use: release, two idle frames (the
+            // `mine_released` latch lags one frame), press.
             app.mine_down = false;
+            tick(&mut app);
             tick(&mut app);
             app.attack_cd = 0.0;
             app.reuse_delay = 0.0;
             app.swing = 0.0;
+            // `ApplyItemTime` (`Player.cs:45310`) also re-arms `item_time`;
+            // the mid-swing gate reads it zero, so clear it for the next use.
+            app.item_time = 0.0;
             app.mine_down = true;
             tick(&mut app);
         }
@@ -880,9 +885,11 @@ mod tests {
         for _ in 0..25 {
             app.mine_down = false;
             tick(&mut app);
+            tick(&mut app); // the `mine_released` latch arms on the 2nd idle
             app.attack_cd = 0.0;
             app.reuse_delay = 0.0;
             app.swing = 0.0;
+            app.item_time = 0.0; // `ApplyItemTime` re-arm (`Player.cs:45310`)
             app.mine_down = true;
             tick(&mut app);
         }
@@ -1012,9 +1019,11 @@ mod tests {
         tick(&mut app);
         app.mine_down = false;
         tick(&mut app);
+        tick(&mut app); // the `mine_released` latch arms on the 2nd idle
         app.attack_cd = 0.0;
         app.reuse_delay = 0.0;
         app.swing = 0.0;
+        app.item_time = 0.0; // `ApplyItemTime` re-arm (`Player.cs:45310`)
         app.mine_down = true;
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 0, "both consumed");

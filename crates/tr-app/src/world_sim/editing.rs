@@ -608,20 +608,30 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
     // (`resolve_melee_strike`'s `ApplyNPCOnHitEffects` tail). The 155
     // Muramasa / 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode`
     // arms — their procs are the player-lane follow-ups, not this lane.
-    if held_kind == 5094 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_tentacle_spikes = true;
-        }
-    }
-    if held_kind == 795 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_blood_butcherer = true;
-        }
-    }
-    if held_kind == 121 {
-        if let Some(p) = app.player.as_mut() {
-            p.spawn_volcano_explosion = true;
-        }
+    // (The 5094/795/121 on-hit spawn latches do NOT arm here — the C#
+    // arms them on `ItemAnimationJustStarted`, AFTER the press tick's
+    // melee hit scan, so the swing's first strike never sees them
+    // (`Player.cs:43468-43479`; see `arm_melee_proc_latches`.)
+}
+
+/// `Player.ItemCheck_OwnerOnlyCode`'s on-hit spawn latches
+/// (`Player.cs:43464-43483`): `_spawnTentacleSpikes` (5094),
+/// `_spawnBloodButcherer` (795) and `_spawnVolcanoExplosion` (121) arm on
+/// the swing-start tick, AFTER the tick's `ItemCheck_MeleeHitNPCs` scan
+/// (`:43681`). The C# `ItemAnimationJustStarted` gate is `itemAnimation ==
+/// itemAnimationMax - 1`, i.e. the tick AFTER the press; the port arms at
+/// the close of the press tick instead — the same before-next-scan state
+/// (the first swing's strike already resolved without the latch, and the
+/// latch survives into the next swing until a landed proc consumes it).
+fn arm_melee_proc_latches(app: &mut App, held_kind: u16) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    match held_kind {
+        5094 => p.spawn_tentacle_spikes = true,
+        795 => p.spawn_blood_butcherer = true,
+        121 => p.spawn_volcano_explosion = true,
+        _ => {}
     }
 }
 
@@ -3728,11 +3738,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
         // fires at `ItemTimeIsZero` mid-swing, not on the press.
-        #[cfg(test)]
-        eprintln!(
-            "[shooter-dbg] mine_down={} held_weapon={} cd={} reuse={} ready={throw_ready}",
-            app.mine_down, held_weapon, app.attack_cd, app.reuse_delay
-        );
         if held_use_ammo > 0 && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
             // `ItemCheck_TryStartUse` → `ItemCheck_CheckCanUse_Inner` →
             // `HasAmmo` (`Player.cs:52021-52023`, `:52316-52319`,
@@ -4222,6 +4227,32 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // returned here for the non-ammo case, which made every melee weapon
         // unreachable.
     }
+    // The use half of `Player.ItemCheck_OwnerOnlyCode` — the bucket/sponge
+    // arm (`:43575`), the melee swing dispatch (`:43644`), the mount swap,
+    // the pick/axe/hammer mining pass (`:43593`), the tile/wall placement,
+    // the wiring/paint tools, the block swap, the extractinator and the pot
+    // arms. The union merge displaced this ladder into [`item_use_arms`] and
+    // dropped the call, so the whole live use path (melee hits, mining
+    // damage, ammo volleys, placement/interactions) went dead; restore the
+    // C# order: shoot half first, then this ladder.
+    item_use_arms(
+        app,
+        tx,
+        ty,
+        held,
+        held_fx,
+        held_use_ammo,
+        held_weapon,
+        world_pos,
+        prev_mine_released,
+        prev_mine_down,
+        cursor_blocked,
+        thrust_took,
+        prev_place_released,
+        prev_place_down,
+        screen,
+        player_in_reach,
+    );
 }
 /// S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse` →
 /// `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399` → `ItemCheck_Shoot`
@@ -6849,6 +6880,7 @@ fn melee_swing_tick(
     // start precedes the tile-first diversion below: the C# use-start
     // (`:42733`) runs ahead of `ItemCheck_UseMiningTools` (`:43593`).
     let reuse_ready = def.auto_reuse || (prev_mine_released && !prev_mine_down);
+    let mut melee_started = false;
     if app.mine_down
         && reuse_ready
         && !cursor_blocked
@@ -6857,6 +6889,7 @@ fn melee_swing_tick(
         && app.attack_cd <= 0.0
         && app.reuse_delay <= 0.0
     {
+        melee_started = true;
         start_use_timers(app, held);
         // `StartActualUse` (`Player.cs:51678-51679`): `attackCD = 0;
         // ResetMeleeHitCooldowns()` — the same override the stab seam keeps
@@ -6876,6 +6909,16 @@ fn melee_swing_tick(
         app.mine_target = None;
         app.mine_timer = 0.0;
     }
+    // The proc-latch state the scan below starts from (the 5094/795/121
+    // on-hit spawns, `Player.cs:43468-43479`): an ALREADY-armed latch that
+    // this tick's strike consumes must stay consumed (see the arm at the
+    // function tail).
+    let latch_pre_armed = app.player.as_ref().is_some_and(|p| match held.kind {
+        5094 => p.spawn_tentacle_spikes,
+        795 => p.spawn_blood_butcherer,
+        121 => p.spawn_volcano_explosion,
+        _ => false,
+    });
     // The tile-first order (the old cursor arm's gate, kept for the tools):
     // a tool whose cursor cell is a tile it can work mines instead
     // (`ItemCheck_UseMiningTools`, `Player.cs:43593` ahead of `:43648`) —
@@ -6990,6 +7033,16 @@ fn melee_swing_tick(
     // inactive cell), so consuming the tick would drop wall hammering
     // (S1-P-i33) — the mining arms below keep their own no-match gates.
     let is_tool = def.pick > 0 || def.axe > 0 || def.hammer > 0;
+    // The on-hit spawn latches arm CLOSING the swing-start tick, after this
+    // tick's scan (`Player.cs:43468-43479`'s `ItemAnimationJustStarted`
+    // is the next tick in C#; the observable is the same — the press
+    // tick's strike resolves without the latch, later swings see it). A
+    // latch that was ALREADY armed at the scan was consumed by a landed
+    // proc this tick and must stay consumed (the C# re-arm is the next
+    // `ItemAnimationJustStarted`, not this tick).
+    if melee_started && !latch_pre_armed {
+        arm_melee_proc_latches(app, held.kind);
+    }
     !held_weapon && !is_tool
 }
 
@@ -7033,11 +7086,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
 /// (`PlaceThing_Tiles_PlaceIt` / `PlaceThing_Walls`, `:40141`/`:39623`),
 /// the wiring/paint tools, the block swap, the extractinator and the pot
 /// arms — i.e. the whole "use" half that `update_editing`'s shoot half
-/// follows in the C#. The body is restored verbatim (every constant, dust
-/// draw and RNG slot intact); the reconstructed tree has not re-attached
-/// the call site yet, so the ladder is defined-but-unwired — no behaviour
-/// change versus the union state.
-#[allow(dead_code)]
+/// follows in the C#. The union merge dropped the call site (leaving the
+/// ladder defined-but-unwired); it is restored at the tail of
+/// [`update_editing`], after the shoot half, per the C# order.
 #[allow(clippy::too_many_arguments)]
 fn item_use_arms(
     app: &mut App,
@@ -7046,7 +7097,6 @@ fn item_use_arms(
     held: ItemSlot,
     held_fx: Option<crate::prefix::PrefixedStats>,
     held_use_ammo: i32,
-    def: &'static registry::ItemDef,
     held_weapon: bool,
     world_pos: Vec2,
     prev_mine_released: bool,
@@ -8708,6 +8758,39 @@ pub(crate) fn play_kill_fail_cue(app: &mut App, tx: i32, ty: i32) {
             app.audio.play_at(name, px, py, volume);
         }
     }
+    // `WorldGen.KillTile`'s fail tail (`WorldGen.cs:63709-63714`): a
+    // `TileID.Sets.IsShakeable` tile composes `WorldGen.ShakeTree` on every
+    // fail tick, BEFORE the grass/moss conversions and `SquareTileFrame`.
+    // The compose order is the `ShakeTree` body (`:63131-63418`): ONE
+    // `Main.rand` draw seeds the `genRand` `FastRandom` stand-in, then the
+    // loot ladder (`shake_loot::shake_tree_loot`, the `UpdatePlayers` stream)
+    // and the leaf FX (`tree_grow_fx`, the same stream). The C# dust loop
+    // (`:63699-63703`) precedes this; the port's fail dust is the recorded
+    // visual skip, so only the RNG-bearing compose lands here.
+    let Some(site) = tr_core::tree::shake_tree_resolve(&mut app.world, tx, ty) else {
+        return;
+    };
+    let spawn_ctx = app.spawn_ctx();
+    let update_stream = crate::app::RngKey::UpdatePlayers;
+    let mut gen_rng =
+        tr_core::tile_light::FastRandom::new(app.rngs.stream(update_stream).next() as u64);
+    let mut rng = app.rngs.stream(update_stream).clone();
+    shake_loot::shake_tree_loot(app, &site, tx, ty, &mut gen_rng, &mut rng);
+    *app.rngs.stream(update_stream) = rng;
+    if let Some((bx, by, style)) = tr_core::tree::shake_tree_fx_at(&app.world, &site) {
+        crate::world_gore_a::tree_grow_fx(
+            bx,
+            by,
+            1,
+            style,
+            true,
+            &mut app.gore,
+            &mut app.dust,
+            &spawn_ctx,
+            app.rngs.stream(update_stream),
+            &app.world,
+        );
+    }
 }
 
 /// W4-g17 wiring — `CheckPot`'s gore switch drain (`WorldGen.cs:
@@ -9669,9 +9752,13 @@ pub(crate) fn break_drop_events(
             .map(|item| item as u16)
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
+            // ONE event per object record: the C# `Item.NewItem` rect
+            // (`Item.cs:49651`) resolves through the rect centre (the g78
+            // FIX-ONCE). The union merge had a duplicated raw-position push
+            // here (the second `events.push`), which spawned every object
+            // drop twice.
             let (px, py) = drop.spawn_center_px();
             events.push((id, 1, px, py));
-            events.push((id, 1, drop.x as f32, drop.y as f32));
             // W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:
             // :54248-54249` / `:54275-54276`): the gun (Musket 96 / The
             // Undertaker 800) spawns WITH a Musket Ball 97 stack of
@@ -9680,7 +9767,10 @@ pub(crate) fn break_drop_events(
             // `:4445`); the stack spawns at the same rect, after the gun.
             if matches!(id, 96 | 800) && drop.tile_kind == 31 {
                 let stack = main_rng.next_range(100, 101) as u32;
-                events.push((97, stack, drop.x as f32, drop.y as f32));
+                // The ball rides the SAME `Item.NewItem` rect (`:54249`),
+                // so it resolves through the same centre as the gun.
+                let (px, py) = drop.spawn_center_px();
+                events.push((97, stack, px, py));
             }
         }
     }
@@ -10084,6 +10174,19 @@ fn cell_drops(
             6 => vec![(999, 1)],
             _ => Vec::new(),
         },
+        // The dye plants 227 drop by `frameX / 34`
+        // (`KillTile_GetItemDrops`, `WorldGen.cs:65048-65055`):
+        // `num = frameX / 34; dropItem = 1107 + num`, and styles 8-11 are the
+        // Strange Plants `3385 + num - 8`. The frame_y-only `registry::
+        // tile_drop` fallback dropped 1107 for EVERY style (the W4-g42 tail).
+        227 => {
+            let num = i32::from(hit.frame_x) / 34;
+            if (8..=11).contains(&num) {
+                vec![((3385 + num - 8) as u16, 1)]
+            } else {
+                vec![((1107 + num) as u16, 1)]
+            }
+        }
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -12115,19 +12218,6 @@ fn resolve_melee_strike(
                 } else {
                     (weapon_damage as f32 * mult + 5e-6) as i32
                 };
-                // `Player.cs:44303-44306` — `if (this.GetBannerBuffEffect(nPC,
-                // out var effect)) dmg = (int)(dmg * effect.DamageDealt.Sample(
-                // Main.Difficulty))`: the placed-banner strength multiplies the
-                // class-scaled damage BEFORE the crit roll and DamageVar (the
-                // C# order — `:44298` crit, `:44342` variance). RNG-free.
-                let raw = match app
-                    .player
-                    .as_ref()
-                    .and_then(|p| p.banner_buff_for_npc(app.npcs[idx].kind.cs_id() as i32))
-                {
-                    Some((dealt, _)) => (raw * dealt) as i32 as f32,
-                    None => raw,
-                };
                 // `int dmg = this.ApplyRapidAttackBonus(originalDamage,
                 // sItem.type, !nPC.immortal)` (`Player.cs:44291`): the
                 // rapid-attack weapons ({2608 Falcon Blade, 3349 Dye
@@ -12147,6 +12237,21 @@ fn resolve_melee_strike(
                 // AFTER the rapid-attack arm, the C#'s own order.
                 if app.npcs[idx].kind.is_town_npc_like() && held.kind == 3351 {
                     dmg = 1;
+                }
+                // `Player.cs:44303-44306` — `if (this.GetBannerBuffEffect(nPC,
+                // out var effect)) dmg = (int)(dmg * effect.DamageDealt.Sample(
+                // Main.Difficulty))`: the placed-banner strength multiplies the
+                // CURRENT `dmg` (after the rapid/cane arms, before the crit
+                // roll `:44298` and DamageVar `:44342`), truncated to int like
+                // the C#. RNG-free. It must scale `dmg`, not the pre-trunacted
+                // product, or the arm is discarded by the `let raw = dmg`
+                // rebind below.
+                if let Some((dealt, _)) = app
+                    .player
+                    .as_ref()
+                    .and_then(|p| p.banner_buff_for_npc(app.npcs[idx].kind.cs_id() as i32))
+                {
+                    dmg = (dmg as f32 * dealt) as i32;
                 }
                 let raw = dmg as f32;
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
@@ -12553,7 +12658,17 @@ fn resolve_melee_strike(
                         .player
                         .as_ref()
                         .is_some_and(|p| p.spawn_volcano_explosion);
-                    if armed && app.npcs[idx].can_be_chased_by() {
+                    // `NPC.HittableForOnHitRewards` (`NPC.cs:90043-90050`):
+                    // `!CountsAsACritter && !immortal` — NO liveness term, so
+                    // a KILLING blow still fires (`Player.cs:44152`). The old
+                    // `can_be_chased_by()` gate refused it (hp > 0). The
+                    // critter set is the verbatim `NPCID.Sets.CountsAsCritter`
+                    // table (`projectile::COUNTS_AS_CRITTER`).
+                    let n = &app.npcs[idx];
+                    let hittable = !n.immortal
+                        && !crate::projectile::COUNTS_AS_CRITTER
+                            .contains(&n.kind.cs_id());
+                    if armed && hittable {
                         let (ncx, ncy) = app.npcs[idx].center();
                         let spawned = app.projectiles.spawn_volcano_proc(
                             me,
@@ -13550,7 +13665,11 @@ mod tests {
         let mut a = melee_app();
         a.inventory[a.selected].kind = 5094; // Tentacle Spike (melee, no shoot)
         a.inventory[a.selected].count = 1;
-        // Swing 1: the strike lands, the use start arms the latch.
+        // The use start arms the latch (`:43470`); this rig's victim sits in
+        // the MIDDLE-third arc (the START third misses it), so the swing's
+        // first LANDED hit comes a few ticks later — exactly the C# order
+        // (`ItemAnimationJustStarted` arms at `:43468-43471`, the hit scan
+        // runs at `:43681` every animation tick).
         mine_frames(&mut a, 1);
         assert!(
             a.player.as_ref().unwrap().spawn_tentacle_spikes,
@@ -13559,24 +13678,16 @@ mod tests {
         assert_eq!(
             a.projectiles.slots().iter().filter(|p| p.active && p.kind == 971).count(),
             0,
-            "the first swing's strike precedes the latch arming — no proc yet"
+            "the press tick's START-third strike misses — no proc before a hit"
         );
-        // Run the swing out, then re-press (release edge → press edge).
-        mine_frames(&mut a, 30);
-        a.npcs[0].hp = a.npcs[0].max_hp;
-        a.npcs[0].hurt_cd = 0.0;
-        a.attack_cd = 0.0;
-        a.mine_down = false;
-        mine_frames(&mut a, 2);
-        a.mine_down = true;
-        // Swing 2: the armed latch fires the proc on the landed hit.
-        mine_frames(&mut a, 1);
+        // Run to the first landed (middle-third) hit of the same swing.
+        mine_frames(&mut a, 10);
         let spike = a
             .projectiles
             .slots()
             .iter()
             .find(|p| p.active && p.kind == 971)
-            .expect("the second swing's hit spawns the 971 sticker");
+            .expect("the swing's landed hit spawns the 971 sticker");
         assert_eq!(spike.ai[0], 1.0, "pre-pinned ai0 = 1 (:44167)");
         assert_eq!(spike.ai[1], 0.0, "ai1 = the victim's slot (:44167)");
         assert!(
@@ -13655,23 +13766,19 @@ mod tests {
             0,
             "the first swing's strike precedes the latch arming — no proc yet"
         );
-        // Run the 40-tick swing out, then re-press.
-        mine_frames(&mut a, 45);
-        a.npcs[0].hp = a.npcs[0].max_hp;
-        a.npcs[0].hurt_cd = 0.0;
-        a.attack_cd = 0.0;
-        a.mine_down = false;
-        mine_frames(&mut a, 2);
-        a.mine_down = true;
-        // Swing 2: the armed latch fires the proc on the landed hit.
+        // Run to the NEXT landed hit of the swing with the latch armed: the
+        // press tick's strike may already have landed (before the arm), so
+        // mirror the loop's `attackCD--` / `hurt_cd` decay to let the next
+        // in-swing hit through.
+        mine_frames_decay(&mut a, 24);
+        // The spawn reads the POST-strike centre (`npc.Center`, `:44153`).
         let (ncx, ncy) = a.npcs[0].center();
-        mine_frames(&mut a, 1);
         let boom = a
             .projectiles
             .slots()
             .iter()
             .find(|p| p.active && p.kind == 978)
-            .expect("the second swing's hit spawns the 978 explosion");
+            .expect("the swing's landed hit spawns the 978 explosion");
         assert_eq!(boom.ai[0], 0.0, "ai0 = 0 (:44155)");
         assert_eq!(boom.ai[1], 2.0, "ai1 = 2 (:44155)");
         assert_eq!(boom.damage, 30, "(int)(40 * 0.75) (:44487)");
@@ -13699,16 +13806,18 @@ mod tests {
         let mut a = melee_app();
         a.inventory[a.selected].kind = 121;
         a.inventory[a.selected].count = 1;
-        mine_frames(&mut a, 1); // swing 1 arms the latch
-        mine_frames(&mut a, 45); // the 40-tick swing runs out
-        a.npcs[0].hp = 1; // swing 2's hit kills
+        mine_frames(&mut a, 1); // the press tick arms the latch
+        assert!(
+            a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the use start arms the latch (:43478)"
+        );
+        // The swing's first landed hit is the MIDDLE third (the START third
+        // misses this rig's victim). Park the victim at 1 HP so that hit —
+        // the one that kills — is the one that must fire the Volcano.
+        a.npcs[0].hp = 1;
         a.npcs[0].hurt_cd = 0.0;
-        a.attack_cd = 0.0;
-        a.mine_down = false;
-        mine_frames(&mut a, 2);
-        a.mine_down = true;
-        mine_frames(&mut a, 1);
-        assert!(a.npcs[0].hp <= 0, "the second swing's hit kills the slime");
+        mine_frames_decay(&mut a, 24);
+        assert!(a.npcs[0].hp <= 0, "the swing's landed hit kills the slime");
         assert!(
             a.projectiles.slots().iter().any(|p| p.active && p.kind == 978),
             "the Volcano fires on the killing blow (:44152 — no active gate)"
@@ -13722,15 +13831,14 @@ mod tests {
         let mut b = melee_app();
         b.inventory[b.selected].kind = 5094;
         b.inventory[b.selected].count = 1;
-        mine_frames(&mut b, 1);
-        mine_frames(&mut b, 30);
-        b.npcs[0].hp = 1;
+        mine_frames(&mut b, 1); // the press tick arms the latch
+        assert!(
+            b.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the use start arms the latch (:43470)"
+        );
+        b.npcs[0].hp = 1; // the swing's landed hit kills
         b.npcs[0].hurt_cd = 0.0;
-        b.attack_cd = 0.0;
-        b.mine_down = false;
-        mine_frames(&mut b, 2);
-        b.mine_down = true;
-        mine_frames(&mut b, 1);
+        mine_frames_decay(&mut b, 24);
         assert!(b.npcs[0].hp <= 0);
         assert!(
             !b.projectiles.slots().iter().any(|p| p.active && p.kind == 971),
@@ -14389,6 +14497,11 @@ mod tests {
         guide.max_hp = 250;
         guide.uid = app.npcs[0].uid;
         app.npcs[0] = guide;
+        // The friendly gate (`Player.cs:44272-44276`) refuses a town NPC
+        // unless the Guide Voodoo Doll is WORN (`ApplyEquipFunctional`
+        // `:14368`; `doll_flags` reads `equipped[3..10]`), so the hit — and
+        // therefore the friendly text pair — only happens with the doll.
+        app.player.as_mut().unwrap().equipped[3] = 267;
         app.mine_released = true;
         app.mine_prev_down = false;
         mine_frames(&mut app, 9);
@@ -14988,7 +15101,10 @@ mod tests {
             });
             let (drops, portals) = drop_events(&kill, hit);
             assert!(portals.is_empty());
-            assert_eq!(drops, vec![(gem, 1, 5.0, 9.0)], "178 style {style}");
+            // Per-cell drop = the tile's top-left PIXEL (`x*16, y*16`,
+            // `KillTile_DropItems`' `Item.NewItem(x*16, y*16, ...)`); only the
+            // object records centre their rect (the g78 FIX-ONCE).
+            assert_eq!(drops, vec![(gem, 1, 80.0, 144.0)], "178 style {style}");
         }
         // An out-of-range column drops nothing (the C# `dropItem > 0` gate,
         // `WorldGen.cs:63953` — the switch leaves `dropItem = 0`).
@@ -15015,22 +15131,22 @@ mod tests {
         let kill = edit::TileKill { kind: 63, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 63, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(177, 1, 3.0, 4.0)]);
+        assert_eq!(drops, vec![(177, 1, 48.0, 64.0)]);
         // The moss tile 179 drops the Stone Block 3 (`:63999-64011`).
         let kill = edit::TileKill { kind: 179, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 179, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(3, 1, 3.0, 4.0)]);
+        assert_eq!(drops, vec![(3, 1, 48.0, 64.0)]);
         // The moss brick 512 drops the Gray Brick 129 (`:64012-64024`).
         let kill = edit::TileKill { kind: 512, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 512, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(129, 1, 3.0, 4.0)]);
+        assert_eq!(drops, vec![(129, 1, 48.0, 64.0)]);
         // The rainbow moss 627 drops the Stone Block 3 (`:64009-64011`).
         let kill = edit::TileKill { kind: 627, ..Default::default() };
         let hit = Some(HitCell { x: 3, y: 4, kind: 627, frame_x: 0, frame_y: 0 });
         let (drops, _) = drop_events(&kill, hit);
-        assert_eq!(drops, vec![(3, 1, 3.0, 4.0)]);
+        assert_eq!(drops, vec![(3, 1, 48.0, 64.0)]);
     }
 
     /// W4-g42 tail D3: the dye plants 227 drop by `frameX/34` style
@@ -15046,11 +15162,11 @@ mod tests {
             drop_events(&kill, hit).0
         };
         // Style 0 (the teal mushroom) → 1107; style 3 → 1110.
-        assert_eq!(drop_for(0), vec![(1107, 1, 5.0, 9.0)], "style 0 → teal mushroom");
-        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 5.0, 9.0)], "style 3 → 1110");
+        assert_eq!(drop_for(0), vec![(1107, 1, 80.0, 144.0)], "style 0 → teal mushroom");
+        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 80.0, 144.0)], "style 3 → 1110");
         // Styles 8-11 → the Strange Plants 3385-3388.
-        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 5.0, 9.0)], "style 8 → Strange Plant1");
-        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 5.0, 9.0)], "style 11 → Strange Plant4");
+        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 80.0, 144.0)], "style 8 → Strange Plant1");
+        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 80.0, 144.0)], "style 11 → Strange Plant4");
     }
 
     /// W4-g42 tail D2: the mushroom grass 70 (and the jungle grasses 60/661/662)
@@ -15063,7 +15179,7 @@ mod tests {
             let hit = Some(HitCell { x: 4, y: 8, kind, frame_x: 0, frame_y: 0 });
             assert_eq!(
                 drop_events(&kill, hit).0,
-                vec![(176, 1, 4.0, 8.0)],
+                vec![(176, 1, 64.0, 128.0)],
                 "tile {kind} drops mud 176"
             );
         }
@@ -15149,7 +15265,7 @@ mod tests {
             let (drops, _) = drop_events(&kill, None);
             assert_eq!(
                 drops,
-                vec![(gun as u16, 1, 10.0, 19.0), (97, 100, 10.0, 19.0)],
+                vec![(gun as u16, 1, 176.0, 320.0), (97, 100, 176.0, 320.0)],
                 "the gun then the 100-stack at the same rect"
             );
         }
@@ -15164,7 +15280,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 10.0, 19.0)]);
+        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 176.0, 320.0)]);
         // The replica/heart/crystal records never pair (their ids are not
         // the guns; the tile_kind gate also holds).
         for (item, tk) in [(5469i32, 696u16), (29, 12), (109, 639)] {
@@ -15178,7 +15294,7 @@ mod tests {
                 }],
                 ..Default::default()
             };
-            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 10.0, 19.0)]);
+            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 176.0, 320.0)]);
         }
         // The stack draw rides the caller's Main.rand stream: the resolver
         // consumes exactly one Next(100,101) per gun record.
@@ -15870,6 +15986,18 @@ mod tests {
         }
     }
 
+    /// [`hold`] with the real loop's per-tick `attackCD--` mirrored
+    /// (`Player.cs:24710-24712`, hosted by `world_sim/npcs.rs` AHEAD of the
+    /// editing pass). Rigs that only drive `update_editing` need it when a
+    /// second use start must land after a swing (`attack_cd` is the port's
+    /// `itemAnimation == 0` stand-in, so it never clears by itself here).
+    fn hold_cd(app: &mut App, screen: Vec2, n: usize, log: &mut Vec<(i32, usize)>) {
+        for _ in 0..n {
+            app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
+            step(app, screen, log);
+        }
+    }
+
     /// The elapsed ticks of a log's shots — the C#'s `itemAnimation` values at
     /// the corresponding ticks (the press-frame arming puts the first shot at
     /// `max - 1`).
@@ -16424,19 +16552,19 @@ mod tests {
         };
         let mut log = Vec::new();
         // Use 1 (state 0): the single card.
-        hold(&mut app, screen, 1, &mut log);
+        hold_cd(&mut app, screen, 1, &mut log);
         assert_eq!(cards(&app), 1, "state 0 fires one card (:49213)");
         assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 1);
         // Run the cadence out to the next shot (useTime 20).
-        hold(&mut app, screen, 20, &mut log);
+        hold_cd(&mut app, screen, 20, &mut log);
         // Use 2 (state 1): forward + back → 3 total.
         assert_eq!(cards(&app), 3, "state 1 adds two (:49217-49218)");
         assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 2);
-        hold(&mut app, screen, 20, &mut log);
+        hold_cd(&mut app, screen, 20, &mut log);
         // Use 3 (state 2): the six-card fan → 9 total.
         assert_eq!(cards(&app), 9, "state 2 adds six (:49227-49235)");
         assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 3);
-        hold(&mut app, screen, 20, &mut log);
+        hold_cd(&mut app, screen, 20, &mut log);
         // Use 4 (state 3): the recall — no new card, all nine return.
         assert_eq!(cards(&app), 9, "state 3 spawns nothing (:49238-49253)");
         assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "wraps >3 → 0");
@@ -16464,7 +16592,7 @@ mod tests {
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         // One card out (state 0 → 1), then park the cycle at 3.
-        hold(&mut app, screen, 1, &mut log);
+        hold_cd(&mut app, screen, 1, &mut log);
         let card = app
             .projectiles
             .slots()
@@ -16475,7 +16603,7 @@ mod tests {
         // The victim died under it: stuck, then dead — ai0 stays 1.
         app.projectiles.slots_mut()[card].ai[0] = 1.0;
         app.projectiles.kill(card);
-        hold(&mut app, screen, 20, &mut log);
+        hold_cd(&mut app, screen, 20, &mut log);
         // The dead stuck card counted as outbound: the recall ran, NOT a
         // fresh single — the card is still dead, now seated ai0=2.
         assert_eq!(
@@ -16486,7 +16614,7 @@ mod tests {
         assert_eq!(app.projectiles.slots()[card].ai[0], 2.0, "the dead card was recalled (:49246)");
         assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "3 → wrap 0");
         // The next state-0 use fires the fresh single.
-        hold(&mut app, screen, 20, &mut log);
+        hold_cd(&mut app, screen, 20, &mut log);
         assert_eq!(
             app.projectiles.slots().iter().filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD).count(),
             1,
@@ -16848,17 +16976,19 @@ mod tests {
         assert!(shots(&app) >= 1, "the 172 row landed (i13) — the shot spawns");
         assert_eq!(app.equip.ammo[0].count, 8, "the picked arrow still drained");
         //
-        // Half 2 — a genuinely row-less resolved kind declines the spawn while
-        // the ammo drains: the Silver Bullet (278 → projectile 981,
-        // `Projectile.cs:981`'s SetDefaults arm exists in C# but the port has
-        // no 981 row yet). The Clockwork Assault Rifle (434, useAmmo 97) fires
-        // it: the wire must refuse the shot without panicking, while the ammo
-        // it already picked still drains (the drain runs before the spawn,
-        // `Player.cs:53675`).
+        // Half 2 — the Silver Bullet (278 → projectile 981,
+        // `Projectile.cs:981`'s SetDefaults arm) is now ROWED, so the
+        // Clockwork Assault Rifle (434, useAmmo 97) fires it: the stale
+        // extra>0 refusal witness became a firing witness once the row
+        // landed. The shot spawns and the picked bullet drains once (the
+        // Clockwork's 3-shot burst shares one drain).
         let mut app2 = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 278, 9)]);
         let mut log2 = Vec::new();
         hold(&mut app2, screen, 26, &mut log2);
-        assert_eq!(shots(&app2), 0, "the spawn declined the unknown kind 981");
+        assert!(
+            shots(&app2) >= 1,
+            "the 981 row landed (Projectile.cs:981) — the shot spawns"
+        );
         assert_eq!(app2.equip.ammo[0].count, 8, "the picked bullet still drained");
     }
 
@@ -17220,6 +17350,11 @@ mod tests {
         app.player = Some(player);
         app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
         app.mouse_pos = Vec2::new(640.0, 360.0); // screen centre == the camera
+        // The full-quality dust budget (`Main.maxDustToDraw` = 6000 at
+        // quality 1, `Main.cs:17055`); the bare `flow_app` keeps
+        // `GfxQuality::default`'s 0, whose pressure bands refuse every dust
+        // after the first slot.
+        app.gfx_quality.max_dust_to_draw = 6000;
         app.inventory[app.selected].kind = 1; // the Iron Pickaxe (pick 40)
         app.inventory[app.selected].count = 1;
         app.mine_down = true;
@@ -17229,6 +17364,21 @@ mod tests {
     fn mine_frames(app: &mut App, n: usize) {
         for _ in 0..n {
             update_editing(app, 1.0 / 60.0, MINE_SCREEN);
+        }
+    }
+
+    /// [`mine_frames`] with the real loop's per-tick `attackCD--`
+    /// (`Player.cs:24710-24712`) and the victim's per-source `hurt_cd` decay
+    /// mirrored (both hosted outside the editing pass in the live loop).
+    /// Needed by the melee proc rigs whose swing's FIRST landed hit comes
+    /// before the latch arms and whose later hit must clear the cooldowns.
+    fn mine_frames_decay(app: &mut App, n: usize) {
+        for _ in 0..n {
+            app.attack_cd = (app.attack_cd - ONE_TICK_SECS).max(0.0);
+            if let Some(npc) = app.npcs.first_mut() {
+                npc.hurt_cd = (npc.hurt_cd - ONE_TICK_SECS).max(0.0);
+            }
+            mine_frames(app, 1);
         }
     }
 
@@ -18385,7 +18535,14 @@ mod tests {
         mine_frames(&mut app, 3);
         assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 3, "1 → 3, the dead-end bumper");
         assert_eq!(app.world.tile(30, 260).unwrap().frame_y, -1);
-        assert!(!app.pound_release, "the 314 arm clears the latch");
+        // `:46310` clears the latch, but the SAME tick's tail sets it again:
+        // `if (releaseUseItem) poundRelease = true` (`:45635-45638`) and the
+        // held autoReuse hammer forces `releaseUseItem = true`
+        // (`:52883-52885`). Holding the button therefore leaves it armed.
+        assert!(
+            app.pound_release,
+            "the held autoReuse release re-arms the cleared latch"
+        );
     }
 
     /// W4-e20 research-71 §3b.4 — the unchanged pound draws NOTHING: an
@@ -18412,7 +18569,12 @@ mod tests {
         app.mine_down = true;
         mine_frames(&mut app, 3);
         assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 0);
-        assert!(!app.pound_release, "the latch clears either way");
+        // The track arm clears at `:46310`, then the held autoReuse release
+        // re-arms it the same tick (`:52883-52885` -> `:45635-45638`).
+        assert!(
+            app.pound_release,
+            "the held autoReuse release re-arms the cleared latch"
+        );
     }
 
     /// S1-P-i31 — the flatten player-push (`WorldGen.cs:80787-80795`): a
@@ -21198,6 +21360,10 @@ mod tests {
         // `return`s (no generic tail); the bubbles carry the fused damage
         // 70 (the magic class multiplier 1) and the item's knockback 3.
         let mut app = staff_app(2623, "Bubble Gun");
+        // Level the aim: the staff rig's camera line sits 13 px above the
+        // player centre (the `shooter_rig` note), which would tilt the base
+        // velocity off +X. The witness's premise is the +X aim (`:48397`).
+        app.camera.y = app.player.as_ref().unwrap().center().1;
         fire_once(&mut app);
         let bubbles: Vec<_> = app
             .projectiles
@@ -22786,6 +22952,9 @@ mod tests {
         let mut app = staff_app(1569, "Vampire Knives");
         let seed = 0x6B1D;
         seed_stream(&mut app, seed);
+        // Level the aim (the `shooter_rig` camera note): the witness's base
+        // shot is exactly (15, 0).
+        app.camera.y = app.player.as_ref().unwrap().center().1;
         fire_once(&mut app);
         // The twin stream: the four count gates, then 2 draws per knife.
         let mut probe = tr_core::UnifiedRandom::new(seed as i32);

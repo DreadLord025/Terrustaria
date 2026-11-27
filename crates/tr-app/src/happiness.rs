@@ -154,8 +154,8 @@ pub fn biome_name_key(biome: BiomeKind) -> &'static str {
 /// The neighbor-relationship rows — the FULL vanilla switch
 /// (`AllPersonalitiesModifier.ModifyShopPrice_Relationships`,
 /// `AllPersonalitiesModifier.cs:41-505`), keyed on the C# `NPCID`; row
-/// order = the C# `if` order (the report text prepends, so the LAST row
-/// reads first). The Princess's random three-loves head (`:15-36`) and
+/// order = the C# `if` order (the report text appends, so this is the
+/// read order). The Princess's random three-loves head (`:15-36`) and
 /// the universal LikePrincess row (`:37-40`) ride `process_mood` itself.
 pub fn neighbor_preferences_by_id(id: u16) -> &'static [(AffectionLevel, u16)] {
     match id {
@@ -706,9 +706,9 @@ pub fn should_bestiary_girl_be_lycantrope(blood_moon: bool, day_time: bool, moon
 /// shapeshift form (`:191-194`: `type == 633 && altTexture == 2` — the
 /// caller derives the form through [`should_bestiary_girl_be_lycantrope`],
 /// the predicate `UpdateAltTexture` writes `altTexture = 2` on,
-/// `NPC.cs:90225-90227`); each row PREPENDS
+/// `NPC.cs:90225-90227`); each row APPENDS
 /// `Language.GetTextValueWith(category.key, substitutes) + " "`.
-fn prepend_report(
+fn append_report(
     report: &mut String,
     kind: NpcKind,
     transformed: bool,
@@ -733,8 +733,12 @@ fn prepend_report(
         .map(|(k, v)| (*k, tr_core::localization::Substitution::Text(v.clone())))
         .collect();
     let line = crate::lang::text_format_with(&format!("TownNPCMood_{name}{suffix}.{key}"), &subs);
-    // `string.Concat(str1: text, str0: report, str2: " ")` — text FIRST.
-    *report = format!("{line}{report} ");
+    // `:195` — `string.Concat(str1: text, str0: report, str2: " ")`: the
+    // NAMED arguments bind text to param 1 and the current report to param 0,
+    // so the result is `report + text + " "` — each new row APPENDS (the
+    // report reads in the mood-flag order) and every row carries its own
+    // trailing space.
+    *report = format!("{report}{line} ");
 }
 
 /// `ShopHelper.BiomeNameByKey` (`ShopHelper.cs:183-186`).
@@ -744,7 +748,7 @@ fn biome_name(key: &str) -> String {
 
 /// The mood flags → the report string (`ShopHelper.ProcessMood`'s
 /// `AddHappinessReportText` call order — the flags carry the order the
-/// factors landed, and every call PREPENDS). The evil-biome row names the
+/// factors landed, and every call APPENDS). The evil-biome row names the
 /// biome (`IsPlayerInEvilBiomes` `:353-356` passes `BiomeName`); the
 /// LikePrincess row uses the `LikeNPC_Princess` key
 /// (`AllPersonalitiesModifier.cs:37-40` → `ShopHelper.cs:252-259`); the
@@ -760,16 +764,16 @@ pub fn happiness_report(
     let mut report = String::new();
     for flag in flags {
         match flag {
-            MoodFlag::NoHome => prepend_report(&mut report, kind, transformed, "NoHome", &[]),
+            MoodFlag::NoHome => append_report(&mut report, kind, transformed, "NoHome", &[]),
             MoodFlag::FarFromHome => {
-                prepend_report(&mut report, kind, transformed, "FarFromHome", &[])
+                append_report(&mut report, kind, transformed, "FarFromHome", &[])
             }
             MoodFlag::HateBiomeEvil => {
                 // The name-less legacy marker — no BiomeName substitute
                 // (the mood pass emits `HateBiomeNamed` instead).
-                prepend_report(&mut report, kind, transformed, "HateBiome", &[]);
+                append_report(&mut report, kind, transformed, "HateBiome", &[]);
             }
-            MoodFlag::HateBiomeNamed(biome) => prepend_report(
+            MoodFlag::HateBiomeNamed(biome) => append_report(
                 &mut report,
                 kind,
                 transformed,
@@ -777,14 +781,14 @@ pub fn happiness_report(
                 &[("BiomeName", biome_name(biome_name_key(*biome)))],
             ),
             MoodFlag::DislikeCrowded => {
-                prepend_report(&mut report, kind, transformed, "DislikeCrowded", &[])
+                append_report(&mut report, kind, transformed, "DislikeCrowded", &[])
             }
             MoodFlag::HateCrowded => {
-                prepend_report(&mut report, kind, transformed, "HateCrowded", &[])
+                append_report(&mut report, kind, transformed, "HateCrowded", &[])
             }
-            MoodFlag::LoveSpace => prepend_report(&mut report, kind, transformed, "LoveSpace", &[]),
-            MoodFlag::HateLonely => prepend_report(&mut report, kind, transformed, "HateLonely", &[]),
-            MoodFlag::Content => prepend_report(&mut report, kind, transformed, "Content", &[]),
+            MoodFlag::LoveSpace => append_report(&mut report, kind, transformed, "LoveSpace", &[]),
+            MoodFlag::HateLonely => append_report(&mut report, kind, transformed, "HateLonely", &[]),
+            MoodFlag::Content => append_report(&mut report, kind, transformed, "Content", &[]),
             MoodFlag::BiomeAffection(level, biome) => {
                 let key = match level {
                     AffectionLevel::Love => "LoveBiome",
@@ -792,7 +796,7 @@ pub fn happiness_report(
                     AffectionLevel::Dislike => "DislikeBiome",
                     AffectionLevel::Hate => "HateBiome",
                 };
-                prepend_report(
+                append_report(
                     &mut report,
                     kind,
                     transformed,
@@ -813,7 +817,7 @@ pub fn happiness_report(
                         AffectionLevel::Hate => "HateNPC",
                     }
                 };
-                prepend_report(
+                append_report(
                     &mut report,
                     kind,
                     transformed,
@@ -833,7 +837,7 @@ pub fn happiness_report(
                 else {
                     continue;
                 };
-                prepend_report(
+                append_report(
                     &mut report,
                     kind,
                     transformed,
@@ -849,7 +853,7 @@ pub fn happiness_report(
 /// `ShopHelper.GetShoppingSettings` (`ShopHelper.cs:49-62`) — the
 /// `Player.SetTalkNPC` companion (`Player.cs:4389`): the mood pass plus the
 /// report string. `process_mood`'s flags carry the call order; the report
-/// folds them through `AddHappinessReportText`'s prepend. The Zoologist's
+/// folds them through `AddHappinessReportText`'s append. The Zoologist's
 /// `Transformed` category suffix reads her shapeshift form off the world
 /// clock (`ShouldBestiaryGirlBeLycantrope`, the predicate `UpdateAltTexture`
 /// writes `altTexture = 2` on — `NPC.cs:90225-90227`). `rng` is the bare
@@ -888,7 +892,10 @@ mod tests {
         // 2×BEACH_DISTANCE so the x≈500 columns are NOT ocean — its hallow/
         // judge witnesses need the band) + f37's `world_surface = 120.0`
         // (research/68 §4: the player-zone judge needs the player above the
-        // surface for the Forest row; f37's x≈60 rigs stay non-beach too).
+        // surface for the Forest row). EVERY mood witness stands at x≈500:
+        // `WorldGen.oceanDepths` (`WorldGen.cs:10963-10976`) marks x < 380
+        // as beach, so the old f37 x≈60 rigs were in the ocean band and the
+        // Forest row never landed.
         let mut w = World::new("t".into(), 1000, 200);
         for x in 0..1000 {
             for y in 120..200 {
@@ -950,13 +957,13 @@ mod tests {
         // `homeless = true` every tick (`NPC.cs:53360`), his prices ride the
         // plain `PriceAdjustment = 1f` with an empty report.
         let w = forest_world();
-        let mut m = Npc::new(NpcKind::TravellingMerchant, 60.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        let mut m = Npc::new(NpcKind::TravellingMerchant, 500.0 * 16.0, 120.0 * 16.0, 1, 0.0);
         m.home = None; // homeless, like the vanilla's forced flag
         let mood = process_mood(
             &w,
             std::slice::from_ref(&m),
             &m,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -983,12 +990,12 @@ mod tests {
         // Like ×0.94 (`:27-30`'s Register(22)) = 0.893 → the cents round
         // 0.89 (`:176-181`).
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1010,14 +1017,14 @@ mod tests {
         // clamp's 1.5 ceiling (`:178`) — the vanilla's crazy prices ARE the
         // ceiling.
         let w = forest_world();
-        let mut guide = Npc::spawn_guide(&w, 60).expect("the guide spawns");
+        let mut guide = Npc::spawn_guide(&w, 500).expect("the guide spawns");
         guide.home = None;
         guide.hp = guide.max_hp;
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1044,8 +1051,8 @@ mod tests {
         }
         // The Guide stands above the patch (the column-surface cache predates
         // the carve — the placement is manual).
-        let mut guide = Npc::new(NpcKind::Guide, 60.0 * 16.0, 90.0 * 16.0, 1, 0.0);
-        guide.home = Some((60, 120));
+        let mut guide = Npc::new(NpcKind::Guide, 500.0 * 16.0, 90.0 * 16.0, 1, 0.0);
+        guide.home = Some((500, 120));
         guide.hp = guide.max_hp;
         let mood = process_mood(
             &w,
@@ -1066,11 +1073,11 @@ mod tests {
         // `:132-146`: the residents within 25 tiles past the third push
         // ×1.05 each; the LoveSpace gate closes (within_house > 2).
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut all = vec![guide.clone()];
         for (dx, dy) in [(4, 0), (-4, 0), (0, -6), (7, 3)] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
-            other.home = Some((60 + dx, 120 + dy));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the neighbor spawns");
+            other.home = Some((500 + dx, 120 + dy));
             other.hp = other.max_hp;
             all.push(other);
         }
@@ -1078,7 +1085,7 @@ mod tests {
             &w,
             &all,
             &all[0],
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1097,11 +1104,11 @@ mod tests {
         // `:147-151`: within_house ≤ 2 AND within_village < 4 — a packed
         // village (the neighbors 25..120 tiles out) keeps LoveSpace off.
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut all = vec![guide.clone()];
         for dx in [30, 60, 90, 110] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the villager spawns");
-            other.home = Some((60 + dx, 120));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the villager spawns");
+            other.home = Some((500 + dx, 120));
             other.hp = other.max_hp;
             all.push(other);
         }
@@ -1109,7 +1116,7 @@ mod tests {
             &w,
             &all,
             &all[0],
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1167,14 +1174,14 @@ mod tests {
     #[test]
     fn the_love_struck_multiply_precedes_the_exclusions() {
         let w = forest_world();
-        let mut m = Npc::new(NpcKind::TravellingMerchant, 60.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        let mut m = Npc::new(NpcKind::TravellingMerchant, 500.0 * 16.0, 120.0 * 16.0, 1, 0.0);
         m.home = None;
         m.buffs.add_buff(119, 600);
         let mood = process_mood(
             &w,
             std::slice::from_ref(&m),
             &m,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1184,13 +1191,13 @@ mod tests {
             mood.multiplier
         );
         assert!(mood.flags.is_empty());
-        let mut guide = housed_guide(&w, (60, 120));
+        let mut guide = housed_guide(&w, (500, 120));
         guide.buffs.add_buff(119, 600);
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1208,14 +1215,14 @@ mod tests {
     fn the_remix_world_skips_every_mood() {
         let mut w = forest_world();
         w.seeds.insert(tr_core::seeds::SeedFlags::REMIX);
-        let mut guide = Npc::spawn_guide(&w, 60).expect("the guide spawns");
+        let mut guide = Npc::spawn_guide(&w, 500).expect("the guide spawns");
         guide.home = None; // homeless — would be the 1.5 ceiling on classic
         guide.hp = guide.max_hp;
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1231,15 +1238,15 @@ mod tests {
     #[test]
     fn the_princess_hates_loneliness_and_skips_the_crowd_rows() {
         let w = forest_world();
-        let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        princess.home = Some((60, 120));
+        let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((500, 120));
         princess.hp = princess.max_hp;
         // Alone: HateLonely at the sentinel (the clamp ceiling).
         let mood = process_mood(
             &w,
             std::slice::from_ref(&princess),
             &princess,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1252,8 +1259,8 @@ mod tests {
         // (one deduped Guide type → one ×0.88 → 0.88).
         let mut all = vec![princess.clone()];
         for (dx, dy) in [(4, 0), (-4, 0), (0, -6), (7, 3)] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
-            other.home = Some((60 + dx, 120 + dy));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the neighbor spawns");
+            other.home = Some((500 + dx, 120 + dy));
             other.hp = other.max_hp;
             all.push(other);
         }
@@ -1261,7 +1268,7 @@ mod tests {
             &w,
             &all,
             &all[0],
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1282,18 +1289,18 @@ mod tests {
     #[test]
     fn the_princess_picks_dedup_by_type_and_ride_the_global_stream() {
         let w = forest_world();
-        let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        princess.home = Some((60, 120));
+        let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((500, 120));
         princess.hp = princess.max_hp;
         let mut all = vec![princess.clone()];
         for dx in [4, -4] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
-            other.home = Some((60 + dx, 120));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the neighbor spawns");
+            other.home = Some((500 + dx, 120));
             other.hp = other.max_hp;
             all.push(other);
         }
         let mut rng = tr_core::UnifiedRandom::new(0);
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut rng);
+        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut rng);
         assert!(
             (mood.multiplier - 0.88).abs() < 0.001,
             "one deduped type → one love, got {}",
@@ -1312,7 +1319,7 @@ mod tests {
         // Two TYPES: the draws replay off the same seed — first
         // `Next(2)` picks the index, `RemoveAt` shrinks the list.
         let mut merchant = Npc::new(NpcKind::Merchant, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        merchant.home = Some((64, 120));
+        merchant.home = Some((504, 120));
         merchant.hp = merchant.max_hp;
         all[2] = merchant;
         let mut rng = tr_core::UnifiedRandom::new(0);
@@ -1323,7 +1330,7 @@ mod tests {
         // The second draw is `Next(1)` — it still consumes the stream.
         let _ = expect.next_max(1);
         let pick2 = picks.remove(0);
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut rng);
+        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut rng);
         assert_eq!(rng, expect, "the picks ride the passed stream verbatim");
         assert!(mood.flags.contains(&MoodFlag::PrincessLove(pick1)));
         assert!(mood.flags.contains(&MoodFlag::PrincessLove(pick2)));
@@ -1342,21 +1349,21 @@ mod tests {
     #[test]
     fn the_guide_likes_a_nearby_princess_and_clothier() {
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut all = vec![guide.clone()];
-        let mut princess = Npc::new(NpcKind::Princess, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        princess.home = Some((64, 120));
+        let mut princess = Npc::new(NpcKind::Princess, 504.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((504, 120));
         princess.hp = princess.max_hp;
         all.push(princess);
-        let mut clothier = Npc::new(NpcKind::Clothier, 56.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        clothier.home = Some((56, 120));
+        let mut clothier = Npc::new(NpcKind::Clothier, 496.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        clothier.home = Some((496, 120));
         clothier.hp = clothier.max_hp;
         all.push(clothier);
         let mood = process_mood(
             &w,
             &all,
             &all[0],
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1387,14 +1394,14 @@ mod tests {
     #[test]
     fn the_biome_traits_judge_the_player_not_the_npc_home() {
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         // The player BELOW the surface line (tile y 130 > 120) — the dirt
         // there carries no special zone, so only ShoppingZone_BelowSurface.
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 130.0 * 16.0),
+            (500.0 * 16.0, 130.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1416,7 +1423,7 @@ mod tests {
     fn the_best_affection_row_wins_over_the_lower_ones() {
         let mut w = forest_world();
         // Jungle grass (kind 60) under the player — enough for the zone.
-        for x in 40..80 {
+        for x in 480..520 {
             for y in 125..160 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
@@ -1426,14 +1433,14 @@ mod tests {
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        let mut tink = Npc::new(NpcKind::GoblinTinkerer, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        tink.home = Some((60, 120));
+        let mut tink = Npc::new(NpcKind::GoblinTinkerer, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        tink.home = Some((500, 120));
         tink.hp = tink.max_hp;
         let mood = process_mood(
             &w,
             std::slice::from_ref(&tink),
             &tink,
-            (60.0 * 16.0, 130.0 * 16.0),
+            (500.0 * 16.0, 130.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1469,16 +1476,16 @@ mod tests {
         // rarely does — the helper pins the CONTRACT, the chain pins the
         // plumbing.
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut clothier = Npc::new(NpcKind::Clothier, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        clothier.home = Some((64, 120));
+        clothier.home = Some((504, 120));
         clothier.hp = clothier.max_hp;
         let all = vec![guide.clone(), clothier];
         let mood = process_mood(
             &w,
             &all,
             &all[0],
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1497,14 +1504,14 @@ mod tests {
     #[test]
     fn the_traits_run_at_the_sentinel_too() {
         let w = forest_world();
-        let mut guide = Npc::spawn_guide(&w, 60).expect("the guide spawns");
+        let mut guide = Npc::spawn_guide(&w, 500).expect("the guide spawns");
         guide.home = None;
         guide.hp = guide.max_hp;
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut tr_core::UnifiedRandom::new(0),
         );
@@ -1568,8 +1575,8 @@ mod tests {
         }
 
         /// `AllPersonalitiesModifier.cs:41-505` — every switch case's rows
-        /// in the C# `if` order (the report prepends, so the order is the
-        /// read order).
+        /// in the C# `if` order (the report appends, so this is the read
+        /// order).
         #[test]
         fn the_neighbor_table_matches_the_switch() {
             let cases: &[(u16, &[(AffectionLevel, u16)])] = &[
@@ -2008,15 +2015,16 @@ mod tests {
         }
 
         /// `AddHappinessReportText` (`ShopHelper.cs:188-196`): each row
-        /// PREPENDS `text + report + " "` — the LAST flag reads first, and
-        /// the substitutes land (`{BiomeName}`/`{NPCName}`).
+        /// APPENDS `report + text + " "` (the named args bind `report` to
+        /// `str0` and the new text to `str1`, `:195`) — the report reads in
+        /// flag order, and the substitutes land (`{BiomeName}`/`{NPCName}`).
         #[test]
-        fn the_report_prepends_in_flag_order() {
+        fn the_report_appends_in_flag_order() {
             let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
             crate::lang::init(tr_core::localization::GameCulture::English);
             // The Guide's rows (`TownNPCMood_Guide`, en-US.Town.json
-            // `:1854-1870`): LoveSpace then the Forest Like — the Like
-            // reads FIRST (it was added last).
+            // `:1854-1870`): LoveSpace then the Forest Like — the LoveSpace
+            // reads FIRST (it was added first).
             let flags = [
                 MoodFlag::LoveSpace,
                 MoodFlag::BiomeAffection(AffectionLevel::Like, BiomeKind::Forest),
@@ -2030,7 +2038,9 @@ mod tests {
                 )],
             );
             let space = crate::lang::text("TownNPCMood_Guide.LoveSpace");
-            assert_eq!(report, format!("{like}{space} "));
+            // Row 1's own `" "` suffix is the separator before row 2's text;
+            // the final row carries the report's trailing space.
+            assert_eq!(report, format!("{space} {like} "));
             assert!(report.ends_with(' '), "the trailing space (`:195`)");
         }
 

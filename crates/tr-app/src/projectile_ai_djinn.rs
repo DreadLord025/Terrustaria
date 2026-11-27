@@ -259,13 +259,14 @@ mod tests {
         curse_ai(&mut pool.slots_mut()[i], &w, Some(&pl), &mut rng);
         assert_eq!(pool.slots()[i].alpha, 230);
         assert_eq!(pool.slots()[i].frame_counter, 1);
-        // Five more ticks: the counter wraps at >4 and the frame advances
-        // (ticks 2-5 reach 5, tick 6 rolls 6 > 4 → counter 0, frame 1).
+        // `++frameCounter > 4` wraps when the counter reaches 5 (tick 5
+        // wraps to 0, frame 1), then tick 6 re-increments to 1 — the 6-tick
+        // state is (counter 1, frame 1).
         for _ in 0..5 {
             let mut r = UnifiedRandom::new(passing_seed());
             curse_ai(&mut pool.slots_mut()[i], &w, Some(&pl), &mut r);
         }
-        assert_eq!(pool.slots()[i].frame_counter, 0);
+        assert_eq!(pool.slots()[i].frame_counter, 1, "the tick that pushes 5 wraps (++counter > 4), the next re-increments");
         assert_eq!(pool.slots()[i].frame, 1);
         assert_eq!(pool.slots()[i].alpha, 230 - 25 * 5);
     }

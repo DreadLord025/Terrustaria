@@ -441,7 +441,10 @@ mod w4_g86_tests {
     /// precedes the coords membership.
     #[test]
     fn w4_g86_the_highlight_area_gates_match_the_csharp_order() {
-        let mut a = area(&[(5, 5)], &[(5, 5)]);
+        // `actuallySelected` is `SmartInteractTileCoordsSelected.Contains`
+        // (`Main.cs:3947`) - computed BEFORE the bounds/`hideUI` gates, so
+        // the probe lists a point outside the interaction rect as selected.
+        let mut a = area(&[(5, 5)], &[(5, 5), (200, 200)]);
         assert_eq!(in_smart_cursor_highlight_area(&a, 5, 5), (true, true));
         // Outside the interaction rect: not in area, but STILL selected.
         assert_eq!(in_smart_cursor_highlight_area(&a, 200, 200), (false, true));

@@ -1224,9 +1224,39 @@ mod w4_d13_style124_tests {
         assert_eq!(rng.ranges[0], (0, 15), "the gate draw");
         // The window's 35×35 per-tile draws, then the point-state tail's
         // Next(10) (`:35679` — ai[0] > 0 won the ladder).
-        assert_eq!(rng.ranges.len(), 1 + 35 * 35 + 1, "one Next(8) per window tile + the tail");
-        assert!(rng.ranges[1..1 + 35 * 35].iter().all(|&r| r == (0, 8)));
-        assert_eq!(rng.ranges[1 + 35 * 35], (0, 10), "the point dust gate");
+        assert_eq!(
+            rng.ranges.len(),
+            1 + 35 * 35 + 6 + 1 + 6,
+            "one Next(8) per window tile + the two sparkle bodies (W4-g64) + the tails"
+        );
+        assert_eq!(rng.ranges.iter().filter(|&&r| r == (0, 8)).count(), 35 * 35);
+        assert_eq!(rng.ranges.iter().filter(|&&r| r == (0, 10)).count(), 1);
+        // The 12 remaining draws are the two NewDust internal sextets; the
+        // sparkles use a 16x16 box, so the position pair is `Next(12)`
+        // (`Dust.cs:170-175`, width/height-4 = 12).
+        let internals: Vec<(i32, i32)> = rng
+            .ranges
+            .iter()
+            .copied()
+            .filter(|&r| r != (0, 8) && r != (0, 10) && r != (0, 15))
+            .collect();
+        assert_eq!(internals.len(), 12);
+        let mut pos_ranges: Vec<i32> = Vec::new();
+        for sextet in internals.chunks(6) {
+            // Both sparkle bodies share the velocity pair, the `Next(3)`
+            // frame and the `Next(-20,21)` scale (`Dust.cs:170-175`); only
+            // the position pair differs with the dust box (8x8 -> 4,
+            // 16x16 -> 12).
+            assert_eq!(&sextet[2..], &[(-20, 21), (-20, 21), (0, 3), (-20, 21)][..]);
+            assert_eq!(sextet[0], sextet[1], "the position pair");
+            pos_ranges.push(sextet[0].1);
+        }
+        pos_ranges.sort();
+        assert_eq!(
+            pos_ranges,
+            vec![4, 12],
+            "the point sparkle's 8x8 box and the scan sparkle's 16x16 box"
+        );
         assert_eq!(rng.floats, 0, "no float draws on this path");
         assert_eq!(p.ai[0], 1.0, "the ore arms the point state");
         let tile_center = Vec2::new(ore_x as f32 * 16.0 + 8.0, ore_y as f32 * 16.0 + 8.0);

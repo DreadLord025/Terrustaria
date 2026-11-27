@@ -585,7 +585,9 @@ mod tests {
         assert_eq!((s.row, s.counter), (0, 4.0)); // no counter reset
         let rows = rows_over(FindFrameKind::CultistArcherBlue, input(1.0, 0.0), 21);
         // floor 7 on tick 1; counter 2/4/6/8 → step on the 4th tick.
-        assert_eq!(&rows[..5], &[7, 7, 7, 7, 8]);
+        // floor 7 on tick 1; counter 2/4/6/8 -- the strict > 6 step lands
+        // on tick 4 (`NPC.cs:71611-71616`).
+        assert_eq!(&rows[..5], &[7, 7, 7, 8, 8]);
         assert_eq!(rows[15], 11);
         assert_eq!(rows[19], 7); // the >= 12 wrap back to the floor
         let mut s = FrameState { counter: 9.0, ..Default::default() };

@@ -1095,10 +1095,18 @@ mod tests {
         ranges: Vec<(i32, i32)>,
         floats: usize,
         doubles: usize,
+        six_nonzero: bool,
     }
     impl DropRng for CensusRng {
         fn next_range(&mut self, min: i32, max: i32) -> i32 {
             self.ranges.push((min, max));
+            // The 708 dust gates (`:69944`) take the branch on a NON-zero
+            // `Next(6)`; the plain census folds every gate shut (min = 0),
+            // so `gate_census` flips this one arm open while the ranges
+            // record the C# argument pair either way.
+            if self.six_nonzero && (min, max) == (0, 6) {
+                return 1;
+            }
             min
         }
         fn next_float(&mut self) -> f32 {
@@ -1111,7 +1119,11 @@ mod tests {
         }
     }
     fn census() -> CensusRng {
-        CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 }
+        CensusRng { ranges: Vec::new(), floats: 0, doubles: 0, six_nonzero: false }
+    }
+    /// The `Next(6) != 0` taken-branch census (`:69944`).
+    fn gate_census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0, doubles: 0, six_nonzero: true }
     }
 
     fn world() -> World {
@@ -1325,7 +1337,7 @@ mod tests {
         let mut p = proj(MONK_STAFF_T3_ALT);
         p.damage = 42;
         p.vel = Vec2::new(12.0, 0.0);
-        let mut rng = census();
+        let mut rng = gate_census();
         let tick = ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
         assert_eq!(rng.doubles, 2, ":69909 — NextVector2Square(-0.2, 0.2)");
         assert_eq!(
@@ -1356,7 +1368,7 @@ mod tests {
         let mut p = proj(MONK_STAFF_T3_ALT);
         p.owner = 3;
         p.vel = Vec2::new(12.0, 0.0);
-        let mut rng = census();
+        let mut rng = gate_census();
         let tick = ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
         assert!(tick.shots.is_empty(), ":69907");
         assert_eq!(rng.doubles, 0);
@@ -1795,7 +1807,10 @@ mod tests {
         use crate::projectile::FALLING_STAR_SPAWNER;
         let mut w = world();
         w.day_time = true;
-        let o = owner(0, 0);
+        let mut o = owner(0, 0);
+        // `Main.LocalPlayer.position.Y < Main.worldSurface * 16` (`:53105`):
+        // the fixture must sit strictly ABOVE the surface line (800 px).
+        o.player_pos = Vec2::new(1600.0, 100.0);
         let mut p = proj(FALLING_STAR_SPAWNER);
         let mut rng = census();
         let tick = ai_star_spawner(&mut p, &o, &w, 0, &mut rng);
@@ -1836,7 +1851,7 @@ mod tests {
         let o = owner(0, 0);
         let mut p = proj(FALLING_STAR_SPAWNER);
         p.ai[0] = 179.0;
-        p.ai[1] = -1.0;
+        p.ai[1] = 0.0; // the target player index (`ai[1] > -1`, `:53115`)
         p.pos = Vec2::new(1600.0, 400.0);
         p.vel = Vec2::new(4.0, 6.0);
         let mut rng = census();

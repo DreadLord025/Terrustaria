@@ -872,11 +872,13 @@ mod tests {
                 find_frame_extra7b(k, &mut s, &windup);
                 assert_eq!((s.row, s.counter), (row, 0.0), "{k:?} ai[1] {a1}");
             }
-            // The air leaves the flip alone (the vy == 0 gate).
+            // The air leaves the flip alone (the vy == 0 gate): the last
+            // grounded windup tick copied its default direction 1
+            // (`NPC.cs:71163-71166`), so the airborne tick keeps 1.
             let mut air = input(0.0, -2.0);
             air.direction = -1;
             find_frame_extra7b(k, &mut s, &air);
-            assert_eq!(s.sprite_dir, 0, "{k:?} air keeps the sprite");
+            assert_eq!(s.sprite_dir, 1, "{k:?} air keeps the sprite");
         }
     }
 

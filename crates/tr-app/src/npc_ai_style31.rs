@@ -791,6 +791,37 @@ mod tests {
         Style31Env::CLASSIC_SOLO
     }
 
+    /// The `Dust.NewDust` internals census (`Dust.cs:170-190`): position
+    /// X then Y `Next(w-4)`/`Next(h-4)`, velocity X then Y
+    /// `Next(-20,21)`, `frame.Y Next(3)`, `scale Next(-20,21)` — six draws.
+    /// The dimensions pass through the C#'s own `max(_, 5)` clamp.
+    fn witness_dust(rng: &mut UnifiedRandom, width: i32, height: i32) {
+        let n2 = width.max(5);
+        let n3 = height.max(5);
+        let _ = rng.next_max(n2 - 4);
+        let _ = rng.next_max(n3 - 4);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+    }
+
+    /// The per-tick ambient drip (`:27074-27079`): one `Next(5)` gate,
+    /// then (on a hit) one type-5 box dust at `(w, (int)(h*0.5))`.
+    fn witness_drip(rng: &mut UnifiedRandom, w: i32, h: f32) {
+        if rng.next_max(5) == 0 {
+            witness_dust(rng, w, (h * 0.5) as i32);
+        }
+    }
+
+    /// The per-tick spin dust (`:27374`): the two `Next(-30, 31)` argument
+    /// draws, then the NewDust internals — 8 draws per spin tick.
+    fn witness_spin_tick(rng: &mut UnifiedRandom, width: i32, height: i32) {
+        let _ = rng.next_range(-30, 31);
+        let _ = rng.next_range(-30, 31);
+        witness_dust(rng, width, height);
+    }
+
     /// W4-e2: the tests' scratch dust seam (the `update_rng` permissive
     /// convention — whole world on-screen, full budget, no cull).
     fn dctx() -> tr_core::particles::SpawnCtx {
@@ -1049,32 +1080,40 @@ mod tests {
         let mut n = spaz(60.0 * TILE_PX, 60.0 * TILE_PX);
         n.ai = [1.0, 0.0, 0.0, 0.0];
         let mut rng = UnifiedRandom::new(42);
+        let (wpc, hpc) = n.size();
         let mut witness = rng.clone();
-        let _gate = witness.next_max(5);
-        let _d1 = witness.next_range(-30, 31);
-        let _d2 = witness.next_range(-30, 31);
+        witness_drip(&mut witness, wpc as i32, hpc);
+        witness_spin_tick(&mut witness, wpc as i32, hpc as i32);
         spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
-        assert_eq!(rng.peek(), witness.peek(), "gate + 2 dust draws");
+        assert_eq!(rng.peek(), witness.peek(), "drip gate + spin pair");
         assert!((n.ai[2] - 0.005).abs() < 1e-6, "the ramp steps 0.005");
-        // The transition into phase 2: 52 burst draws + the pair.
+        // The transition into phase 2: the 12 gore + 40 burst-argument
+        // draws, each dust followed by its own NewDust internals, then
+        // the per-tick pair.
         n.ai = [1.0, 99.0, 0.5, 0.0];
         let mut witness = rng.clone();
-        let _gate = witness.next_max(5);
-        for _ in 0..52 {
-            let _ = witness.next_range(-30, 31);
+        witness_drip(&mut witness, wpc as i32, hpc);
+        for _ in 0..2 {
+            for _ in 0..3 {
+                let _ = witness.next_range(-30, 31);
+                let _ = witness.next_range(-30, 31);
+            }
         }
-        let _d1 = witness.next_range(-30, 31);
-        let _d2 = witness.next_range(-30, 31);
+        for _ in 0..20 {
+            let _ = witness.next_range(-30, 31);
+            let _ = witness.next_range(-30, 31);
+            witness_dust(&mut witness, wpc as i32, hpc as i32);
+        }
+        witness_spin_tick(&mut witness, wpc as i32, hpc as i32);
         spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 2.0);
         assert_eq!(n.ai[1], 0.0);
-        assert_eq!(rng.peek(), witness.peek(), "52 burst + 2, in order");
+        assert_eq!(rng.peek(), witness.peek(), "burst + pair, in order");
         // The transition into phase 3: no burst, ai[2] zeroed.
         n.ai = [2.0, 99.0, 0.005, 0.0];
         let mut witness = rng.clone();
-        let _gate = witness.next_max(5);
-        let _d1 = witness.next_range(-30, 31);
-        let _d2 = witness.next_range(-30, 31);
+        witness_drip(&mut witness, wpc as i32, hpc);
+        witness_spin_tick(&mut witness, wpc as i32, hpc as i32);
         spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 3.0);
         assert_eq!(n.ai[2], 0.0, "the phase-3 entry zeroes the spin");

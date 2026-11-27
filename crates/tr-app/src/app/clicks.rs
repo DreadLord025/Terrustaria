@@ -1629,16 +1629,15 @@ impl App {
             held,
             self.talk_npc.and_then(|i| self.npcs.get(i)),
         );
-        // The live label list in registration order (`NPCInteractions.All`,
-        // `:513-530`): OpenSign (sign only), Stardew (cola held), Happiness
-        // (condition), then CloseChat (always last, `:515`).
-        let mut labels: Vec<String> = Vec::new();
-        let sign_index = if sign_open {
-            labels.push(crate::lang::inter(if self.sign_editing() { 47 } else { 48 }));
-            Some(0usize)
-        } else {
-            None
-        };
+        // The live label list in `NPCInteractions.All` registration order
+        // (`NPCInteractions.cs:513-530`, preserved by `NPCChatPanel.
+        // PrepareInteractions` `:164-175`): CloseChat (`:515`) first, then
+        // OpenSign (`:516`), StardewValleyBit (`:517`), ... ReportHappiness
+        // (`:529`). `ui::npc_chat::interactions` is the same list the draw
+        // walks (`draw_interactions`), so the click rects match the row.
+        let mut labels = ui::npc_chat::interactions(sign_open, self.sign_editing());
+        let close_index = 0usize;
+        let sign_index = sign_open.then_some(1usize);
         let stardew_index = if stardew {
             labels.push(crate::dryad_stardew::give_cola_button_text());
             Some(labels.len() - 1)
@@ -1651,8 +1650,6 @@ impl App {
         } else {
             None
         };
-        labels.push(crate::lang::inter(52));
-        let close_index = labels.len() - 1;
         let rects =
             ui::npc_chat::interaction_rects(&self.lookups, screen, &self.npc_chat_text, &labels);
         let hovered = rects

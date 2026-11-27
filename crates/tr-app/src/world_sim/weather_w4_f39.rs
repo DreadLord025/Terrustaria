@@ -63,6 +63,10 @@ fn w4_f39_the_clock_decays_before_the_rain_section_and_stops_on_update_time() {
     let mut twin = UnifiedRandom::new(app.world.seed as i32);
     let want_cooldown = -(twin.next_range(3024, 6048) as f64) * 100.0;
     let _travel = twin.next_max((27000.0 / 1.0) as i32 * 4);
+    // The homeless-arrival roll follows the visit roll on the SAME
+    // `Main.rand` stream (`Main.cs:65043-65057`: `Next(maxValue)` with
+    // `maxValue = (int)(27000.0 / dayRate)`).
+    let _homeless = twin.next_max((27000.0 / 1.0) as i32);
     update_world_tick(&mut app, STEP);
     assert!(!app.world.slime_rain, "the expiry stopped the rain");
     assert_eq!(app.world.slime_rain_time, want_cooldown);
@@ -97,7 +101,10 @@ fn w4_f39_the_negative_cooldown_climbs_and_snaps_to_zero() {
     app.world.slime_rain_time = -100.0;
     let pristine = UnifiedRandom::new(app.world.seed as i32);
     let mut twin = pristine.clone();
-    let _travel = twin.next_max(27000 * 4); // only the travel roll draws
+    let _travel = twin.next_max(27000 * 4); // the travel roll
+    // The homeless-arrival roll (`Main.cs:65052-65057`, `Next(27000)`) rides
+    // the same stream right after it.
+    let _homeless = twin.next_max(27000);
     update_world_tick(&mut app, STEP);
     assert_eq!(app.world.slime_rain_time, -99.0);
     assert_eq!(
@@ -146,6 +153,9 @@ fn w4_f39_a_rain_ending_this_tick_does_not_open_the_slime_roll() {
     let _hit = twin.next_max(450_000);
     let _duration = twin.next_range(32400, 54000);
     let _travel = twin.next_max(27000 * 4);
+    // The homeless-arrival roll (`Main.cs:65052-65057`) closes the tick's
+    // `Main.rand` draws after the visit roll.
+    let _homeless = twin.next_max(27000);
     assert_eq!(
         *app.rngs.stream(crate::app::RngKey::UpdateTime),
         twin,
@@ -250,6 +260,9 @@ fn w4_f39_the_morning_roll_gates_are_the_busy_invasion_set() {
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
         if gate != "afternoon" && gate != "night" {
             let _travel = twin.next_max(27000 * 4);
+            // The homeless-arrival roll shares the day window and stream
+            // (`Main.cs:65043-65057`, `Next(27000)`).
+            let _homeless = twin.next_max(27000);
         }
         update_world_tick(&mut app, STEP);
         assert!(!app.world.slime_rain, "{gate} refused the roll");
@@ -272,10 +285,15 @@ fn w4_f39_the_ready_gate_edges_are_exclusive_and_the_not_ready_arm_draws_nothing
         app.player.as_mut().unwrap().stat_defense = def;
         app.world.downed_slime_king = true;
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
-        if ready {
-            let _slime = twin.next_max(450_000);
+        // `Main.cs:64945`'s `Next(num3) == 0` draws only when ready (the
+        // `flag3 || expertMode` gate); a hit then `StartSlimeRain`'s
+        // `Next(32400, 54000)` (`:64767`).
+        if ready && twin.next_max(450_000) == 0 {
+            let _duration = twin.next_range(32400, 54000);
         }
         let _travel = twin.next_max(27000 * 4);
+        // The homeless-arrival roll (`Main.cs:65052-65057`).
+        let _homeless = twin.next_max(27000);
         update_world_tick(&mut app, STEP);
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdateTime),

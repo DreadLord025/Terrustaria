@@ -583,9 +583,9 @@ mod tests {
         let g = row_geometry([100.0, 50.0, 400.0, 30.0], 60.0, false);
         assert_eq!(g.panel_width, 401.0);
         assert_eq!(g.title_pos, [108.0, 58.0]);
-        assert_eq!(g.value_pos, [440.0, 58.0]);
+        assert_eq!(g.value_pos, [430.0, 58.0]);
         let gp = row_geometry([100.0, 50.0, 400.0, 30.0], 60.0, true);
-        assert_eq!(gp.value_pos, [440.0, 55.0]);
+        assert_eq!(gp.value_pos, [430.0, 55.0]);
     }
 
     /// `GenInput` (`UIKeybindingListItem.cs:80-112`): empty → "", keyboard
@@ -620,11 +620,13 @@ mod tests {
     /// trigger to its Lang key and falls back to the raw name (`:174`).
     #[test]
     fn the_unbound_row_dims_and_the_friendly_name_maps_keys() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let row = KeybindingRow::new("Jump", InputMode::Keyboard, [63, 65, 151, 255]);
         let d = row.draw_plan([0.0, 0.0, 400.0, 30.0], false, false, &[], 40.0);
         assert_eq!(d.base_color, [80, 80, 80, 255]);
-        // The unloaded manager echoes the key — pin the KEY, not the string.
-        assert!(d.text == "Unbound" || d.text == "LegacyMenu.195", "got {}", d.text);
+        // The loaded en-US `LegacyMenu.195` row is `<Unbound>`.
+        assert_eq!(d.text, "<Unbound>");
         let listening = row.draw_plan([0.0, 0.0, 400.0, 30.0], true, true, &[], 40.0);
         assert_eq!(listening.base_color, [255, 235, 127, 255]);
         let bound = row.draw_plan(

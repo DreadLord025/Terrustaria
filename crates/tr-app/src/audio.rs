@@ -2204,6 +2204,11 @@ impl Audio {
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
+            // The id-42 trackables the projectile façade hands here
+            // (`play_proj_sound`'s case-42 arm → `play_use_sound`): the
+            // projectile-only bank rows (`pal_digtoise_joy`) resolve from
+            // this list, not the SFX/item banks.
+            .chain(PROJ_CUSTOM_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
@@ -3872,7 +3877,15 @@ impl Audio {
             } else {
                 format!("{base}_0")
             };
-            if !PROJ_CUSTOM_CUES.contains(&cue.as_str()) {
+            // Only the landed trackable bank plays (the rest stay the
+            // documented skip — their machines are unported). The drain's
+            // id-42 styles span the projectile-only rows (`pal_digtoise_joy`)
+            // and the item-use bank rows the same styles resolve
+            // (`sonar_potion` 311, `rainbow_boulder` 274), so the gate is
+            // the union — the same set `sound_type` reports as id 42.
+            if !(PROJ_CUSTOM_CUES.contains(&cue.as_str())
+                || ITEM_CUSTOM_CUES.contains(&cue.as_str()))
+            {
                 return None;
             }
             return self.play_use_sound(idx as u16, x, y, pitch_offset, rng);
@@ -7244,6 +7257,10 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted play consumes no gameplay draw");
+        // The live `Main.soundVolume` gate restored (`:369-372`); the probes
+        // above/below must not leak the muted listener into the audible arm.
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
         // An audible play: exactly ONE Next(-6, 7) on the passed stream —
         // the same value a bare draw produces (the default case-2 window).
         let mut witness = UnifiedRandom::new(11);
@@ -7726,7 +7743,9 @@ mod tests {
         let _ = witness.next_range(-6, 7);
         assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), Some("Item_34"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
-        // Muted: the gate refuses before any draw.
+        // The Item62 play is audible and adds its OWN one case-2 pitch draw
+        // (`:632`) — advance the witness so each play's census is compared.
+        let _ = witness.next_range(-6, 7);
         let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("Item_62"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one case-2 pitch draw");
@@ -7902,6 +7921,10 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
+        // Restore the live volume: the `(3, 29)` route below is the AUDIBLE
+        // arm (the gate reads `Main.soundVolume`, `:369-372`).
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
         assert_eq!(
             audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("NPC_Hit_29")
@@ -9293,7 +9316,9 @@ mod tests {
         let _ = witness.next_range(-6, 7);
         assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), Some("Item_34"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
-        // Muted: the gate refuses before any draw.
+        // The Item62 play is audible and adds its OWN one case-2 pitch draw
+        // (`:632`) — advance the witness so each play's census is compared.
+        let _ = witness.next_range(-6, 7);
         let cue = audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("Item_62"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one case-2 pitch draw");
@@ -9474,6 +9499,10 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
+        // Restore the live volume: the `(3, 29)` route below is the AUDIBLE
+        // arm (the gate reads `Main.soundVolume`, `:369-372`).
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
         assert_eq!(
             audio.play_proj_sound((3, 29), 0.0, 0.0, 0.0, 1.0, &mut rng),
             Some("NPC_Hit_29")
@@ -9637,11 +9666,11 @@ mod tests {
         assert!(SINGLE_SLOT_CUES.iter().all(|(n, _)| *n != "Moonlord_Cry"));
         assert_eq!(audio.play_single_voice("Pixie", -1.0, -1.0), None);
         assert_eq!(audio.play_single_voice("Moonlord_Cry", -1.0, -1.0), None);
-        // The sibling-lane cases are NOT on this tree (the merge brings
-        // e10's Female_Hit_0 (20) and g23's Item_57 (37)); the gore drip
-        // (39) is PORTED at the PITCH SEAL (the GoreSound seam).
-        assert_eq!(sound_type("Female_Hit_0"), 0, "case 20 is e10's lane");
-        assert_eq!(sound_type("Item_57"), 0, "case 37 is g23's lane");
+        // The sibling-lane cases now ride the merged bank: e10's
+        // Female_Hit_0 (20) and g23's Item_57 (37); the gore drip (39) is
+        // PORTED at the PITCH SEAL (the GoreSound seam).
+        assert_eq!(sound_type("Female_Hit_0"), 20, "case 20 is e10's lane");
+        assert_eq!(sound_type("Item_57"), 37, "case 37 is g23's lane");
         assert_eq!(sound_type("Drip_0"), 39, "case 39 landed at the seal");
         assert_eq!(sound_type("Drip_1"), 39);
         assert_eq!(sound_type("Drip_2"), 39);

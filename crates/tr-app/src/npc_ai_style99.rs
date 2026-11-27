@@ -392,8 +392,8 @@ mod tests {
 
     /// `:39936-39947` — the dissolve freezes at oldPosition, counts 5
     /// ticks, then fires the HitEffect + death seam. Under the menu
-    /// ctx the trail dusts refuse before drawing, so the whole
-    /// dissolve is explicit-draw-free.
+    /// ctx each NewDust refuses BEFORE its internals, but the HitEffect's
+    /// own `SelectRandom` + `NextFloat` still draw: 4 sites × 5 = 40.
     #[test]
     fn w4_d33_s99_the_dissolve_snaps_back_and_dies_at_five() {
         let w = air();
@@ -415,7 +415,18 @@ mod tests {
             assert_eq!(n.ai[1], tick as f32);
             assert_eq!(out.died, tick == 5, "the death fires at 5 only");
         }
-        assert_eq!(rng.peek(), UnifiedRandom::new(99).peek(), "menu ctx refuses all");
+        // `:83011-83022` — the tick-5 HitEffect: 4 oldPos sites (0/3/6/9),
+        // 5 dusts each, each dust drawing `SelectRandom(6,259,158)`'s
+        // Next(3) and `scale += NextFloat()`. NewDust itself refuses on
+        // the menu ctx before any internal draw.
+        let mut oracle = UnifiedRandom::new(99);
+        for _ in 0..4 {
+            for _ in 0..5 {
+                let _ = oracle.next_max(3);
+                let _ = oracle.next_float();
+            }
+        }
+        assert_eq!(rng.peek(), oracle.peek(), "the tick-5 HitEffect draws");
     }
 
     /// `:39948-39953` — the fall accelerates 0.2/tick, caps at 12,

@@ -351,6 +351,10 @@ mod tests {
         // blocked move.
         let mut w = floor_world();
         let mut p = tomb(43);
+        // A foreign owner skips the placement arm (`:25329-25332`), so the
+        // movement/bounce half is reachable (a local owner would place the
+        // tombstone on the empty cell above the floor and Kill instead).
+        p.owner = 1;
         // Fall onto the floor (row 30 = px 480): the box bottom
         // 320+24+vy crosses 480 only when vy is large — park just
         // above with a fast fall.
@@ -366,6 +370,7 @@ mod tests {
         assert!(p.active, "the bounce does not kill");
         // A slow fall (last.Y ≤ 1.5) zeroes Y without the bounce.
         let mut q = tomb(201);
+        q.owner = 1; // the foreign-owner placement skip (above)
         q.pos = Vec2::new(320.0, 455.0);
         q.vel = Vec2::new(0.0, 1.0);
         let mut rng2 = Recorder { draws: Vec::new(), next: 1 };

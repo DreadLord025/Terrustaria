@@ -727,6 +727,10 @@ mod tests {
             if g < 3 {
                 oracle.next_max(3);
             }
+            // `Gore.cs:1327-1328` — NewGore's own velocity nudges:
+            // Next(10, 31) then Next(-20, 21), BEFORE the caller's vy.
+            oracle.next_range(10, 31);
+            oracle.next_range(-20, 21);
             oracle.next_float(); // the vy nudge
         }
         assert_eq!(rng.peek(), oracle.peek(), "the gore argument order");

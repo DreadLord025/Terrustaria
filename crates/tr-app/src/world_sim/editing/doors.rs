@@ -72,9 +72,6 @@ fn use_golem_altar(app: &mut App) -> bool {
                 // `Player.cs:32782` — `PlaySound(15, (int)position.X,
                 // (int)position.Y, 0)`: Style 0 → Roar_0, top-left,
                 // draw-free (case 15's slot guard rides play_roar).
-                let (rx, ry) =
-                    app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-                app.audio.play_roar(0, rx, ry);
                 spawn_golem_on_altar(app);
                 break;
             }
@@ -2879,13 +2876,15 @@ mod tests {
             1,
             "the anchor dedupe (`:32363-32371`)"
         );
-        // A click on the TOP row (31, 30) hits the same anchor (frameY 0,
-        // no shift) — still deduped.
+        // A click on the TOP-RIGHT cell (31, 30): the C# anchor normalises
+        // Y only (`num25 = myY`, decremented on frameY 18, `:32358-32362`);
+        // `myX` stays the clicked column, so (31, 30) is a DIFFERENT anchor
+        // and spawns its own fountain (`:32366`'s ai0 == myX).
         assert!(interact_tile(&mut app, 31, 30));
         assert_eq!(
             app.projectiles.slots().iter().filter(|p| p.active).count(),
-            1,
-            "the top row shares the anchor"
+            2,
+            "the clicked column is the anchor X (`:32366`)"
         );
         // Kill the fountain: the next click spawns a fresh one.
         for p in app.projectiles.slots_mut() {

@@ -814,9 +814,19 @@ pub enum StockWhen {
 /// vanilla's `num` order (the UI fills the slots left to right). The
 /// shared tail — the pylon rows (`:3472-3537`) and the `isAShopItem`
 /// stamp (`:3538-3541`) — rides [`setup_shop_tail`].
-pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
-    let _ = inventory_ids;
-    let mut rows: Vec<ShopEntry> = match shop_index {
+///
+/// The switch's gates are evaluated HERE, in source order: `Chest.SetupShop`
+/// keeps one running `num` that the tail's `num < 39` pylon guards read, so
+/// the rows must be filtered before the tail is appended (the old split
+/// appended the tail to the RAW table, where gated-out rows inflated the
+/// count and dropped every pylon).
+pub fn setup_shop(
+    shop_index: u32,
+    inventory_ids: &[u16],
+    flags: &ShopFlags,
+    moon_phase: u32,
+) -> Vec<ShopEntry> {
+    let raw: Vec<ShopEntry> = match shop_index {
         // The Merchant (`Chest.cs:1371-1483`, the registry
         // `NPCInteractions.Shop(17, 1)`, `NPCInteractions.cs:488`): every
         // row in the C#'s num order, every gate verbatim.
@@ -837,17 +847,9 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(40, StockWhen::Always),
             row(42, StockWhen::Always),
             row(965, StockWhen::Always),
-            row(967, StockWhen::ZoneSnow),
-            row(33, StockWhen::ZoneJungle),
-            // `:1428-1430`'s happy-windy-day row rides the weather pass.
-            row(279, StockWhen::BloodMoon),
-            row(282, StockWhen::Night),
-            // `:1435-1437` — `BirthdayParty.PartyIsUp` adds the Rainbow
-            // Glowstick (5643) between the night row and the downedBoss3
-            // row (W4-f41 final sweep — the live scheduler gate).
-            row(5643, StockWhen::PartyUp),
-            row(346, StockWhen::DownedBoss3),
-            row(488, StockWhen::HardMode),
+            // `:1412-1448` — ONE copy of the snow/jungle/windy/blood-moon/
+            // night/party/boss3/hardmode block, in the C# `num` order (the
+            // merge had spliced a second, out-of-order copy here).
             row(967, StockWhen::ZoneSnow), // `:1412-1416`
             // `:1417-1421`: `ZoneJungle || (tenthAnniversaryWorld &&
             // notTheBeesWorld && !remixWorld)`.
@@ -1018,16 +1020,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // 1835 first, then 1258).
             row(1836, StockWhen::PlayerHasItem(1835)),
             row(1261, StockWhen::PlayerHasItem(1258)),
-        ],
-        // The Witch Doctor (`Chest.cs:2615-2672`): the Blowgun 1430 and the
-        // Flask 986 always; the conditionals (the Queen Bee 2999, the
-        // jungle 6147/1167, the night 1158, the hardmode 1159, the
-        // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
-        // constants-off until their flags land. W4-f39: the halloween
-        // Tiki mask (1791, `:2667-2670`) rides the season flag.
-        16 => vec![
-            row(1430, StockWhen::Always),
-            row(986, StockWhen::Always),
+            // `:2667-2670`: `Main.halloween` — the Tiki mask 1791.
             row(1791, StockWhen::Halloween),
         ],
         // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
@@ -1058,33 +1051,6 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(269, StockWhen::Always), // `:1843-1848`
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
-            // W4-f39: `:1903-1907`'s halloween mask (1740) and
-            // `:1966-1970`'s halloween pair (3246/3247). The port's list
-            // keeps the always rows then the gated ones (the filter
-            // preserves relative order; the unported hardmode moon-phase /
-            // downedFrost rows between them are absent).
-            row(1740, StockWhen::Halloween),
-            row(3246, StockWhen::Halloween),
-            row(3247, StockWhen::Halloween),
-        ],
-        // The Dryad (`Chest.cs:1568-1745`): the blood-moon seed branch (both
-        // flavours — W4-g69 doc-sweep wires the `WorldGen.crimson` split),
-        // the base rows, the flower-seed moon-phase pairs. The graveyard/
-        // underworld/glowshroom rows and the halloween rows sit constants-off.
-        3 => vec![
-            row(67, StockWhen::BloodMoonCorruption),
-            row(59, StockWhen::BloodMoonCorruption),
-            row(4504, StockWhen::BloodMoonCorruption),
-            // `:1575-1581`: the crimson branch's Vicious Powder / Crimson
-            // Seeds / Blood-Moon Monolith rows.
-            row(2886, StockWhen::BloodMoonCrimson),
-            row(2171, StockWhen::BloodMoonCrimson),
-            row(4508, StockWhen::BloodMoonCrimson),
-            row(66, StockWhen::Always),
-            row(62, StockWhen::Always),
-            row(63, StockWhen::Always),
-            row(745, StockWhen::Always),
-            row(27, StockWhen::Always),
             // `:1849-1857`: `NPC.downedClown` — the clown outfit trio.
             row(503, StockWhen::DownedClown),
             row(504, StockWhen::DownedClown),
@@ -1117,7 +1083,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:1898-1902`: the snow biome — the Eskimo set 1429.
             row(1429, StockWhen::ZoneSnow),
             // `:1903-1907`: `Main.halloween` — the Bride of Frankenstein
-            // mask 1740 (constants-off, no season system).
+            // mask 1740.
             row(1740, StockWhen::Halloween),
             // `:1908-1952`: hardmode — the EXACT-phase costume sets
             // (2 → 869, 3 → 4994/4997, 4 → 864/865, 5 → 4995/4998,
@@ -1139,7 +1105,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(1275, CLOTHIER_FROST_DAY),
             row(1276, CLOTHIER_FROST_NIGHT),
             // `:1966-1970`: `Main.halloween` — the Cat Ears/Bunny Hood
-            // pair (constants-off).
+            // pair.
             row(3246, StockWhen::Halloween),
             row(3247, StockWhen::Halloween),
             // `:1971-1978`: `BirthdayParty.PartyIsUp` — the party set.
@@ -1194,27 +1160,15 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:1647-1654`: the underworld/glowshroom else-if — the
             // Hellcake 5214 wins over the Mushroom set 194.
             row(5214, StockWhen::ZoneUnderworld),
-            row(194, StockWhen::ZoneGlowshroom),
-            // W4-f39: `:1655-1661`'s halloween pumpkins (1853/1854), ahead
-            // of the 3215 flower-seed block.
+            row(194, DRYAD_GLOWSHROOM_ELSE),
+            // `:1655-1661`: `Main.halloween` — the pumpkin pair 1853/1854.
             row(1853, StockWhen::Halloween),
             row(1854, StockWhen::Halloween),
+            // `:1662-1672`: the planter block and the crimson split
+            // (`WorldGen.crimson` → 3218, else 3217).
             row(3215, StockWhen::Always),
             row(3216, StockWhen::Always),
             row(3219, StockWhen::Always),
-            // `:1665-1672`'s 3217/3218 crimson split rides the live world
-            // flag (W4-g69 doc-sweep).
-            row(3217, StockWhen::CorruptionWorld),
-            row(3218, StockWhen::CrimsonWorld),
-            row(194, DRYAD_GLOWSHROOM_ELSE),
-            // `:1655-1661`: `Main.halloween` — the Goodie Bag pair
-            // (constants-off, no season system).
-            row(1853, StockWhen::Halloween),
-            row(1854, StockWhen::Halloween),
-            row(3215, StockWhen::Always), // `:1662-1675`'s planter block
-            row(3216, StockWhen::Always),
-            row(3219, StockWhen::Always),
-            // `:1665-1672`: `WorldGen.crimson` → 3218, else 3217.
             row(3218, StockWhen::CrimsonWorld),
             row(3217, StockWhen::Not(&StockWhen::CrimsonWorld)),
             row(3220, StockWhen::Always),
@@ -1567,13 +1521,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2738, StockWhen::Always),
             row(4470, StockWhen::Always),
             row(4681, StockWhen::Always),
-            // `:2309-2312` — `LanternNight.LanternsUp` adds the Release
-            // Lantern (4702) ahead of the always tail.
-            row(4702, StockWhen::LanternsUp),
             // `:2305-2308` — the graveyard goggles.
             row(4682, StockWhen::ZoneGraveyard),
-            // `:2309-2312` — `LanternNight.LanternsUp`.
-            row(4702, StockWhen::LanternNight),
+            // `:2309-2312` — `LanternNight.LanternsUp` adds the Release
+            // Lantern (4702) after the goggles (ONE copy: the merge had
+            // spliced a second row ahead of the graveyard).
+            row(4702, StockWhen::LanternsUp),
             // `:2313-2317` — `HasItem(3548)` restocks the carried item.
             row(3548, StockWhen::PlayerHasItem(3548)),
             // `:2318-2321` — `NPC.AnyNPCs(229)` (the Pirate).
@@ -1607,19 +1560,6 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3745, StockWhen::PartyUp),
             row(3744, StockWhen::PartyUp),
             row(3743, StockWhen::PartyUp),
-            // `:2345-2358` — the BirthdayParty block (eleven rows, the
-            // C#'s own order).
-            row(3749, StockWhen::PartyIsUp),
-            row(3746, StockWhen::PartyIsUp),
-            row(3739, StockWhen::PartyIsUp),
-            row(3740, StockWhen::PartyIsUp),
-            row(3741, StockWhen::PartyIsUp),
-            row(3737, StockWhen::PartyIsUp),
-            row(3738, StockWhen::PartyIsUp),
-            row(3736, StockWhen::PartyIsUp),
-            row(3745, StockWhen::PartyIsUp),
-            row(3744, StockWhen::PartyIsUp),
-            row(3743, StockWhen::PartyIsUp),
         ],
         // The Zoologist's shop (index 23, `Chest.cs:3263-3407`, the registry
         // `NPCInteractions.Shop(633, 23)`, `NPCInteractions.cs:510`): every
@@ -1705,23 +1645,6 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(5310, StockWhen::Always),
             row(5222, StockWhen::Always),
             row(5228, StockWhen::Always),
-            row(5266, StockWhen::DownedBothSlimes),
-            row(5044, StockWhen::HardModeMoonlord),
-            // W4-f39: the anniversary block (`Main.tenthAnniversaryWorld &&
-            // !Main.getGoodWorld`, `:3436`): the three always-in-block rows
-            // (the Sparkle Slime Balloon 1309, the Heart Lantern 1859, the
-            // Star in a Bottle 1358), the desert row (857), the blood-moon
-            // row (4144) and the four hardmode+pirate moon-phase pairs.
-            row(1309, StockWhen::Anniversary),
-            row(1859, StockWhen::Anniversary),
-            row(1358, StockWhen::Anniversary),
-            row(857, StockWhen::AnniversaryDesert),
-            row(4144, StockWhen::AnniversaryBloodMoon),
-            row(2584, StockWhen::AnniversaryPiratePair(0)),
-            row(854, StockWhen::AnniversaryPiratePair(1)),
-            row(855, StockWhen::AnniversaryPiratePair(2)),
-            row(905, StockWhen::AnniversaryPiratePair(3)),
-            row(5088, StockWhen::Always),
             row(5266, StockWhen::DownedBothSlimes),  // `:3428-3431`
             row(5044, StockWhen::HardModeMoonlord),  // `:3432-3435`
             // The anniversary block (`:3436-3468`).
@@ -2094,6 +2017,16 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         }
         _ => Vec::new(),
     };
+    // `Chest.SetupShop`'s running `num`: the `if` arms write a row only when
+    // their gate passes, and the tail's `num < 39` guards read that count.
+    let mut num = 0u32;
+    let mut rows: Vec<ShopEntry> = Vec::new();
+    for e in raw {
+        if stock_gate(&e.when, flags, inventory_ids, moon_phase, num) {
+            num += 1;
+            rows.push(e);
+        }
+    }
     setup_shop_tail(shop_index, flags, &mut rows);
     rows
 }
@@ -3087,18 +3020,9 @@ pub fn resolve_stock_entries_moon(
     inventory_ids: &[u16],
     moon_phase: u32,
 ) -> Vec<ShopEntry> {
-    // The C#'s `num` — the count of the rows that RESOLVED so far; the
-    // `num < 38` guards (`Chest.cs:1979`/`:1984`) read it live as the
-    // case walks, so the port counts the accepted rows the same way.
-    let mut num = 0u32;
-    let mut out = Vec::new();
-    for e in setup_shop(shop_index, inventory_ids, flags) {
-        if stock_gate(&e.when, flags, inventory_ids, moon_phase, num) {
-            num += 1;
-            out.push(e);
-        }
-    }
-    out
+    // The switch gates (and the `num` the `NumBelow`/pylon guards read) are
+    // evaluated inside [`setup_shop`], in the C# source order.
+    setup_shop(shop_index, inventory_ids, flags, moon_phase)
 }
 
 /// One `StockWhen` gate against the live state — the `SetupShop` if-arms'
@@ -3171,12 +3095,16 @@ fn stock_gate(
             StockWhen::CoinsOverGold => flags.coins_over_gold,
             StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
             StockWhen::PartyGirlPresent => flags.party_girl_present,
-            StockWhen::PartyUp => flags.party_up,
+            // `BirthdayParty.PartyIsUp` is ONE C# boolean; the two port
+            // fields are the same predicate from different lanes
+            // (`world_sim/npcs.rs:1670`/`:1744` both feed
+            // `world_events::party_is_up`), so either opens the row.
+            StockWhen::PartyUp => flags.party_up || flags.party_is_up,
             StockWhen::LanternsUp => flags.lanterns_up,
             // W4-d123: the Party Girl's second-half gates (`Chest.cs:2285-2358`).
             StockWhen::PiratePresent => flags.pirate_present,
             StockWhen::DownedGolem => flags.downed_golem,
-            StockWhen::PartyIsUp => flags.party_is_up,
+            StockWhen::PartyIsUp => flags.party_is_up || flags.party_up,
             // W4-d123: the Cyborg's event/martians gates (`Chest.cs:2363-2435`).
             StockWhen::Eclipse => flags.eclipse,
             // (d123 NightOrEclipse arm deduped — the d122 Cyborg shop uses CYBORG_ROCKET_III.)
@@ -3367,7 +3295,12 @@ fn stock_gate(
             StockWhen::FairyTorchAvailable => flags.fairy_torch_available,
             StockWhen::DownedTowerSolar => flags.downed_tower_solar,
             // W4-d122 remainder census, shop 24 (`Chest.cs:3436`/:3441).
-            StockWhen::AnniversaryWorld => flags.anniversary_world,
+            // `Main.tenthAnniversaryWorld` is bare in `Chest.cs:3436`; the
+            // `not_ftw` field is the SAME seed flag AND-ed with
+            // `!getGoodWorld`, so it is a subset — either answers.
+            StockWhen::AnniversaryWorld => {
+                flags.anniversary_world || flags.anniversary_not_ftw
+            }
             // The combinators + the num guard are handled above — unreachable.
             StockWhen::All(_)
             | StockWhen::Any(_)
@@ -4447,8 +4380,9 @@ mod tests {
     /// W4-a6 — `Chest.cs:1303-1306`: the Peddler's Satchel's permanent
     /// extra stock slot. The flag adds NO draw (a straight `num++`), so the
     /// same seed's prefix rows stay identical and the stock grows by one
-    /// generated row ahead of the painting tail (the painting roll itself
-    /// shifts with the extra iteration's draws — only the count is pinned).
+    /// generated row ahead of the painting tail. The extra draw here lands
+    /// the 3637 staff family, whose `_AddToShop` pair write (`Chest.cs:
+    /// 764-793`) occupies TWO slots for ONE `added`, so the live count is 9.
     #[test]
     fn the_peddlers_satchel_adds_one_stock_slot() {
         let mut w = World::new("t".into(), 200, 200);
@@ -4462,9 +4396,14 @@ mod tests {
             &[2274, 4420, 2281, 2266, 3118, 3099],
             "the prefix rows are draw-identical"
         );
-        // One MORE generated row + the painting tail = 8 live slots.
-        assert_eq!(stock[..8].iter().filter(|v| **v != 0).count(), 8);
-        assert!(stock[8..].iter().all(|v| *v == 0), "the tail is empty");
+        // The extra main row is the 3637 staff family, written as the
+        // 3633/3638 pair (`Chest.cs:764-793`), then the painting 5232.
+        assert_eq!(
+            &stock[..9],
+            &[2274, 4420, 2281, 2266, 3118, 3099, 3633, 3638, 5232],
+            "the pair write + the painting tail"
+        );
+        assert!(stock[9..].iter().all(|v| *v == 0), "the tail is empty");
         let seen: Vec<u16> = stock.iter().copied().filter(|v| *v != 0).collect();
         for (i, id) in seen.iter().enumerate() {
             assert!(!seen[i + 1..].contains(id), "the duplicate {id}");
@@ -4641,15 +4580,17 @@ mod tests {
             ..Default::default()
         };
         let g = resolve_stock_moon(3, &grave, &[], 0);
-        let i747 = g.iter().position(|v| *v == 747).unwrap();
-        assert_eq!(g[i747 - 1], 2171, "the corruption world's grave seed");
+        // `:1610-1622`: the grave seed is written BETWEEN 745 and the 27
+        // head row (not beside 747).
+        let i27 = g.iter().position(|v| *v == 27).unwrap();
+        assert_eq!(g[i27 - 1], 2171, "the corruption world's grave seed");
         let grave_c = ShopFlags {
             crimson_world: true,
             ..grave
         };
         let gc = resolve_stock_moon(3, &grave_c, &[], 0);
-        let i747c = gc.iter().position(|v| *v == 747).unwrap();
-        assert_eq!(gc[i747c - 1], 59, "the crimson world's grave seed");
+        let i27c = gc.iter().position(|v| *v == 27).unwrap();
+        assert_eq!(gc[i27c - 1], 59, "the crimson world's grave seed");
         // `:1647-1654`: the underworld wins over the glowshroom else-if.
         let under = ShopFlags {
             zone_underworld_height: true,
@@ -5524,8 +5465,9 @@ mod town5_tests {
         assert!(resolve_stock_moon(3, &hell, &[], 0).contains(&5214));
         let shroom = ShopFlags { zone_glowshroom: true, ..ShopFlags::default() };
         assert!(resolve_stock_moon(3, &shroom, &[], 0).contains(&194));
-        // The unknown index stays empty.
-        assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+        // An unknown index stays empty (9 is Santa, added by the d122 lane;
+        // `Chest.SetupShop` has no case 26).
+        assert!(resolve_stock_moon(26, &ShopFlags::default(), &[], 0).is_empty());
     }
 
     /// W4-d122 shop 9 — Santa Claus (`Chest.cs:2091-2111`, the registry

@@ -2078,6 +2078,11 @@ mod tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world.day_time = true;
         app.world.time = 10000.0;
+        // The whole block (slime clock + roll + rain) is wrapped in
+        // `Main.cs:64846`'s `isThereAWorldSurface` (`worldSurface > 50.0`,
+        // `Main.cs:2788`) — flow_app's 8x8 default is surface-less, so the
+        // roll would never run; arm the gate the C# requires.
+        app.world.world_surface = 200.0;
         let mut player = crate::player::Player::spawn(&app.world);
         player.max_hp = 200; // AnyPlayerReadyToFightKingSlime: lifeMax > 140
         player.stat_defense = 10; // && statDefense > 8 — the roll draws
@@ -2095,7 +2100,14 @@ mod tests {
         let num6 = (27000.0f64 / day_rate as f64) as i32;
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
         let slime_fired = twin.next_max(num3) == 0;
+        // A hit runs `StartSlimeRain`'s `Next(32400, 54000)` (`:64767`).
+        if slime_fired {
+            let _duration = twin.next_range(32400, 54000);
+        }
         let _travel_fired = twin.next_max(num6 * 4) == 0;
+        // The homeless-arrival roll closes the tick's `Main.rand` draws
+        // (`Main.cs:65052-65057`: `Next((int)(27000.0 / dayRate))`).
+        let _homeless = twin.next_max(num6);
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdateTime),
             twin,
@@ -2419,11 +2431,16 @@ mod tests {
     /// a fire-seeded `UpdateTime` stream and every other gate open.
     #[test]
     fn the_f39_expiring_rain_does_not_open_the_slime_roll_this_tick() {
-        // A seed whose FIRST UpdateTime draw hits Next(450000) — the
-        // morning roll would fire if the gate let it run.
+        // A seed whose SECOND UpdateTime draw hits Next(450000): the tick's
+        // first draw is the homeless-arrival roll (`Main.cs:65052`), so the
+        // NEXT tick's roll fires on the second draw.
         let fire = (1..2_000_000i32)
-            .find(|&s| UnifiedRandom::new(s).next_max(450_000) == 0)
-            .expect("a 450000 seed exists");
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                let _homeless = r.next_max(27_000);
+                r.next_max(450_000) == 0
+            })
+            .expect("a 450000 seed exists past the homeless draw");
         let mut app = flow_app(None, vec![], vec![]);
         app.world.world_surface = 200.0;
         app.world.day_time = true;
@@ -2433,9 +2450,9 @@ mod tests {
         player.max_hp = 200;
         player.stat_defense = 10; // fight-ready
         app.player = Some(player);
-        // A resident Travelling Merchant silences the visit roll (step 7)
-        // — the tick's only OTHER UpdateTime consumer here — so the fire
-        // draw below is the slime roll's own first draw.
+        // A resident Travelling Merchant silences the visit roll (step 7) —
+        // the tick's other UpdateTime consumer is the homeless-arrival roll
+        // (`Main.cs:65052-65057`).
         app.npcs.push(crate::npc::Npc::new(
             crate::npc::NpcKind::TravellingMerchant,
             4.0 * 16.0,
@@ -2453,10 +2470,19 @@ mod tests {
             !app.world.slime_rain,
             "the roll stayed closed — the tick entered RAINING (`:64864`)"
         );
-        // The stream is untouched by the roll (the expiry's StopRain draws
-        // nothing on UpdateTime; the strength roll never ran).
-        // NEXT tick: not raining at entry, the same stream fires the roll.
-        // A calm rig silences the rain START arms deterministically (the
+        // The stream advanced ONLY by the homeless roll (the expiry's
+        // StopRain draws nothing on UpdateTime; the strength roll never ran;
+        // the ladder kept the slime roll closed).
+        let mut after_first = UnifiedRandom::new(fire);
+        let _homeless = after_first.next_max(27_000);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            after_first,
+            "the raining-arm tick consumed only the homeless roll — no slime draw"
+        );
+        // NEXT tick: not raining at entry, the same stream fires the roll
+        // (the second draw). A calm rig silences the rain START arms
+        // deterministically (the
         // `with_forced` test hook — the witness pins the UpdateTime gate,
         // not the rain scheduler's own rolls).
         app.rain = Rain::with_forced(9, None, true);

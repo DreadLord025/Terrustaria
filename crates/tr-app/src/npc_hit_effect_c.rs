@@ -5060,7 +5060,9 @@ mod tests {
     #[test]
     fn w4_f10_the_dutchman_fan_draws_position_then_type() {
         let w = air();
-        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        // y 400 keeps every -200/-300 fan drop (plus the ±40 jitter)
+        // inside the 400-tile world (`Gore.DeactivateIfOutsideOfWorld`).
+        let mut n = boss(100.0, 400.0, 350.0, 120.0);
         n.sprite_dir = -1;
         n.rotation = 0.0;
         let mut gore = GorePool::new();
@@ -5073,7 +5075,8 @@ mod tests {
             assert!(matches!(g.gore_type, 860 | 892 | 893), "fan type {}", g.gore_type);
         }
         // The twin: per gore two NextDouble (RandomVector2) + Next(3)
-        // (SelectRandom) + the two kicks.
+        // (SelectRandom) + the two kicks, then SpecialAI 1's two
+        // NextFloat velocity draws (`Gore.cs:1403-1406`) for 860/892/893.
         let mut twin = UnifiedRandom::new(191);
         for _ in 0..15 {
             let _rx = twin.next_double();
@@ -5081,6 +5084,8 @@ mod tests {
             let _sel = twin.next_max(3);
             let _ky = twin.next_range(10, 31);
             let _kx = twin.next_range(-20, 21);
+            let _vx = twin.next_float();
+            let _vtheta = twin.next_float();
         }
         assert_eq!(rng.peek(), twin.peek(), "the fan mirrors the C# argument order");
     }
@@ -5090,7 +5095,8 @@ mod tests {
     #[test]
     fn w4_f10_the_dutchman_855_loop_spawns_the_four_gores() {
         let w = air();
-        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        // y 300 keeps the 160/220 drops inside the world.
+        let mut n = boss(100.0, 300.0, 350.0, 120.0);
         n.sprite_dir = -1;
         n.rotation = 0.0;
         let mut gore = GorePool::new();
@@ -5098,12 +5104,12 @@ mod tests {
         dutchman_death_855(&n, &mut gore, &mut rng, &w);
         let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![855, 855, 855, 855]);
-        // v15 = (215,100); width*0.15 = 52.5. num185=0 drop 160 -> y=-60.
-        assert_eq!(gore.slot(0).position, Vec2::new(215.0 + 52.5, 100.0 - 160.0));
-        assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 52.5, 100.0 - 160.0));
-        // num185=1 drop 220 -> y=-120.
-        assert_eq!(gore.slot(2).position, Vec2::new(215.0 + 52.5, 100.0 - 220.0));
-        assert_eq!(gore.slot(3).position, Vec2::new(215.0 - 52.5, 100.0 - 220.0));
+        // v15 = (215,300); width*0.15 = 52.5. num185=0 drop 160 -> y=140.
+        assert_eq!(gore.slot(0).position, Vec2::new(215.0 + 52.5, 300.0 - 160.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 52.5, 300.0 - 160.0));
+        // num185=1 drop 220 -> y=80.
+        assert_eq!(gore.slot(2).position, Vec2::new(215.0 + 52.5, 300.0 - 220.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(215.0 - 52.5, 300.0 - 220.0));
     }
 
     /// `NPC.cs:83693-83695` — the Dutchman 854/853/856 loop: 9 gores, the
@@ -5281,7 +5287,11 @@ mod tests {
             for _ in 0..20 {
                 census(&mut twin); // type 5
                 if twin.next_max(3) == 0 && ty != 524 {
-                    census(&mut twin); // the accent dust (no tweak for 75/170/67)
+                    census(&mut twin); // the accent dust
+                    // `Dust.cs:214-218`: type 75 re-rolls velocity.Y.
+                    if ty == 525 {
+                        let _vy = twin.next_range(-10, 6);
+                    }
                 }
             }
             for _ in 0..6 {

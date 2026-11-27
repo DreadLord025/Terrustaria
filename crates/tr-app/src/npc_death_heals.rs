@@ -397,8 +397,10 @@ mod tests {
         let mut rng = ScriptRng::new(&[]);
         let mut out = Vec::new();
         drop_common_life_and_mana(&npc(81), &player(), &mut rng, &mut out);
-        assert_eq!(items(&out), vec![184]);
-        assert_eq!(rng.ranges, vec![(0, 2)], "only the second RollLuck(2)");
+        // `:79536`: netID 81 sets num=1, so BOTH gates are skipped -- no
+        // drop and no draw.
+        assert!(out.is_empty(), "netID 81");
+        assert!(rng.ranges.is_empty(), "netID 81 draws nothing");
     }
 
     #[test]
@@ -475,7 +477,8 @@ mod tests {
         let mut out = Vec::new();
         drop_heals(&npc(267), &p, false, &mut rng, &mut out);
         assert!(out.is_empty());
-        assert_eq!(rng.ranges, vec![(0, 6), (0, 2), (0, 2), (0, 2)]);
+        // 4 preamble draws + the Creeper's own heart gate (`:79165-79170`).
+        assert_eq!(rng.ranges, vec![(0, 6), (0, 2), (0, 2), (0, 2), (0, 2)]);
     }
 
     #[test]

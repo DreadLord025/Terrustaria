@@ -388,6 +388,9 @@ pub fn item_use_case2(style: i32, music_pitch: f32, rng: &mut dyn FnMut(i32, i32
                 tweak *= 0.75;
             }
         }
+        // `:580-588` — the 159 slot's playing guard arms the SAME ×0.75
+        // volume cut (the guard itself lives in the facade).
+        159 => tweak *= 0.75,
         37 => tweak *= 0.5,
         52 => tweak *= 0.35,
         157 => tweak *= 0.7,

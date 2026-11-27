@@ -732,7 +732,9 @@ mod tests {
         find_frame_extra6(k, &mut s, &shot);
         assert_eq!((s.row, s.counter, s.sprite_dir), (4, 0.0, -1), "no -1");
         // vx 2 → +6/tick never > 6: the row holds at the lift-to-6.
-        assert_eq!(rows_over(k, input(2.0, 0.0), 3), vec![6, 6, 6]);
+        // vx 2 -> +6/tick: tick 2's 12 > 6 steps (`NPC.cs:76048-76053`),
+        // so the lift-to-6 holds one tick, then rows 7/7.
+        assert_eq!(rows_over(k, input(2.0, 0.0), 3), vec![6, 7, 7]);
         // vx 3 → +9/tick steps every tick: 7..19 then wrap 20 → 6.
         assert_eq!(
             rows_over(k, input(3.0, 0.0), 14),

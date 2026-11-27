@@ -63,6 +63,12 @@ pub(crate) struct PlayerAssets {
     /// normal-hat branch's 52-px crop (`PlayerDrawLayers.cs:2254-2281`).
     pub(crate) armor_head_spectre_hood: Option<BgTex>,
     pub(crate) armor_head_spectre_mask: Option<BgTex>,
+    /// W4-f41 - `TextureAssets.ArmorHead[195]` (`Images/Armor_Head_195`,
+    /// `AssetInitializer.cs:164-166`): the Party Hat vanity (item 3732,
+    /// `headSlot = 195`). Head 195 is in `GetHairSettings`' `hatHair` set
+    /// (`Player.cs:16880/16902`), so the ALT hair strip draws UNDER this
+    /// normal-hat crop (`PlayerDrawLayers.cs:2104-2109` then `:2254-2281`).
+    pub(crate) armor_head_party_hat: Option<BgTex>,
     /// W4-d115 wiring round — the Acc_Neck layer family
     /// (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
     /// `AssetInitializer.cs:223-226`), indexed by `ArmorIDs.Neck` slot
@@ -107,6 +113,7 @@ impl Default for PlayerAssets {
             armor_legs: [None; 5],
             armor_head_spectre_hood: None,
             armor_head_spectre_mask: None,
+            armor_head_party_hat: None,
             acc_neck: [None; 15],
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
@@ -158,6 +165,9 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         // 165-185` indexes by the armor slot: file number == slot).
         armor_head_spectre_hood: sky_tex(atlas, "Armor_Head_101", None),
         armor_head_spectre_mask: sky_tex(atlas, "Armor_Head_156", None),
+        // W4-f41 - the Party Hat vanity (head slot 195, item 3732): the
+        // `ArmorHead[195]` file (`AssetInitializer.cs:164-166`).
+        armor_head_party_hat: sky_tex(atlas, "Armor_Head_195", None),
         armor_body: {
             let mut body: [Option<BgTex>; 5] = [None; 5];
             for (slot, tex) in body.iter_mut().enumerate().skip(1) {
@@ -2124,6 +2134,13 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // W4-f18 batch 4 — the folded CultistArcherWhite 380 keeps its OWN
         // draw sheet (the bestiary fold is the credit's, not the texture's).
         NpcKind::CultistArcherWhite => 380,
+        // W4-d125 - the Empress + Lacewing draw their OWN sheets
+        // (`TextureAssets.Npc[636]` / `[661]`, `Main.cs:67147`/`:67150`).
+        // `net_id()` folds to the bestiary row (the Lacewing's own credit is
+        // 661 but the port-local type is 742), so the DRAW sheet is spelled
+        // out here - the wyvern-segment precedent.
+        NpcKind::EmpressOfLight => 636,
+        NpcKind::PrismaticLacewing => 661,
         _ => kind.net_id() as u16,
     }
 }
@@ -7900,7 +7917,9 @@ mod anchor_tests {
         for &(kind, w, h, rows) in cases {
             let net = texture_net_id(kind);
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
-            assert!(D35_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            // This is the D125 wave, not d35's roster (the copy-paste D35
+            // check would fail even though 636/661 are packed).
+            assert!(D125_SHEETS.contains(&(net as u32)), "{kind:?} packed");
             let t = sheet(w, h);
             let npc = bare(kind);
             let (tex, fh, size, _) = generic_anchor(Some(&t), rows, &npc, 20.0, 40.0);
@@ -8220,16 +8239,46 @@ mod anchor_tests {
         for slot in 1..crate::id_tables::ARMOR_NECK_COUNT {
             let name = format!("Acc_Neck_{slot}");
             assert!(packed(&name), "{name} is asked for by the neck layer but never packed");
+        }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.
-        // W4-d40: the bound is 429 (the lunar vanilla band's last id,
-        // VortexSoldier) — 430 is ArmedZombie, the 421-490 band's first kind,
-        // NOT a lunar minion (the data wave's `from_u16(430)` now resolves it,
-        // so the old `..=430` bound mis-routed it into the pillar audit).
-        for net in 396u16..=429 {
-            let Some(kind) = NpcKind::from_u16(net) else {
-                continue;
-            };
+        // W4-d40: enumerate the lunar KINDS by name. `NpcKind::from_u16`
+        // decodes the port's PROTOCOL table, where 396..399 are the
+        // HellArmoredBones family (`npc/data.rs:926`), so a 396..=429 sweep
+        // routed the hell knights through the pillar audit and missed every
+        // lunar mob. The lunar band's sheets are vanilla types 396-429.
+        for kind in [
+            NpcKind::MoonLordHead,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+            NpcKind::StardustWormHead,
+            NpcKind::StardustCellBig,
+            NpcKind::StardustCellSmall,
+            NpcKind::StardustJellyfishBig,
+            NpcKind::StardustSpiderBig,
+            NpcKind::StardustSpiderSmall,
+            NpcKind::StardustSoldier,
+            NpcKind::SolarCrawltipedeHead,
+            NpcKind::SolarCrawltipedeBody,
+            NpcKind::SolarCrawltipedeTail,
+            NpcKind::SolarDrakomire,
+            NpcKind::SolarDrakomireRider,
+            NpcKind::SolarSroller,
+            NpcKind::SolarCorite,
+            NpcKind::SolarSelenian,
+            NpcKind::SolarSpearman,
+            NpcKind::NebulaFloater,
+            NpcKind::BrainSuckler,
+            NpcKind::NebulaBeast,
+            NpcKind::Predictor,
+            NpcKind::VortexRifleman,
+            NpcKind::VortexHunter,
+            NpcKind::VortexAlien,
+            NpcKind::VortexHeadcrab,
+            NpcKind::VortexSoldier,
+        ] {
             let tex_id = texture_net_id(kind);
             assert!(
                 PILLAR_SHEETS.contains(&(tex_id as u32)),
@@ -8710,7 +8759,6 @@ mod anchor_tests {
         }
     }
 }
-}
 
 /// The task/offsets pins: the three audit claims the branch fixes, each
 /// recomputed against the C# source before the fix was written.
@@ -8917,7 +8965,14 @@ mod d38_sheet_tests {
         assert_eq!(STRIPS.len(), 35, "the wave so far");
         for &(kind, w, h, rows) in STRIPS {
             let net = texture_net_id(kind);
-            assert_eq!(net, kind.cs_id(), "{kind:?} draws its own sheet");
+            // The blade's `cs_id` folds onto the Pumpking's 327 (the S1-F-3
+            // invariant, `npc/data.rs:8618-8623`); its own DRAW sheet is
+            // NPC_328 (`to_u16`/`texture_net_id`), so pin that explicitly.
+            if kind == NpcKind::PumpkingBlade {
+                assert_eq!(net, 328, "PumpkingBlade draws its own sheet");
+            } else {
+                assert_eq!(net, kind.cs_id(), "{kind:?} draws its own sheet");
+            }
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
             let t = BgTex { uv: [0.0, 0.0, 1.0, 1.0], w, h };
             let fh = vanilla_row_h(&t, rows);

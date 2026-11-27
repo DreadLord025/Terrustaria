@@ -502,6 +502,9 @@ impl App {
                     return;
                 }
                 server.set_slot_name(id, pi.name.clone());
+                // `MessageBuffer.cs:349-354` — the server keeps its slot copy
+                // of the five shimmer unlocks from the identity's bitsByte17.
+                server.set_slot_shimmer_unlocks(id, pi.flags3);
                 log::info!("slot {id} announced as {}", pi.name);
             }
             // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
@@ -5229,6 +5232,10 @@ impl App {
                 // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
                 entry.petting = ps.flags_c.get(4);
                 entry.pet_small = ps.flags_c.get(5);
+                // The `13` extension's team/dead arms (`MessageBuffer.cs:1043-
+                // 1057`) — the host writes them, the client's peer copy reads them.
+                entry.team = ps.team as i32;
+                entry.dead = ps.dead;
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -5859,6 +5866,12 @@ impl App {
                     sd.y as i32,
                     sd.text.clone(),
                 );
+                // `MessageBuffer.cs:2400-2403` — the addressed client opens
+                // the sign (the quiet bit suppresses it): `OpenSign` plays
+                // Menu_Open once and latches `Player.sign` + npcChatText.
+                if sd.sender as u32 == self.local_id && (sd.flags & 1) == 0 {
+                    crate::signs::open_sign(self, sd.sign as i32);
+                }
             }
             // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
             // ours is skipped (`:2461-2464`), a peer's lands in its record
@@ -5918,10 +5931,38 @@ impl App {
             // `case 60` — an NPC's household banner (`MessageBuffer.cs:2695-2739`):
             // the client sets homeless/homeTile (`:2708-2713`) and, for a
             // town-like NPC, runs the TownManager kick-out/room arm
-            // (`:2718-2728`). The port's client keeps no housing simulation
-            // (the host is authoritative, the `23` snapshots carry the NPC),
-            // so the read is a no-op here — the host arm owns the effect.
-            S2c::NpcHouse(_) => {}
+            // (`:2718-2728`).
+            S2c::NpcHouse(h) => {
+                let slot = h.npc as i32;
+                if slot < 0 || slot as usize >= MAX_NPCS {
+                    return; // `:2703-2707` — the cheating boot gate
+                }
+                let Some(kind) = self.net_npcs.get(&(slot as u32)).map(|n| n.kind) else {
+                    return; // the port's store has no fixed 200 array
+                };
+                // `:2709-2712` — homeless / homeTileX / homeTileY, verbatim.
+                let home = if h.status == 1 {
+                    None
+                } else {
+                    Some((h.home_x as i32, h.home_y as i32))
+                };
+                if let Some(npc) = self.net_npcs.get_mut(&(slot as u32)) {
+                    npc.home = home;
+                }
+                self.net_npcs_dirty = true;
+                // `:2715-2728` — the town-like gate + the book arms.
+                if kind.is_town_npc_like() {
+                    let net_id = kind.net_id();
+                    match h.status {
+                        1 => self.town_rooms.kick_out(net_id), // `:2721-2723`
+                        2 => {
+                            self.town_rooms
+                                .set_room(net_id, h.home_x as i32, h.home_y as i32);
+                        } // `:2725-2727`
+                        _ => {}
+                    }
+                }
+            }
             // `case 63` — the host's tile paint/coat relay
             // (`MessageBuffer.cs:2909-2928`): the client applies the same
             // paint/coat to its world copy.
@@ -6688,15 +6729,16 @@ impl App {
                 self.revenge_markers
                     .retain(|x| x.unique_id != m.unique_id as u64);
             }
-            // `case 147`'s client half (`MessageBuffer.cs:4336-4337`):
-            // `TrySwitchingLoadout` + `ReadAccessoryVisibility` on
-            // `Main.player[num68]`. The loadout swap is unported (no loadout
-            // system); the accessory-visibility bits unpack onto the local
-            // player's `hide_visible_accessory` (`MessageBuffer.cs:4494-
-            // 4501`, bit i per slot). A peer's loadout is stored on the
-            // snapshot (stored-not-simulated).
+            // `case 147`'s client half (`MessageBuffer.cs:4327-4340`):
+            // `TrySwitchingLoadout(num69)` then `ReadAccessoryVisibility`
+            // (`:4337`, bits i -> slot i) on `Main.player[num68]`. The local
+            // player runs the real swap core; a peer's loadout is
+            // stored-not-simulated on its snapshot.
             S2c::SyncLoadout(l) => {
                 if l.player_id as u32 == self.local_id {
+                    if self.player.is_some() {
+                        let _ = self.try_switching_loadout(l.loadout as usize);
+                    }
                     if let Some(p) = self.player.as_mut() {
                         for i in 0..p.hide_visible_accessory.len() {
                             p.hide_visible_accessory[i] = (l.hide_accessory & (1 << i)) != 0;
@@ -7192,10 +7234,20 @@ impl App {
     /// `6 WorldRequest`.
     fn client_send_identity(&self, client: &net::Client) {
         let me = self.local_id as u8;
-        client.send(&C2s::PlayerInfo(net::PlayerInfo::with_name(
-            me,
-            &self.player_name,
-        )));
+        let mut info = net::PlayerInfo::with_name(me, &self.player_name);
+        // `NetMessage.cs:189-194` — bitsByte17 carries the shimmer unlocks
+        // (bit 0 AegisCrystal, 1 AegisFruit, 2 ArcaneCrystal, 3 GalaxyPearl,
+        // 4 GummyWorm, 5 Ambrosia, 6 ArtisanBread).
+        if let Some(p) = self.player.as_ref() {
+            info.flags3.set(0, p.used_aegis_crystal);
+            info.flags3.set(1, p.used_aegis_fruit);
+            info.flags3.set(2, p.used_arcane_crystal);
+            info.flags3.set(3, p.used_galaxy_pearl);
+            info.flags3.set(4, p.used_gummy_worm);
+            info.flags3.set(5, p.used_ambrosia);
+            info.flags3.set(6, p.ate_artisan_bread);
+        }
+        client.send(&C2s::PlayerInfo(info));
         // The health (`Main.cs`'s 16 in the same push).
         let (hp, max_hp) = self
             .player
@@ -7345,6 +7397,12 @@ impl App {
             info.cave_back_style[2] as i32,
             info.cave_back_style[3] as i32,
         ];
+        // The `57 WorldEvilBytes` join push lands BEFORE `49 InitialSpawn`
+        // (the C# `WorldGen.tGood/tEvil/tBlood` are Main statics and survive
+        // the install); re-seed the fresh world from the App copies.
+        world.t_good = self.world_evil_good;
+        world.t_evil = self.world_evil_evil;
+        world.t_blood = self.world_evil_blood;
         world.blood_moon = info.blood_moon;
         world.sundial_cooldown = info.sundial_cooldown;
         world.moondial_cooldown = info.moondial_cooldown;
@@ -7353,6 +7411,52 @@ impl App {
         }
         if info.rock_layer > 0 {
             world.rock_layer = info.rock_layer as f64;
+        }
+        // The 14 flag groups' world-field homes (`NetMessage.cs:285-389`),
+        // applied on the install exactly as the in-world re-push does
+        // (`apply_world_info_repush`) — the C# reader writes them at every
+        // state (`MessageBuffer.cs:655-659`).
+        {
+            let f = &info.world_flags;
+            world.shadow_orb_smashed = f[0].get(0);
+            world.downed_eoc = f[0].get(1);
+            world.downed_eow = f[0].get(2);
+            world.downed_skeletron = f[0].get(3);
+            world.hard_mode = f[0].get(4);
+            world.downed_plant_boss = f[0].get(7);
+            world.downed_mech_boss1 = f[1].get(0);
+            world.downed_mech_boss2 = f[1].get(1);
+            world.downed_mech_boss3 = f[1].get(2);
+            world.pumpkin_moon = f[1].get(6);
+            world.snow_moon = f[1].get(7);
+            world.fast_forward_to_dawn = f[2].get(1);
+            world.slime_rain = f[2].get(2);
+            world.downed_slime_king = f[2].get(3);
+            world.downed_queen_bee = f[2].get(4);
+            world.downed_fishron = f[2].get(5);
+            world.downed_martians = f[2].get(6);
+            world.downed_ancient_cultist = f[2].get(7);
+            world.downed_moon_lord = f[3].get(0);
+            world.downed_golem = f[3].get(6);
+            world.downed_pirates = f[4].get(0);
+            world.downed_frost = f[4].get(1);
+            world.downed_goblins = f[4].get(2);
+            world.dd2_event_ongoing = f[4].get(4);
+            world.dd2_downed_t1 = f[4].get(5);
+            world.dd2_downed_t2 = f[4].get(6);
+            world.dd2_downed_t3 = f[4].get(7);
+            world.combat_book_was_used = f[5].get(0);
+            world.downed_tower_solar = f[5].get(2);
+            world.downed_tower_vortex = f[5].get(3);
+            world.downed_tower_nebula = f[5].get(4);
+            world.downed_tower_stardust = f[5].get(5);
+            world.downed_queen_slime = f[6].get(6);
+            world.downed_deerclops = f[7].get(2);
+            world.combat_book_volume_two_was_used = f[7].get(6);
+            world.peddlers_satchel_was_used = f[7].get(7);
+            world.unlocked_slime_rainbow_spawn = f[8].get(3);
+            world.unlocked_slime_red_spawn = f[8].get(4);
+            world.fast_forward_to_dusk = f[8].get(7);
         }
         // The sections fill the world; the stream must cover the whole grid.
         let want = net::sections_x(world.width) * net::sections_y(world.height);
@@ -7370,6 +7474,14 @@ impl App {
             }
         }
         let _ = want;
+        // W4-f40 DOC-SWEEP: the net client's world install runs the C#
+        // `WorldGen.clearWorld()` (`Netplay.cs:500`, the state-4 arm) BEFORE
+        // the tile sections land — the lantern event clear + sky reset ride
+        // here (the install mutates `self` in place, no `App::new` rebuild,
+        // so the shared `enter_loaded_world` tail must NOT carry the clear:
+        // it would clobber the single-player restore).
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
         self.world = world;
         self.liquids = LiquidSystem::new(&self.world);
         self.map = Some(map::WorldMap::new(&self.world));
@@ -7471,21 +7583,33 @@ impl App {
         f[7].set(2, w.downed_deerclops);
         f[7].set(3, w.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES));
         f[7].set(4, w.seeds.contains(tr_core::seeds::SeedFlags::REMIX));
+        f[7].set(6, w.combat_book_volume_two_was_used);
+        f[7].set(7, w.peddlers_satchel_was_used);
         f[8].set(3, w.unlocked_slime_rainbow_spawn);
         f[8].set(4, w.unlocked_slime_red_spawn);
         f[8].set(7, w.fast_forward_to_dusk);
         f[9].set(0, w.seeds.contains(tr_core::seeds::SeedFlags::NO_TRAPS));
         f[9].set(1, w.seeds.contains(tr_core::seeds::SeedFlags::ZENITH));
         f[9].set(6, w.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK));
-        // `NetMessage.cs:246-258`'s 13-byte bg block narrowed to the port's
-        // 11-row array (treeBG1..4 ride 0 — unported; corrupt..underworld
-        // map onto the five owned styles).
+        // `NetMessage.cs:246-258`'s 13-byte bg block, verbatim wire order:
+        // the four forest `treeBG` slots (setBG ids 0/10/11/12), then
+        // corrupt(1), jungle(2), snow(3), hallow(4), crimson(5), desert(6),
+        // ocean(7), mushroom(8), underworld(9) — the inverse of the client
+        // install's `BG_SLOTS` (`MessageBuffer.cs:493-505`).
         let mut backgrounds = [0u8; 13];
+        backgrounds[0] = w.forest_bg_styles[0];
+        backgrounds[1] = w.forest_bg_styles[1];
+        backgrounds[2] = w.forest_bg_styles[2];
+        backgrounds[3] = w.forest_bg_styles[3];
         backgrounds[4] = w.corrupt_bg_style;
         backgrounds[5] = w.jungle_bg_style;
+        backgrounds[6] = w.snow_bg_style;
         backgrounds[7] = w.hallow_bg_style;
         backgrounds[8] = w.crimson_bg_style;
-        backgrounds[10] = w.mushroom_bg_style;
+        backgrounds[9] = w.desert_bg_style;
+        backgrounds[10] = w.ocean_bg_style;
+        backgrounds[11] = w.mushroom_bg_style;
+        backgrounds[12] = w.underworld_bg_style;
         let o = &w.ore_tiers;
         net::WorldInfo {
             time: w.time as i32,
@@ -7515,16 +7639,28 @@ impl App {
             },
             moon_type: w.moon_type,
             backgrounds,
-            ice_back_style: 0,
-            jungle_back_style: 0,
+            // `NetMessage.cs:259-278` — the ice/jungle/hell back styles, the
+            // tree rolls and the cave rolls (cave x[3] is never sent).
+            ice_back_style: w.ice_back_style,
+            jungle_back_style: w.jungle_back_style,
             hell_back_style: w.hell_back_style,
             wind_speed_target: self.wind.speed_target,
             // The static cloud-field stand-in (`rain.rs` NUM_CLOUDS_STAND_IN).
             num_clouds: 100,
-            tree_x: [0; 3],
-            tree_style: [0; 4],
-            cave_back_x: [0; 3],
-            cave_back_style: [0; 4],
+            tree_x: w.tree_x,
+            tree_style: [
+                w.tree_style[0] as u8,
+                w.tree_style[1] as u8,
+                w.tree_style[2] as u8,
+                w.tree_style[3] as u8,
+            ],
+            cave_back_x: [w.cave_back_x[0], w.cave_back_x[1], w.cave_back_x[2]],
+            cave_back_style: [
+                w.cave_back_style[0] as u8,
+                w.cave_back_style[1] as u8,
+                w.cave_back_style[2] as u8,
+                w.cave_back_style[3] as u8,
+            ],
             tree_tops: [0; net::TREE_TOPS_BYTES],
             // `NetMessage.cs:281-284`: `!raining` forces the wire 0.
             max_raining: if self.rain.is_raining() {
@@ -8223,6 +8359,28 @@ impl App {
             return;
         }
         self.net_timer = 0.0;
+        // W4-g15 lane 5 — the client's `22 ItemOwner` reservation hold ticks
+        // down on the 10 Hz cadence (the C#'s `timeToKeepReservation`
+        // decrements per 60 Hz update, `WorldItem.cs:445-448`; the port's
+        // client reservation map is the `net_reserved` stand-in, so the hold
+        // decays 6 per cadence tick — the same 1 s grid the host's
+        // `net_play_counter` batches). An expired hold releases the
+        // reservation. The decay lives in `WorldItem.Update`, which runs
+        // regardless of a local player object, so it sits OUTSIDE the
+        // player-gated send block below.
+        if matches!(self.net, NetRole::Client(_)) {
+            let expired: Vec<i16> = self
+                .net_reserved
+                .iter_mut()
+                .filter_map(|(slot, (_, hold))| {
+                    *hold = hold.saturating_sub(6);
+                    if *hold == 0 { Some(*slot) } else { None }
+                })
+                .collect();
+            for slot in expired {
+                self.net_reserved.remove(&slot);
+            }
+        }
         let Some(p) = self.player.as_ref() else {
             // No local player: the cadence still ran above, so drop its outboxes
             // rather than let them grow unbounded (the sends need a player).
@@ -8247,6 +8405,11 @@ impl App {
             body_frame: p.body_frame,
             petting: p.petting.is_petting,
             pet_small: p.petting.is_pet_small,
+            // The `13` extension's team/dead arms (`MessageBuffer.cs:1043-
+            // 1057`): the host's own snapshot must carry them so the client's
+            // peer copy (slot 0) has the team and the death flag.
+            team: p.team,
+            dead: p.dead,
             ..Default::default()
         };
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
@@ -8366,26 +8529,6 @@ impl App {
                 });
             }
             NetRole::Client(_client) => {
-                // W4-g15 lane 5 — the client's `22 ItemOwner` reservation
-                // hold ticks down on the 10 Hz cadence (the C#'s
-                // `timeToKeepReservation` decrements per 60 Hz update,
-                // `WorldItem.cs:445-448`; the port's client reservation map
-                // is the `net_reserved` stand-in, so the hold decays 6 per
-                // cadence tick — the same 1 s grid the host's
-                // `net_play_counter` batches). An expired hold releases the
-                // reservation (the C#'s `FindOwner` re-reserves on the next
-                // tick; the port's client grab gate reads the map live).
-                let expired: Vec<i16> = self
-                    .net_reserved
-                    .iter_mut()
-                    .filter_map(|(slot, (_, hold))| {
-                        *hold = hold.saturating_sub(6);
-                        if *hold == 0 { Some(*slot) } else { None }
-                    })
-                    .collect();
-                for slot in expired {
-                    self.net_reserved.remove(&slot);
-                }
                 // S1-I-4d: the client's own projectiles already drained through
                 // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
                 // machine → `27`, despawns → `29`).
@@ -10871,6 +11014,9 @@ mod handshake_tests {
     #[test]
     fn the_cavern_grid_stores_and_rides_the_join_bundle() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The `136` join push follows the client's own `12 PlayerSpawn`
+        // (`MessageBuffer.cs:870`), so drain the tail frame before asserting.
+        pump(&mut host_app, &mut client_app, 8);
         // The join tail rolled the host's grid (`WorldFile.cs:771`); the
         // join push carried it to the client verbatim.
         assert_eq!(
@@ -12631,7 +12777,10 @@ mod handshake_tests {
     fn w4_g55_a_client_loadout_switch_reaches_the_host_snapshot() {
         let (mut host_app, mut client_app) = in_world_pair();
         client_app.player = Some(player::Player::spawn(&client_app.world));
-        client_app.player.as_mut().unwrap().hide_visible_accessory[2] = true;
+        // `EquipmentLoadout.Swap` (`EquipmentLoadout.cs:76-81`) exchanges the
+        // `Hide` array with the live one, so the NEW visibilities are loadout
+        // 1's: hide slot 2 there, and the post-swap `147` mask carries bit 2.
+        client_app.player.as_mut().unwrap().loadouts[1].hide[2] = true;
         // The client switches to loadout 1 (the swap core + the 147 send).
         assert!(client_app.try_switching_loadout(1));
         assert_eq!(client_app.player.as_ref().unwrap().current_loadout_index, 1);
@@ -13795,6 +13944,9 @@ mod message_family_tests {
     #[test]
     fn w4_g51_the_counts_as_host_join_push_lands_for_a_loopback_peer() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The `139` join push follows the client's `12 PlayerSpawn`, so drain
+        // the tail frame before asserting.
+        pump(&mut host_app, &mut client_app, 8);
         // The test pair connects over loopback, so the peer counts as host.
         // The join push already ran in in_world_pair; the host's peer record
         // carries the flag and the client stored it on its own slot (1).
@@ -14927,6 +15079,8 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_91_emote_bubble_upserts_and_removes() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The player-anchor arm writes the local player's `emoteTime`.
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id as u16;
         if let NetRole::Host(server) = &host_app.net {
             server.broadcast(&S2c::EmoteBubble(net::EmoteBubble {
@@ -15127,6 +15281,9 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_102_nebula_pickup_levels_the_local_player() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The joined client owns a local player in real play; the fixture
+        // must spawn one for the level-up target.
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id as u8;
         let (cx, cy) = client_app.player.as_ref().unwrap().center();
         if let NetRole::Client(client) = &client_app.net {
@@ -15217,7 +15374,8 @@ mod message_family_tests {
     /// the host flips the gem lock's 3×3 frame to the on row and trips it.
     #[test]
     fn w4_g50_the_105_gem_lock_flips_the_frame_and_trips() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The 3x3 lock needs a world wider than the flow fixture.
+        let (mut host_app, mut client_app) = big_world_pair();
         // A gem lock (440) at (10,4), off row (frameY 0), amethyst column 0.
         for app in [&mut host_app, &mut client_app] {
             for k in 10..13 {
@@ -15251,7 +15409,9 @@ mod message_family_tests {
     /// poof spawns the gore burst + the type-16 dust ring.
     #[test]
     fn w4_g50_the_106_poof_spawns_gore_and_dust() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The burst point (200, 100) px is outside the 8-tile flow world, so
+        // the dust/gore spawns would read out of bounds; use the big world.
+        let (mut host_app, mut client_app) = big_world_pair();
         if let NetRole::Host(server) = &host_app.net {
             server.broadcast(&S2c::PoofOfSmoke(net::PoofOfSmoke {
                 packed: net::pack_half_vector2(200.0, 100.0),
@@ -15351,6 +15511,8 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_110_wire_bill_consumes_for_the_billed_player() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The billed client owns a local player in real play.
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id as u8;
         // Stock 20 wire in the client's first grid cell.
         client_app.inventory[0] = crate::item::ItemSlot {
@@ -15426,7 +15588,8 @@ mod message_family_tests {
     /// host summons the crystal on a valid stand and starts the invasion.
     #[test]
     fn w4_g50_the_113_crystal_summon_starts_the_invasion() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The crystal stand at x=30 needs a world wider than the flow fixture.
+        let (mut host_app, mut client_app) = big_world_pair();
         // An eternia crystal stand (466) at (30, 4) with a wide arena floor.
         for app in [&mut host_app, &mut client_app] {
             for x in 0..app.world.width {
@@ -15510,6 +15673,8 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_117_self_hurt_drops_the_local_hp() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The self-hurt's target is the local player (`Main.player[whoAmI]`).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id as u8;
         let hp_before = client_app.player.as_ref().unwrap().hp;
         if let NetRole::Client(client) = &client_app.net {
@@ -15533,6 +15698,8 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_118_death_kills_the_local_player() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // The forced subject is the local player (`Main.player[whoAmI]`).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id as u8;
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::PlayerDeathV2(net::PlayerDeathV2 {
@@ -15595,7 +15762,10 @@ mod message_family_tests {
     /// the client pays and clears `wireOperationsCooldown`. WRITTEN NOT RUN.
     #[test]
     fn w4_g50_the_109_mass_wire_walks_the_senders_stock_and_bills() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The drag rectangle starts at x=10, outside the 8-tile flow world.
+        let (mut host_app, mut client_app) = big_world_pair();
+        // The sending client owns a local player (the bill's cooldown home).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
         let me = client_app.local_id;
         // The sender stands right-facing next to the drag rectangle.
         let entry = host_app.remote_players.entry(me).or_default();
@@ -15658,7 +15828,8 @@ mod message_family_tests {
     /// and syncs the changed chest slot (32). WRITTEN NOT RUN.
     #[test]
     fn w4_g50_the_85_quick_stack_transfers_and_restores() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The chest cell (10, 2) needs a world wider than the flow fixture.
+        let (mut host_app, mut client_app) = big_world_pair();
         let me = client_app.local_id;
         // The sender stands next to a chest at tile (10, 2).
         let entry = host_app.remote_players.entry(me).or_default();
@@ -15892,8 +16063,14 @@ mod message_family_tests {
             }));
         }
         pump(&mut host_app, &mut client_app, 40);
+        // The client's own slot may already exist from the `139` join push
+        // (loopback counts as host); the witness is that the `76` echo did
+        // NOT write the echoed counters onto it (`:3167`).
         assert!(
-            !client_app.remote_players.contains_key(&(me as u32)),
+            client_app
+                .remote_players
+                .get(&(me as u32))
+                .map_or(true, |p| p.angler_quests_finished != 9),
             "the own echo (:3167) never stores a self record"
         );
         let peer = client_app
@@ -15978,7 +16155,15 @@ mod message_family_tests {
         // No inventory synced yet: the selected slot's kind is unknown, so
         // the channel re-derive reads false (`:2283`).
         assert!(!stored.channel);
-        assert!(client_app.remote_players.get(&1).is_none());
+        // The client's own slot may exist from the `139` join push; the
+        // `41` echo is excluded (`:2286`), so the self record keeps its
+        // default rotation.
+        assert!(
+            client_app
+                .remote_players
+                .get(&1)
+                .map_or(true, |p| p.item_rotation == 0.0)
+        );
     }
 
     /// W4-c27 `43 ManaEffect` — the host forces the subject to the sender
@@ -16026,8 +16211,14 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 12);
         let stored = host_app.remote_players.get(&1).expect("peer stored");
         assert_eq!(stored.stealth, 0.25, "the float stored under the sender");
-        // The relay excludes the sender, so no self-echo record.
-        assert!(client_app.remote_players.get(&1).is_none());
+        // The relay excludes the sender, so no self-echo value (the own slot
+        // may exist from the `139` join push and keeps its default 0.0).
+        assert!(
+            client_app
+                .remote_players
+                .get(&1)
+                .map_or(true, |p| p.stealth == 0.0)
+        );
         // The host's own stealth value reaches the client's peer record
         // (the `netMode == 1` half keeps the wire id, `:3254`).
         if let NetRole::Host(server) = &host_app.net {
@@ -16066,9 +16257,15 @@ mod message_family_tests {
         assert_eq!(stored.zone.zone5.0, 0x01);
         assert_eq!(stored.zone.town_npcs, 4);
         // The relay excludes the sender (`:2199`'s `this.whoAmI`), so the
-        // client never sees its own zone echo — its peer record for itself
-        // stays absent, exactly the C#'s ignore-own shape.
-        assert!(client_app.remote_players.get(&1).is_none());
+        // client never sees its own zone echo (the own slot may exist from
+        // the `139` join push; it keeps the default zero zones), exactly the
+        // C#'s ignore-own shape.
+        assert!(
+            client_app
+                .remote_players
+                .get(&1)
+                .map_or(true, |p| p.zones == [0; 5])
+        );
     }
 
     /// W4-c27 `18 SetTime` — the client applies the host's clock verbatim
@@ -17368,7 +17565,10 @@ mod g48_apply_tests {
     /// copy without spawning local drops (the `netMode != 1` gate).
     #[test]
     fn g48_17_kill_tile_edit_breaks_and_relays() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The `17` reader's `WorldGen.InWorld(x, y, 3)` gate
+        // (`MessageBuffer.cs:1127-1130`) needs a world wider than the 8-tile
+        // flow fixture, so the witness uses the roomy 64x64 pair.
+        let (mut host_app, mut client_app) = roomy_pair();
         // A stone block at (6, 3) on both sides (above the dirt row).
         for app in [&mut host_app, &mut client_app] {
             let i = app.world.index(6, 3);
@@ -17410,7 +17610,9 @@ mod g48_apply_tests {
     /// 530 wire item host-side (`WorldGen.cs:58130`).
     #[test]
     fn g48_17_wire_place_and_kill_edit_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // The `InWorld(x, y, 3)` gate (`MessageBuffer.cs:1127-1130`) needs the
+        // 64x64 fixture; the 8-tile flow world refuses (7, 3).
+        let (mut host_app, mut client_app) = roomy_pair();
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::TileEdit(net::TileEdit {
                 kind: 5, // PlaceWire (red)
@@ -17523,15 +17725,18 @@ mod g48_apply_tests {
     #[test]
     fn g48_19_door_open_toggle_replicates() {
         let (mut host_app, mut client_app) = in_world_pair();
-        // A closed door (tile 10, 1x3) at (8, 1..3) above the dirt row (y 4),
-        // on both sides. `place_item_tile`'s y is the bottom row.
+        // A closed door (tile 10, 1x3) at (4, 1..3) above the dirt row (y 4),
+        // inside the `19` reader's `InWorld(x, y, 3)` box for the 8-tile flow
+        // world (3..=4), on both sides. `place_item_tile`'s y for the 1x3
+        // door is the MIDDLE cell (`edit/kill.rs`'s doorway fixture places at
+        // y=18 for cells 17..19), so the middle here is y=2.
         for app in [&mut host_app, &mut client_app] {
-            assert!(tr_core::edit::place_item_tile(&mut app.world, 8, 3, 10, 0, 1));
+            assert!(tr_core::edit::place_item_tile(&mut app.world, 4, 2, 10, 0, 1));
         }
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::DoorToggle(net::DoorToggle {
                 action: 0,
-                x: 8,
+                x: 4,
                 y: 2,
                 direction: 1,
             }));
@@ -17543,8 +17748,8 @@ mod g48_apply_tests {
             host_app.poll_net();
             client_app.poll_net();
             // The open door is tile 11 (the closed 10 became the open pair).
-            opened = host_app.world.tile(8, 2).is_some_and(|t| t.kind == 11)
-                && client_app.world.tile(8, 2).is_some_and(|t| t.kind == 11);
+            opened = host_app.world.tile(4, 2).is_some_and(|t| t.kind == 11)
+                && client_app.world.tile(4, 2).is_some_and(|t| t.kind == 11);
             if opened {
                 break;
             }
@@ -17603,13 +17808,15 @@ mod g48_apply_tests {
     /// tiles + store slot via `PlaceChestDirect`.
     #[test]
     fn g48_34_chest_place_replicates_the_store_and_tiles() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // The dirt row (y 4) supports a chest at (8, 3) — the 2x2 sits on it.
+        // The 64x64 fixture: its dirt floor is y 20 (the 8-tile flow world
+        // puts the chest cell x=8 out of bounds).
+        let (mut host_app, mut client_app) = roomy_pair();
+        // The dirt row (y 20) supports a chest at (8, 19) — the 2x2 sits on it.
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::ChestUpdates(net::ChestUpdates {
                 action: 0,
                 x: 8,
-                y: 3,
+                y: 19,
                 style: 0,
                 chest: 0, // the client writes 0; the host zeroes it (`:1993`)
             }));
@@ -17620,19 +17827,19 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            placed = crate::chest::find_chest(&host_app.world_chests, 8, 2).is_some()
-                && crate::chest::find_chest(&client_app.world_chests, 8, 2).is_some();
+            placed = crate::chest::find_chest(&host_app.world_chests, 8, 18).is_some()
+                && crate::chest::find_chest(&client_app.world_chests, 8, 18).is_some();
             if placed {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(placed, "the chest store slot landed on both sides");
-        // The 2x2 tiles (the anchor is (8, 2): PlaceChest's objectData.yCoord).
+        // The 2x2 tiles (the anchor is (8, 18): PlaceChest's objectData.yCoord).
         for app in [&host_app, &client_app] {
             for dx in 0..2 {
                 for dy in 0..2 {
-                    let t = app.world.tile(8 + dx, 2 + dy).unwrap();
+                    let t = app.world.tile(8 + dx, 18 + dy).unwrap();
                     assert!(t.active() && t.kind == 21, "chest cell ({dx},{dy})");
                 }
             }

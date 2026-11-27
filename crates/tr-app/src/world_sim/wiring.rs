@@ -204,8 +204,8 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // `BirthdayParty.PartyIsUp` at the `HitWireSingle` site
         // (`Wiring.cs:2304`): the statue style-9 arm reads the live party
         // state — mirror the app's `WorldEvents` book in before the step.
-        app.wiring
-            .set_party_is_up(crate::world_events::party_is_up(&app.world_events));
+        let party_up = crate::world_events::party_is_up(&app.world_events);
+        app.wiring.set_party_is_up(party_up);
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
         // every living player/NPC standing in a pad's 48×48 box moves to the
@@ -224,6 +224,11 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     npc_id,
                     cap_ids,
                 } => {
+                    // `Wiring.cs:2301-2313`: the bunny statue resolves 46 →
+                    // 540 while `BirthdayParty.PartyIsUp`. The engine picks
+                    // the id when the wire trips; the app's party mirror is
+                    // sampled above the step, so re-resolve at the drain.
+                    let npc_id = if party_up && npc_id == 46 { 540 } else { npc_id };
                     // `NPC.MechSpawn` (`NPC.cs:7420-7506`): the caps over the
                     // app's npc list — 3 within 200 px, 6 within 600 px, 10
                     // global, grouped by the C#'s type families. Every id in
@@ -586,6 +591,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 1,
                 glam::Vec2::new(cx, cy),
             );
+            // `spawn_item_drop_centre` still routes the position through the
+            // tile-entry px helper, whose `+1` px top-left fudge shifts the
+            // box centre +1. Undo it here so the drop lands on the exact C#
+            // rect centre (`Item.cs:49651`: `center = X + Width/2`).
+            if let Some(d) = app.items.last_mut() {
+                d.pos.x -= 1.0;
+            }
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with

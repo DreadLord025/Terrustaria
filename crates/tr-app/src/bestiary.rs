@@ -4310,6 +4310,177 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Cyborg",
     },
+    // ---- The town PETS (the W4-g10 roster, `NPCID.Sets.IsTownPet`
+    // `NPCID.cs:10118`: 637/638/656/670/678-684). The populator's
+    // `AddTownNPCs_Manual` registers one `BestiaryEntry.TownNPC` row per
+    // pet net id (`BestiaryDatabaseNPCsPopulator.cs:833-843`: 638, 637,
+    // 656, then the eight `IsTownSlime` ids 670/678/679/680/681/682/683/
+    // 684). `TownNPC` (`BestiaryEntry.cs:59-79`) takes the name from
+    // `Lang.GetNPCName(npcNetId)` and installs the TownNPC (chat) provider;
+    // the three 1.4.1 pets then get the `Friends.*` name overrides
+    // (`BestiaryDatabaseNPCsPopulator.cs:646-648` → `Friends.TownCat` /
+    // `.TownDog` / `.TownBunny`, en-US.json:839-841), while the town slimes
+    // keep their NPC names (en-US NPCs.json:715-722). `FillNpcRarities`
+    // pins all eleven at 3 stars (`ContentSamples.cs`; the port's override
+    // row is `bestiary_data.rs:373`). The credit ids are
+    // `NPCID.Search.GetName(netId)` (`ContentSamples.cs:868-870`), i.e.
+    // the NPCID field names.
+    BestiaryEntryDef {
+        credit_id: "TownDog",
+        net_id: 638,
+        kind: NpcKind::TownDog,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Dog",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownCat",
+        net_id: 637,
+        kind: NpcKind::TownCat,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Cat",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownBunny",
+        net_id: 656,
+        kind: NpcKind::TownBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeBlue",
+        net_id: 670,
+        kind: NpcKind::TownSlimeBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Nerdy Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeGreen",
+        net_id: 678,
+        kind: NpcKind::TownSlimeGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Cool Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeOld",
+        net_id: 679,
+        kind: NpcKind::TownSlimeOld,
+        variant: None,
+        quick_unlock: false,
+        name: "Elder Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimePurple",
+        net_id: 680,
+        kind: NpcKind::TownSlimePurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Clumsy Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeRainbow",
+        net_id: 681,
+        kind: NpcKind::TownSlimeRainbow,
+        variant: None,
+        quick_unlock: false,
+        name: "Diva Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeRed",
+        net_id: 682,
+        kind: NpcKind::TownSlimeRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Surly Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeYellow",
+        net_id: 683,
+        kind: NpcKind::TownSlimeYellow,
+        variant: None,
+        quick_unlock: false,
+        name: "Mystic Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeCopper",
+        net_id: 684,
+        kind: NpcKind::TownSlimeCopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Squire Slime",
+    },
+    // `NPCID.LadyBug` (604, `NPCID.cs:11885`). `CountsAsACritter` holds
+    // (lifeMax 5 / damage 0, `NPC.cs:16768-16770`), so the automated pass
+    // registers it with the critter provider
+    // (`BestiaryDatabaseNPCsPopulator.cs:851-868`) — the gold twin 605's
+    // provider peer (`:711` `{605: [604]}`, `bestiary_data.rs:103`). Name
+    // `Lang.GetNPCName(604)` = "Ladybug" (`en-US NPCs.json:642`); the
+    // WindyDay tag is folded by `:973` (`bestiary_tags.rs:748`), and
+    // `FillNpcRarities` pins 3 stars (`bestiary_data.rs:376`).
+    BestiaryEntryDef {
+        credit_id: "LadyBug",
+        net_id: 604,
+        kind: NpcKind::LadyBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Ladybug",
+    },
+    // `NPCID.GoldLadyBug` (605, `NPCID.cs:11887`). Same automated critter
+    // pass (`BestiaryDatabaseNPCsPopulator.cs:851-868`), then the gold
+    // provider override (`:703-720`; the dictionary row `:711` is
+    // `{605: [604]}`, mirrored in `GOLD_PEER_TABLE` below). Name
+    // `Lang.GetNPCName(605)` = "Gold Ladybug" (`en-US NPCs.json:643`); the
+    // WindyDay tag rides `:974` (`bestiary_tags.rs:749`). No
+    // `FillNpcRarities` override: `rarity = 3` (`NPC.cs:16775-16778`) lands
+    // the formula's 1+3+2.0 → 5-star cap, so its census row is 5 stars.
+    BestiaryEntryDef {
+        credit_id: "GoldLadyBug",
+        net_id: 605,
+        kind: NpcKind::GoldLadyBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Ladybug",
+    },
+    // `NPCID.Lihzahrd` (198, `NPCID.cs:11073`). A plain enemy (18x40,
+    // aiStyle 3, dmg 38 / def 20 / 400 HP, `NPC.cs:11533-11545`), so the
+    // automated pass registers `BestiaryEntry.Enemy(198)`
+    // (`BestiaryDatabaseNPCsPopulator.cs:851-868`). `ContentSamples` folds
+    // the CREDIT onto the crawler's name:
+    // `NpcBestiaryCreditIdsByNpcNetIds[198] = [...[199]]` =
+    // "LihzahrdCrawler" (`ContentSamples.cs:1052`), while the plate name is
+    // `Lang.GetNPCName(198)` = "Lihzahrd" (`en-US NPCs.json:140`). The
+    // crawler 199 is `Hide = true` (`NPCID.cs:2577-2582`), so it carries no
+    // own row — the fold arms below resolve 199 onto this entry. Temple tag
+    // at `:1468` (`bestiary_tags.rs:355`); no `FillNpcRarities` override,
+    // so the formula lands 38+20+400/4 = 158 → 2 stars.
+    BestiaryEntryDef {
+        credit_id: "LihzahrdCrawler",
+        net_id: 198,
+        kind: NpcKind::Lihzahrd,
+        variant: None,
+        quick_unlock: false,
+        name: "Lihzahrd",
+    },
+    // `NPCID.IcyMerman` (206, `NPCID.cs:11089`). A plain enemy (18x40,
+    // aiStyle 3, dmg 60 / def 30 / 280 HP, coldDamage,
+    // `NPC.cs:11640-11652`) → `BestiaryEntry.Enemy(206)` from the automated
+    // pass (`BestiaryDatabaseNPCsPopulator.cs:851-868`); name
+    // `Lang.GetNPCName(206)` = "Icy Merman" (`en-US NPCs.json:150`),
+    // credit `NPCID.Search.GetName(206)` = "IcyMerman". Underground Snow
+    // tag at `:1529` (`bestiary_tags.rs:363`); `FillNpcRarities` pins 3
+    // stars (`ContentSamples.cs:1214`).
+    BestiaryEntryDef {
+        credit_id: "IcyMerman",
+        net_id: 206,
+        kind: NpcKind::IcyMerman,
+        variant: None,
+        quick_unlock: false,
+        name: "Icy Merman",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -4759,6 +4930,11 @@ pub fn try_entry_for_npc(
         // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
         // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
         NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
+        // W4-d36 E4: the Lihzahrd crawler 199 is Hide=true
+        // (`NPCID.cs:2577-2582`) and its bestiary credit folds onto the 198
+        // entry (`ContentSamples.cs:1052` — the 198 row is keyed on the 199
+        // name) — one entry per family (the SleepingGolfer precedent).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4932,6 +5108,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
         // CultistArcherBlue 379 (the try_entry twin above).
         NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
+        // W4-d36 E4: the Lihzahrd crawler 199 is Hide=true
+        // (`NPCID.cs:2577-2582`) and its bestiary credit folds onto the 198
+        // entry (`ContentSamples.cs:1052` — the 198 row is keyed on the 199
+        // name) — one entry per family (the SleepingGolfer precedent).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES
@@ -5392,6 +5573,55 @@ mod tests {
         assert_eq!(ids.len(), ENTRIES.len());
     }
 
+    /// The town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) resolve to
+    /// their own rows — the populator's `AddTownNPCs_Manual` pass registers
+    /// all eleven (`BestiaryDatabaseNPCsPopulator.cs:833-843`) and the credit
+    /// id is `NPCID.Search.GetName(netId)` (`ContentSamples.cs:868-870`).
+    #[test]
+    fn the_town_pet_kinds_carry_their_bestiary_rows() {
+        for (kind, net, credit, name) in [
+            (NpcKind::TownDog, 638i32, "TownDog", "Town Dog"),
+            (NpcKind::TownCat, 637, "TownCat", "Town Cat"),
+            (NpcKind::TownBunny, 656, "TownBunny", "Town Bunny"),
+            (NpcKind::TownSlimeBlue, 670, "TownSlimeBlue", "Nerdy Slime"),
+            (NpcKind::TownSlimeGreen, 678, "TownSlimeGreen", "Cool Slime"),
+            (NpcKind::TownSlimeOld, 679, "TownSlimeOld", "Elder Slime"),
+            (
+                NpcKind::TownSlimePurple,
+                680,
+                "TownSlimePurple",
+                "Clumsy Slime",
+            ),
+            (
+                NpcKind::TownSlimeRainbow,
+                681,
+                "TownSlimeRainbow",
+                "Diva Slime",
+            ),
+            (NpcKind::TownSlimeRed, 682, "TownSlimeRed", "Surly Slime"),
+            (
+                NpcKind::TownSlimeYellow,
+                683,
+                "TownSlimeYellow",
+                "Mystic Slime",
+            ),
+            (
+                NpcKind::TownSlimeCopper,
+                684,
+                "TownSlimeCopper",
+                "Squire Slime",
+            ),
+        ] {
+            let entry = entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(entry.kind, kind);
+            assert_eq!(entry.net_id, net, "{kind:?} net id");
+            assert_eq!(entry.credit_id, credit, "{kind:?} credit id");
+            assert_eq!(entry.name, name, "{kind:?} name");
+            assert!(!entry.quick_unlock, "{kind:?} is not a boss row");
+            assert_eq!(crate::bestiary_data::rarity_stars(entry), 3);
+        }
+    }
+
     #[test]
     fn the_mothron_egg_resolves_through_its_own_row_but_credits_mothron() {
         // W4-d40 seal witness (WRITTEN NOT RUN — code-only): the g61
@@ -5664,7 +5894,10 @@ mod tests {
     /// override rows `ContentSamples.cs:1106-1242` first, else the
     /// `GetNPCBestiaryRarityStarsCount` formula over the Classic
     /// `SetDefaults` sample with the fresh-Main progression flags false).
-    /// 326 rows: 79x1 / 161x2 / 53x3 / 23x4 / 10x5 (the merge appended the W4 kinds' rows).
+    /// 341 rows: 79x1 / 162x2 / 66x3 / 23x4 / 11x5 (the merge appended the W4
+    /// kinds' rows; the eleven town pets ride the manual town pass, the
+    /// Ladybug pair the automated critter/gold passes, the Lihzahrd/Icy
+    /// Merman the automated enemy pass).
     #[test]
     fn w4_c37_the_star_census() {
         const EXPECTED: &[(i32, i32)] = &[
@@ -5994,6 +6227,25 @@ mod tests {
             (630, 2), // BloodMummy
             (80, 2), // LightMummy
             (580, 2), // WalkingAntlion
+            // The town pets (`AddTownNPCs_Manual`,
+            // `BestiaryDatabaseNPCsPopulator.cs:833-843`): the
+            // `FillNpcRarities` override pins all eleven at 3 stars
+            // (`bestiary_data.rs:373`).
+            (638, 3), // TownDog
+            (637, 3), // TownCat
+            (656, 3), // TownBunny
+            (670, 3), // TownSlimeBlue
+            (678, 3), // TownSlimeGreen
+            (679, 3), // TownSlimeOld
+            (680, 3), // TownSlimePurple
+            (681, 3), // TownSlimeRainbow
+            (682, 3), // TownSlimeRed
+            (683, 3), // TownSlimeYellow
+            (684, 3), // TownSlimeCopper
+            (604, 3), // LadyBug (`FillNpcRarities`, `bestiary_data.rs:376`)
+            (605, 5), // GoldLadyBug (rarity 3 formula, `NPC.cs:16775-16778`)
+            (198, 2), // Lihzahrd (formula: 38+20+400/4 = 158 bulk step)
+            (206, 3), // IcyMerman (`ContentSamples.cs:1214`)
         ];
         assert_eq!(EXPECTED.len(), ENTRIES.len());
         for (e, &(net, stars)) in ENTRIES.iter().zip(EXPECTED) {

@@ -651,8 +651,18 @@ mod tests {
         assert_eq!(top.pivot, [16.0, 46.0]);
         assert_eq!(mid.pivot, [16.0, 30.0]);
         assert_eq!(bot.pivot, [16.0, 14.0]);
-        assert_eq!(top.rot, cycle * 0.15 * (2.0 / 3.0));
-        assert_eq!(mid.rot, cycle * 0.15 * (1.0 / 3.0));
+        // The ladder is the C# `1f - (row + 1) / 3f` evaluated in f32
+        // (`TileDrawing.cs:8959-8963`), NOT the algebraically equal `2/3`
+        // (the two round to different f32 values at row 1).
+        let n3 = |row: i32| {
+            let mut v = 1.0f32 - (row as f32 + 1.0) / 3.0;
+            if v == 0.0 {
+                v = 0.1;
+            }
+            v
+        };
+        assert_eq!(top.rot, cycle * 0.15 * n3(0));
+        assert_eq!(mid.rot, cycle * 0.15 * n3(1));
         assert_eq!(bot.rot, cycle * 0.15 * 0.1);
     }
 
@@ -748,18 +758,22 @@ mod tests {
             w.tiles[i].frame_y = 0;
         }
         w.compute_chunks();
-        assert_eq!(climb_cat_tail(&w, 10, 20), 3);
-        // The registered cell is the flame-top (row 20); top-left = row 18.
-        // Anchor Y = top_left_y*16 + 16*height = 18*16 + 48 = 336; the cell's
-        // vector2 Y = 20*16 + tileTop 2 = 322; pivot Y = 336 - 322 = 14.
-        let top = cattail_sway(&wind, &w, 10, 20, 2, 0.0);
+        // The registered special point is the BASE cell (frameX / 18 <= 4,
+        // `TileDrawing.cs:682-687`): row 22 here. `ClimbCatTail` walks UP
+        // from it (`:8807-8827`), counting the flame top at row 20.
+        assert_eq!(climb_cat_tail(&w, 10, 22), 3);
+        // topLeftY = 22 - (3 - 1) = 20; the base cell's own row index is 2,
+        // so num3 = 1 - 3/3 = 0 -> 0.1 (`:8959-8963`).
+        // Anchor Y = top_left_y*16 + 16*height = 20*16 + 48 = 368; the cell's
+        // vector2 Y = 22*16 + tileTop 2 = 354; pivot Y = 368 - 354 = 14.
+        let top = cattail_sway(&wind, &w, 10, 22, 2, 0.0);
         assert_eq!(top.pivot, [8.0, 14.0]);
-        let cycle = wind.cycle(10, 18, 0.0);
-        assert_eq!(top.rot, cycle * 0.15 * (2.0 / 3.0));
-        // A wall blocking ONLY the top row freezes the whole stem.
-        let i = w.index(10, 18);
+        let cycle = wind.cycle(10, 20, 0.0);
+        assert_eq!(top.rot, cycle * 0.15 * 0.1);
+        // A wall blocking ONLY the top row (20) freezes the whole stem.
+        let i = w.index(10, 20);
         w.tiles[i].wall = 1;
-        let frozen = cattail_sway(&wind, &w, 10, 20, 2, 0.0);
+        let frozen = cattail_sway(&wind, &w, 10, 22, 2, 0.0);
         assert_eq!((frozen.dy, frozen.rot), (0.0, 0.0));
     }
 }

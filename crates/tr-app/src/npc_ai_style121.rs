@@ -1195,7 +1195,9 @@ mod tests {
             ticker: 7,
         };
         let _ = style121_step(&mut n, &mut env);
-        assert_eq!(n.ai[1], -100.0);
+        // The latch writes -100, then the same tick's state-0 tail does
+        // `ai[1]++` (`:45290` below the `timeLeft`/grounded break) → -99.
+        assert_eq!(n.ai[1], -99.0);
         assert_eq!(n.local_ai[0], 18000.0);
         assert!(n.net_update);
     }

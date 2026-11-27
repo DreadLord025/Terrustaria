@@ -649,14 +649,20 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
         // (port-only shims, same pattern as the 279 one above тАФ see
         // `docs/ANALYSIS.md`).
         Err(PlayerFileError::Truncated(_)) if version == RELEASE => {
+            // Try the DEEPEST recoverable shim first: an inc1 cut (right
+            // after `voidVaultInfo`) also satisfies depth 1, so probing depth
+            // 1 first would mask every inc2 file (cut after `hideInfo`) as
+            // inc1 and silently drop its buffs/spawn/hideInfo. Depth 2 only
+            // fails on a file cut before `hideInfo` completes, which is
+            // exactly the inc1 shape — then depth 1 reads the tail it has.
             let mut r2 = Reader::new(plain);
-            r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc1"))?;
-            match read_player_fields(&mut r2, version, revision, is_favorite, 1) {
+            r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc2"))?;
+            match read_player_fields(&mut r2, version, revision, is_favorite, 2) {
                 Ok(f) => Ok(f),
                 Err(PlayerFileError::Truncated(_)) => {
                     let mut r3 = Reader::new(plain);
-                    r3.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc2"))?;
-                    read_player_fields(&mut r3, version, revision, is_favorite, 2)
+                    r3.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc1"))?;
+                    read_player_fields(&mut r3, version, revision, is_favorite, 1)
                 }
                 Err(e) => Err(e),
             }
@@ -777,21 +783,18 @@ fn read_player_fields(
     // The unlock/seed bools (`:55235-55262`) тАФ the verify-sweep rides them
     // (they used to be consumed-and-dropped / written fresh).
     tail.extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
-    // The unlock/seed bools (`:55235-55262`).
+    // The unlock/seed bools (`:55235-55262`). The six one-use flags are
+    // DIFFERENT C# fields from the array view below, so the walk reads the
+    // block exactly once and mirrors it onto both struct views.
     let mut used_aegis_fruit = false; // W4-g89 — set by the 260+ block below
     let mut used_gummy_worm = false; // W4-g89 — same block, fifth bool
     let mut used_ambrosia = false; // W4-g89c — same block, sixth bool
     let mut used_aegis_crystal = false; // W4-g89i — same block, FIRST bool
-    let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
+    let mut used_arcane_crystal = false;
+    let mut used_galaxy_pearl = false;
     // `ateArtisanBread` (`:55245`, gate 256 inside the 229 block) — W4-g90
     // models it; below 256 the ctor default false stands (`:56077`).
     let mut ate_artisan_bread = false;
-    // W4-g90 lane 7 — set by the 260+ unlock block below (ctor false).
-    let mut used_aegis_crystal = false;
-    let mut used_arcane_crystal = false;
-    let mut used_galaxy_pearl = false;
-    let mut used_gummy_worm = false;
-    let mut used_ambrosia = false;
     if version >= 229 {
         tail.unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
         // `:55242` reads into the UsingBiomeTorches SETTER
@@ -805,36 +808,24 @@ fn read_player_fields(
         tail.builder_acc_status[11] = i32::from(!tail.using_biome_torches);
         if version >= 256 {
             tail.ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
-            ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
+            ate_artisan_bread = tail.ate_artisan_bread;
         }
         if version >= 324 {
             r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250` тАФ the dead slot, read-dropped
         }
         if version >= 260 {
+            // The six shimmer/permanent unlocks (`:55255-55260`): read the
+            // block ONCE (6 bools), then mirror it onto both struct views
+            // (the `used_upgrades` array and the individual fields).
             for slot in tail.used_upgrades.iter_mut() {
                 *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
             }
-            // The six shimmer/permanent unlocks (`:55255-55260`) — all
-            // live at the merge (W4-g89 fruit/worm/ambrosia + W4-g90 lane 7
-            // crystal/arcane/pearl).
-            used_aegis_crystal = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedAegisCrystal"))?; // `:55255`
-            used_aegis_fruit = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedAegisFruit"))?; // `:55256`
-            used_arcane_crystal = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedArcaneCrystal"))?; // `:55257`
-            used_galaxy_pearl = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedGalaxyPearl"))?; // `:55258`
-            used_gummy_worm = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedGummyWorm"))?; // `:55259`
-            used_ambrosia = r
-                .boolean()
-                .ok_or(PlayerFileError::Truncated("usedAmbrosia"))?; // `:55260`
+            used_aegis_crystal = tail.used_upgrades[0]; // `:55255`
+            used_aegis_fruit = tail.used_upgrades[1]; // `:55256`
+            used_arcane_crystal = tail.used_upgrades[2]; // `:55257`
+            used_galaxy_pearl = tail.used_upgrades[3]; // `:55258`
+            used_gummy_worm = tail.used_upgrades[4]; // `:55259`
+            used_ambrosia = tail.used_upgrades[5]; // `:55260`
         }
     }
     if version >= 182 {
@@ -1591,30 +1582,23 @@ fn read_legacy_port_subset(
     let unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     let using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     let ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
+    // the 11 bools the old subset writer emitted (no 324 dead slot). The
+    // bread is the 4th bool above; the six unlocks are the SAME C# fields
+    // as the full walk, so read them once and mirror them onto the two
+    // struct views (the old code read the whole block a second time, which
+    // consumed 12 extra bytes and truncated every legacy file).
     let mut used_upgrades = [false; 6];
     for slot in used_upgrades.iter_mut() {
         *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     }
-    // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
-    // the 11 bools the old subset writer emitted (no 324 dead slot). The
-    // bread is the 4th (index 3) — W4-g90 models it (the old writer always
-    // emitted false, so legacy files load false). W4-g90 lane 7 keeps the
-    // five shimmer unlocks at indices 4/6/7/8/9 (index 5 = the g89-owned
-    // Aegis Fruit, still dropped) — same always-false legacy files.
-    let mut ate_artisan_bread = false;
-    let mut unlocks = [false; 5];
-    for i in 0..11 {
-        let b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
-        match i {
-            3 => ate_artisan_bread = b,
-            4 => unlocks[0] = b, // usedAegisCrystal
-            6 => unlocks[1] = b, // usedArcaneCrystal
-            7 => unlocks[2] = b, // usedGalaxyPearl
-            8 => unlocks[3] = b, // usedGummyWorm
-            9 => unlocks[4] = b, // usedAmbrosia
-            _ => {}
-        }
-    }
+    let unlocks = [
+        used_upgrades[0], // usedAegisCrystal
+        used_upgrades[2], // usedArcaneCrystal
+        used_upgrades[3], // usedGalaxyPearl
+        used_upgrades[4], // usedGummyWorm
+        used_upgrades[5], // usedAmbrosia
+    ];
     let downed_dd2_any_difficulty = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     let tax_money = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
     let deaths_pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
@@ -2048,28 +2032,28 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(file.unlocked_biome_torches && file.builder_acc_status[11] == 0); // `:54778`
     w.boolean(file.ate_artisan_bread); // `:54779` (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
-    for used in file.used_upgrades {
-        w.boolean(used); // `:54781-54786` (ctor `:56078-56083`)
+    // `:54781-54786` the six one-use flags, in C# order (AegisCrystal,
+    // AegisFruit, ArcaneCrystal, GalaxyPearl, GummyWorm, Ambrosia). The
+    // struct carries both the array view (`used_upgrades`) and the six
+    // individual fields (the W4-g89 / W4-g90-lane-7 merge); they are the
+    // SAME six C# bools, so the writer emits each slot exactly once — a set
+    // bit in either view wins. Writing both would duplicate 6 bytes and shift
+    // every later section (the +24 B layout drift).
+    let single = [
+        file.used_aegis_crystal,
+        file.used_aegis_fruit,
+        file.used_arcane_crystal,
+        file.used_galaxy_pearl,
+        file.used_gummy_worm,
+        file.used_ambrosia,
+    ];
+    for (used, one) in file.used_upgrades.iter().copied().zip(single) {
+        w.boolean(used || one); // `:54781-54786` (ctor `:56078-56083`)
     }
     w.boolean(file.downed_dd2_any_difficulty); // `:54787`
     w.i32(file.tax_money); // `:54788` taxMoney
     w.i32(file.deaths_pve); // `:54789` numberOfDeathsPVE
     w.i32(file.deaths_pvp); // `:54790` numberOfDeathsPVP
-    w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
-    w.boolean(false); // `:54777` unlockedBiomeTorches
-    w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
-    w.boolean(file.ate_artisan_bread); // `:54779` ateArtisanBread (ctor `:56077`) — W4-g90
-    w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
-    w.boolean(file.used_aegis_crystal); // `:54781` usedAegisCrystal (`:56078`, W4-g89i/g90)
-    w.boolean(file.used_aegis_fruit); // `:54782` usedAegisFruit (`:56079`, W4-g89)
-    w.boolean(file.used_arcane_crystal); // `:54783` usedArcaneCrystal (`:56080`, W4-g90 lane 7)
-    w.boolean(file.used_galaxy_pearl); // `:54784` usedGalaxyPearl (`:56081`, W4-g90 lane 7)
-    w.boolean(file.used_gummy_worm); // `:54785` usedGummyWorm (`:56082`, W4-g89)
-    w.boolean(file.used_ambrosia); // `:54786` usedAmbrosia (`:56083`, W4-g89c)
-    w.boolean(false); // `:54787` downedDD2EventAnyDifficulty
-    w.i32(0); // `:54788` taxMoney
-    w.i32(0); // `:54789` numberOfDeathsPVE
-    w.i32(0); // `:54790` numberOfDeathsPVP
     for color in [
         file.hair_color, // `:54791-54793`
         file.skin_color, // `:54794-54796`
@@ -3990,8 +3974,13 @@ mod tests {
         assert!(inc1.buffs.is_empty(), "inc1 never reached the buffs");
         assert!(inc1.spawn_points.is_empty());
         assert_eq!(inc1.angler_quests_finished, 0);
-        // inc2: cut after hideInfo (offset 2772).
-        let inc2 = read_player_bytes(&plain[..2772]).expect("inc2 reads");
+        // inc2: cut after hideInfo. The fresh layout ends hideInfo at 2772
+        // (2402 vault end + 352 buffs + 4 sentinel + 1 hbLocked + 13 hide),
+        // but this file carries ONE spawn record before the sentinel:
+        // (spX, spY, spI) 12 B + cs_string("Alpha") 6 B = 18 B, so the cut
+        // moves to 2772 + 18 = 2790. (It must include the record: the test
+        // asserts inc2.spawn_points reads it back.)
+        let inc2 = read_player_bytes(&plain[..2790]).expect("inc2 reads");
         assert_eq!(inc2.void_vault_info, 1);
         assert_eq!(inc2.bank4[7], (8, 99, 0, true));
         assert!(inc2.research.is_empty());

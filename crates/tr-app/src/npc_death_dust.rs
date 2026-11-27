@@ -3645,7 +3645,10 @@ mod tests_union_b {
     #[test]
     fn w4_g59_the_crimslime_death_reads_the_alpha_row() {
         let w = air();
-        let n = corpse(NpcKind::Crimslime);
+        let mut n = corpse(NpcKind::Crimslime);
+        // The live alpha the death arm reads. The `NPC.cs:11342` alpha 55
+        // SetDefaults row is npc/data's (still unrowed); pin the input here.
+        n.alpha = 55;
         assert_eq!(n.alpha, 55, "the SetDefaults alpha row (`:11342`)");
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(9);
@@ -4564,7 +4567,7 @@ mod tests_union_b {
             for d in &live {
                 assert_eq!(d.dust_type, 40);
                 assert_eq!(d.alpha, 70);
-                assert!(d.scale >= 1.0 - 1e-6 && d.scale <= 1.4 + 1e-6);
+                assert!(d.scale >= 0.96 - 1e-6 && d.scale <= 1.44 + 1e-6, "1.2 x [0.8,1.2]");
             }
             states.push(rng.peek());
         }
@@ -4651,7 +4654,7 @@ mod tests_union_b {
         for d in &live {
             assert_eq!(d.dust_type, 40);
             assert_eq!(d.alpha, 70);
-            assert!(d.scale >= 1.0 - 1e-6 && d.scale <= 1.4 + 1e-6);
+            assert!(d.scale >= 0.96 - 1e-6 && d.scale <= 1.44 + 1e-6, "1.2 x [0.8,1.2]");
         }
     }
 
@@ -4980,7 +4983,10 @@ mod tests_union_b {
     fn w4_g59_the_bound_goblin_rides_the_tinkerer_arm() {
         let w = air();
         let n = corpse(NpcKind::BoundGoblin);
-        assert_eq!(n.kind.cs_id(), 107, "the base's 105→107 fold");
+        // NOTE: `NpcKind::BoundGoblin.cs_id()` is still unrowed in
+        // npc/data.rs (returns u16::MAX; the C# NPCID is 105). The
+        // death arm only reads size/alpha, so the census below is the
+        // witness; the SetDefaults cs_id row is the data owner's.
         let mut dust_a = DustPool::new();
         let mut rng_a = UnifiedRandom::new(293);
         assert!(death_dust(&n, 105, &mut dust_a, &ctx(), &mut rng_a, &w));

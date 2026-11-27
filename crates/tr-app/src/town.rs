@@ -862,11 +862,13 @@ mod tests {
 
     #[test]
     fn the_homeless_guide_finds_a_furnished_room() {
-        // A furnished room in the world: the three-pass scan finds it from
-        // the Guide's position up to 10 tiles away.
+        // A furnished room in the world: the pass-1 scan at the Guide's own
+        // home tile finds it. (The C# `canSpawn` is the LAST StartRoomCheck
+        // in a pass — a start OUTSIDE the room walks the ±10 ring and the
+        // later failures clear the flag, `WorldGen.cs:5739-5757`.)
         let mut w = ground();
         build_furnished_room(&mut w, 60, 100, 12, 9);
-        let home = quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false);
+        let home = quick_find_home(&w, &[], 65, 108, None, GUIDE_ID, false);
         assert!(home.is_some(), "the scan finds the room");
         let (hx, hy) = home.unwrap();
         assert!((60..=71).contains(&hx), "hx {hx}");
@@ -887,12 +889,12 @@ mod tests {
             Some((65, 106)),
         );
         assert!(
-            quick_find_home(&w, &[resident], 72, 108, None, GUIDE_ID, false).is_none(),
+            quick_find_home(&w, &[resident], 65, 108, None, GUIDE_ID, false).is_none(),
             "the occupied room is refused"
         );
         // The asking NPC itself does not block its own room (`ignoreNPC`).
         assert!(
-            quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false).is_some(),
+            quick_find_home(&w, &[], 65, 108, None, GUIDE_ID, false).is_some(),
             "the empty room still answers"
         );
     }
@@ -913,7 +915,7 @@ mod tests {
             Some((65, 106)),
         );
         assert!(
-            quick_find_home(&w, &[resident], 72, 108, None, TOWN_CAT_ID, false).is_some(),
+            quick_find_home(&w, &[resident], 65, 108, None, TOWN_CAT_ID, false).is_some(),
             "a different-category tenant may share the room"
         );
     }
@@ -923,7 +925,7 @@ mod tests {
         // A room without furniture: the scan fails everywhere.
         let mut w = ground();
         build_furnished_room_with(&mut w, 60, 100, 12, 9, &[]);
-        assert!(quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false).is_none());
+        assert!(quick_find_home(&w, &[], 65, 108, None, GUIDE_ID, false).is_none());
     }
 
     #[test]
@@ -1373,7 +1375,7 @@ mod tests {
             assert_eq!(rooms.has_room(GUIDE_ID), Some((hx, hy)));
             assert!(chat.messages.is_empty(), "a successful move prints nothing");
             // The old room is free again: another Guide may take it.
-            assert!(quick_find_home(&w, &npcs, 72, 108, None, GUIDE_ID, false).is_some());
+            assert!(quick_find_home(&w, &npcs, 65, 108, None, GUIDE_ID, false).is_some());
 
             // A failed move changes nothing (`Main.cs:45174-45179` only
             // acts on `true`): solid stone refuses with the reason text.
@@ -1443,7 +1445,11 @@ mod tests {
         player.x = 72.0 * 16.0;
         player.y = 108.0 * 16.0;
         app.player = Some(player);
-        let mut guide = town_npc(crate::npc::NpcKind::Guide, 72.0 * 16.0, 108.0 * 16.0, None);
+        // The Guide stands INSIDE the furnished room: `QuickFindHome`'s
+        // pass-1 scan runs at the NPC's own tile, and the C# `canSpawn` is
+        // the LAST StartRoomCheck (`WorldGen.cs:5739-5757`) — a start one
+        // tile outside walks the ±10 ring and the later failures clear it.
+        let mut guide = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, None);
         guide.hp = guide.max_hp;
         guide.look_for_home_timeout = 3;
         app.npcs.push(guide);

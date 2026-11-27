@@ -1777,7 +1777,10 @@ mod tests {
         let w = world(64, 64);
         // The non-solid pass head (:477-478 both fire, :479 tiers rebuild).
         let mut r = Recorder::default();
-        let area = draw_layer(&w, &inputs(false), |_| false, &mut r);
+        // The direct-screen pass: no offscreen pad (`!drawToScreen` false).
+        let mut inp_ns = inputs(false);
+        inp_ns.draw_to_screen = true;
+        let area = draw_layer(&w, &inp_ns, |_| false, &mut r);
         assert_eq!(
             r.log.iter().filter(|s| s.starts_with("legacy ")).count(),
             7

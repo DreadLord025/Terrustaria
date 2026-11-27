@@ -214,18 +214,21 @@ mod tests {
 
     #[test]
     fn the_kite_rides_the_cursor_with_a_one_tick_cooldown() {
-        // `:35724-35736`: the move sets localAI[1] = 1; the next tick
-        // decrements it to 0 and does NOT move; the tick after moves.
+        // `:35724-35736`: the move sets localAI[1] = 1; the NEXT tick
+        // decrements it to 0 FIRST, so the move branch runs again and a
+        // still-different mouse re-snaps (re-arming the cooldown); an
+        // unchanged mouse point leaves the position AND drains the counter.
         let mut p = kite(155.0, 315.0);
         p.ai = [10.0, 20.0, 0.0, 0.0]; // anchor already latched
         ai_wire_kite(&mut p, owner(true), Vec2::new(200.0, 320.0), false);
         assert_eq!(p.pos, Vec2::new(195.0, 315.0), "centre rides the mouse");
         assert_eq!(p.local_ai[1], 1.0);
         ai_wire_kite(&mut p, owner(true), Vec2::new(240.0, 320.0), false);
-        assert_eq!(p.pos, Vec2::new(195.0, 315.0), "the cooldown tick holds");
-        assert_eq!(p.local_ai[1], 0.0);
+        assert_eq!(p.pos, Vec2::new(235.0, 315.0), "the decrement precedes the gate");
+        assert_eq!(p.local_ai[1], 1.0, "the moved tick re-arms");
         ai_wire_kite(&mut p, owner(true), Vec2::new(240.0, 320.0), false);
-        assert_eq!(p.pos, Vec2::new(235.0, 315.0));
+        assert_eq!(p.pos, Vec2::new(235.0, 315.0), "the same point does not move");
+        assert_eq!(p.local_ai[1], 0.0, "the idle tick drains the cooldown");
     }
 
     #[test]

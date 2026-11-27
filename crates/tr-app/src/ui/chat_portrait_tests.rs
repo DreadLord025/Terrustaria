@@ -91,7 +91,9 @@ fn the_shimmer_gate_needs_variation_one_and_the_transform_set() {
 fn the_anchor_rides_the_hop_lift() {
     let tl = Vec2::new(710.0, 100.0);
     assert_eq!(portrait_anchor(tl, 80), Vec2::new(648.0, 162.0));
-    assert_eq!(portrait_anchor(tl, 0), Vec2::new(648.0, 162.0 - 14.0));
+    // Frame 0: `BounceEaseOut(0)` = 1 (`Utils.cs:360-363`), so the lift is
+    // `-14 * (1 - 1)` = 0 - the resting anchor.
+    assert_eq!(portrait_anchor(tl, 0), Vec2::new(648.0, 162.0));
     let f10 = portrait_anchor(tl, 10);
     assert!((f10.y - (162.0 - 10.71875)).abs() < 1e-4);
     assert_eq!(portrait_anchor(tl, 120), Vec2::new(648.0, 162.0));

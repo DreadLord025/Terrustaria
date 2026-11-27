@@ -353,9 +353,14 @@ mod tests {
         };
         let _ = style122_step(&mut n, &mut env);
         assert_eq!(n.alpha, 95);
-        // desired = (4, 0); v = 0 + (4-0)*(2/15) = 8/15.
-        assert!((n.vx - 8.0 / 15.0).abs() < 1e-6, "vx {}", n.vx);
-        assert!(n.vy.abs() < 1e-6);
+        // `:44867` — `Utils.MoveTowards(velocity,
+        // Zero.MoveTowards(target - Center, 4f), 2f / 15f)`: the inner cap
+        // picks the unit direction and the outer walks exactly 2/15 along
+        // it (maxAmountAllowedToMove is a DISTANCE, not a lerp fraction).
+        let unit = Vec2::new(1010.0 - 109.0, 121.0 - 120.0).normalize();
+        let step = 2.0 / 15.0;
+        assert!((n.vx - unit.x * step).abs() < 1e-6, "vx {}", n.vx);
+        assert!((n.vy - unit.y * step).abs() < 1e-6, "vy {}", n.vy);
     }
 
     /// `:44868-44881` — the separation: the near sibling pushes away
@@ -394,10 +399,17 @@ mod tests {
             ticker: 7,
         };
         let _ = style122_step(&mut n, &mut env);
-        // The chase gave vx 8/15; the sibling right pushes vx -= 0.1
-        // then -= 0.1 again (the X double). vy unchanged (level).
-        assert!((n.vx - (8.0 / 15.0 - 0.2)).abs() < 1e-5, "vx {}", n.vx);
-        assert!(n.vy.abs() < 1e-6);
+        // `:44867` gives the 2/15 chase step along the unit aim; the
+        // sibling at (+30, 0) is inside 50 px, so `:44877-44878` applies
+        // the ±0.1 push plus the extra X push (vx -= 0.2, vy unchanged).
+        let unit = Vec2::new(1010.0 - 109.0, 121.0 - 120.0).normalize();
+        let step = 2.0 / 15.0;
+        assert!(
+            (n.vx - (unit.x * step - 0.2)).abs() < 1e-5,
+            "vx {}",
+            n.vx
+        );
+        assert!((n.vy - unit.y * step).abs() < 1e-5, "vy {}", n.vy);
     }
 
     /// `NPC.cs:74836-74884` — the 6-tick row advance wraps at 4.

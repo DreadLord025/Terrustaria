@@ -961,10 +961,12 @@ mod tests {
         // vx 1: +1.5 a tick, the > 6 step every 5th tick.
         let rows = rows_over(FindFrameExtra8Kind::GoldMouse, input(1.0, 0.0), 16);
         assert_eq!(rows, vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3]);
-        // The wrap-to-2 at the full count (rows 0/1 idle-only).
-        let mut s = FrameState { row: 5, ..Default::default() };
+        // The wrap-to-2 at the full count: a 6.0 counter + 1.5 = 7.5 > 6
+        // steps row 5 -> 6, which is >= the sheet count, so row 2
+        // (`NPC.cs:76545-76548`).
+        let mut s = FrameState { row: 5, counter: 6.0, ..Default::default() };
         find_frame_extra8(FindFrameExtra8Kind::GoldMouse, &mut s, &input(1.0, 0.0));
-        assert_eq!(s.row, 2);
+        assert_eq!((s.row, s.counter), (2, 0.0));
         // The air walk: same stride, NO sprite flip.
         let mut s = FrameState { sprite_dir: -1, ..Default::default() };
         find_frame_extra8(FindFrameExtra8Kind::GoldMouse, &mut s, &input(1.0, 2.0));
@@ -1042,12 +1044,13 @@ mod tests {
             find_frame_extra8(k, &mut s, &input(1.0, -2.0));
             assert_eq!((s.row, s.counter), (1, 0.0));
         }
-        // The 452's one-extra toss row: band 1 lands row 19 (the
-        // 19-row trio lands 15).
+        // The 452's one-extra toss row: band 1 lands row 16 (the
+        // 19-row trio lands 15) -- `num53 = count - 5` (`NPC.cs:71416`),
+        // count 20 vs 19 (`Main.cs:67129`).
         let i = FrameInput { ai: [0.0, 50.0, 1.0, 0.0], ..input(0.0, 0.0) };
         let mut s = FrameState::default();
         find_frame_extra8(FindFrameExtra8Kind::BoneThrowingSkeleton4, &mut s, &i);
-        assert_eq!(s.row, 19);
+        assert_eq!(s.row, 16);
         find_frame_extra8(FindFrameExtra8Kind::BoneThrowingSkeleton, &mut s, &i);
         assert_eq!(s.row, 15);
     }

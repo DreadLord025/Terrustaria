@@ -814,9 +814,12 @@ mod tests {
         assert_eq!(half_accel, 0.11);
         // Below half life the kb override zeroes.
         n.hp = n.max_hp / 2 - 1;
+        // `:40170` — rotation = velocity.X * 0.04 runs at the TOP of the
+        // step, from the PRE-step velocity (the movement lands after it).
+        let vx_before = n.vx;
         let _ = sand_elemental_step(&mut n, &w, &p, &mut rng, &[]);
         assert_eq!(n.kb_resist_override, Some(0.0));
-        assert_eq!(n.rotation, n.vx * 0.04);
+        assert_eq!(n.rotation, vx_before * 0.04);
     }
 
     /// The attack cycle: ai[0]==0 arms to 1; the positive counter
@@ -847,10 +850,12 @@ mod tests {
         // The negative climb: −300 → −299.
         let _ = sand_elemental_step(&mut n, &w, &p, &mut rng, &[]);
         assert_eq!(n.ai[0], -299.0);
-        // −1 → 0 (the Min clamp), then the NEXT tick arms to 1.
+        // −1 → 0 (the Min clamp) and the SAME tick's `:40313-40318` arm
+        // lifts it straight to 1 (the arm is a sibling of the `>0` block,
+        // not a next-tick step).
         n.ai[0] = -1.0;
         let _ = sand_elemental_step(&mut n, &w, &p, &mut rng, &[]);
-        assert_eq!(n.ai[0], 0.0);
+        assert_eq!(n.ai[0], 1.0);
     }
 
     /// The ai[0]==54 volley's SHAPE: at most 3 spawns, columns ≥10 tiles
@@ -970,11 +975,17 @@ mod tests {
         let p = player_at(200.0 * 16.0, 100.0 * 16.0);
         let mut n = elemental(&w);
         n.ai[0] = -300.0;
-        // A seed whose two Next(2) both hit (the maximal-draw path).
+        // A seed whose two Next(2) gates both hit (the maximal-draw path).
+        // The second gate comes AFTER the first hit's floats — the finder
+        // must replay `:40191-40204` in order, not just draw twice.
         let seed = (1..=200u64)
             .find(|&s| {
                 let mut r = UnifiedRandom::new(s as i32);
-                r.next_max(2) != 0 && r.next_max(2) != 0
+                if r.next_max(2) != 0 {
+                    r.next_float();
+                    r.next_float();
+                }
+                r.next_max(2) != 0
             })
             .unwrap();
         let mut rng = UnifiedRandom::new(seed as i32);

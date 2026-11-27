@@ -2475,6 +2475,14 @@ mod tests {
             .count()
     }
 
+    /// `Dust.NewDust`'s default-block scale (`Dust.cs:155-160`):
+    /// `(1 + Next(-20, 21) * 0.01) * Scale` — pin the 41-step quantum.
+    fn scale_from(actual: f32, scale: f32) -> bool {
+        let k = (actual / scale - 1.0) * 100.0;
+        let q = k.round();
+        (k - q).abs() < 0.02 && (-20.0..=20.0).contains(&q)
+    }
+
     /// W4-g63 — the 54 drip: the `Next(20)` gate draws EVERY tick; a
     /// refused gate spawns nothing, a taken gate spawns ONE dust 40
     /// whose velocity carries the v×0.1 speeds (plus the pool jitter).
@@ -2612,8 +2620,19 @@ mod tests {
         assert!(!returned);
         assert_eq!(live(&dust), 5, "the puff + 3 trail + the sixth");
         assert_eq!(rng.ranges[0], (0, 2));
-        assert_eq!(rng.ranges[1], (0, 2));
-        assert_eq!(*rng.ranges.last().unwrap(), (0, 8));
+        // The puff's NewDust internals sit between the two gates
+        // (`:24599-24607`), so count the two Next(2) gates rather than
+        // indexing.
+        assert_eq!(
+            rng.ranges.iter().filter(|r| **r == (0, 2)).count(),
+            2,
+            "the puff gate + the return gate"
+        );
+        assert_eq!(
+            rng.ranges.iter().filter(|r| **r == (0, 8)).count(),
+            1,
+            "the sixth-puff gate"
+        );
     }
 
     /// W4-g63 — the ice block's placed phase: the -1 tick bursts 10
@@ -2627,7 +2646,9 @@ mod tests {
         let mut rng = Recorder::new(0);
         ice_block_placed_dust(&p, true, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 10);
-        assert!(rng.ranges.is_empty(), "the burst tick draws no gate");
+        // The burst's NewDust internals still draw; the DRIP gate
+        // (`Next(30)`, `:25681`) is the one that must not run.
+        assert!(!rng.ranges.contains(&(0, 30)), "the burst tick draws no drip gate");
         let mut rng = Recorder::new(1);
         ice_block_placed_dust(&p, false, &mut rng, &mut dust, &c, &w);
         assert_eq!(rng.ranges, vec![(0, 30)], "the drip gate every later tick");
@@ -2692,13 +2713,14 @@ mod tests {
         assert_eq!(rng.ranges, vec![(0, 2)]);
         assert_eq!(rng.floats, 0);
         assert_eq!(live(&dust), 0);
-        // Taken pair (roll 0, float 0.5 + 0.2 < 1.0): the scale float,
-        // the spawn, the circular pair (2 floats) — 3 floats total.
+        // Taken pair (roll 0, float 0.5 + 0.2 < 1.0): the NextFloat gate,
+        // the scale float, then AFTER the spawn the circular pair — 4
+        // floats (`:26449-26455`).
         let mut dust = DustPool::new();
         let mut rng = Recorder::new(0);
         trident_trail(&p, 1.0, &mut rng, &mut dust, &c, &w);
         assert_eq!(rng.ranges[0], (0, 2), "the Next(2) gate first");
-        assert_eq!(rng.floats, 3, "the float gate + the scale + the circular pair");
+        assert_eq!(rng.floats, 4, "the float gate + the scale + the circular pair");
         assert_eq!(live(&dust), 1);
         assert_eq!(dust.slot(0).dust_type, 27);
     }
@@ -2715,9 +2737,12 @@ mod tests {
         trident_hostile_latch_trail(&p, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 20);
         assert!(dust.slots()[..20].iter().all(|d| d.dust_type == 27));
-        // The first offset: velocity.X * (30/5) * 80 = 480.
+        // The first offset: velocity.X * (30/5) * 80 = 480 → the box at
+        // 520; `Dust.NewDust`'s position jitter adds Next(8-4)+4 = 4..7
+        // (`Dust.cs:153-193`), so the spawn lands inside [524, 527].
         let d = dust.slot(0);
-        assert!((d.position.x - (1000.0 - 480.0)).abs() < 1.0, "the i=5 offset");
+        let jitter = d.position.x - (1000.0 - 480.0);
+        assert!((4.0..=7.0).contains(&jitter), "the i=5 offset + the 8×8 jitter");
     }
 
     /// W4-g63 — the 173 enchanted sparkle: the Next(3) type pick draws
@@ -2830,8 +2855,11 @@ mod tests {
         spectre_wrath_ring(&p, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 5);
         assert!(dust.slots()[..5].iter().all(|d| d.dust_type == 175 && d.no_gravity));
-        // The i=1 X offset: vx*0.2*1 = 2 → position.X = 100 - 2.
-        assert!((dust.slot(1).position.x - 98.0).abs() < 1.0);
+        // The i=1 X offset: vx*0.2*1 = 2. The spawn's x is
+        // pos + Next(16-4)+4 = 104..115 (`Dust.cs:153-193`), so the
+        // offset point lands in [102, 113].
+        let x = dust.slot(1).position.x;
+        assert!((102.0..=113.0).contains(&x), "the i=1 offset + the 16×16 jitter");
     }
 
     /// W4-g63 — the 385 sharknado ring: 6× dust 172, each with the
@@ -2867,9 +2895,9 @@ mod tests {
         assert!(d.no_gravity);
         assert!((d.scale - 1.5).abs() < 1e-6);
         // The spin point (4,-8) rotated by 0 → the spawn at
-        // Center + (4,-8) - (5,5) = (108-1, 108-13) = (107, 95).
-        assert!((d.position.x - 107.0).abs() < 1.0);
-        assert!((d.position.y - 95.0).abs() < 1.0);
+        // Center + (4,-8) - (5,5) = (107, 95), then `Dust.NewDust`'s
+        // position jitter Next(5-4)+4 = 4 (`Dust.cs:153-193`).
+        assert_eq!(d.position, Vec2::new(111.0, 99.0));
     }
 
     // ---- batch 5: the AI_001 per-kind trail arms (kinds ≤400) ----
@@ -3453,7 +3481,8 @@ mod tests {
         let d = dust.slot(0);
         assert_eq!(d.dust_type, 6);
         assert!(d.no_gravity && d.no_light);
-        assert!((d.scale - 2.0).abs() < 0.2);
+        // dust-6 takes the `:214-252` `scale *= 0.7` tweak: grid around 1.4.
+        assert!(scale_from(d.scale, 2.0 * 0.7), "the scale-2 argument jitter x0.7");
         let mut dust = DustPool::new();
         imp_fireball_dust(&p, 6.0, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 2, "counter 6: two");

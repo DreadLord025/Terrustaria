@@ -1161,12 +1161,16 @@ mod tests {
     /// nothing (the helper's `_positionsChecked`), and the damage zeroes.
     #[test]
     fn w4_g78_the_1008_stuck_arm_checks_every_tick_deduped() {
-        let mut w = ore_world();
+        // A 200-row world: `Collision.SolidCollision` clamps its scan to
+        // `maxTilesY - 40` (`Collision.cs:2700-2710`), so an 80-row fixture
+        // (cap 40) can never see row 40 and the flare always "un-sticks".
+        let mut w = World::new("t".into(), 80, 200);
         // The flare's 6x6 box at px (640, 640) sits INSIDE tile (40, 40):
         // make that cell stone so SolidCollision keeps it stuck; move the
         // ore to (41, 40) — still inside the ±30 window + radius.
         let i = w.index(40, 40);
         w.tiles[i].kind = 1;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let i = w.index(41, 40);
         w.tiles[i].kind = 6;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;

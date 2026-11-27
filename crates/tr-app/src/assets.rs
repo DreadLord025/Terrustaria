@@ -1292,19 +1292,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_173",
         "Extra_175",
         "Extra_176",
-        // W4-f29 fix F4 (research/140 §3): the revenge map markers draw the
-        // 1x8 `Coin_<n>` ANIMATION strips (`TextureAssets.Coin[0..4]`,
-        // `AssetInitializer.cs:369`), NOT the `Item_71..74` inventory icons
-        // (`CoinLossRevengeSystem.cs:262`, `CoinSlot.cs:242`).
-        "Coin_0",
-        "Coin_1",
-        "Coin_2",
-        "Coin_3",
-        // W4-f40: `LanternSky`'s lantern sheet (`TextureAssets.Extra[134]`,
-        // `LanternSky.cs:79`) — the 3-variant background lantern strip.
-        "Extra_134",
-        "UI/Cursor_0",
-        "UI/Cursor_1",
         // `TextureAssets.Cursors[11]` — the thick-cursor border ring
         // (`Main.DrawThickCursor`, `Main.cs:48087,48129`;
         // `AssetInitializer.cs:498-500`).
@@ -1348,8 +1335,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // the `ExtrasID.Count` loop `:362-365`).
         "Lock_0",
         "Lock_1",
-        "UI/BlockReplace_0",
-        "Extra_211",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -1443,7 +1428,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // The shop happiness icon strip (`TextureAssets.NPCHappiness`,
         // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 horizontal
         // frames; W4-g58's slice, ported via research/142).
-        "UI/NPCHappiness",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1479,7 +1463,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Bestiary/Icon_Rank_Light",
         "UI/Bestiary/Icon_Rank_Dim",
         "UI/Bestiary/Stat_Panel",
-        "UI/Bestiary/Button_Search",
         "UI/Bestiary/Stat_HP",
         "UI/Bestiary/Stat_Attack",
         "UI/Bestiary/Stat_Defense",
@@ -1686,7 +1669,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-f23 closeout item 1: the worldgen-debug pass-list icons —
         // `GenPassElement.PassIconEntry.FromBestiaryIcon` frames this 16×5
         // sheet (`UIWorldGenDebug.cs:184-196`, `Icon_Tags_Shadow`).
-        "UI/Bestiary/Icon_Tags_Shadow",
         "UI/CharCreation/CategoryPanel",
         "UI/CharCreation/CategoryPanelBorder",
         "UI/CharCreation/CategoryPanelHighlight",
@@ -1768,7 +1750,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `TextureAssets.Extra[243]` — the Steam-workshop badge
         // (`UIWorkshopImportWorldListItem.cs:63/:168`, `UIResourcePack.cs:104`).
         "Extra_243",
-        "UI/TexturePackButtons",
         "UI/DefaultResourcePackIcon",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
@@ -1942,7 +1923,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-d41 — the desert antlions + the Dune Splicer chain
         // (DESERT_SHEETS).
         "NPC_508",
-        "NPC_509",
         "NPC_510",
         "NPC_511",
         "NPC_512",
@@ -1977,7 +1957,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-d41 — the critters + the tumbler (CRITTER_TUMBLER_SHEETS).
         "NPC_538",
         "NPC_539",
-        "NPC_540",
         "NPC_546",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
@@ -2037,7 +2016,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_34",
         "NPC_37",
         "NPC_43",
-        "NPC_46",
         // W4-d34 kinds 1-70 coverage wave (phase 2).
         "NPC_39",
         "NPC_40",
@@ -2065,7 +2043,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_322",
         "NPC_323",
         "NPC_324",
-        "NPC_328",
         // W4-d38 b5 — the kinds' own sheets.
         "NPC_302",
         "NPC_303",
@@ -2284,7 +2261,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
     // rows above).
     "NPC_175",
     "NPC_666",
-    "NPC_516",
     "NPC_150",
     "NPC_151",
     "NPC_152",
@@ -2311,14 +2287,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds' own sheets
         // (`render/entities.rs`'s KIND_WIRE_1_SHEETS), keyed by the vanilla
         // net id in `NpcAssets::npc_sheets`.
-        "NPC_61",
-        "NPC_63",
         "NPC_64",
         "NPC_69",
         "NPC_70",
-        "NPC_75",
-        "NPC_82",
-        "NPC_83",
         "NPC_84",
         "NPC_85",
         // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' own sheets
@@ -2334,9 +2305,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_182",
         "NPC_195",
         "NPC_196",
-        // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family's
-        // own sheets (`render/entities.rs`'s KIND_WIRE_3_SHEETS).
-        "NPC_34",
         // W4-g82 — the rope coils' trailing-chain sheets
         // (`Main.DrawProjDirect`, `Main.cs:28546`/`:28601-28605`/
         // `:28660-28666`): Chain16 for 171, Chain38/39 for 475,
@@ -2349,68 +2317,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Chains_5",
         "Chains_6",
         "Chains_7",
-        // The man-eater family (W4-d23, aiStyle 13): the six kinds' own
-        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
-        // (`render/entities.rs`'s MANEATER_SHEETS).
-        "NPC_43",
-        "NPC_56",
-        "NPC_101",
-        "NPC_175",
-        "NPC_259",
-        "NPC_260",
-        // The aiStyle-9 spit/flare family (W4-d23): the three kinds' own
-        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
-        // (`render/entities.rs`'s SPIT_FLARE_SHEETS).
-        "NPC_112",
-        "NPC_666",
-        "NPC_516",
-        // The aiStyle-14 flyer family (W4-d23): the fourteen kinds' own
-        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
-        // (`render/entities.rs`'s FLYER14_SHEETS).
-        "NPC_48",
-        "NPC_62",
-        "NPC_93",
-        "NPC_121",
-        "NPC_137",
-        "NPC_150",
-        "NPC_151",
-        "NPC_152",
-        "NPC_158",
-        "NPC_226",
-        // W4-g8 lane 1 batch 4 — the last three kinds' own sheets
-        // (`render/entities.rs`'s KIND_WIRE_4_SHEETS).
-        "NPC_221",
-        "NPC_48",
-        "NPC_156",
-        // W4-g8 machine round 3 — the Vampire 159's own sheet.
-        "NPC_159",
-        // W4-d33 — the dragonfly sheets (`DRAGONFLY_SHEETS`).
-        "NPC_595",
-        "NPC_596",
-        "NPC_597",
-        "NPC_598",
-        "NPC_599",
-        "NPC_600",
-        "NPC_601",
-        // W4-d33 wiring — the fairy critters' + the windy balloon's
-        // sheets (`FAIRY_BALLOON_SHEETS`). d42 batch-2/3's rows,
-        // constants-copy (keep-one d37c-E3).
-        "NPC_583",
-        "NPC_584",
-        "NPC_585",
-        "NPC_594",
         // W4-f42 — the sandstorm debris + desert family's sheets, keyed by
         // the vanilla net id in `NpcAssets::npc_sheets`
         // (`render/entities.rs`'s DESERT_SHEETS).
-        "NPC_546",
-        "NPC_61",
-        "NPC_69",
-        "NPC_78",
         "NPC_79",
         "NPC_630",
         "NPC_80",
         "NPC_580",
-        "NPC_581",
         "NPC_521",
         // W4-d39 (research/125) — the Butterfly's own sheet, keyed by
         // the vanilla net id in `NpcAssets::npc_sheets`
@@ -2419,36 +2332,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_356",
         "NPC_366",
         "NPC_367",
-        "NPC_156",
-        "NPC_158",
-        "NPC_159",
-        "NPC_226",
-        "NPC_634",
-        "NPC_660",
-        // W4-f18 first-20 port — batch 1's critters' own sheets, keyed by
-        // the vanilla net id in `NpcAssets::npc_sheets`
-        // (`render/entities.rs`'s CRITTER_SHEETS).
-        "NPC_355",
-        "NPC_356",
-        "NPC_357",
-        "NPC_358",
-        "NPC_359",
         // W4-f18 batch 2 — the critters' own sheets (the Duck2 363 draws
         // its own NPC_363 even though its bestiary credit folds onto 362).
-        "NPC_360",
         "NPC_361",
-        "NPC_362",
-        "NPC_363",
-        "NPC_364",
-        // W4-f18 batch 3 — the critters' own sheets (the folded DuckWhite2
-        // 365 / TruffleWormDigger 375 draw their own art).
-        "NPC_365",
-        // W4-f18 batch 3 — the critters' own sheets (the folded DuckWhite2
-        // 365 / TruffleWormDigger 375 draw their own art).
-        "NPC_366",
-        "NPC_367",
-        "NPC_374",
-        "NPC_375",
         // W4-f18 batch 4 — the kinds' own sheets (the folded
         // CultistArcherWhite 380 draws its own art).
         "NPC_377",
@@ -2457,7 +2343,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_380",
         // W4-e26 — the luck critter sheets (`LUCK_CRITTER_SHEETS`, E8
         // keep-one: the Duck's NPC_362 dropped to c10).
-        "NPC_361",
         "NPC_604",
         "NPC_605",
         // W4-g10 lane 3 — the town pets' own sheets, keyed by the vanilla
@@ -2469,14 +2354,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_656",
         "NPC_670",
         "NPC_678",
-        "NPC_694",
         "NPC_695",
         "NPC_696",
         "NPC_689",
         "NPC_690",
         "NPC_691",
         "NPC_692",
-        "NPC_693",
         "NPC_684",
         "NPC_685",
         "NPC_686",
@@ -2487,43 +2370,29 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_681",
         "NPC_682",
         "NPC_683",
-        // W4-g10 lane 3 batch 2 — the copper slime's sheet.
-        "NPC_684",
         // Doc-sweep lane 36 — the ShimmerSlime's 2-frame strip (the
         // d35 atlas-repack wave owns the packing reconciliation; a
         // missing file keeps the draw arm's None fallback).
         "NPC_676",
-        "NPC_430",
         // The Shimmerfly (W4-c9's sheet, adopted by W4-g62 with the kind
         // rowing): its own strip, keyed by the vanilla net id in
         // `NpcAssets::npc_sheets` (`render/entities.rs`'s SNAIL_SHEETS).
         // The snail trio's sheets stay c9's (the merge dedupes).
-        "NPC_677",
         "NPC_674",
         "NPC_675",
-        "NPC_676",
-        "NPC_677",
-        "NPC_678",
         "NPC_669",
-        "NPC_670",
         "NPC_671",
         "NPC_672",
         "NPC_673",
         "NPC_662",
         "NPC_664",
         "NPC_665",
-        "NPC_666",
         "NPC_667",
         "NPC_657",
         "NPC_658",
         "NPC_659",
-        "NPC_660",
-        "NPC_661",
         "NPC_652",
         "NPC_653",
-        "NPC_654",
-        "NPC_655",
-        "NPC_656",
         "NPC_647",
         "NPC_648",
         "NPC_649",
@@ -2534,16 +2403,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_644",
         "NPC_645",
         "NPC_646",
-        "NPC_637",
-        "NPC_638",
         "NPC_639",
         "NPC_640",
         "NPC_641",
         "NPC_631",
         "NPC_632",
-        "NPC_634",
         "NPC_635",
-        "NPC_636",
         // W4-d36 census batch 0 (the repack wave packs the union —
         // research/108 §5's 8192 overflow note).
         "NPC_141",
@@ -2561,7 +2426,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_163",
         "NPC_166",
         "NPC_167",
-        "NPC_238",
         // W4-d36 hover batch.
         "NPC_173",
         "NPC_176",
@@ -2592,19 +2456,6 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-d11 DOC-SWEEP — the BloodSquid's own sheet
         // (`render/entities.rs`'s SMALL_KIND_SHEETS 619 row).
         "NPC_619",
-        "NPC_430",
-        // W4-f42 — the sandstorm debris + desert family's sheets, keyed by
-        // the vanilla net id in `NpcAssets::npc_sheets`
-        // (`render/entities.rs`'s DESERT_SHEETS).
-        "NPC_546",
-        "NPC_61",
-        "NPC_69",
-        "NPC_78",
-        "NPC_79",
-        "NPC_630",
-        "NPC_80",
-        "NPC_580",
-        "NPC_581",
 ];
 
 
@@ -6131,6 +5982,38 @@ mod tests {
         }
     }
 
+    /// The retail content pack is **optional and user-local** (`AGENTS.md`
+    /// §Assets: `assets/Content` is "derived from the user's own retail copy";
+    /// `build.rs:12` likewise treats `Logo.xnb` as optional and the loader's
+    /// `load_png` arms skip missing sheets). A checkout that carries only the
+    /// `Logo.xnb` stub must therefore *skip* the content-wide tests, not fail
+    /// them — an absent optional asset is never a packing regression.
+    ///
+    /// The probe is the same fact the inventory tests assert: content carries
+    /// `Item_*.xnb` files. Zero of them is the stub junction; a real pack that
+    /// lost a sheet still fails those tests (the invariants below stay exactly
+    /// as strict once the pack is present).
+    fn retail_content_dir() -> Option<PathBuf> {
+        let content = crate::app::find_content_dir()?;
+        let images = content.join("Images");
+        (!enumerate_item_icon_ids(&images).is_empty()).then_some(content)
+    }
+
+    /// Early-return a content-wide test when the optional retail pack is
+    /// absent (see [`retail_content_dir`]). The reason is printed so a skipped
+    /// run is visible with `--nocapture`.
+    macro_rules! require_retail_content {
+        () => {
+            if retail_content_dir().is_none() {
+                eprintln!(
+                    "skip: retail assets/Content is absent (the user-local pack; \
+                     see AGENTS.md §Assets)"
+                );
+                return;
+            }
+        };
+    }
+
     // ---- W4-g71 wiring: the atlas budget guard ----
 
     #[test]
@@ -6311,6 +6194,7 @@ mod tests {
     /// re-run at seal time). Written not run (code-only).
     #[test]
     fn w4_f12_seal_buff_icons_enumerate_the_full_400() {
+        require_retail_content!();
         let content = crate::app::find_content_dir()
             .expect("assets/Content not found: the asset tests need the game content junction");
         let ids = enumerate_buff_icon_ids(&content.join("Images"));
@@ -6370,6 +6254,7 @@ mod tests {
     /// by input order, so a reordering would move every UV.
     #[test]
     fn test_the_world_and_static_split_concatenates_to_the_full_list() {
+        require_retail_content!();
         let content = crate::app::find_content_dir().unwrap();
         // `load_png` resolves names through the process-global images dir, so the
         // test must seed it exactly like startup does.
@@ -6416,6 +6301,7 @@ mod tests {
     /// bring the multi-second Play freeze back.
     #[test]
     fn test_the_second_atlas_build_reuses_the_static_half() {
+        require_retail_content!();
         let content = crate::app::find_content_dir().unwrap();
         set_content_dir(content.clone());
         let images_dir = content.join("Images");
@@ -6453,6 +6339,7 @@ mod tests {
 
     #[test]
     fn test_DW_4_1_item_icons_cover_enumerated_content_files() {
+        require_retail_content!();
         let (atlas, lookups) = content_lookups();
         let content = crate::app::find_content_dir().unwrap();
         let enumerated: BTreeSet<u16> = enumerate_item_icon_ids(&content.join("Images"))
@@ -6480,6 +6367,7 @@ mod tests {
     /// 16 px shuriken quad.
     #[test]
     fn m4_proj_6b_proj_sheets_pack_and_slice_by_proj_frames() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let mut packed = 0;
         for kind in crate::projectile::spawnable_kinds() {
@@ -6519,6 +6407,7 @@ mod tests {
 
     #[test]
     fn test_DW_4_3_fileless_id_stays_out_of_item_icons() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         // 3665 opens the C# `TextureCopyLoad` block (`ItemID.cs:1314`) and has
         // no `Item_3665.xnb` in content — the dirty boundary. It must miss so
@@ -6546,6 +6435,7 @@ mod tests {
         // `ItemSlot.cs:2154`: the gold frame a favorited stack swaps in. The
         // sheet used to be absent from the pack list, so the draw code tinted
         // the default background instead (`slot::favorited_slot_tint`).
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let rect = lookups
             .ui_back10
@@ -6559,6 +6449,7 @@ mod tests {
         // `Main.cs:42079-42095`: an `Inventory_Back11` cell per town NPC plus
         // the head sheet centred in it. The guide head (1) is the sheet the
         // page draws for the port's most common town NPC.
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let cell = lookups
             .ui_back11
@@ -6596,6 +6487,7 @@ mod tests {
     /// pin is presence + non-zero, not a hand-copied dimension.
     #[test]
     fn the_issue_indicator_button_pair_packs() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let button = lookups
             .ui_issue_button
@@ -6611,6 +6503,7 @@ mod tests {
     /// heads, the pylon line's BlackTile and the notification quickicon.
     #[test]
     fn w4_e17_the_map_head_overlay_sheets_pack() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         assert_eq!(lookups.npc_boss_heads.len(), 40);
         // The boss heads the port's kinds resolve to must all be packed.
@@ -6649,6 +6542,7 @@ mod tests {
 
     #[test]
     fn coin_and_shuriken_fallbacks_resolve_from_enumerated_sheets() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         // `coins` and `shuriken` are atlas-sheet lookups, untouched by the swap;
         // their sheets now arrive through the enumeration instead of the list.
@@ -6666,6 +6560,7 @@ mod tests {
     /// coinFrame)`). The savings draws read these.
     #[test]
     fn the_coin_spin_strips_pack_and_slice_eight_frames() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         for kind in 0..4usize {
             let rect = lookups.coin_strips[kind].expect("Coin_{kind} packs");
@@ -6691,6 +6586,7 @@ mod tests {
     /// `value5.Frame(4, 1, band)` quarters the width.
     #[test]
     fn the_npc_happiness_sheet_packs_as_a_four_frame_strip() {
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let sheet = lookups
             .ui_npc_happiness
@@ -6706,6 +6602,7 @@ mod tests {
         // and both are horizontal 2-frame strips — `DrawBestiaryIcon` and
         // `DrawEmoteBubblesButton` slice them with
         // `value.Frame(2, 1, flag ? 1 : 0)` (`Main.cs:42464`, `:42408`).
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let bestiary = lookups
             .ui_bestiary_button
@@ -6736,6 +6633,7 @@ mod tests {
 
     #[test]
     fn item_icon_uvs_are_normalized_and_atlas_fits() {
+        require_retail_content!();
         let (atlas, lookups) = content_lookups();
         assert!(
             atlas.height <= 8192,
@@ -6764,6 +6662,7 @@ mod tests {
             STATIC_SHEET_NAMES.contains(&"OneDropLogo"),
             "the static half must name the sheet"
         );
+        require_retail_content!();
         let (_, lookups) = content_lookups();
         let sheet = lookups
             .one_drop_logo
@@ -6776,13 +6675,21 @@ mod tests {
     /// bug class). The retail content carries all seven files.
     #[test]
     fn w4_g82_the_coil_chain_sheets_pack_and_resolve() {
-        let (_, lookups) = content_lookups();
+        // The pack-list half is content-independent: a chain sheet missing
+        // from `STATIC_SHEET_NAMES` is a bug even without the retail pack.
         for kind in [171u16, 475, 505, 506] {
             for name in crate::projectile_rope_coil::coil_chain_sheets(kind) {
                 assert!(
                     STATIC_SHEET_NAMES.contains(name),
                     "{name} is asked for by the coil {kind} chain but never packed"
                 );
+            }
+        }
+        // The atlas half needs the user-local pack (AGENTS.md §Assets).
+        require_retail_content!();
+        let (_, lookups) = content_lookups();
+        for kind in [171u16, 475, 505, 506] {
+            for name in crate::projectile_rope_coil::coil_chain_sheets(kind) {
                 let (uv, w, h) = lookups
                     .coil_chain_uv(name)
                     .unwrap_or_else(|| panic!("{name} must resolve from the atlas"));
@@ -6811,6 +6718,7 @@ mod tests {
     /// this test pins the height bound on the real dims.
     #[test]
     fn the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound() {
+        require_retail_content!();
         let content = crate::app::find_content_dir()
             .expect("assets/Content not found: the asset tests need the game content junction");
         set_content_dir(content.clone());

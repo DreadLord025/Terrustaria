@@ -1221,11 +1221,15 @@ mod tests {
         assert_eq!(pool.slot(0).position, mpool.slot(0).position);
         assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
         assert!(pool.slot(0).no_gravity);
-        assert_eq!(pool.slot(0).scale, 2.0);
-        // The box pair: velocity -= (vx, vy) then +5 Y.
+        // `Dust.cs:190-191`: scale = (1 + Next(-20,21)*0.01) * Scale --
+        // the mirror's identical draw pins the foot puff exactly.
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert!((1.6..=2.4).contains(&pool.slot(0).scale), "Scale 2 x [0.8, 1.2]");
+        // The box pair: velocity -= (vx, vy) then +5 Y; each scale is
+        // the same C# 2 x [0.8, 1.2] random product.
         for i in 1..3 {
             assert!(pool.slot(i).no_gravity);
-            assert_eq!(pool.slot(i).scale, 2.0);
+            assert!((1.6..=2.4).contains(&pool.slot(i).scale), "Scale 2 x [0.8, 1.2]");
         }
     }
 
@@ -1245,9 +1249,9 @@ mod tests {
         let d = pool.slot(0);
         assert_eq!(d.dust_type, 5);
         assert!(d.position.y >= 527.5 && d.position.y < 527.5 + 55.0);
-        // vx' = (4 + jitter) * 0.5 — the jitter is in [-1.2, 1.2]
-        // (width 100 box, Dust.cs:158-163), so vx' in [1.4, 2.6].
-        assert!(d.velocity.x >= 1.4 && d.velocity.x <= 2.6);
+        // vx' = (4 + jitter) * 0.5 -- `Dust.cs:172` jitters by
+        // Next(-20,21)*0.1 = [-2.0, 2.0], so vx' in [1.0, 3.0].
+        assert!(d.velocity.x >= 1.0 && d.velocity.x <= 3.0);
     }
 
     /// W4-e2 — sites 26755/27369 + 26760/27374: the burst is 20 dusts,
@@ -1362,10 +1366,14 @@ mod tests {
         stardust_cell_ring(1000.0, 1000.0, 1.0, -1.0, 200.0, &mut rng, &mut pool, &c, &w);
         let act = active(&pool);
         assert!(act.len() <= 2, "num1319+1 = 2 iterations");
-        for (k, &i) in act.iter().enumerate() {
+        // `NPC.cs:39411-39425`: iteration i reads scale 0.4 (even) /
+        // 0.65 (odd) AFTER the Next(2) gate. Seed 51's iteration 0
+        // rolls 0 (skipped), so the sole record is iteration 1's 0.65.
+        assert_eq!(act.len(), 1, "seed 51: the first gate misses");
+        for &i in &act {
             let d = pool.slot(i);
             assert_eq!(d.dust_type, 226);
-            assert_eq!(d.scale, if k % 2 == 1 { 0.65 } else { 0.4 });
+            assert_eq!(d.scale, 0.65, "iteration 1's odd row");
             assert!(d.no_gravity);
             // |velocity| = 1.2 (the normalized inward vector).
             let v = d.velocity.length();

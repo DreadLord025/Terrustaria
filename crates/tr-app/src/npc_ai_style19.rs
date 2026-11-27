@@ -362,7 +362,10 @@ mod tests {
         let mut rng = UnifiedRandom::new(5);
         let witness = rng.clone();
         let mut dust = DustPool::new();
-        let (out, fx) = ai_style19(&mut n, &w, &[cand(1620.0, 600.0)], 0, &mut rng, &mut dust, &dust_ctx());
+        // The target BELOW keeps TargetClosest's directionY at +1, so the
+        // aim/flag28 arm is shut and the grounded path's only output is
+        // the probe's vy/no-gravity flags.
+        let (out, fx) = ai_style19(&mut n, &w, &[cand(1620.0, 700.0)], 0, &mut rng, &mut dust, &dust_ctx());
         assert!(out.no_gravity && out.no_tile_collide);
         assert_eq!(n.vy, -0.2);
         assert_eq!(rng, witness, "the grounded path draws nothing");
@@ -370,23 +373,24 @@ mod tests {
     }
 
     /// `:24418-24444` — the directionY<0 block: the rotation clamp, the
-    /// always-true OR quirk zeroes vx.
+    /// always-true OR quirk zeroes vx. TargetClosest (the `:24409` head)
+    /// writes directionY from the target's side, so the arming target must
+    /// be ABOVE the antlion.
     #[test]
     fn the_aim_block_clamps_and_zeroes_vx() {
         let w = air();
         let mut n = antlion(1600.0, 300.0);
-        n.direction_y = -1;
         n.vx = 5.0;
         let mut rng = UnifiedRandom::new(5);
         let mut dust = DustPool::new();
-        // The player far below-right: the raw rotation exceeds 0.8.
-        ai_style19(&mut n, &w, &[cand(1900.0, 900.0)], 0, &mut rng, &mut dust, &dust_ctx());
+        // The player above-right: TargetClosest sets directionY = -1 and
+        // the raw rotation (atan2 + 1.57) exceeds the +0.8 clamp.
+        ai_style19(&mut n, &w, &[cand(1900.0, 200.0)], 0, &mut rng, &mut dust, &dust_ctx());
         assert_eq!(n.rotation, 0.8, "the +0.8 clamp");
         assert_eq!(n.vx, 0.0, "the OR quirk always zeroes");
         assert!(n.net_update);
-        // directionY >= 0: no rotation write, no decay.
+        // A target BELOW leaves directionY = +1: no rotation write, no decay.
         let mut m = antlion(1600.0, 300.0);
-        m.direction_y = 1;
         m.vx = 5.0;
         m.rotation = 0.3;
         ai_style19(&mut m, &w, &[cand(1900.0, 900.0)], 0, &mut rng, &mut dust, &dust_ctx());
@@ -430,11 +434,12 @@ mod tests {
         w.tiles[i] = Tile { kind: 421, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut n = antlion(1600.0, 616.0);
-        n.direction_y = 1; // no flag28 — the conveyor branch runs
         n.rotation = 0.0;
         let mut rng = UnifiedRandom::new(5);
         let mut dust = DustPool::new();
-        let (_, fx) = ai_style19(&mut n, &w, &[cand(1620.0, 600.0)], 0, &mut rng, &mut dust, &dust_ctx());
+        // The target BELOW keeps directionY = +1 so the rotation/flag28
+        // arm is shut and the conveyor branch (`:24470`) is the shot.
+        let (_, fx) = ai_style19(&mut n, &w, &[cand(1620.0, 700.0)], 0, &mut rng, &mut dust, &dust_ctx());
         assert_eq!(fx.shots.len(), 1);
         let s = &fx.shots[0];
         // rotation 0 − 1.57: cos ≈ 0.0008, sin ≈ −1 → vx ≈ 0.0096, vy ≈ −12.
