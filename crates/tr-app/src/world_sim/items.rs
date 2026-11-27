@@ -844,10 +844,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // The port's host owns every drop in SP (the map is empty);
             // the MP reservation lives in `net_reserved` (the same read
             // the grab gate above uses).
-            let reserved_elsewhere = app
-                .net_reserved
-                .get(&(i as i16))
-                .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
+            // The port's host owns every drop in SP (the map is empty); an
+            // MP stream (a non-empty `net_reserved`) defaults an absent slot
+            // to the C# 255 (nobody) — also "not us". Both read as
+            // `playerIndex != Main.myPlayer` at `:683`/`:159`.
+            let reserved_elsewhere = match app.net_reserved.get(&(i as i16)) {
+                Some((who, _)) => *who != app.local_id as u8 && *who != 255,
+                None => !app.net_reserved.is_empty(),
+            };
             // `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:418-421`,
             // `:681-763`): the doll in lava is consumed and the sacrifice
             // runs (the resolve rides the post-tick pass — the closure holds
@@ -1227,10 +1231,10 @@ fn try_granting_make_a_wish_set(app: &mut App) {
         }
         // `:592` — the gate row. `wet` is the water flag (the C# `base.wet`),
         // `shimmerWet` the shimmer-liquid flag; a coin in shimmer is refused.
-        let reserved_elsewhere = app
-            .net_reserved
-            .get(&(i as i16))
-            .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
+        let reserved_elsewhere = match app.net_reserved.get(&(i as i16)) {
+            Some((who, _)) => *who != app.local_id as u8 && *who != 255,
+            None => !app.net_reserved.is_empty(),
+        };
         if reserved_elsewhere
             || !drop.wet
             || drop.count != 1
@@ -1452,6 +1456,20 @@ pub(crate) fn spawn_item_drop_px(
     count: u32,
     pos: Vec2,
 ) {
+    spawn_item_drop_at(items, rng, kind, count, pos, 1.0);
+}
+
+/// The shared spawn body. `x_bias` is the +1 px the tile-cell entry applies
+/// (the C# rect overload's left edge); the CENTRE entry passes 0 so the box
+/// lands exactly on `centre - SIZE/2` (W4-g78).
+fn spawn_item_drop_at(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    pos: Vec2,
+    x_bias: f32,
+) {
     let r1 = rng.next_float();
     let r2 = rng.next_float();
     let r3 = rng.next_float();
@@ -1463,7 +1481,7 @@ pub(crate) fn spawn_item_drop_px(
         kind,
         count.max(1),
         prefix,
-        pos.x + 1.0,
+        pos.x + x_bias,
         pos.y,
         (r1 * 2.0 - 1.0) * 1.4,
         -2.2 - r2 * 1.2,
@@ -1494,12 +1512,13 @@ pub(crate) fn spawn_item_drop_centre(
     count: u32,
     centre: Vec2,
 ) {
-    spawn_item_drop_px(
+    spawn_item_drop_at(
         items,
         rng,
         kind,
         count,
         centre - Vec2::splat(crate::item::SIZE * 0.5),
+        0.0,
     );
 }
 
@@ -2452,9 +2471,12 @@ mod rand_light_witness {
     #[test]
     fn the_flicker_arms_draw_the_item_stream_in_slot_order() {
         let mut app = dry_world();
-        // Slot order: 520 (draw), 116 (skip), 521 (draw), 501 (skip),
-        // 58 (draw), 2 (no arm), 3456 (essScale, draw-free).
-        for (i, kind) in [520u16, 116, 521, 501, 58, 2, 3456].iter().enumerate() {
+        // Slot order: 520 (draw), 2 (draw-free skip), 521 (draw), 2 (skip),
+        // 58 (draw), 2 (no arm), 3456 (essScale, draw-free). (116/501 gained
+        // their own faithful dust draws in the W4-g15 dust port —
+        // `WorldItem.cs:1211-1222`/`:1295-1303` — so they are no longer
+        // draw-free skips and the witness uses plain blocks for that role.)
+        for (i, kind) in [520u16, 2, 521, 2, 58, 2, 3456].iter().enumerate() {
             app.items.push(resting(*kind, 28.0 + i as f32));
         }
         *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(4242);
@@ -2499,7 +2521,10 @@ mod rand_light_witness {
     #[test]
     fn a_world_without_flicker_kinds_stays_draw_free() {
         let mut app = dry_world();
-        for (i, kind) in [116u16, 501, 2, 3456, 3459].iter().enumerate() {
+        // 116/501 now draw their dust gates (`WorldItem.cs:1211-1222`/
+        // `:1295-1303`), so this muted-path witness uses only the genuinely
+        // draw-free kinds: blocks and the two essScale fragments.
+        for (i, kind) in [2u16, 3456, 2, 3459, 2].iter().enumerate() {
             app.items.push(resting(*kind, 28.0 + i as f32));
         }
         *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(9);
@@ -4410,7 +4435,7 @@ mod drop_witness_tests {
             let d = &mut app.items[0];
             d.vel = Vec2::ZERO;
             d.age = 1.0;
-            d.pos = Vec2::new(160.0, 1920.0 - crate::item::SIZE);
+            d.pos = Vec2::new(400.0, 1920.0 - crate::item::SIZE);
         }
         let dc = app.items[0].center();
         {

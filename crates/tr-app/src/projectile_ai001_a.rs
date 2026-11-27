@@ -589,7 +589,10 @@ mod tests {
             FlailInputs::default(),
             &mut rng,
             0,
-            false,
+            // The host/single-player simulation flag: `spawn_hostile` parks
+            // the owner at 255, so its machine only runs with this set (the
+            // update's `simulated` gate, `Projectile.cs:17210`).
+            true,
         );
     }
 

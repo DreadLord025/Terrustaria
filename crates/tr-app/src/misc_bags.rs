@@ -328,8 +328,10 @@ mod tests {
 
     #[test]
     fn w4_f35_can_of_worms_the_three_in_ten_gate_boundary() {
-        // Next(10)=2 < 3 hits; =3 misses (no stack draw).
-        let mut hit = ScriptRng::new(&[0, 2]);
+        // Next(10)=2 < 3 hits; =3 misses (no stack draw). The 1/20 gold-worm
+        // gate then needs its own miss draw (1), and the nightcrawler stack
+        // range(1,3) takes draw 0.
+        let mut hit = ScriptRng::new(&[0, 2, 0, 1]);
         let mut out = Vec::new();
         open_can_of_worms(&mut hit, &mut out);
         assert_eq!(items(&out), vec![2002, 3191]);
@@ -420,12 +422,16 @@ mod tests {
             (5, 163),
             (6, 113),
         ] {
-            let mut rng = ScriptRng::new(&[pick, 1, 1, 1]);
+            // [pick, weapon prefix (0 = no prefix roll), shadow-key miss,
+            // ram-rune miss, silver-bracer miss]. A non-zero prefix gate
+            // would fall into `RollAPrefix`'s extra draws and shift the
+            // trailing gates.
+            let mut rng = ScriptRng::new(&[pick, 0, 1, 1, 1]);
             let mut out = Vec::new();
             open_lock_box(false, false, &mut rng, &mut out);
             assert_eq!(items(&out), vec![want], "pick {pick}");
         }
-        let mut remix = ScriptRng::new(&[4, 1, 1, 1]);
+        let mut remix = ScriptRng::new(&[4, 0, 1, 1, 1]);
         let mut out = Vec::new();
         open_lock_box(true, false, &mut remix, &mut out);
         assert_eq!(items(&out), vec![2623], "the remix case-4 swap");

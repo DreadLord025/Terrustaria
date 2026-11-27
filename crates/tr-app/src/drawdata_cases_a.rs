@@ -997,7 +997,7 @@ mod tests {
         let w = World::new("t".into(), 64, 64);
         let mut d = draw_data(564, 0, 0, 18, 0, 3, false);
         assert_eq!(d.add_fr_y, 108); // first switch: 3 * 36
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [255, 0, 0], 0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [255, 0, 0], 3).unwrap();
         assert_eq!(g.src[1], 108); // rect y = fy + pre-clear addFrY
         assert_eq!(d.add_fr_y, 0); // :6112 clear via the delta
         // 638: 75% lerp toward the cell colour, height minus half-brick.
@@ -1229,15 +1229,17 @@ mod tests {
     }
 
     /// TILE-DRAW-2 (W4-f15): 711's FIRST-switch glow record
-    /// (`TileDrawing.cs:4931-4939`): tile-sheet sentinel (mask 0), framed
-    /// rect on the post-first-switch metrics (18 wide on later columns,
-    /// 20 tall), colour stays the init `Color.Transparent` (`:4538`).
+    /// (`TileDrawing.cs:4931-4939`): the glow texture is the tile sheet
+    /// (`TILE_SHEET_GLOW`, the array sentinel the draw pass maps back to
+    /// `TextureAssets.Tile`), framed rect on the post-first-switch metrics
+    /// (18 wide on later columns, 20 tall), colour stays the init
+    /// `Color.Transparent` (`:4538`).
     #[test]
     fn test_TD2_glow_711_first_switch_record() {
         let (d, g) = dd(711, 0, 0, 0, 0);
         assert_eq!(d.width, 16);
         let g = g.unwrap();
-        assert_eq!((g.mask, g.color), (0, [0, 0, 0, 0]));
+        assert_eq!((g.mask, g.color), (TILE_SHEET_GLOW, [255, 255, 255, 0]));
         assert_eq!(g.src, [0, 0, 16, 20]);
         let (_, g) = dd(711, 0, 0, 18, 36);
         let g = g.unwrap();

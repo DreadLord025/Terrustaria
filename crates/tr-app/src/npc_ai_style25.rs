@@ -346,6 +346,12 @@ mod tests {
         // Untouched: stays asleep (ai3 pre-latched to skip the nudge).
         let mut n = chest(1000.0, 1600.0);
         n.ai[3] = 1.0;
+        // The `NPC.Update` pre-AI latch (`NPC.cs:90393-90395`) — the AI
+        // body runs after it, so the pure machine's witness supplies it
+        // (a fresh update copies the current values into the old fields).
+        n.old_target = n.target;
+        n.old_direction = n.facing;
+        n.old_direction_y = n.direction_y;
         ai_style25(85, &mut n, &w, &[far], 0);
         assert_eq!(n.ai[0], 0.0);
         assert!(!n.net_update);

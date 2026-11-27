@@ -61,7 +61,9 @@ fn w4_f39_generate_scatters_max_tiles_y_over_6_slimes_in_the_exact_draw_order() 
         }
         let s = &sky.slimes[i];
         assert_eq!(s.position.x, x as f32, "slime {i} x");
-        assert_eq!(s.position.y, y as f32, "slime {i} y");
+        // The activation tick also runs one `update_once` (the same call),
+        // so the spawned Y already carries one fall step.
+        assert_eq!(s.position.y, y as f32 + speed, "slime {i} y");
         assert_eq!(s.speed, speed, "slime {i} speed");
         assert_eq!(s.texture, texture, "slime {i} texture");
         assert_eq!(s.depth, want_depth, "slime {i} depth");
@@ -82,8 +84,8 @@ fn w4_f39_the_frame_counter_wraps_at_24_and_the_source_row_is_frame_over_6() {
     // 24 ticks from y <= 2388 vs the 4800 line) wrap every counter to 0.
     let mut sky = SlimeSky::new(7);
     let c = ctx();
-    sky.update(STEP, true, 1, &c);
-    for _ in 0..23 {
+    sky.update(STEP, true, 1, &c); // generate + the activation tick's first fall
+    for _ in 0..22 {
         sky.update(STEP, true, 1, &c);
     }
     assert!(sky.slimes.iter().all(|s| s.frame == 23));

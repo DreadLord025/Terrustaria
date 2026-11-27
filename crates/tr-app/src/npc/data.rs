@@ -2772,7 +2772,15 @@ impl NpcKind {
     /// **Not** [`NpcKind::to_u16`] — that is the port's internal protocol id
     /// space; the wire needs the real one.
     pub fn net_id(self) -> i32 {
-        crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
+        // `NPC.netID` (`NPC.cs`) is the vanilla type. The bestiary rows
+        // carry it for every credited kind; a kind the database does not
+        // credit (a roster gap: the Empress / Prismatic Lacewing /
+        // Shimmer Slime today) still speaks its vanilla id through
+        // `cs_id` (the same fallback chain `cs_id` itself uses) rather
+        // than panicking the whole tick.
+        crate::bestiary::try_entry_for_npc(self, SlimeVariant::Blue)
+            .map(|e| e.net_id)
+            .unwrap_or_else(|| self.cs_id() as i32)
     }
 
     /// The family-scoped defaults above, or `None` outside the 16 kinds.
@@ -11264,6 +11272,15 @@ impl NpcKind {
 /// (`LoadNPCs:2896`): the vanilla net id maps to the kind through the same
 /// table the bestiary credits from. `None` for an id the port does not model.
 pub fn kind_from_net_id(net_id: i32) -> Option<(NpcKind, SlimeVariant)> {
+    // `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) IS the Prismatic
+    // Lacewing (`NPC.cs:17351-17366`). Two port kinds share that vanilla
+    // id (the d43 butterfly roster row and the d125 machine kind); the
+    // release/catch and death chains key on the d125 kind, so resolve it
+    // explicitly ahead of the ENTRIES scan (whose first 661 row is the
+    // butterfly twin).
+    if net_id == 661 {
+        return Some((NpcKind::PrismaticLacewing, SlimeVariant::Blue));
+    }
     crate::bestiary::ENTRIES
         .iter()
         .find(|e| e.net_id == net_id)

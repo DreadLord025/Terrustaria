@@ -421,7 +421,21 @@ pub fn working_set(
         .iter()
         .enumerate()
         .filter(|(_, e)| filterer.fits(e, crate::bestiary::unlock_state_gate(e, tracker)))
-        .map(|(i, e)| (i, sort_key(e, tracker)))
+        .map(|(i, e)| {
+            let mut key = sort_key(e, tracker);
+            // `ContentSamples.NpcBestiarySortingId` has no key for the
+            // Hide-folded rows (`CreateBestiarySortingIds` numbers the
+            // surviving DB entries only, `ContentSamples.cs:1083-1092`);
+            // the port's helper mirrors that absence with 0. When such a
+            // row is still in the port roster (the documented GAP rows),
+            // give it the sentinel position so it sorts AFTER the visible
+            // set instead of ahead of sorting id 1 (Guide). The raw
+            // `sorting_id` value stays 0 for the table's own witness.
+            if key.sorting_id == 0 {
+                key.sorting_id = i32::MAX;
+            }
+            (i, key)
+        })
         .collect();
     keys.sort_by(|(_, a), (_, b)| sorter.compare(a, b));
     keys.into_iter().map(|(i, _)| i).collect()

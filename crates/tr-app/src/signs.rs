@@ -957,6 +957,15 @@ mod tests {
     #[test]
     fn breaking_another_sign_remaps_the_open_index() {
         let mut app = sign_app();
+        // Give (5,5) a live 2-wide sign tile, else `text_sign` kills the
+        // record it just created (Sign.cs:74-85's dead-tile arm).
+        for x in [5, 6] {
+            if let Some(cell) = app.world.tile_mut(x, 5) {
+                *cell = tr_core::tile::Tile { kind: 55, ..Default::default() };
+                cell.flags |= tr_core::tile::FLAG_ACTIVE;
+                cell.frame_x = if x == 5 { 0 } else { 18 };
+            }
+        }
         // Two records: (5,5) first (the one to break), (19,30) opened.
         let b = find_or_create(&mut app.world.signs, 5, 5).unwrap();
         text_sign(&mut app.world, b, 5, 5, "drop".into());

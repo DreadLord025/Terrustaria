@@ -437,6 +437,7 @@ mod tests {
     fn w4_e8_the_painted_mushroom_uses_the_paint_bytes_and_other_styles_skip() {
         let mut rng = FastRandom::new(7);
         let mut twin = FastRandom::new(7);
+        let _ = twin.next_range(28, 42); // the one argument draw
         // Painted: the draw still happens (the C# computes num before the
         // paint branch), but the colour is the paint table's.
         let got = mushroom_tree_light(14, 1, 255, &mut rng).expect("painted lights");
@@ -444,8 +445,9 @@ mod tests {
         assert_eq!(rng.next_range(0, 1000), twin.next_range(0, 1000));
         // Non-mushroom styles draw NOTHING and return None.
         let mut rng2 = FastRandom::new(7);
+        let mut twin2 = FastRandom::new(7);
         assert!(mushroom_tree_light(0, 0, 255, &mut rng2).is_none());
-        assert_eq!(rng2.next_range(0, 1000), twin.next_range(0, 1000));
+        assert_eq!(rng2.next_range(0, 1000), twin2.next_range(0, 1000));
     }
 
     // ---- The five DelegateMethods casts (DelegateMethods.cs:712-816). ----
@@ -573,13 +575,21 @@ mod tests {
         // SOLID stone lights (unlike every CastLightOpen* arm); (3) a plain
         // absent SOLID-kind tile (default dirt, !active, !inActive, solid,
         // not solid-top) is the one false case in bounds.
-        let w = cast_world();
+        let mut w = cast_world();
+        // Quirk 2 needs a solid inside the origin's 10-tile radius; the
+        // cast_world stone at (10,10) is 14.1 away and correctly fails the
+        // radius gate (`:803-806`), so plant one at (6,6).
+        {
+            let t = w.tile_mut(6, 6).unwrap();
+            t.kind = 1;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
         let mut out = Vec::new();
         // Quirk 2: the active solid stone lights.
-        assert!(spread_light_open_stop(&w, 10, 10, &env(), &mut out));
+        assert!(spread_light_open_stop(&w, 6, 6, &env(), &mut out));
         // Quirk 1: (-1, 0) is out of the array but distance 1 <= 10.
         assert!(spread_light_open_stop(&w, -1, 0, &env(), &mut out));
-        assert_eq!(out, vec![(10, 10, [0.3, 0.6, 0.9]), (-1, 0, [0.3, 0.6, 0.9])]);
+        assert_eq!(out, vec![(6, 6, [0.3, 0.6, 0.9]), (-1, 0, [0.3, 0.6, 0.9])]);
         // Quirk 3: the absent dirt tile at (0, 1) fails all four terms.
         assert!(!spread_light_open_stop(&w, 0, 1, &env(), &mut out));
         // The radius gate (`:803-806`): distance 15 > 10 -> false, no light.

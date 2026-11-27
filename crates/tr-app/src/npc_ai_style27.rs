@@ -1244,12 +1244,15 @@ mod tests {
         n.vx = 1.0;
         let mut h = Harness::new(1);
         let before = h.rng.clone();
+        // `:25720` reads the PRE-pin position: the arm re-pins
+        // `position.Y = num355` later (`:25843-25853`).
+        let sound_y = n.y;
         h.step(&mut n, &w, &players);
         assert_eq!(n.wants_sound.len(), 1, "the roar fired");
         let req = n.wants_sound[0];
         assert!(matches!(req.cue, crate::npc::NpcSoundCue::NpcDeath(10)));
         assert_eq!(req.x, n.x);
-        assert_eq!(req.y, n.y);
+        assert_eq!(req.y, sound_y, ":25720 reads the pre-pin Y; :25853 re-pins after");
         // The stream order: Next(1000) then the re-arm Next(200).
         let mut probe = before.clone();
         let _threshold = probe.next_max(1000);

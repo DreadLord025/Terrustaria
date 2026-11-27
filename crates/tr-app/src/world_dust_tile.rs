@@ -237,8 +237,11 @@ mod tests {
             (tile(101, 0, 0), -1),
             (tile(19, 0, 0), 7),
             (tile(19, 0, 18 * 50), 309),
-            (tile(79, 0, 0), 7),
-            (tile(79, 0, 36 * 8), 109),
+            // The 79 frame ladder (`:67424-67428`) is dead: the final
+            // `type == 79 || 90 || 101 -> num = -1` overwrite (`:69039-69042`)
+            // runs after it for every 79 cell.
+            (tile(79, 0, 0), -1),
+            (tile(79, 0, 36 * 8), -1),
             (tile(18, 0, 0), 7),
             (tile(18, 36 * 15, 0), 126),
             (tile(18, 36 * 16, 0), -1),

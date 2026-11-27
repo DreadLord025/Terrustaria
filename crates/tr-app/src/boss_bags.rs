@@ -1082,8 +1082,8 @@ mod tests {
         assert_eq!(out[3].stack, 1, "Next(3)+1 minimum");
         assert_eq!(out[4].stack, 20, "Next(31)+20 minimum");
         // The ore stack's THREE draws are all Next(21) — the census.
-        let ore_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 21)).collect();
-        assert_eq!(ore_draws.len(), 3, "the triple-draw ore stack");
+        let ore_draws: Vec<_> = rng.ranges.iter().skip(2).take(3).copied().collect();
+        assert_eq!(ore_draws, [(0, 21); 3], "the triple-draw ore stack");
         // The money tail follows (the all-zero script hits every bonus
         // gate — the exact coin math is pinned by the replay tests).
         assert!(its[6..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
@@ -2340,7 +2340,10 @@ mod tests {
             let mut out = Vec::new();
             bag_money(&mut rng, &mut out, boss, 1.0);
             assert!(out.is_empty(), "boss {boss} mints nothing");
-            assert_eq!(rng.ranges.len(), 5, "the spread + 4 gates drew");
+            // The zero script hits all four gates, so each draws its inner
+            // spread too (`Player.cs:7836-7851`): 1 (the -20..20 spread) +
+            // 4 gates + 4 inner spreads = 9.
+            assert_eq!(rng.ranges.len(), 9, "the spread + 4 gates + 4 spreads drew");
         }
     }
 

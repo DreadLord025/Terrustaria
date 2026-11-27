@@ -567,6 +567,7 @@ mod tests {
         // Daytime fails the persist gate on its own (`!dayTime` half).
         let mut day = WorldEvents::default();
         day.genuine_lanterns = true;
+        day.was_lantern_night = true; // the genuine set was up last tick
         assert_eq!(update_time_lanterns(&mut day, false), Some(false));
         assert!(!day.genuine_lanterns);
     }
@@ -703,10 +704,13 @@ mod tests {
         let mut ev = WorldEvents::default();
         let mut chat = ChatMonitor::default();
         ev.genuine_party = true;
-        ev.celebrating_npcs = vec![0, 1];
+        // One celebrant: the C# `RemoveAt(i)` quirk (increment after a
+        // removal) would leave the second of a two-item roster behind, so
+        // the single-item fixture is the one that empties.
+        ev.celebrating_npcs = vec![0];
         // The edge: was_celebrating false -> PartyIsUp true.
-        // Both celebrants gone (partyable all false): the roster empties.
-        let partyable = [false, false];
+        // The celebrant is gone (partyable false): the roster empties.
+        let partyable = [false];
         let edge = update_time_party(&mut ev, &partyable, &mut chat);
         assert_eq!(edge, Some(true), "the up-edge fires");
         assert!(ev.celebrating_npcs.is_empty());

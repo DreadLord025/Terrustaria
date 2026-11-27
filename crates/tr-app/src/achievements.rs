@@ -1208,10 +1208,17 @@ mod tests {
         assert_eq!(row.conditions.len(), 1);
         assert_eq!(row.conditions[0].name, "Use");
         assert_eq!(row.conditions[0].kind, CondKind::Custom("Use"));
-        // No progression id completes it (the event-end grant is silent).
+        // No progression id completes the torch row (the event-end grant is
+        // silent). The ids are the f30 tail census's live rows — 21
+        // MECHA_MAYHEM / 29 BOOK_WORM / 45 TRASH_COMPACTOR are real — so the
+        // assertion names the torch row, not "None".
         let mut m = AchievementManager::registry();
         for id in [21u32, 24, 29, 33, 45] {
-            assert_eq!(m.notify_progression(id), None, "progression {id}");
+            assert_ne!(
+                m.notify_progression(id),
+                Some("GAIN_TORCH_GODS_FAVOR"),
+                "progression {id}"
+            );
         }
         assert!(!m
             .list

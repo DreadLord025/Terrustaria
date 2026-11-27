@@ -3713,7 +3713,9 @@ mod tests {
     /// not the bare coating bit the pre-wave pass read.
     #[test]
     fn w4_g78_the_echo_gates_ride_the_sight_input() {
-        let src = include_str!("tiles.rs");
+        let raw = include_str!("tiles.rs");
+        let src = raw.replace("\r\n", "\n");
+        let src = src.as_str();
         let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
         // The wall layer: one wall_visible call with the coating bit + sight.

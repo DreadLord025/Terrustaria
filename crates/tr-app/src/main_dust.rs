@@ -1534,12 +1534,16 @@ mod tests {
             assert_eq!(live(&pool)[0].velocity, v);
         }
         assert_eq!(rng, m);
-        // Non-surface rect: both gates skipped, zero draws.
+        // Non-surface rect: the Next(350) surface arm is skipped, but the
+        // deep-liquid Next(700) still draws — its gate is `liquid > 200`,
+        // independent of the rect (`Main.cs:57786-57790`).
         let (mut pool, world, ctx) = rig();
         let mut rng = UnifiedRandom::new(0x5EED);
+        let mut m = UnifiedRandom::new(0x5EED);
+        let _ = m.next_max(700);
         lava_bubble_pair(20, 20, 3.5, 4, 255, true, &mut rng, &mut pool, &ctx, &world);
         assert!(live(&pool).is_empty());
-        assert_eq!(rng, UnifiedRandom::new(0x5EED));
+        assert_eq!(rng, m);
     }
 
     // ------------------------------------------------ wiring witnesses --

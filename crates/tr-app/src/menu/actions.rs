@@ -305,9 +305,13 @@ impl Menu {
                     self.pending_cue = Some("Menu_Open");
                     Action::Achievements
                 }
-                // menuMode 11 row 4 (`Main.cs:48949-48957`): the App opens
-                // the pack-selection screen (W4-d84).
-                Action::ResourcePacks => Action::ResourcePacks,
+                // menuMode 11 row 4 (`Main.cs:48951-48956`): `SoundEngine.
+                // PlaySound(10)` then `OpenResourcePacksMenu(null)` — the App
+                // opens the pack-selection screen (W4-d84).
+                Action::ResourcePacks => {
+                    self.pending_cue = Some("Menu_Open"); // `:48954`
+                    Action::ResourcePacks
+                }
                 // No row carries it — only the in-game keybinds' Back/Escape
                 // arms produce it. W4-g22 — `IngameFancyUI.Close`'s loud arm
                 // plays 11 (`IngameFancyUI.cs:167`).

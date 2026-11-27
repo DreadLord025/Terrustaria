@@ -691,7 +691,8 @@ mod tests {
     }
 
     /// `PopupText.cs:716-729`: 60 live ticks, then −0.03/tick until the
-    /// scale drops below 0.1 (31 shrink ticks from 1.0).
+    /// scale drops below 0.1 (30 shrink ticks from 1.0 — f32 accumulation
+    /// lands the 30th sum at 0.09999999, already below 0.1).
     #[test]
     fn the_popup_lives_60_ticks_then_shrinks_out() {
         let mut pool = Pool::default();
@@ -718,7 +719,7 @@ mod tests {
             shrink += 1;
             assert!(shrink < 40);
         }
-        assert_eq!(shrink, 31, "1.0 − 0.03×31 = 0.07 < 0.1");
+        assert_eq!(shrink, 30, "1.0 - 0.03x30 = 0.09999999 < 0.1 in f32");
     }
 
     /// `PopupText.cs:678-697`: overlapping popups extend both lifetimes to

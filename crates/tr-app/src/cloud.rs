@@ -1022,7 +1022,13 @@ mod tests {
             ..Default::default()
         };
         f.update_clouds(&e, &l);
-        assert!(f.slots.iter().find(|c| c.active).unwrap().kill);
+        // The bubble pass may shuffle the wisp (and `addCloud` fills the
+        // vacated slot 0), so find the type-11 cloud itself, not "the first
+        // active slot".
+        assert!(f
+            .slots
+            .iter()
+            .any(|c| c.active && c.kind == 11 && c.kill));
     }
 
     #[test]

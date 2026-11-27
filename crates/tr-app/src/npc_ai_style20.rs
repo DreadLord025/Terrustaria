@@ -258,6 +258,11 @@ mod tests {
     fn the_zero_axes_pin_to_one() {
         let w = air();
         let mut n = ball(1000.0, 1000.0);
+        // A fresh NPC enters the AI with both axes at the C# field
+        // default 0 (type 70's SetDefaults writes neither direction nor
+        // directionY); the fixture starts there so the picks stay 0.
+        n.facing = 0;
+        n.direction_y = 0;
         // A dead player: the pick leaves the axes at 0.
         let mut p = cand(1100.0, 1100.0);
         p.dead = true;

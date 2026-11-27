@@ -416,7 +416,11 @@ mod tests {
         let mut slots = BuffSlots::default();
         slots.add_buff(332, 10_000);
         let mut e = FrameEffects::default();
-        update_hunger_buffs_frame(&mut slots, &mut e, false, false);
+        // `Player.cs:12108-12123`: the 332 row is dontStarve-world only —
+        // outside it the `if (!Main.dontStarveWorld) buffTime[i] = 0` arm
+        // zeroes even a 10 000-timer. The fixture arms the world that owns
+        // the buff, so the long timer is the thing under test.
+        update_hunger_buffs_frame(&mut slots, &mut e, true, false);
         let i = slots.find_buff_index(332).unwrap();
         assert_eq!(slots.buff_time[i], 10_000, "time > 2: no expiry");
         assert!(e.emotes.is_empty());
@@ -455,10 +459,17 @@ mod tests {
         c.lava_wet = true;
         let mut s = FrameState::default();
         assert_eq!(s.lava_opacity, 1.0, ":1534 the initial value");
+        let mut min = 1.0f32;
         for _ in 0..100 {
             lava_opacity_ladder(&c, &mut s);
+            min = min.min(s.lava_opacity);
         }
-        assert_eq!(s.lava_opacity, 0.4, "the :12057 clamp holds at 0.4");
+        // `Player.cs:12052-12066`: the down arm's clamp pins 0.4, but the
+        // `else if (lavaOpacity < 1f)` up arm does NOT re-check the pair —
+        // so at the floor the next frame rises one step. The ladder is a
+        // 0.40 <-> 0.44 bounce; an even 100 down-frames ends on 0.44.
+        assert_eq!(min, 0.4, "the :12057 clamp holds at 0.4");
+        assert_eq!(s.lava_opacity, 0.44, "the next frame's unconditional up step");
     }
 
     #[test]
@@ -490,14 +501,16 @@ mod tests {
 
     #[test]
     fn s1_e_7f_lava_opacity_at_floor_with_pair_is_stable() {
-        // At exactly 0.4 with the pair live, neither arm runs: the down
-        // gate is `> 0.4` and the up gate is the else of the whole pair.
+        // `Player.cs:12052-12066`: the down arm needs `> 0.4f`; at exactly
+        // 0.4 its else-if (`lavaOpacity < 1f`, with NO pair re-check) runs
+        // the up arm, so the floor steps to 0.44 — the source's one-frame
+        // bounce, not a fixed point.
         let mut c = ctx();
         c.lava_vision = true;
         c.lava_wet = true;
         let mut s = FrameState { lava_opacity: 0.4, ..FrameState::default() };
         lava_opacity_ladder(&c, &mut s);
-        assert_eq!(s.lava_opacity, 0.4, "the floor is a fixed point");
+        assert_eq!(s.lava_opacity, 0.44, "the source's unconditional up step");
     }
 
     // ---- frame order + the already-live preamble -------------------------

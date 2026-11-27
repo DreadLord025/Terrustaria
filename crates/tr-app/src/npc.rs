@@ -6515,6 +6515,10 @@ impl Npc {
                 | NpcKind::PumpkingBlade
                 // W4-d40: the tablet's `dontTakeDamage = true` row (`NPC.cs:14191`).
                 | NpcKind::CultistTablet
+                // W4-d125: the Empress's `dontTakeDamage = true`
+                // (`NPC.cs:17204`) — the materialize/transform shield; the
+                // adapter flips it with the machine state.
+                | NpcKind::EmpressOfLight
             ),
             // W4-c8 sweep — `NPC.dontTakeDamageFromHostiles`
             // (`NPC.cs:6277`, reset false `:8501`): the TruffleWorm 374
@@ -6662,6 +6666,11 @@ impl Npc {
                     } else if kind == NpcKind::BlazingWheel {
                         // the wheel's `alpha = 100` row (`NPC.cs:9723`)
                         100
+                    } else if kind == NpcKind::EmpressOfLight {
+                        // `:17203` — `Opacity = 0f` at SetDefaults: the
+                        // materialize starts fully transparent (alpha 255)
+                        // and the machine ramps it down.
+                        255
                     } else {
                         match kind {
                             // W4-d40: the dragon family's `alpha = 255` spawn-fade
@@ -8095,6 +8104,12 @@ impl Npc {
             // ai[2]-as-timer self-kill, the every-tick 579 spam, the
             // discarded rng) is retired.
             94 => self.ai_094_pillar_family(world, player, rng, dust, dust_ctx),
+            // `else if (this.aiStyle == 120) { this.AI_120_HallowBoss(); }`
+            // (`NPC.cs:41099-41102`; the machine `:45953-46942`). W4-d125:
+            // the Empress of Light (636) is the style's only kind; the
+            // adapter owns the state pack/unpack, the rage write-back and
+            // the noTileCollide integration tail.
+            120 => self.ai_120_empress(world, player, rng),
             // S1-D-4c fallback contract: the arms above claim EVERY aiStyle
             // that has a retired kind arm in `update_kind_ai` (the
             // `unreachable!("aiStyle N rides the style axis")` markers). A
@@ -9209,6 +9224,9 @@ impl Npc {
             // (`:8533`) — the stock `_ => 0.4` below never sees it.
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
+            // W4-d125: the Empress's `knockBackResist = 0f` row
+            // (`NPC.cs:17198`).
+            NpcKind::EmpressOfLight => 0.0,
             // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
             NpcKind::ArmedZombie => 0.5,
             NpcKind::ArmedZombieEskimo => 0.45,
@@ -9549,6 +9567,8 @@ impl Npc {
             return self.slime.stats().defense;
         }
         match self.kind {
+            // W4-d125: the Empress's `defense = 50` row (`NPC.cs:17200`).
+            NpcKind::EmpressOfLight => 50,
             NpcKind::DemonEye => 2,
             NpcKind::WanderingEye => 20,
             NpcKind::Zombie => 6,
@@ -10216,6 +10236,9 @@ impl Npc {
             return self.slime.stats().value;
         }
         match self.kind {
+            // W4-d125: the Empress's `value = Item.buyPrice(0, 25)` =
+            // 25 gold in copper (`NPC.cs:17199`).
+            NpcKind::EmpressOfLight => 250_000.0,
             // `NPC.cs:14130`: the core alone carries a value (1 platinum
             // = 1000000 copper); the parts are value 0.
             NpcKind::VortexHunter => 1200.0,
@@ -10916,6 +10939,11 @@ impl Npc {
             NpcKind::SkeletronHead | NpcKind::SkeletronPrime | NpcKind::DungeonGuardian => {
                 self.ai[1] != 2.0
             }
+            // `:78752-78753` — case 636: `!ShouldEmpressBeEnraged()`. The
+            // adapter recomputes the gate post-integration each tick and
+            // parks it on `empress_dodgeable` (the `&World` immutability
+            // seam); before the first step the C# default is true.
+            NpcKind::EmpressOfLight => self.empress_dodgeable.unwrap_or(true),
             _ => true,
         }
     }
@@ -11003,6 +11031,10 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        // `StrikeNPC`'s hit-dust tail (`NPC.cs:83000-86560`): the
+        // strike-time snapshot queues for the `UpdateNPCs` replay; the 133
+        // eye-pop latch fires at the C#'s write order (`:86531`).
+        self.capture_hit_dust(amount, dir);
         // S1-D-3 W-9 fishron wiring — `NPC.checkDead`'s 371 arm
         // (`NPC.cs:78046-78051`): a struck Detonating Bubble does NOT
         // die — the strike arms the 4-tick detonation and restores full
@@ -11011,6 +11043,21 @@ impl Npc {
             crate::npc_ai_style70::bubble_check_dead(self);
         }
         true
+    }
+
+    /// The `StrikeNPC` hit-dust capture (`NPC.cs:83000-86560`'s per-type
+    /// dust/gore block, reached from the strike tail): the strike-time
+    /// state rides a [`crate::npc_hit_dust::HitDustSnapshot`] onto
+    /// `wants_hit_dust`, which the sim replays on the `UpdateNPCs` stream.
+    /// The 133 WanderingEye eye-pop writes its `localAI[0] = 1` latch at
+    /// the C#'s order (`:86529-86533`): AFTER the capture reads the old
+    /// latch, BEFORE the drain's `Gore.NewGore`.
+    fn capture_hit_dust(&mut self, dmg: i32, dir: i32) {
+        let snap = crate::npc_hit_dust::HitDustSnapshot::capture(self, dmg, dir);
+        if snap.eye_pop_latched {
+            self.local_ai[0] = 1.0;
+        }
+        self.wants_hit_dust.push(snap);
     }
 
     /// The projectile-hit path: identical to [`Npc::hurt`] but without the
@@ -11057,6 +11104,8 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        // `StrikeNPC`'s hit-dust tail — the `hurt` twin's capture.
+        self.capture_hit_dust(amount, dir);
         // S1-D-3 W-9: the checkDead 371 re-arm (the `hurt` twin above).
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
@@ -11143,8 +11192,13 @@ impl Npc {
         // the caller passes as `owner`.
         if let Some(owner) = owner {
             let target = Npc::carrier_index(npcs, idx).unwrap_or(idx);
-            // `ApplyInteraction_Inner` (`NPC.cs:80035-80056`).
+            // `ApplyInteraction_Inner` (`NPC.cs:80035-80068`).
             npcs[target].player_interaction[owner as usize] = true;
+            // `:80057-80067` — the lastInteraction latch (only when
+            // `player < 255`; the sender slot indexes 0..254).
+            if (owner as usize) < 255 {
+                npcs[target].last_interaction = owner as i32;
+            }
         }
         // The knockback half (`NPC.cs:81389-81458`).
         let n = &mut npcs[idx];
@@ -11171,6 +11225,10 @@ impl Npc {
         n.vx = vx;
         n.vy = vy;
         n.on_ground = false;
+        // `StrikeNPC`'s hit-dust tail (`NPC.cs:83000-86560`) — the
+        // strike-time snapshot queues on the STRUCK slot (the pool's own
+        // position), and the 133 eye-pop latch lands here (`:86531`).
+        n.capture_hit_dust(amount, dir);
         // S1-D-3 W-9 fishron wiring — `NPC.checkDead`'s 371 arm
         // (`NPC.cs:78046-78051`, reached from `StrikeNPC`'s `:81561`):
         // a struck Detonating Bubble does NOT die — the strike arms the
@@ -11351,9 +11409,14 @@ impl Npc {
         // the frame's movement, exactly like the original.
         self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
-        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
+        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`):
+        // `if (immune[j] > 0) immune[j]--` — a fresh 0/negative window is
+        // left ALONE (the `saturating_sub` clamp at i32::MIN let a fresh
+        // 0 become -1 and the lava gate's `!= 0` read it as armed).
         for v in self.immune.iter_mut() {
-            *v = v.saturating_sub(1);
+            if *v > 0 {
+                *v -= 1;
+            }
         }
         self.anim += dt;
     }
@@ -12672,8 +12735,11 @@ impl Npc {
         };
         let ty = self.kind.cs_id() as i32;
         let fx = crate::npc_ai_style65::ai_065_butterflies(ty, self, world, &ctx, rng, dust, dust_ctx);
-        debug_assert!(!fx.despawn, "444 never fades (the 661 despawn arm)");
-        debug_assert!(fx.light.is_none(), "444 glows nowhere (661/653 only)");
+        // The 444-only invariants: the GoldButterfly never fades nor glows
+        // (`NPC.cs:44896-45119`'s 661/653 light arms). The Prismatic
+        // Lacewing (661) rides this arm too and DOES request the glow.
+        debug_assert!(ty != 444 || !fx.despawn, "444 never fades (the 661 despawn arm)");
+        debug_assert!(ty != 444 || fx.light.is_none(), "444 glows nowhere (661/653 only)");
         // noGravity TRUE (`:14286`) — no gravity block; noTileCollide
         // FALSE — `UpdateCollision` (`NPC.cs:90490-90492`), the port's
         // blocked-axis stand-in with the collide latches (the spore
@@ -14339,6 +14405,42 @@ impl Npc {
                 }
                 if self.frame >= crate::render::entities::npc_rows(48) {
                     self.frame = 0;
+                }
+            }
+            // `case 620` (`NPC.cs:68423-68475`) — the GoblinShark. The
+            // attack-pose strip (`:68424-68446`) is the AI-side rows; the
+            // WET arm owns the swim spin (`:68448-68475`): the x velocity
+            // picks `direction`, a sprite-direction flip negates the
+            // accumulated rotation, and the atan2 target (the
+            // direction-folded velocity) is approached with the
+            // `(rotation * 4 + target) / 5` lerp, unwrapped across ±π.
+            NpcKind::GoblinShark => {
+                if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let dir = self.facing as f32;
+                    // `:68463` — `Atan2(velocity.Y * direction,
+                    // velocity.X * direction)`.
+                    let num43 = (self.vy * dir).atan2(self.vx * dir);
+                    // `:68464-68474` — the ±π wrap against the CURRENT
+                    // rotation (the f32 `Math.PI` casts, verbatim).
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    // `:68475` — `rotation = (rotation * 4 + num43) / 5`.
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
                 }
             }
             // W4-d34 (phase 3): the Snatcher rides the case-43/56 bite cycle
@@ -22868,8 +22970,10 @@ impl Npc {
             // (the 10-speed lunge + the 687 breath at 35), the 120-tick
             // ride with the 0.5 accel past 550 px.
             self.ai[1] += 1.0;
-            // `:61999`: `num30 = (Center.X < target.Center.X) ? 1 : -1`.
+            // `:61999-62000`: `num30 = (Center.X < target.Center.X) ? 1 : -1`;
+            // `this.ai[2] = num30`.
             let dir = if cx < pcx { 1.0 } else { -1.0 };
+            self.ai[2] = dir;
             if self.ai[1] < 40.0 {
                 let (tx, ty) = (pcx + dir * -600.0, pcy - 250.0);
                 let (dx, dy) = (tx - cx, ty - cy);
@@ -22888,8 +22992,22 @@ impl Npc {
                 self.vy = 0.0;
                 self.facing = dir2 as i32;
                 self.sprite_dir = self.facing;
-                self.wants_hostile_shot
-                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+                // `:62024-62026` — `NewProjectile(base.Center,
+                // base.velocity, 687, num3, ai0: 0, owner: myPlayer,
+                // ai1: base.whoAmI)`: the breath rides the AI-shot seam
+                // so the drain keeps the `ai1 = whoAmI` carrier link the
+                // aiStyle-136 body anchors to.
+                self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                    kind: 687,
+                    x: cx,
+                    y: cy,
+                    vx: self.vx,
+                    vy: self.vy,
+                    damage: 35,
+                    ai0: 0.0,
+                    ai1: self.slot as f32,
+                    scale: None,
+                });
             } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
                 self.vx += self.vx.signum() * 0.5;
             }
@@ -25971,37 +26089,53 @@ impl Npc {
             self.caster_counter = 300;
         }
         // `:63076-63117`'s per-sub-state tuning: the charge length, the
-        // engage distance, the cooldown and the throw's own tuning.
-        let (tick, engage, cooldown, proj, dmg, hop, ox, oy, throw_at) = match self.ai[1] as i32 {
-            2 => (
-                90.0,
-                250.0,
-                60.0,
-                683u16,
-                60,
-                56.0,
-                -20.0 * self.facing as f32,
-                h * 0.5 - 1.0,
-                36.0,
-            ),
-            1 => (
-                90.0,
-                1000.0,
-                240.0,
-                676u16,
-                40,
-                0.0,
-                30.0 * self.facing as f32,
-                -70.0,
-                35.0,
-            ),
-            _ => (44.0, 130.0, 60.0, 0u16, 0, 0.0, 0.0, 0.0, 0.0),
-        };
+        // engage distance, the cooldown and the throw's own tuning. The
+        // throw speed (`num10`), drop (`num15`), jitter (`num16`) and
+        // launch offset (`num18`) keep the AI_107 DEFAULTS for both the
+        // spit and the pound — `num3 = 13f` (`:63093`) is the HOP speed,
+        // not the projectile speed.
+        let (tick, engage, cooldown, proj, dmg, hop, ox, oy, throw_at) =
+            match self.ai[1] as i32 {
+                2 => (
+                    90.0,
+                    250.0,
+                    60.0,
+                    683u16,
+                    60,
+                    56.0,
+                    -20.0 * self.facing as f32,
+                    h * 0.5 - 1.0,
+                    36.0,
+                ),
+                1 => (
+                    90.0,
+                    1000.0,
+                    240.0,
+                    676u16,
+                    40,
+                    0.0,
+                    30.0 * self.facing as f32,
+                    -70.0,
+                    35.0,
+                ),
+                _ => (44.0, 130.0, 60.0, 0u16, 0, 0.0, 0.0, 0.0, 0.0),
+            };
+        // `:63092`'s `num2 = 41` (case 2 only) — the airborne charge clamp.
+        let clamp_at = if self.ai[1] == 2.0 { 41.0 } else { 0.0 };
         // The flag5 charge (`:63850-63880`): the countdown, the damping and
-        // the cooldown.
+        // the cooldown. `:63857`'s arming gate also needs a clear
+        // `Collision.CanHit`/`CanHitLine` walk, so a wall between the pair
+        // keeps the charge at 0.
+        let los = crate::projectile::can_hit(
+            world, self.x, self.y, w, h, player.x, player.y,
+            crate::player::WIDTH as f32, crate::player::HEIGHT as f32,
+        ) || crate::projectile::can_hit_line(
+            world, self.x, self.y, w, h, player.x, player.y,
+            crate::player::WIDTH as f32, crate::player::HEIGHT as f32,
+        );
         if self.ai[0] < 0.0 {
             self.ai[0] += 1.0;
-        } else if self.ai[0] == 0.0 && self.vy == 0.0 && dist < engage {
+        } else if self.ai[0] == 0.0 && self.vy == 0.0 && dist < engage && los {
             self.ai[0] = tick;
         }
         if self.ai[0] > 0.0 {
@@ -26011,20 +26145,45 @@ impl Npc {
                 self.ai[0] = -cooldown;
             }
         }
-        // `:63916-63920`'s hop: at `num = 56` the ogre slams up.
-        if hop > 0.0 && self.ai[0] == hop {
-            self.vy = -13.0;
-        }
-        // `:63888-63913`'s throw: at `num9 = 36` the projectile leaves from
-        // the offset, aimed with the `Math.Abs(v.X) * num15` drop.
+        // `:63881-63913`'s throw: at `num9` the projectile leaves from the
+        // offset, aimed with the `Math.Abs(v.X) * num15` drop. The C#
+        // throw block sits BEFORE the hop block (`:63881` vs `:63914`), so
+        // an airborne charge still throws on the 36 tick before the clamp
+        // lifts it back to 41.
         if throw_at > 0.0 && self.ai[0] == throw_at {
             let (sx, sy) = (cx + ox, cy + oy);
-            let drop = (pcx - sx).abs() * 0.15;
-            let (dx, dy) = (pcx - sx, pcy - sy - drop);
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            let speed = 13.0;
+            // `v.Y -= Math.Abs(v.X) * num15` — num15's default 0.1.
+            let drop = (pcx - sx).abs() * 0.1;
+            let (mut dx, mut dy) = (pcx - sx, pcy - sy - drop);
+            // `v.SafeNormalize(-Vector2.UnitY)` — the zero vector reads
+            // (0, -1) (`Vector2.cs`'s SafeNormalize).
+            let len = (dx * dx + dy * dy).sqrt();
+            if len == 0.0 {
+                dx = 0.0;
+                dy = -1.0;
+            } else {
+                dx /= len;
+                dy /= len;
+            }
+            // `vector5 = normalized * num10` — the default 11 speed.
+            let (vx0, vy0) = (dx * 11.0, dy * 11.0);
+            // `Utils.RandomVector2(Main.rand, -num16, num16)` — the two
+            // NextDouble draws (num16's default 0.5), the X first.
+            let jx = (rng.next_double() * 1.0 - 0.5) as f32;
+            let jy = (rng.next_double() * 1.0 - 0.5) as f32;
+            // `vector7 += vector5 * num18` — the default offset 1.
             self.wants_hostile_shot
-                .push((proj, sx, sy, dx / len * speed, dy / len * speed, dmg));
+                .push((proj, sx + vx0, sy + vy0, vx0 + jx, vy0 + jy, dmg));
+        }
+        // `:63916-63919` — the airborne clamp: while the hop's velocity is
+        // live and the charge has fallen under `num2 = 41`, it
+        // fast-forwards back to 41 (the pound still throws on landing).
+        if clamp_at > 0.0 && self.vy != 0.0 && self.ai[0] < clamp_at && self.ai[0] > 0.0 {
+            self.ai[0] = clamp_at;
+        }
+        // `:63920-63923`'s hop: at `num = 56` the ogre slams up at `num3`.
+        if hop > 0.0 && self.ai[0] == hop {
+            self.vy = -13.0;
         }
         // The walker physics (the shared `AI_107` body's accel/friction):
         // `num23 = 1.0`, `num24 = 0.07`, `num25 = 0.8`.
@@ -28624,6 +28783,29 @@ impl Npc {
         if player.creative_god_mode {
             return;
         }
+        // `Player.cs:31332-31349` — the per-type cooldown-lane pick
+        // (`specialHitSetter`): General (-1) by default, the Moon Lord
+        // parts (396/397/398/400/401) and the Empress (636) ride
+        // BossNoCheese (1). The 636 ALSO skips the pass entirely in the
+        // materialize (ai[0] 0) / transform (ai[0] 10) states.
+        let cs = self.kind.cs_id() as i32;
+        let special = match cs {
+            396 | 397 | 398 | 400 | 401 => crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+            636 => {
+                if self.ai[0] == 0.0 || self.ai[0] == 10.0 {
+                    return;
+                }
+                crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+            }
+            _ => crate::id_tables::IMMUNITY_GENERAL,
+        };
+        // `:31392-31396` — `flag4`: the pre-hit immunity gate. General
+        // reads `!immune`; a real array counter reads its own window.
+        let flag4 = if special >= 0 {
+            player.hurt_cooldowns[special as usize] == 0
+        } else {
+            !player.immune
+        };
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -28713,9 +28895,9 @@ impl Npc {
                 // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
                 // immunity gates the thorns arms (`:31397-31418`), so a
                 // contact that dodges (`Hurt` runs after, `:31423`) still
-                // reflects. The port's `hurt_cd <= 0` is the `!immune`
-                // stand-in (the collapsed General cooldown, M4-HAZARD-1).
-                let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // reflects. A real cooldown counter (`:31392-31396`) reads
+                // its own array window instead (`flag4` above).
+                let pre_hit_not_immune = flag4;
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -28754,7 +28936,7 @@ impl Npc {
                 // gates `StatusFromNPC`, whose debuff body the port carries
                 // elsewhere (unchanged).
                 if dmg > 0 {
-                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    player.hurt_cooldown(dmg, cx, rng, self.is_damage_dodgeable(), special);
                 }
             }
         }
@@ -44144,7 +44326,10 @@ mod s1_f_13b_tests {
                 legacy.buffs.update_buffs_tick(&mut legacy.hp, legacy.max_hp);
                 legacy.hurt_cd = (legacy.hurt_cd - 1.0 / 60.0).max(0.0);
                 for v in legacy.immune.iter_mut() {
-                    *v = v.saturating_sub(1);
+                    // `NPC.cs:90454-90459` — `if (immune[j] > 0) immune[j]--`.
+                    if *v > 0 {
+                        *v -= 1;
+                    }
                 }
                 legacy.anim += 1.0 / 60.0;
                 // The pre-slice kind-match arms, verbatim.

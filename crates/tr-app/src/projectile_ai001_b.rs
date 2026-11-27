@@ -160,10 +160,11 @@ fn finish_flight(p: &mut Projectile, world: &World) {
                 let style = if p.ai[1] != 0.0 { 114 } else { 115 };
                 p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
-            p.active = false;
-            p.time_left = 0;
             if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
-                // `:18280-18284` — the latch + the last step + the restore.
+                // `:18280-18286` — the latch + the last step + the restore.
+                // The beam is NOT killed: `ai[1] == 1` makes the next
+                // `HandleMovement` call take the `:17590`/`:20435` skip and
+                // hold the position while the ramp counts down.
                 p.ai[1] = 1.0;
                 p.pos += p.vel;
                 // velocity = lastVelocity: unchanged (the probe never wrote).

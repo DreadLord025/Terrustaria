@@ -847,13 +847,15 @@ mod tests {
 
     #[test]
     fn probe_lights_only_when_the_snapped_centre_is_open() {
-        // `:50624-50630` — the Probe's 30×30 box at (160, 160): the GATE
-        // uses the snapped integer centre (160+15)/16 = 10, the LIGHT the
-        // float quotient centre 175/16 = 10.9 → 11. Open gate tile → light
-        // at (11, 11); solid gate tile → dark.
+        // `:50624-50630` — the Probe's 30×30 box at (160, 160). BOTH the
+        // gate and the light truncate a centre computed from the raw
+        // position: the gate `(int)160 + 30/2 = 175` then `/16 = 10`, the
+        // light `(int)((160 + 15) / 16) = (int)10.9375 = 10` — the SAME
+        // tile (there is no float-vs-int split for positive positions).
+        // Open gate tile → light at (10, 10); solid gate tile → dark.
         let n = Npc::new(NpcKind::Probe, 160.0, 160.0, 1, 0.0);
         let mut w = air();
-        assert_eq!(probe_light(&n, &w).unwrap(), (11, 11, [0.3, 0.1, 0.05]));
+        assert_eq!(probe_light(&n, &w).unwrap(), (10, 10, [0.3, 0.1, 0.05]));
         solid(&mut w, 10, 10);
         assert!(probe_light(&n, &w).is_none());
     }

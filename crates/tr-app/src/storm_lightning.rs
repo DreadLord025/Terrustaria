@@ -561,8 +561,9 @@ mod tests {
         w.tiles[idx].flags &= !tr_core::tile::FLAG_INACTIVE;
         w.tiles[idx].kind = 1;
         assert!(!is_lightning_attractor(&w, 100, 100));
-        // A torch (4) is in AttractsStormLightning.
-        w.tiles[idx].kind = 4;
+        // Tile 6 (Iron Ore) is in AttractsStormLightning (the C# set starts
+        // at 6, `TileID.cs:624` — torch 4 is NOT a member).
+        w.tiles[idx].kind = 6;
         assert!(is_lightning_attractor(&w, 100, 100));
     }
 

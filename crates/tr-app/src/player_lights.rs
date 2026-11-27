@@ -577,13 +577,6 @@ pub(crate) fn held_item_lights(
         // dust half is skipped.
         let v = loc + Vec2::new(8.0 * dir, -10.0) + pos;
         emit(v, [1.0 * 1.3, 0.7 * 1.3, 0.8 * 1.3]);
-        // colour (1, .7, .8) × 1.3. W4-d21 fold 2: the `petting.isPetting`
-        // gate is live (the pulley gate already rides `p.pulley` upstream);
-        // the `Next(40)` dust half is skipped.
-        if !p.petting.is_petting {
-            let v = loc + Vec2::new(8.0 * dir, -10.0) + pos;
-            emit(v, [1.0 * 1.3, 0.7 * 1.3, 0.8 * 1.3]);
-        }
     }
     out
 }

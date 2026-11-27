@@ -75,6 +75,10 @@ fn vampire_seed_sunlight_exposure(
     zone_glowshroom: bool,
     show_invisible: bool,
 ) {
+    // `Player.cs:18730` — `ResetEffects` clears the flag every tick BEFORE
+    // `UpdateSunScorch`'s scan; the port has no ResetEffects pass, so the
+    // per-tick entry owns the clear.
+    p.vampire_burning_in_sunlight = false;
     // `:28674-28675` — the tile column at the centre X, the feet row minus 1.
     let (cx, cy) = p.center();
     let (_, by) = p.bottom();
@@ -376,40 +380,62 @@ mod tests {
     /// stops the climb, glass (54) does not.
     #[test]
     fn the_wall_and_block_scan_follows_the_source() {
-        // A stone wall at the feet row blocks.
+        // A stone wall in EVERY climbed row leaves no open cell in the
+        // 15-step column (the C# opens the sky on the first `wall == 0/21/
+        // 318` cell, `:28707-28711`) — the climb exhausts without burning.
+        let wall_column = |w: &mut World, x: i32, bottom: i32, wall: u16| {
+            for y in 0..=bottom {
+                if let Some(t) = w.tile_mut(x, y) {
+                    t.wall = wall;
+                }
+            }
+        };
         let (mut p, mut w) = rig();
         let (_, by) = p.bottom();
         let row = ((by - 1.0) as i32) / 16;
-        w.tile_mut(32, row).unwrap().wall = 1;
+        wall_column(&mut w, 32, row, 1);
         assert!(!scorch(&mut p, &w));
         assert!(!p.vampire_burning_in_sunlight);
         // Glass (21) and echo (318) walls stay open.
         for wall in [21u16, 318] {
             let (mut q, mut wq) = rig();
-            wq.tile_mut(32, row).unwrap().wall = wall;
+            wall_column(&mut wq, 32, row, wall);
             assert!(!scorch(&mut q, &wq));
             assert!(q.vampire_burning_in_sunlight, "wall {wall} is transparent");
         }
-        // A hidden invisible wall stays open; showing it blocks.
+        // A hidden invisible wall stays open; showing it blocks (all rows
+        // walled so the shown scan finds no open cell).
         let (mut r, mut wr) = rig();
-        wr.set_invisible_wall(32, row, true);
-        wr.tile_mut(32, row).unwrap().wall = 1;
+        wall_column(&mut wr, 32, row, 1);
+        for y in 0..=row {
+            wr.set_invisible_wall(32, y, true);
+        }
         assert!(!scorch(&mut r, &wr));
         assert!(r.vampire_burning_in_sunlight, "hidden invisible wall is open");
         update_sun_scorch(&mut r, &wr, &[], true, true, false, false, false, false, true);
         assert!(!r.vampire_burning_in_sunlight, "shown invisible wall blocks");
-        // A solid stone block two rows up stops the climb (no burn).
+        // A solid stone block two rows up stops the climb (no burn): the
+        // rows below it are walled so no open cell is seen first.
         let (mut s, mut ws) = rig();
+        wall_column(&mut ws, 32, row, 1);
         let t = ws.tile_mut(32, row - 2).unwrap();
         t.kind = 1; // Stone
         t.flags = FLAG_ACTIVE;
         assert!(!scorch(&mut s, &ws));
         assert!(!s.vampire_burning_in_sunlight);
-        // A glass block (54) does not stop it.
+        // A glass block (54) does not stop the climb. The C#'s type check
+        // reads the PRE-decrement `tile` reference (`:28715`), so the
+        // exception only fires while the traversed cells themselves are
+        // glass: wall+glass row-2..=row, leaving row-3 open so the climb
+        // reaches it.
         let (mut u, mut wu) = rig();
-        let t = wu.tile_mut(32, row - 2).unwrap();
-        t.kind = 54;
-        t.flags = FLAG_ACTIVE;
+        for y in row - 2..=row {
+            if let Some(t) = wu.tile_mut(32, y) {
+                t.wall = 1;
+                t.kind = 54;
+                t.flags |= FLAG_ACTIVE;
+            }
+        }
         assert!(!scorch(&mut u, &wu));
         assert!(u.vampire_burning_in_sunlight, "glass is transparent");
     }

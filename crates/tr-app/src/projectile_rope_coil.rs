@@ -979,10 +979,19 @@ mod tests {
         assert!((near.pos[0] - 107.0).abs() < 1e-3);
         assert!((near.pos[1] - 107.0).abs() < 1e-3);
         assert!(near.rot.is_nan(), "the rot reads the post-normalize pair");
-        // Every later link walked through 0/0 — positions and rotations
-        // NaN, the C# array carries the same.
+        // Every later link's CENTRE walked through the first link's NaN
+        // advance (positions NaN, the C# array carries the same). The
+        // rotations do NOT stay NaN: the per-iteration reset
+        // (`:28537-28540`) rewrites dx/dy from the velocity BEFORE the next
+        // atan2, so walk 29 reads (0, 11.6) → atan2(11.6, +0.0) = π/2 and
+        // `rot = π/2 - 1.57` (`:28531`).
         assert!(links[0].pos[0].is_nan(), "the far end walked through 0/0");
-        assert!(links[0].rot.is_nan(), "atan2(NaN, NaN) - 1.57 stays NaN");
+        let pi_half = std::f32::consts::FRAC_PI_2;
+        assert!(
+            (links[0].rot - (pi_half - 1.57)).abs() < 1e-6,
+            "the reset makes the far link's atan2 finite: {}",
+            links[0].rot
+        );
     }
 
     // Projectile.cs:77572-77615 — the refund ladder.

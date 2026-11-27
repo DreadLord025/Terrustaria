@@ -897,7 +897,15 @@ mod tests {
         ] {
             let mut p = proj(kind, 2.0, 0.0);
             step(&mut p, &w, &[], -1);
-            assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
+            // 634/635: the latch (1) is immediately advanced to 2 by the
+            // retry-window tail in the SAME tick (`:54486` then `:54547-54554`);
+            // the other slice-C kinds have no such tail.
+            let latched = if kind == NEBULA_BLAZE_1 || kind == NEBULA_BLAZE_2 {
+                2.0
+            } else {
+                1.0
+            };
+            assert_eq!(p.ai[1], latched, "kind {kind}: the latch");
             assert_eq!(
                 p.wants_sound,
                 Some((2, style, 160.0, 160.0, 0.0, 1.0)),

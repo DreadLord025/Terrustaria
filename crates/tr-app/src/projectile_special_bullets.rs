@@ -169,8 +169,10 @@ pub(crate) fn step(
         ),
         max_dust_to_draw: 6000,
     };
-    let mut rng = tr_core::UnifiedRandom::new(0);
-    step_dust(p, world, npcs, local_immunity, &mut rng, &mut dust, &ctx);
+    // The caller's stream is threaded through: the 981's `Next(6)` drip
+    // (`:56746`) is an explicit call-site draw on the pass stream, so the
+    // scratch entry must not shadow it with a private stream.
+    step_dust(p, world, npcs, local_immunity, rng, &mut dust, &ctx);
 }
 
 /// W4-g63 — the full step with the caller's `UpdateProjectiles` stream +

@@ -5555,6 +5555,9 @@ mod w4_e4_mount_extras_tests {
         // Below the gate the charge zeroes.
         m.update_frame_extras(FRAME_RUNNING, 0.0, 0.0, &c, &mut charge);
         assert_eq!(charge, 0.0, "the sub-gate tick zeroes the charge");
+        // That tick still met `sign(ctx.pvx) == direction` (c.pvx is +fast),
+        // so drain its trail request before the sign-mismatch assertion.
+        let _ = m.take_mount_dust();
         // Sign(vx) != direction skips the trail.
         c.pvx = -fast;
         c.direction = 1;

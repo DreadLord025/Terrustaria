@@ -2021,8 +2021,13 @@ mod frame_key {
     #[test]
     fn the_app_warm_up_uses_a_fresh_clone_and_world_entry_keeps_the_tables() {
         let src = include_str!("mod.rs");
+        // Built at runtime so this witness's own source cannot satisfy it.
+        let warm = format!(
+            "app.cage_anim.warm_up({}tr_core::UnifiedRandom::new(world_seed as i32))",
+            "&mut "
+        );
         assert!(
-            src.contains("app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(world_seed as i32))"),
+            src.contains(&warm),
             "App::new warms up on a fresh world-seed clone"
         );
         // Built at runtime so this witness's own source does not match.
@@ -2037,11 +2042,17 @@ mod frame_key {
             flow.contains("app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1))"),
             "the flow_app twin warms up on the same clone form"
         );
+        // Both markers are built at runtime: the literal `pub(crate) fn
+        // <name>` appears in this witness's own source, so a literal split
+        // would slice the test body instead of the hook (`nth(1)` lands on
+        // the witness, not `App::enter_loaded_world`).
+        let entry_marker = format!("pub(crate) fn {}", "enter_loaded_world");
+        let end_marker = format!("pub(crate) fn {}", "is_client");
         let enter = src
-            .split("pub(crate) fn enter_loaded_world")
+            .split(&entry_marker)
             .nth(1)
             .expect("the world-entry hook")
-            .split("pub(crate) fn is_client")
+            .split(&end_marker)
             .next()
             .expect("the hook ends before is_client");
         // The STATEMENT forms — the hook's comment names the dropped call.
@@ -5012,10 +5023,6 @@ impl App {
         // to softcore on every Play — the hardcore ghost arm needs the draft.
         let session_draft = self.session_draft.take();
         let player_name = self.player_name.clone();
-        // W4-g66 gap-fill — the session draft survives the world swap
-        // (`Main.PendingPlayer`/`ActivePlayerFileData` are world-independent;
-        // `enter_loaded_world` re-applies its appearance to the fresh player).
-        let session_draft = self.session_draft.take();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
         let music = std::mem::replace(
             &mut self.music,
@@ -9406,14 +9413,15 @@ mod s1_p_i44_tests {
         // stays empty (`ItemSlot.cs:2084`'s `shopSpecialCurrency == -1`
         // half); the unit lands on the cursor like every shop buy.
         let mut app = medal_stock_app();
-        app.inventory[0] = medals(20);
+        app.inventory[0] = medals(30);
         assert!(app.buy_shop_item(0));
-        assert_eq!(app.inventory[0].count, 5, "15 medals consumed");
+        assert_eq!(app.inventory[0].count, 15, "15 medals consumed");
         assert_eq!(app.coins, 1_000_000, "the purse is untouched");
         assert_eq!((app.mouse_item.kind, app.mouse_item.count), (3819, 1));
         assert_eq!(app.shop_sellback.get_amount(3819, 0), 0, "no medal memo");
         // The raw price ignores the mood AND the Discount Card
-        // (`Player.cs:35361-35365`'s early return).
+        // (`Player.cs:35361-35365`'s early return): the second buy still
+        // costs the raw 15 (a discounted/mooded 9 would leave 6 behind).
         app.shop_mood = 0.75;
         app.discount_available = true;
         assert!(app.buy_shop_item(0));
@@ -9428,7 +9436,7 @@ mod s1_p_i44_tests {
         let mut app = medal_stock_app();
         app.inventory[3] = medals(10);
         let p = app.player.as_mut().unwrap();
-        p.banks[0][0] = medals(4);
+        p.banks[0][0] = medals(5);
         p.banks[1][7] = medals(50);
         assert!(app.buy_shop_item(0));
         assert_eq!(app.inventory[3], crate::item::EMPTY_SLOT);

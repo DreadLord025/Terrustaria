@@ -101,9 +101,10 @@ const TOWN_NET_IDS: &[i32] = &[
 /// dontTakeDamage) qualify — the automated pass registers both through
 /// `BestiaryEntry.Critter` (`BestiaryDatabaseNPCsPopulator.cs:858-861`).
 /// The W4-c8 wave's nine crawler kinds (357/374/375/448/484-486/606/661)
-/// join this list when their ENTRIES rows land on the union — the c8
-/// census's `is_critter_entry` set, recorded here for the compose.
-const CRITTER_NET_IDS: &[i32] = &[55, 549];
+/// join this list when their ENTRIES rows land on the union - the c8
+/// census's `is_critter_entry` set, recorded here for the compose. The
+/// Prismatic Lacewing 661 joins now (`NPC.cs:17351-17366`: 5 HP, 0 damage).
+const CRITTER_NET_IDS: &[i32] = &[55, 549, 661];
 
 /// `NPCID.Sets.GoldCrittersCollection` (`NPCID.cs:10121-10125`), verbatim
 /// order — the gold provider's any-seen gate
@@ -273,8 +274,9 @@ pub fn counted_as_boss_for_bestiary(net_id: i32) -> bool {
 /// 14116/14136/14227/17202/17323/17401/17460`), narrowed to the port's
 /// roster. The Eater of Worlds' runtime `boss` latch (`NPC.cs:78425-78428`,
 /// set in NPCLoot when no other segment lives) is NOT a SetDefaults row —
-/// 13 rides `counted_as_boss_for_bestiary` instead. 636/657/664 have no
-/// port entry yet.
+/// 13 rides `counted_as_boss_for_bestiary` instead. 657/664 still have no
+/// port entry; 636 (the Empress of Light, `NPC.cs:17202`) landed with the
+/// entity row.
 pub fn set_defaults_boss(net_id: i32) -> bool {
     matches!(
         net_id,
@@ -295,6 +297,7 @@ pub fn set_defaults_boss(net_id: i32) -> bool {
             | 397
             | 398
             | 439
+            | 636
             | 668
     )
 }

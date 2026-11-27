@@ -1720,8 +1720,9 @@ mod tests {
             proj_lights_a(&p, None, [255, 0, 0]),
             vec![(10, 11, [0.75, 0.25, 0.25])]
         );
-        // Full-white disco → (1, 1, 1); all-zero → the 0.25 floor.
-        assert_eq!(proj_lights_a(&p, None, [255, 255, 255])[0].2, [1.0, 1.0, 1.0]);
+        // Full-white disco → (0.5 + 255/255)/2 = 0.75 (f32); all-zero → the
+        // 0.25 floor (`Projectile.cs:24303-24309`).
+        assert_eq!(proj_lights_a(&p, None, [255, 255, 255])[0].2, [0.75, 0.75, 0.75]);
         assert_eq!(proj_lights_a(&p, None, [0, 0, 0])[0].2, [0.25, 0.25, 0.25]);
         // A mid-cycle byte: G = 128 → (0.5 + 128/255)/2, no byte rounding
         // (the C# divides the byte by 255f as floats).

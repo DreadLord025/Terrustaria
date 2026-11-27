@@ -609,7 +609,14 @@ mod tests {
     /// (100, 100, 0, 0) also fails the strict intersect).
     #[test]
     fn w4_d21_the_hitbox_inflates_the_target_and_tests_points() {
-        let h = MultiPointHitbox::new((16, 16), vec![Vec2::new(100.5, 100.5)]);
+        // A SINGLE point's `CenteredRectangle(p, Zero)` + `Including` leaves a
+        // zero-width BoundingRect (C# `Utils.cs:957-963`), and XNA's strict
+        // `Intersects` rejects it before the Contains walk — so the fixture
+        // carries a second point to give the bounding rect extent.
+        let h = MultiPointHitbox::new(
+            (16, 16),
+            vec![Vec2::new(100.5, 100.5), Vec2::new(140.0, 140.0)],
+        );
         assert!(h.intersects(Rect::new(90, 90, 4, 4)));
         assert!(!h.intersects(Rect::new(110, 110, 4, 4)));
         // The point ON the inflated right edge is excluded (XNA Contains

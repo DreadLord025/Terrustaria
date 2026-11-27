@@ -6755,7 +6755,10 @@ mod w4_d16_159_tests {
         let mut rng = census();
         ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
         assert_eq!(p.direction, 1);
-        assert_eq!(p.rot, 0.0);
+        // The launch latch writes `rotation = velocity.ToRotation()` = 0, but
+        // the tail overwrites it from the POST-bob velocity each tick
+        // (`:48751`): atan2(-0.15, 5).
+        assert!((p.rot - (-0.15f32).atan2(5.0)).abs() < 1e-6, "the tail rotation: {}", p.rot);
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.ai[0], -29.0, "-Next(30,80) + the counter++");
         assert!(p.net_update);
@@ -6866,10 +6869,18 @@ mod w4_d16_159_tests {
             .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
             .unwrap();
         let mut rng = census();
-        pool.update(
-            &mut w, &mut npcs, None, None, None,
-            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
-        );
+        // extraUpdates 0 → one 5-px sub-step per update; the box (10 wide)
+        // reaches the tile-101 edge at 1616 on the THIRD step. Tick until
+        // the contact kill, not just once.
+        for _ in 0..6 {
+            pool.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+            if !pool.slots()[slot].active {
+                break;
+            }
+        }
         assert!(!pool.slots()[slot].active, "the tile kill");
         let sounds = pool.drain_proj_sounds();
         assert!(sounds.iter().any(|&(id, style, _, _, _, _)| id == 2 && style == 10), "the Item10 cue");
@@ -6881,10 +6892,15 @@ mod w4_d16_159_tests {
         let s2 = pool2
             .spawn_with_data_ai(PAPER_AIRPLANE_B, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
             .unwrap();
-        pool2.update(
-            &mut w, &mut npcs, None, None, None,
-            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
-        );
+        for _ in 0..6 {
+            pool2.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+            );
+            if !pool2.slots()[s2].active {
+                break;
+            }
+        }
         assert!(!pool2.slots()[s2].active);
         assert_eq!(pool2.drain_item_drops()[0].0, 4344, "762 ╤В╨Ц╨в 4344");
     }
@@ -8431,9 +8447,12 @@ mod w4_d18_177_tests {
         let npcs: Vec<Npc> = Vec::new();
         let immune = [0i32; 256];
         let mut rng = census();
+        // The 917's head kills an absent/dead owner (`:45119-45123`), so the
+        // steering test needs a LIVE owner snapshot (buff off → no pin).
+        let mut pl = owner(&w);
         let mut p = slicer(COOL_WHIP_PROJ, 1600.0, 800.0);
         p.vel = Vec2::new(10.0, 0.0);
-        ai_ice_whip_slicer(&mut p, &w, &npcs, &immune, None, 0, &mut rng);
+        ai_ice_whip_slicer(&mut p, &w, &npcs, &immune, Some(&mut pl), 0, &mut rng);
         assert!((p.vel.x - 9.2).abs() < 1e-4, "the 0.92 decay");
         // CensusRng returns min 0 ╤В╨Ц╨в the 1-in-3 gate TAKEN ╤В╨Ц╨в one pair.
         assert_eq!(rng.ranges, vec![(0, 3)]);

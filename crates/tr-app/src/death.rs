@@ -446,9 +446,10 @@ pub fn hardcore_death_penalty(app: &mut App) -> (bool, bool) {
 pub fn kill_me_for_good(app: &mut App) {
     // The headless test apps carry no bound character file — the erase is
     // the live-session half only (the `flow_app` rigs must never touch the
-    // real Players dir). The ghost flag + the draft reset still run.
-    #[cfg(not(test))]
-    {
+    // real Players dir). In test builds the erase is opt-in through
+    // `TR_TEST_PLR_ERASE`, set by the scratch-pinned hardcore witness.
+    let erase = cfg!(not(test)) || std::env::var_os("TR_TEST_PLR_ERASE").is_some();
+    if erase {
         let name = app
             .session_draft
             .as_ref()
@@ -1146,6 +1147,9 @@ mod revenge_tests {
         let dir = crate::test_world_helpers::test_scratch("c46-hardcore-delete");
         let _env = crate::app::tr_hooks::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe { std::env::set_var("USERPROFILE", dir.to_str().unwrap()) };
+        // Opt the erase half in (test builds default it off to protect the
+        // real Players dir); the USERPROFILE pin routes it into the scratch.
+        unsafe { std::env::set_var("TR_TEST_PLR_ERASE", "1") };
         // The seeded path resolves through the pin (Players/ under the
         // Terrustaria root, `save.rs:172-200`).
         let resolved = tr_core::save::default_player_path("Doomed").unwrap();
@@ -1164,9 +1168,11 @@ mod revenge_tests {
         on_player_death(&mut app, 100.0, 100.0, "Doomed was slain...");
         assert!(!resolved.exists(), "KillMeForGood deleted the .plr (:38797)");
         assert!(!resolved_bak.exists(), "and the .bak (:38801)");
-        // The draft survives the deletion (the documented :38803 deviation —
-        // the live Player keeps difficulty 2 so the ghost still latches).
-        assert_eq!(app.active_player_difficulty(), 2);
+        // `:38803` — `Main.ActivePlayerFileData = new PlayerFileData()`: the
+        // session draft resets, so the stand-in reads the fresh 0 difficulty
+        // (`App::active_player_difficulty`). The ghost itself is latched by
+        // the live Player's own `difficulty` (set at spawn), not the draft.
+        assert_eq!(app.active_player_difficulty(), 0);
         // Softcore: the same files stay.
         std::fs::write(&resolved, b"softcore").unwrap();
         std::fs::write(&resolved_bak, b"softcore bak").unwrap();
@@ -1190,6 +1196,7 @@ mod revenge_tests {
         ghost.player = Some(crate::player::Player::spawn(&ghost.world));
         on_player_death(&mut ghost, 100.0, 100.0, "gone...");
         unsafe { std::env::remove_var("USERPROFILE") };
+        unsafe { std::env::remove_var("TR_TEST_PLR_ERASE") };
         crate::test_world_helpers::remove_scratch(&dir);
     /// W4-g55 loadout-rest — the mediumcore loadout sweep
     /// (`Player.cs:54351-54355`, `EquipmentLoadout.TryDroppingItems`

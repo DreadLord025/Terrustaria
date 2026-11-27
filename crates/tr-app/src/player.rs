@@ -5690,8 +5690,13 @@ impl Player {
         let value4 = ((y + h) / 16.0) as i32 + 2;
         let num = value.clamp(0, world.width as i32 - 1);
         let value2 = value2.clamp(0, world.width as i32 - 1);
-        let value3 = value3.clamp(0, world.height.saturating_sub(40));
-        let value4 = value4.clamp(0, world.height.saturating_sub(40));
+        // `Collision.cs:2708-2709` clamps to `Main.maxTilesY - 40`; a tiny
+        // test world can be shorter than 40, where `i32::saturating_sub`
+        // yields a negative upper bound and `clamp` panics. Floor at 0 (the
+        // C# loop then runs no rows, same as `maxTilesY - 40 < 0`).
+        let bottom = (world.height - 40).max(0);
+        let value3 = value3.clamp(0, bottom);
+        let value4 = value4.clamp(0, bottom);
         for i in num..value2 {
             for j in value3..value4 {
                 let Some(t) = world.tile(i, j) else {
@@ -9073,6 +9078,16 @@ impl Player {
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
+        // `Player.cs:38369-38377` (the MP tail): a landed, non-quiet local hit
+        // queues `13` (the knockback body, only when the knockback gate is
+        // armed) and `16` (the hp pair) BEFORE `statLife -= num2`
+        // (`:38383`) — the wire carries the PRE-subtraction life. The netglue
+        // cadence drains the queue (`take_hurt_net`). The C#'s `netMode == 1
+        // && whoAmI == myPlayer` gate folds to the client-only drain.
+        let hurt_knockback_13 = knock_back
+            && !self.no_knockback
+            && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()));
+        self.pending_hurt_net = Some((hurt_knockback_13, self.hp, self.max_hp));
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
         // W4-f50 — the player hurt combat text (`Player.cs:38382`):
@@ -10166,10 +10181,11 @@ impl Player {
         // `:38178-38181` — the Necro set (head 75|7, body 7, legs 7).
         if (head == 75 || head == 7) && body == 7 && legs == 7 {
             self.bone_armor = true;
-        // `:38182-38185` — the Frost set (body 27, head 46, legs 26).
+        }
+        // `:38182-38185` — the Frost set (body 27, head 46, legs 26) is an
+        // INDEPENDENT `if`; nesting it in the Necro arm made it unreachable.
         if body == 27 && head == 46 && legs == 26 {
             self.frost_armor = true;
-    }
         }
     }
 
@@ -12249,6 +12265,10 @@ impl Player {
         // is NOT cleared here — `UpdateArmorSets_Always_Vortex` (`:16317`)
         // owns that clear, gated on the freshly-derived `setVortex`.
         self.set_stardust = false;
+        // `:18743` — the SAME `setVortex = (setNebula = (setStardust = false))`
+        // chain: the clear MUST land before the armor-set match re-derives
+        // `setVortex` (and before `UpdateArmorSets_Always_Vortex` reads it).
+        self.set_vortex = false;
         self.set_forbidden = false;
         // d79's nebula trio zero DUPLICATE dropped at batch-L (the S1
         // receipt): the f49 copy above (`mana_regen_bonus` neighbour,
@@ -13293,7 +13313,8 @@ impl Player {
         self.shiny_stone = false;
         self.yoraiz0r_eye = 0;
         self.set_solar = false;
-        self.set_vortex = false;
+        // `set_vortex` was already cleared at the `:18743` chain above
+        // (before the armor-set match re-derives it) — no second zero here.
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
         // clear lives in the ResetEffects block above (before the buff
@@ -13771,25 +13792,9 @@ impl Player {
             self.run_acceleration *= 1.25;
             self.max_run_speed *= 1.5;
         }
-        // W4-f42 — `Player.cs:26573-26577`: the sandstorm dash's run boost
-        // reads the PREVIOUS tick's `sandStorm` (the per-tick clear at
-        // `:26743` runs later in the tick; `DoubleJumpVisuals` `:26767`
-        // re-sets it while the jump performs). Acceleration ×1.5, top ×2.
-        if self.sand_storm {
-            self.run_acceleration *= 1.5;
-            self.max_run_speed *= 2.0;
-                }
-        // W4-f3 — `Player.cs:26613-26617`: the Magic Carpet glide boosts the
-        // run (acceleration ×1.25, max ×1.5). The C# reads `carpetFrame != -1`
-        // here BEFORE `CarpetMovement` (`:26766`) rewrites it this tick — the
-        // PREVIOUS tick's glide state, like the floor flags above. The
-        // performing-jump run boosts (`:26573-26612`) are the extra-jump
-        // lane's (the port's `performing_jump` visual state has no run-mod
-        // consumer yet); the carpet arm is independent of them.
-        if self.carpet_frame != -1 {
-            self.run_acceleration *= 1.25;
-            self.max_run_speed *= 1.5;
-        }
+        // W4-f42 duplicate of the sand-storm boost above was dropped (the
+        // C# applies `:26573-26577` ONCE; the duplicated arm doubled the run
+        // stats on every boost tick).
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
         // both. The vanilla default is `Settings.HoverControl == Hold`
@@ -14194,23 +14199,13 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
-        // `Player.cs:26753-26756`: `jump == 0` cancels the performing-jump
-        // visual flag (`CancelAllJumpVisualEffects(includeDownDash: false)`).
-        if self.jump == 0 {
-            self.cancel_all_jump_visual_effects();
-        }
-
-        // `Player.cs:26753-26756`: `jump == 0` cancels the jump visual
-        // effects (`CancelAllJumpVisualEffects(includeDownDash: false)`,
-        // `:36649-36662` — the seven bottle flags). The port's single
-        // `performing_jump` slot models the family: the hold-boost counter
-        // exhausted ends the performing state, so the DoubleJumpVisuals
-        // seam below stops re-arming `sandStorm` (W4-c40). The DownDash
-        // flag is a separate port predicate (`is_performing_down_dash`),
-        // untouched — the C# excludes it here too.
-        if self.jump == 0 && !grappling {
-            self.performing_jump = None;
-        }
+        // `Player.cs:26753-26756`'s `jump == 0` cancel lives INSIDE the
+        // `grappling[0] == -1 && !tongued` movement block (`:26494`): a
+        // tongued (or grappling) player skips the cancel entirely. The one
+        // canonical call sits in the gated block below (the three legacy
+        // unconditional copies were misplaced). The DownDash flag is a
+        // separate port predicate (`is_performing_down_dash`), untouched —
+        // the C# excludes it here too.
 
         // W4-g66 gap-fill — `Player.cs:26100-26115`: the carpet latch — no
         // carpet clears it; a rest tick (vy 0 or sliding) re-arms the launch
@@ -14225,27 +14220,10 @@ impl Player {
             self.carpet_frame_counter = 0.0;
         }
 
-        // `Player.cs:26753-26756`: the hold-boost spent cancels the performing
-        // flag (`CancelAllJumpVisualEffects(includeDownDash: false)`,
-        // `:36649-36662`) BEFORE `DashMovement`/`DoubleJumpVisuals` read it.
-        // The C# clear list (`:36655-36661`) covers Cloud..Santank only — the
-        // Goat/Basilisk flags survive (they have no `DoubleJumpVisuals` arm).
-        if self.jump == 0
-            && matches!(
-                self.performing_jump,
-                Some(
-                    ExtraJump::Cloud
-                        | ExtraJump::Sandstorm
-                        | ExtraJump::Blizzard
-                        | ExtraJump::Fart
-                        | ExtraJump::Sail
-                        | ExtraJump::Unicorn
-                        | ExtraJump::Santank
-                )
-            )
-        {
-            self.performing_jump = None;
-        }
+        // `Player.cs:26753-26756` (the hold-boost cancel) is the same gated
+        // `CancelAllJumpVisualEffects(includeDownDash: false)` call as the
+        // single canonical one inside the `!tongued` block below — the
+        // seven-flag Cloud..Santank clear list rides that one implementation.
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step. W4-f3: on a
         // pulley tick the ride calls it itself (`:26491`) — same slot, one
@@ -14270,6 +14248,12 @@ impl Player {
         // The type-31 wall dust queues one snapshot; the drain replays it
         // on `UpdatePlayers` (`player_trail_dust::drain_wall_dust`).
         if !grappling && !self.tongued {
+            // `:26753-26756` — the one canonical `jump == 0` cancel; it is
+            // inside this `grappling[0] == -1 && !tongued` block, so a
+            // tongued player keeps the performing-jump visual.
+            if self.jump == 0 {
+                self.cancel_all_jump_visual_effects();
+            }
             if self.mount.is_active() && self.mount.kind() == 55 {
                 self.wall_climb_movement(world, gravity);
             } else {
@@ -14281,6 +14265,10 @@ impl Player {
             // and the ride's `canCarpet` refill (`:26483`) all landed. NO
             // dust sites (the census found zero `Dust.NewDust` in it).
             self.carpet_movement(gravity);
+            // `Player.cs:26767`: `DoubleJumpVisuals` right after the wall
+            // machines. The performing-jump trail queues its snapshot here;
+            // the drain replays it after the wall dust.
+            self.double_jump_visuals();
         }
         // W4-f3 — the pulley ride (`Player.cs:26300-26493`): the climb/descend
         // velocity machine + the X snap + the flight refills. Its DashMovement
@@ -14290,40 +14278,6 @@ impl Player {
             self.pulley_ride(world, fall_cap);
             self.dash_movement(world, input); // `:26491`
         }
-        // `Player.cs:26767`: `DoubleJumpVisuals` right after the wall machines.
-        // The performing-jump trail queues its snapshot here; the drain
-        // replays it after the wall dust.
-        self.double_jump_visuals();
-            self.carpet_movement(gravity);
-        }
-        // W4-g66 — `Player.DoubleJumpVisuals` (`Player.cs:26767`,
-        // `:21892-22021`): the per-tick trail while an extra jump performs
-        // (the one-shot start burst is W4-d51's `pending_jump_dust`). The
-        // C# gates each arm on `isPerformingJump_X && hasJumpOption_X &&
-        // !canJumpAgain_X` + the ascent sign (the Sail widens to `vy < 1`);
-        // the port's `performing_jump` + option tables carry the same state.
-        if !grappling {
-            if let Some(j) = self.performing_jump {
-                let ascent = if j == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
-                if self.has_jump_options[j.index()] && !self.can_jump_again[j.index()] && ascent {
-                    // `:21919`: the Sandstorm arm re-arms the hover flag (the
-                    // wings/mount clear at `:26768-26771` runs right after).
-                    if j == ExtraJump::Sandstorm {
-                        self.sand_storm = true;
-                    }
-                    self.pending_double_jump_dust = Some(DoubleJumpDust {
-                        kind: j,
-                        x: self.x,
-                        y: self.y,
-                        width: self.width,
-                        height: self.height,
-                        vx: self.vx,
-                        vy: self.vy,
-                        jump: self.jump,
-                        sandstorm_gore_gate: self.misc_counter % 3 == 0,
-                    });
-                }
-            }
         }
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
@@ -16367,10 +16321,12 @@ impl Player {
         if !ascending {
             return;
         }
-        // `:21894`: the Cloud arm also needs the Sandstorm option spent-or-absent.
+        // `:21894`: the Cloud arm also needs the Sandstorm option spent-or-absent —
+        // `canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`. Only an
+        // ARMED and UNSPENT Sandstorm (has && !can) suppresses the puff.
         if kind == ExtraJump::Cloud
             && self.has_jump_options[ExtraJump::Sandstorm.index()]
-            && self.can_jump_again[ExtraJump::Sandstorm.index()]
+            && !self.can_jump_again[ExtraJump::Sandstorm.index()]
         {
             return;
         }
@@ -18521,15 +18477,11 @@ impl Player {
     /// `main_dust::player_teleport` on the `UpdatePlayers` stream — the
     /// `pending_force_clear` convention (the effects need `&mut App`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
-        // W4-e1 — `:37490-37491`: the teleport-visuals countdown arms.
-        self.teleport_time = 1.0;
-        self.teleport_style_id = style;
-        // `:37477-37480` — style 4 records the portal colour index.
-        if style == 4 {
-            // `extraInfo` is the portal colour; the port's callers pass 0
-            // (the pylon/portal lane owns the index) — kept as the field.
-            self.last_portal_color_index = 0;
-        }
+        // `:37490-37491` — the `teleportTime = 1` / `teleportStyle` grants
+        // land at the END of `Player.Teleport` and ride the replay
+        // (`main_dust::player_teleport`); writing them here would also
+        // corrupt the `:37442` `Clamp(1 - teleportTime*0.99)` mult the
+        // Entry effect captures.
         self.teleport_style_with_extra(new_x, new_y, style, 0);
     }
 
@@ -18542,6 +18494,12 @@ impl Player {
     pub fn teleport_style_with_extra(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
         self.queue_teleport_effect(new_x, new_y, style, extra_info);
         self.teleport_move_core(new_x, new_y, style);
+        // `:37475-37481` — the style-4 portal-colour hand-off runs AFTER the
+        // move (the Entry queue captured the OLD index) and before the
+        // Exit/grants; `teleport_style`'s `extraInfo` default is 0.
+        if style == 4 {
+            self.last_portal_color_index = extra_info;
+        }
         // Union-exec (research/116 gap 6): the grants moved to the replay
         // (`main_dust::player_teleport`, the C#-position write at
         // `:37490-37491`) — the inline duplicate is retired. The queue
@@ -19568,61 +19526,30 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // W4-c14 - `:26884-26896`: the rocketSoundDelay cue - the
-                // VANITY tier picks the cue (1/5 Item13 cadence 30,
-                // 2/3/4/6 Item24 cadence 15). W4-c14 doc-sweep: the vanity
-                // producer lands (`vanity_rocket_boots` - the equip rows set
-                // both tiers equal, `Player.cs:14420`/`:15023`/`:15222`/
-                // `:15380-15400`, the vanity pass `UpdateBootVisualEffects`
-                // `:36704-36751` re-derives it, the Red's Leggings 668 sets
-                // tier 6 `:13088-13091`), so the cue reads the vanity tier
-                // like the C#. The play queues on the movement-cue drain
-                // (the Item55 convention).
+                // `:26884-26896`: the rocketSoundDelay cue — the VANITY tier
+                // picks the sound (1/5 Item13 cadence 30, 2/3/4/6 Item24
+                // cadence 15). The play queues on BOTH existing drains (the
+                // movement-cue string list + the `pending_rocket_sound` seam);
+                // the gate is the C#'s `rocketSoundDelay <= 0`.
                 if self.rocket_sound_delay <= 0 {
                     let cue = match self.vanity_rocket_boots {
-                        1 | 5 => Some(("Item_13", 30)),
-                        2 | 3 | 4 | 6 => Some(("Item_24", 15)),
+                        1 | 5 => Some(("Item13", "Item_13", 30)),
+                        2 | 3 | 4 | 6 => Some(("Item24", "Item_24", 15)),
                         _ => None,
                     };
-                    if let Some((cue, delay)) = cue {
+                    if let Some((name, cue, delay)) = cue {
                         self.rocket_sound_delay = delay;
-                        self.pending_cart_sounds.push(crate::minecart::CartCue {
-                            cue,
-                            x: self.x,
-                            y: self.y,
-                        });
-
-        }
-        }                // W4-e10 — `:26884-26896`: the rocketSoundDelay cue — the
-                // vanity tier picks Item13 (1/5, cooldown 30) or Item24
-                // (2/3/4/6, cooldown 15), at `base.position`. The façade
-                // draw rides the drain's `UpdatePlayers` stream.
-                    let style = match self.vanity_rocket_boots {
-                        1 | 5 => Some(("Item13", 30)),
-                        2 | 3 | 4 | 6 => Some(("Item24", 15)),
-                        _ => None,
-                    };
-                    if let Some((name, cooldown)) = style {
-                        self.rocket_sound_delay = cooldown;
                         if let Some(idx) = crate::soundid::SOUND_STYLES
                             .iter()
                             .position(|s| s.name == name)
                         {
                             self.pending_rocket_sound = Some((idx as u16, self.x, self.y));
                         }
-                    }
-                // W4-g66 gap-fill — `:26884-26896`: the rocketSoundDelay cue
-                // — vanity tiers 1/5 play Item13 (cadence 30), tiers 2/3/4/6
-                // Item24 (cadence 15). The play queues on the
-                // `pending_flap_sound` convention (the drain's case-2 pitch
-                // draw rides `UpdatePlayers`).
-                if self.rocket_sound_delay <= 0 {
-                    if self.vanity_rocket_boots == 1 || self.vanity_rocket_boots == 5 {
-                        self.rocket_sound_delay = 30;
-                        self.queue_rocket_sound("Item13");
-                    } else if matches!(self.vanity_rocket_boots, 2 | 3 | 4 | 6) {
-                        self.rocket_sound_delay = 15;
-                        self.queue_rocket_sound("Item24");
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue,
+                            x: self.x,
+                            y: self.y,
+                        });
                     }
                 }
             } else {
@@ -36918,7 +36845,13 @@ mod s1_player_composite_tests {
         p.regen.nebula_mana_counter = 4;
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.nebula_mana_counter, 0, "tier 0 wipes (:19583)");
-        // The reset zeroes the trio (the chained :18755 assign).
+        // The reset zeroes the trio (the chained :18755 assign). The pickup's
+        // live 176-178 slot would be re-derived by UpdateBuffs (`:10444`) —
+        // drop it so this tick models the real "no live buff" state (the
+        // buff timer is 480; the fixture runs only a few ticks).
+        for id in 176..=178 {
+            p.buffs.clear_buff(id);
+        }
         p.nebula_level_mana = 3;
         p.nebula_level_life = 2;
         p.nebula_level_damage = 1;
@@ -38883,7 +38816,9 @@ mod w4_f3_pulley_tests {
         p.vy = 0.0;
         p.pulley_ride(&w, MAX_FALL);
         assert_eq!(p.vy, -0.2, "the first climb tick (:26371)");
-        for _ in 0..60 {
+        // The C# `:26369-26376`: -0.2 per tick while above -3, then -0.02
+        // per tick; the -8 cap therefore needs ~250 further ticks.
+        for _ in 0..300 {
             p.pulley_ride(&w, MAX_FALL);
         }
         assert_eq!(p.vy, -8.0, "the climb cap (:26377-26380)");
@@ -38980,7 +38915,9 @@ mod w4_f3_pulley_tests {
         p.y = 50.0 * 16.0 + 8.0; // the (y-8)/16 probe row is 50
         p.find_pulley(&w);
         assert!(p.pulley, "the placed coil column attaches (:19708)");
-        assert_eq!(p.y, (50 * 16 + 22) as f32, "the top-link lone-cell hang");
+        // A COLUMN is not a lone cell: `:19665` requires no rope-kind
+        // neighbour above AND below, and row 51 is rope — the Y is kept.
+        assert_eq!(p.y, (50 * 16 + 8) as f32, "a column keeps the Y (:19665-19668)");
         // Link 3 — ride (THIS branch pulley_ride :26331-26381): holding DOWN
         // descends the placed column (+0.2 first tick).
         p.control_up = false;
@@ -39817,13 +39754,15 @@ mod w4_f3_carpet_tests {
         assert_eq!(p.wing_frame, 1, "the flag3 ladder edge");
         let b = p.take_wing_frame_dust().unwrap();
         assert!(b.just_switched);
-        // 50: the 1→3 fold at the boundary (no controlJump needed).
+        // 50: the 1→3 fold at the boundary. An ASCENDING tick (vy < 0)
+        // leaves the machine animating at the 5-tick step (`:30109-30119`),
+        // so frame 1 + counter 4 crosses the boundary into frame 3.
         let mut q = Player::spawn(&w);
         q.wings_logic = 50;
-        q.vy = 1.0;
+        q.vy = -1.0;
         q.control_jump = true;
         q.wing_frame = 1;
-        q.wing_frame_counter = 2;
+        q.wing_frame_counter = 4;
         q.wing_frame_visuals(false);
         assert_eq!(q.wing_frame, 3, "the 50 fold 1→3");
         let b = q.take_wing_frame_dust().unwrap();

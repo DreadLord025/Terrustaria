@@ -892,6 +892,7 @@ mod tests {
         // Hand-re-derive the C# chain (f64 sqrt, integer head halves).
         let mut v = Vec2::new(hx + hw * 0.5 - 5.0 * side, hy + 20.0);
         let mut want = [(Vec2::ZERO, 0.0f32); 2];
+        let mut hop1 = Vec2::ZERO;
         for j in 0..2 {
             let mut dx = tx + (tw / 2) as f32 - v.x;
             let mut dy = ty + (th / 2) as f32 - v.y;
@@ -903,6 +904,8 @@ mod tests {
             if j == 0 {
                 v.x += dx * norm / 2.0;
                 v.y += dy * norm / 2.0;
+            } else {
+                hop1 = Vec2::new(dx * norm, dy * norm);
             }
         }
         for j in 0..2 {
@@ -918,7 +921,10 @@ mod tests {
         skeletron_hand_bone_dust(hx, hy, hw, side, tx, ty, tw, th, true, &mut rng, &mut pool, &c, &w);
         let act = active(&pool);
         assert_eq!(act.len(), 1);
-        let tip_base = sprites[1].0 - Vec2::new(16.0, 6.0);
+        // The C# advances the j==1 anchor by the leg hop for the sprite,
+        // then advances by the SAME hop again before the -16/-6 puff
+        // (`Main.cs:22718-22745`), so the tip carries a second hop.
+        let tip_base = sprites[1].0 + hop1 - Vec2::new(16.0, 6.0);
         // The pool's NewDust jitters the position by Next(30-4)+4 /
         // Next(10-4)+4 (`Dust.cs:170-171`) — the tip is within the box.
         let p = pool.slot(act[0]).position;

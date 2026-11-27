@@ -235,8 +235,9 @@ mod tests {
             assert!(!name.is_empty());
             // An unnamed type answers "" without drawing.
             let mut rng2 = UnifiedRandom::new(1234);
+            let fresh = UnifiedRandom::new(1234);
             assert_eq!(new_npc_name(4, &mut rng2), "");
-            assert_eq!(rng2.next_max(100), mirror.next_max(100), "no draw consumed");
+            assert_eq!(rng2, fresh, "no draw consumed");
         });
     }
 

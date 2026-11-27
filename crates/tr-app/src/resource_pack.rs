@@ -316,7 +316,7 @@ mod tests {
         // The version tiebreak: same name, higher version sorts later.
         list.packs[2].version = PackVersion { major: 2, minor: 0 };
         assert_eq!(list.all_packs(), vec![1, 2, 0, 3]);
-        list.packs[1].version = PackVersion { major: 0, minor: 9 };
+        list.packs[2].version = PackVersion { major: 0, minor: 5 };
         assert_eq!(list.all_packs(), vec![2, 1, 0, 3]);
     }
 

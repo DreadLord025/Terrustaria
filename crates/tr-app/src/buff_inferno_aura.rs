@@ -299,7 +299,12 @@ mod tests {
             &p, &mut npcs, true, &metrics(), &mut rng, &mut texts, None,
         );
         assert!(strikes.is_empty(), "the book refuses the critter");
-        // Without the book the same goldfish is hittable.
+        // Without the book the same goldfish reaches the critter gate. In
+        // the C# a catchable Goldfish 55 is friendly (`Main.cs:9331` ->
+        // `NPC.cs:17851-17855`), which the aura's `!nPC.friendly` gate also
+        // refuses; clear that flag to model the hostile (uncatchable) fish
+        // this gate row is about.
+        npcs[0].friendly = false;
         p.dont_hurt_critters = false;
         let strikes = inferno_aura_scan(
             &p, &mut npcs, true, &metrics(), &mut rng, &mut texts, None,

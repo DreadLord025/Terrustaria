@@ -713,14 +713,17 @@ mod tests {
         // at exactly the boundary is the flush's, matching the C# walk).
         let full = balloon_band_indices(&bs, f32::NEG_INFINITY, f32::INFINITY).unwrap();
         assert_eq!(full, (0, 4));
-        // A mid band [2.0, 3.0): num = first depth < 3.0 (index 0), num2 =
-        // last depth > 2.0 before the break at depth <= 2.0 (index 1, the
-        // 2.0 balloon breaks) → 0..1 draws only the 1.6 balloon... the C#
-        // walk's `depth <= minDepth` break lands on the 2.0 slot.
+        // A mid band [2.0, 3.0): num = first depth < 3.0 (index 0), then the
+        // `depth <= minDepth` break at the 2.0 slot runs BEFORE `num2 = j`
+        // (`PartySky.cs:195-200`), so num2 stays at the 1.6 slot's index 0.
+        // For this ascending fixture the band draws the empty 0..0 range —
+        // the source's own walk; the live balloon array order decides what
+        // the range covers.
         let mid = balloon_band_indices(&bs, 2.0, 3.0).unwrap();
-        assert_eq!(mid, (0, 1), "the break at depth <= minDepth (the 2.0 slot)");
-        // A band deeper than every balloon: num == -1 → None.
-        assert!(balloon_band_indices(&bs, 4.0, 5.0).is_none());
+        assert_eq!(mid, (0, 0), "the break at depth <= minDepth precedes num2 = j");
+        // A band shallower than every balloon (depths start at 1.6): no
+        // first index < maxDepth → None.
+        assert!(balloon_band_indices(&bs, 0.0, 1.0).is_none());
         // The shallow flush band (-inf, 1.6]: num = first depth < 1.6 →
         // none (1.6 is not < 1.6) → None; the nearest balloon rides the
         // boundary above it.

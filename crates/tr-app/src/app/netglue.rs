@@ -4696,6 +4696,94 @@ impl App {
                 &S2c::PlayerInfo(net::PlayerInfo::with_name(0, &self.player_name)),
             );
         }
+        // `NetMessage.cs:2909-2922` — `SyncOnePlayer`'s `5 PlayerInventory`
+        // burst: the 59 grid slots then the armour / dye / misc / misc-dye
+        // arrays. The joining client stores them under peer slot 0 (the
+        // `5` reader's peer arm, `MessageBuffer.cs:264-276`); without the
+        // armour block the host's Paladin's Shield / outfit never reaches a
+        // joiner (`PlayerNet::paladin_shield` reads `ARMOR_0 + 3..10`).
+        if let Some(p) = self.player.as_ref() {
+            for (i, slot) in self.inventory.iter().enumerate() {
+                server.send(
+                    id,
+                    &S2c::Inventory {
+                        player_id: 0,
+                        slot: i as i16,
+                        item: net::NetItem {
+                            kind: slot.kind as i16,
+                            stack: slot.count.min(i16::MAX as u32) as i16,
+                            prefix: slot.prefix.min(255) as u8,
+                            favorited: self.favorite_slots.contains(&i),
+                            blocked: false,
+                        },
+                    },
+                );
+            }
+            for i in 0..p.equipped.len() {
+                server.send(
+                    id,
+                    &S2c::Inventory {
+                        player_id: 0,
+                        slot: player_item_slot::ARMOR_0 + i as i16,
+                        item: net::NetItem {
+                            kind: p.equipped[i] as i16,
+                            stack: 1,
+                            prefix: p.equipped_prefix[i].min(255) as u8,
+                            favorited: false,
+                            blocked: false,
+                        },
+                    },
+                );
+            }
+            for i in 0..p.dye_slots.len() {
+                server.send(
+                    id,
+                    &S2c::Inventory {
+                        player_id: 0,
+                        slot: player_item_slot::DYE_0 + i as i16,
+                        item: net::NetItem {
+                            kind: p.dye_slots[i] as i16,
+                            stack: 1,
+                            prefix: 0,
+                            favorited: false,
+                            blocked: false,
+                        },
+                    },
+                );
+            }
+            for i in 0..p.misc_dye_slots.len() {
+                server.send(
+                    id,
+                    &S2c::Inventory {
+                        player_id: 0,
+                        slot: player_item_slot::MISC_DYE_0 + i as i16,
+                        item: net::NetItem {
+                            kind: p.misc_dye_slots[i] as i16,
+                            stack: 1,
+                            prefix: 0,
+                            favorited: false,
+                            blocked: false,
+                        },
+                    },
+                );
+            }
+        }
+        for (i, slot) in self.equip.misc_equips.iter().enumerate() {
+            server.send(
+                id,
+                &S2c::Inventory {
+                    player_id: 0,
+                    slot: player_item_slot::MISC_0 + i as i16,
+                    item: net::NetItem {
+                        kind: slot.kind as i16,
+                        stack: slot.count.min(i16::MAX as u32) as i16,
+                        prefix: slot.prefix.min(255) as u8,
+                        favorited: false,
+                        blocked: false,
+                    },
+                },
+            );
+        }
         let name = server.slot_name(id);
         let (px, py) = self.net_peer_spawn_pos();
         self.remote_players.insert(
@@ -12763,13 +12851,24 @@ mod handshake_tests {
     /// from the synced armour slots (`PlayerNet::paladin_shield`).
     #[test]
     fn the_paladin_peer_fields_ride_the_snapshot_and_the_inventory() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        let p = host_app.player.as_mut().unwrap();
-        p.team = 2;
-        p.hp = 200;
-        p.max_hp = 400;
-        // A worn Paladin's Shield in functional slot 3 (wire slot 62).
-        p.equipped[3] = 938;
+        // The host's armour must be in place BEFORE the join: vanilla's
+        // `TrySyncingMyPlayer` is `netMode == 1` only, so a post-join host
+        // armour edit is never live-synced (`Main.cs:17545-17574`); the
+        // joiner gets it from `SyncOnePlayer`'s `5` burst
+        // (`NetMessage.cs:2909-2922`). Build the pair manually so the host
+        // player exists across `drive_to`.
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        host_app.player_name = "host".into();
+        {
+            let p = host_app.player.as_mut().unwrap();
+            p.team = 2;
+            p.hp = 200;
+            p.max_hp = 400;
+            // A worn Paladin's Shield in functional slot 3 (wire slot 62).
+            p.equipped[3] = 938;
+        }
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
         pump(&mut host_app, &mut client_app, 15);
         let peer = client_app.remote_players.get(&0).expect("host peer stored");
         assert_eq!(peer.team, 2, "the 13 extension carries the team");
@@ -14494,6 +14593,8 @@ mod message_family_tests {
     /// (`WorldGen.tGood/tEvil/tBlood`), and the Dryad report reads them back.
     #[test]
     fn w4_g49_world_evil_bytes_store_and_feed_the_dryad_report() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let (mut host_app, mut client_app) = in_world_pair();
         if let NetRole::Host(server) = &host_app.net {
             server.send(client_app.local_id, &S2c::WorldEvilBytes(net::WorldEvilBytes {

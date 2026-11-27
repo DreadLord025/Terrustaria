@@ -326,7 +326,9 @@ mod tests {
             assert_eq!(sa.x, sb.x);
             assert_eq!(sa.tex, sb.tex);
             assert!((0.42..1.56).contains(&sa.scale)); // 70..129 × 0.006, ×2 rare
-            assert!((0.6..=1.0).contains(&sa.twinkle));
+            // `Next(60, 101) * 0.01f`: the f32 product of 60 is
+            // 0.59999996, a hair under the nominal 0.6 rail.
+            assert!((0.599..=1.0).contains(&sa.twinkle), "twinkle {}", sa.twinkle);
         }
     }
 

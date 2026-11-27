@@ -373,8 +373,10 @@ mod tests {
         let w = air();
         let s = HairDyeGoreState { x: 100.0, y: 200.0, vx: 1.0, vy: -2.0, width: 20 };
         // Scan seeds until both gates hit, then verify the full order.
+        // Both gates hit with p ≈ 1/(45·225), so 500 candidates is far too
+        // sparse; scan the seed space wide enough for a deterministic hit.
         let mut hit_seed = None;
-        for seed in 0..500 {
+        for seed in 0..2_000_000 {
             let mut probe = UnifiedRandom::new(seed);
             let dust_hit = probe.next_max(45) == 0;
             // The dust arm's draws when it hits (type + 6 internals +

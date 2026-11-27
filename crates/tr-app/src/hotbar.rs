@@ -775,6 +775,11 @@ mod tests {
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let mut inv = [EMPTY_SLOT; INV];
         inv[3] = slot(12, 5); // Copper Ore — trader-only, mode -1
+        // Strategy 7's reach comes from the FIRST ExtractinatorMode item
+        // (`Player.cs:17705-17709`); copper ore has mode -1, so carry silt
+        // (424, mode 0) in a LATER slot to establish the range without
+        // winning the pick itself.
+        inv[4] = slot(424, 5);
         let (coins, ammo) = empty_carry();
         let c = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);
         assert_eq!(smart_select_lookup(&c, true, 0), Some(3));
@@ -793,8 +798,11 @@ mod tests {
         inv[3] = slot(12, 5); // Copper Ore — no mode, no trader on 219
         let (coins, ammo) = empty_carry();
         let c = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);
-        // No extractinator input → the strategy falls through (no pick).
-        assert_eq!(smart_select_lookup(&c, true, 0), None);
+        // Copper Ore has no ExtractinatorMode, so no slot matches strategy 7.
+        // `SmartSelectLookup` still returns true with `PickToolForStrategy`'s
+        // `result = selectedItem` (`Player.cs:17458`, `:17474`) — the current
+        // slot 0, not "no override".
+        assert_eq!(smart_select_lookup(&c, true, 0), Some(0));
         // Silt (424, mode 0) still picks on 219.
         inv[3] = slot(424, 5);
         let c2 = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);

@@ -323,11 +323,12 @@ mod tests {
             }
         }
         // The day-time decrement changes the phase term: same name/slot,
-        // phase 0 day vs night differ by the `num2` step.
-        let day = party_hat_color("Andrew", 0, 0, true);
-        let night = party_hat_color("Andrew", 0, 0, false);
-        // num2 = -1 (day) vs 0 (night); slot 0 is even (dir 1), so the day
-        // colour is one step lower in the hash (mod the fold).
+        // phase 0 day vs night differ by the `num2` step. whoAmI = 1 is ODD
+        // (dir -1), so the step is +1 — "Andrew" (base 71) lands on residue
+        // 3 by day and 2 by night (mod 5); slot 0's -1 step collides through
+        // the 0 -> 1 fold.
+        let day = party_hat_color("Andrew", 1, 0, true);
+        let night = party_hat_color("Andrew", 1, 0, false);
         assert_ne!(day, night, "the day-time phase decrement shifts the colour");
     }
 

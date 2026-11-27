@@ -8072,58 +8072,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         crate::npc_ai_style56::style56_step(&mut npcs[i], &mut env);
                     }
                     // W4-d38 — the PumpkingBlade's arm (`NPC.AI()`'s
-                    // aiStyle-59 block, `NPC.cs:33198-33373`): the carrier
-                    // link (`ai[1]` = the Pumpking's slot) resolves here at
-                    // the blade's slot turn (the pool read the solo
-                    // `update_rng` axis cannot see). The faithful
-                    // `npc_ai_style59::ai_style59` runs the hover/rise/dive/
-                    // sweep state machine; the Flaming Scythe 329 shot
-                    // (rotation/spriteDirection in ai0/ai1) drains into
-                    // `wants_hostile_shot_ai`. The noTileCollide integration
-                    // tail rides here. RNG-free by construction.
-                    if npcs[i].kind == NpcKind::PumpkingBlade && npcs[i].hp > 0 {
-                        let cand = crate::npc_target::session_candidate(&*session_player);
-                        // The carrier: the living Pumpking (327, aiStyle 58).
-                        // The C# reads `Main.npc[Clamp(ai[1], 0, 199)]`; the
-                        // port resolves the first living Pumpking (the
-                        // single-carrier convention, the moon-core fallback).
-                        let carrier = npcs
-                            .iter()
-                            .find(|m| m.kind == NpcKind::Pumpking && m.hp > 0)
-                            .map(|m| {
-                                let (ccx, ccy) = m.center();
-                                crate::npc_ai_style59::PumpkingCarrier {
-                                    center_x: ccx,
-                                    center_y: ccy,
-                                    top_y: m.y,
-                                    ai1: m.ai[1],
-                                    ai3: m.ai[3],
-                                }
-                            });
-                        let shot = crate::npc_ai_style59::ai_style59(
-                            &mut npcs[i],
-                            world,
-                            &[cand],
-                            carrier.as_ref(),
-                            world.day_time,
-                            0,
-                        );
-                        if let Some(s) = shot {
-                            npcs[i].wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                                kind: s.kind as u16,
-                                x: s.x,
-                                y: s.y,
-                                vx: s.vx,
-                                vy: s.vy,
-                                damage: s.damage,
-                                ai0: s.ai0,
-                                ai1: s.ai1,
-                                scale: None,
-                            });
-                        }
-                        // The noTileCollide integration (`NPC.cs:92605-92607`).
-                        npcs[i].integrate_no_tile_collide();
-                    }
+                    // aiStyle-59 block, `NPC.cs:33198-33373`) rides the
+                    // style axis (`npc.rs`'s `59 =>` arm) with the carrier
+                    // the pre-pass stamped above (`pumpking_blade_carrier`,
+                    // from the stable uid link). The old slot-local block
+                    // ALSO ran `ai_style59` here, so every blade stepped
+                    // twice per tick (the counter double-decrement and the
+                    // duplicate shot) — merged into the ONE axis arm.
                     // W4-c4: the style-44 swimmers' arm (`NPC.AI()`'s
                     // aiStyle-44 block, `NPC.cs:30861-31124`) runs at the
                     // NPC's own slot turn like the spirit's above — the
@@ -9785,15 +9740,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `CountKillForAchievements`. The `GetWereThereAnyInteractions`
         // gate is constants-on - every death the port produces today is a
         // player kill, and no ported kind fails
-        // `IsNPCValidForBestiaryKillCredit`.
-        let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-        app.bestiary.kills.register_kill(entry.credit_id);
-        app.broadcast_bestiary_kill(
-            entry.net_id,
-            app.bestiary.kills.get_kill_count(entry.credit_id),
-        );
-        let _ = app.try_grant_bestiary_100_net();
-        let net_id = entry.net_id;
+        // `IsNPCValidForBestiaryKillCredit`. A roster-gap kind with no
+        // ENTRIES row (the Empress / Prismatic Lacewing / Shimmer Slime)
+        // skips only the credit — the vanilla `netID` still rides
+        // `NpcKind::net_id`'s `cs_id` fallback for the achievement/save
+        // paths.
+        let bestiary = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime);
+        if let Some(entry) = bestiary {
+            app.bestiary.kills.register_kill(entry.credit_id);
+            app.broadcast_bestiary_kill(
+                entry.net_id,
+                app.bestiary.kills.get_kill_count(entry.credit_id),
+            );
+            let _ = app.try_grant_bestiary_100_net();
+        }
+        let net_id = bestiary.map(|e| e.net_id).unwrap_or_else(|| npc.kind.net_id());
         let notify_kill = |app: &mut App| {
             if npc.player_interaction[app.local_id as usize] {
                 let _ = app
@@ -12090,8 +12051,13 @@ fn banner_kill_plr(app: &App, npc: &Npc) -> i32 {
 /// into `spawn_coins` (the C# `NPCLoot_DropItems` :78855 runs BEFORE
 /// `NPCLoot_DropMoney` :78897).
 pub(crate) fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
-    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-    let net_id = entry.net_id;
+    // The bestiary entry carries the vanilla id for every credited kind; a
+    // roster-gap kind (Empress / Prismatic Lacewing / Shimmer Slime) falls
+    // back to `NpcKind::net_id`'s `cs_id` chain (the `NPCLoot` arm's own
+    // type remap) instead of panicking the death pass.
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
     // W4-f35 LOOT FINAL — `NPCLoot`'s ENTRY gate (`NPC.cs:78832-78835`),
     // the terms reachable in the port's single-player classic world:
     // (a) the no-surface / getGoodWorld pre-Skeletron dungeon refusal —
@@ -12541,8 +12507,10 @@ pub(crate) fn spawn_coins(app: &mut App, npc: &Npc, value_zeroed: bool) {
 /// `NPC.NewNPC` at the NPC's centre. The RollLuck draw rides the UpdateNPCs
 /// stream (the death path's swap); the wall read is the death tile.
 fn summon_dungeon_spirit(app: &mut App, npc: &Npc) {
-    let net_id = crate::bestiary::entry_for_npc(npc.kind, npc.slime).net_id;
-    // `Main.player[target].ZoneDungeon` — the port's single player carries
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
+    // `Main.player[target].ZoneDungeon` - the port's single player carries
     // the render-side zone flag (the scene metrics seam, the HookCtx
     // precedent `:1564`).
     let target_in_dungeon = npc.target >= 0
@@ -12590,8 +12558,9 @@ fn summon_dungeon_spirit(app: &mut App, npc: &Npc) {
 /// triplet on the same `UpdateNPCs` stream. The Badger's Hat latches
 /// live on the World (the dusk transition clears them, `Main.cs:65221`).
 fn spawn_heals(app: &mut App, npc: &Npc) {
-    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-    let net_id = entry.net_id;
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
     // The EoW head's dynamic boss latch (`DropEoWLoot`, `NPC.cs:78414-
     // 78429`): the LAST living segment's death sets `boss = true`
     // before its NPCLoot. The port's death retain already removed the
@@ -12865,7 +12834,9 @@ pub(crate) fn spawn_heals_g4(app: &mut App, npc: &Npc) {
         npc.damage_override.unwrap_or_else(|| npc.kind.contact_damage())
     };
     let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
-    let net_id = crate::bestiary::entry_for_npc(npc.kind, npc.slime).net_id;
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     // `NPCLoot_DropHeals` opens with the common life/mana roll
     // (`NPC.cs:79100`), then the per-type heart tail.
@@ -12914,8 +12885,9 @@ pub(crate) fn spawn_heals_g4(app: &mut App, npc: &Npc) {
 /// spawns at the NPC's centre on a dungeon-wall tile (`Main.wallDungeon`,
 /// `Main.cs:10598-10606`: 7/8/9/94-99 — `tr_core::scene::is_dungeon_wall`).
 pub(crate) fn summon_dungeon_spirit_g4(app: &mut App, npc: &Npc) {
-    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-    let net_id = entry.net_id;
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     let luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
     let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
@@ -13005,8 +12977,9 @@ pub(crate) fn advance_slime_rain(app: &mut App, npc: &Npc) {
 /// the EoC and the WoF died today (`EoCKilledToday && WoFKilledToday`,
 /// reset at dusk — `Main.cs:65221`). All draws ride `UpdateNPCs`.
 pub(crate) fn boss_potions_and_hearts(app: &mut App, npc: &Npc) {
-    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
-    let net_id = entry.net_id;
+    let net_id = crate::bestiary::try_entry_for_npc(npc.kind, npc.slime)
+        .map(|e| e.net_id)
+        .unwrap_or_else(|| npc.kind.net_id());
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     let (x, y) = (npc.x, npc.y);
     let tenth = app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
@@ -13159,6 +13132,43 @@ pub(crate) fn do_death_events_switch(app: &mut App, npc: &Npc) {
             let first = !app.world.downed_empress_of_light;
             app.world.downed_empress_of_light = true;
             crate::world_events::on_game_event_cleared(&mut app.world_events, 23, first);
+        }
+        // `:79493-79503` - case 661: an INTERACTED Prismatic Lacewing death
+        // spawns ONE Empress 200 px above its centre with the +/-50 circular
+        // jitter (`NPC.SpawnBoss` -> `NewNPC`'s `Bottom = (X, Y)`,
+        // `NPC.cs:80770`); `AnyNPCs(636)` refuses a second while she lives.
+        // The boss's `timeLeft *= 20` (`:80686`) is the 937-tick critter
+        // window x20.
+        NpcKind::PrismaticLacewing => {
+            if crate::banners::get_were_there_any_interactions(npc, app.local_id as usize)
+                && !app
+                    .npcs
+                    .iter()
+                    .any(|m| m.kind == NpcKind::EmpressOfLight && m.hp > 0)
+            {
+                let (lcx, lcy) = npc.center();
+                // `NextVector2Circular(50, 50)` (`Utils.cs:1261-1268`): the
+                // unit angle draw, then the radius draw.
+                let rng = app.rngs.stream(RngKey::UpdateNpcs);
+                let angle = rng.next_float() * std::f32::consts::TAU;
+                let radius = rng.next_float();
+                let jx = angle.cos() * 50.0 * radius;
+                let jy = angle.sin() * 50.0 * radius;
+                let bx = (lcx + jx) as i32;
+                let by = (lcy - 200.0 + jy) as i32;
+                let (ew, eh) = NpcKind::EmpressOfLight.size();
+                let mut boss = Npc::new(
+                    NpcKind::EmpressOfLight,
+                    bx as f32 - ew * 0.5,
+                    by as f32 - eh,
+                    0,
+                    0.0,
+                );
+                boss.hp = boss.max_hp;
+                boss.target = app.local_id as i32;
+                boss.despawn_timer = ((750.0 * 1.25) as i32) * 20;
+                app.npcs.push(boss);
+            }
         }
         // `:79354-79356` - case 668: `SetEventFlagCleared(downedDeerclops, 25)`.
         NpcKind::Deerclops => {
@@ -26756,8 +26766,13 @@ mod pillar_mob_tests {
         );
         n.hp = n.max_hp;
         app.npcs.push(n);
-        let mut rng = UnifiedRandom::new(11);
-        let mut mirror = UnifiedRandom::new(11);
+        // Seed 10 keeps ALL FOUR ambient `Next(5)` gates closed, so the
+        // stream pin sees exactly the gates and none of the dust-body
+        // draws (seed 11 opens the first plume body, which correctly
+        // spends the `Dust.NewDust`/`NextFloat` draws on this same
+        // stream).
+        let mut rng = UnifiedRandom::new(10);
+        let mut mirror = UnifiedRandom::new(10);
         let mut player = app.player.take().unwrap();
         app.npcs[0].update_rng(&app.world, &mut player, 1.0 / 60.0, &mut rng);
         for _ in 0..4 {
@@ -29118,8 +29133,10 @@ mod dw3_tests {
         let hp0 = z.hp;
         assert_eq!(z.immune[255], 0, "fresh NPC: no lava i-frame");
         app.npcs.push(z);
-        // The LavaSlime beside it — lava-immune, untouched.
-        let mut ls = Npc::new(NpcKind::LavaSlime, 100.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        // The LavaSlime beside it — lava-immune, untouched. Start it one
+        // half tile lower: the slime's first-tick hop lifts it ~10 px, and
+        // from 117.5 tiles the 24×18 box would leave the 118-row pool.
+        let mut ls = Npc::new(NpcKind::LavaSlime, 100.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
         ls.hp = ls.max_hp;
         let ls_hp0 = ls.hp;
         app.npcs.push(ls);
@@ -31452,10 +31469,13 @@ mod empress_wiring_tests {
             .expect("the death spawned the Empress");
         assert_eq!(boss.target, app.local_id as i32);
         assert_eq!(boss.despawn_timer, ((750.0 * 1.25) as i32) * 20);
-        // The jitter band: centre (2000,1600) + (0,-200) +/- 50.
+        // The jitter band: the lacewing's centre (2000,1600) + (0,-200) is
+        // the `SpawnBoss` point, and `NewNPC`'s `Bottom = (X, Y)`
+        // (`NPC.cs:80770`) puts the 100×100 boss's CENTRE 50 px above it —
+        // (2000, 1350) ± the 50-px circular jitter.
         let (bcx, bcy) = boss.center();
         assert!((bcx - 2000.0).abs() <= 50.0, "the circular jitter X");
-        assert!((bcy - 1400.0).abs() <= 50.0, "the -200 lift + jitter Y");
+        assert!((bcy - 1350.0).abs() <= 50.0, "the -200 lift + Bottom anchor + jitter Y");
         // A second interacted death while she lives: no duplicate.
         let mut lace2 = Npc::new(NpcKind::PrismaticLacewing, 1995.0, 1595.0, 1, 0.0);
         lace2.hp = 0;
@@ -31720,6 +31740,11 @@ mod empress_wiring_tests {
         let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
         n.hp = n.max_hp;
         n.home = Some((30, 120));
+        // The b3 town AI's dry WALK state (`ai[0] == 1`, `NPC.cs:54217`):
+        // the 0.5 px/tick `update_guide` stand-in the old witness pinned is
+        // retired, so the fixture enters the state-1 walk directly.
+        n.ai[0] = 1.0;
+        n.ai[1] = 200.0;
         app.npcs.push(n);
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.npcs[0].ai[0], 0.0, "no emergence state");

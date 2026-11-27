@@ -4330,7 +4330,7 @@ mod tests {
         let mut saw = false;
         for seed in 1..4000u64 {
             let c = dungeon_ctx(&w, true);
-            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 330 * 16, false, false, false) {
                 if n.kind == NpcKind::GiantCursedSkull {
                     saw = true;
                     break;
@@ -4342,7 +4342,7 @@ mod tests {
         let mut saw_off = false;
         for seed in 1..4000u64 {
             let c = dungeon_ctx(&w, false);
-            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 330 * 16, false, false, false) {
                 if n.kind == NpcKind::GiantCursedSkull {
                     saw_off = true;
                     break;
@@ -4364,7 +4364,7 @@ mod tests {
         let mut saw = false;
         for seed in 1..4000u64 {
             let c = dungeon_ctx(&w, false);
-            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 340 * 16, false, false, false) {
+            if let Some(n) = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 330 * 16, false, false, false) {
                 if n.kind == NpcKind::CursedSkull {
                     saw = true;
                     break;
@@ -5042,11 +5042,13 @@ mod tests {
 
     /// W4-g51 id-136: the cavern-grid arm (`NPC.cs:5097-5101`) consumes
     /// `Next(3)` + (on a hit) `Next(2)` + `Next(3)` exactly where the C#
-    /// draws them. The grid kinds (494-506) are the roster gap, so the
-    /// outcome falls through to the skeleton arm; the DRAWS are the
-    /// contract — the post-call stream equals the hand-replayed vanilla
-    /// chain (style 7, worm 50, worm 50, Tim 200, imp 14, miner 20, grid
-    /// 3, row 2, col 3, skeleton 4, skeleton-variant 3/2).
+    /// draws them. The grid kinds (494-506) are now ported
+    /// (`kind_from_net_id` maps them), so a hit RETURNS the spawn and the
+    /// skeleton arm never runs. The DRAWS are the contract — the post-call
+    /// stream equals the hand-replayed vanilla chain (spider gate 3,
+    /// zombie 7, worm 50, worm 50, miner 20, grid 3, row 2, col 3). The
+    /// Tim gate is OFF here (`350 > (rock 320 + height 700) / 2` is false)
+    /// and the underworld arm is off, so neither Next(200)/Next(14) draws.
     #[test]
     fn w4_g51_the_cavern_grid_arm_consumes_the_vanilla_draws() {
         let mut w = ground_tall();
@@ -5060,10 +5062,14 @@ mod tests {
         let c = ctx(&w, 350.0 * 16.0, true);
         let mut hits = 0;
         for seed in 1..4000u64 {
-            // Pre-roll the gate chain to find a grid HIT whose skeleton
-            // arm takes the Next(3) != 0 branch (one deterministic extra
-            // draw). The Tim depth gate is true at y=350 (rock 40, h 800).
+            // Pre-roll the exact gate chain: `set_spawn_spider_flag`
+            // (`NPC.cs:1153`'s Next(3) + the radius draw on 0), the
+            // GetZombieSettings style, then the underground ladder through
+            // the grid hit (the Tim/imp arms are gated off at y=350).
             let mut probe = UnifiedRandom::new(seed as i32);
+            if probe.next_max(3) == 0 {
+                let _ = probe.next_range(5, 15); // the spider radius scan
+            }
             let _ = probe.next_max(7); // GetZombieSettings
             if probe.next_max(50) == 0 {
                 continue; // the underground worm arm returns early
@@ -5071,28 +5077,26 @@ mod tests {
             if probe.next_max(50) == 0 {
                 continue; // the Giant Worm
             }
-            if probe.next_max(200) == 0 {
-                continue; // Tim
-            }
-            // The Fire Imp's `underworld_depth` gate is OFF at y=350
-            // (350 < 700-190) — no Next(14) draw on this path.
+            // The Tim gate is OFF at y=350 (`(320 + 700) / 2 = 510`), and
+            // the Fire Imp's `underworld_depth` gate is off — NEITHER
+            // Next(200) nor Next(14) runs on this path.
             if probe.next_max(20) == 0 || probe.next_max(3) != 0 {
                 continue; // miner hit / grid miss
             }
             let _ = probe.next_max(2);
             let _ = probe.next_max(3);
-            if probe.next_max(4) != 0 || probe.next_max(3) == 0 {
-                continue; // want the skeleton's one-extra-draw branch
-            }
             hits += 1;
             let mut rng = UnifiedRandom::new(seed as i32);
             let _ = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false);
             // (The spawn ctor may refuse the carved pocket's geometry —
             // the DRAWS are the contract, not the placement.)
-            // The hand replay: the same chain, then one more draw — the
-            // streams must agree (the grid arm consumed exactly 3+2+3).
+            // The hand replay: the same chain; the grid hit is terminal, so
+            // the skeleton's Next(4)/Next(3) must NOT be consumed.
             let mut want = UnifiedRandom::new(seed as i32);
-            for m in [7, 50, 50, 200, 20, 3, 2, 3, 4, 3] {
+            if want.next_max(3) == 0 {
+                let _ = want.next_range(5, 15);
+            }
+            for m in [7, 50, 50, 20, 3, 2, 3] {
                 let _ = want.next_max(m);
             }
             assert_eq!(

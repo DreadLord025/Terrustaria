@@ -334,7 +334,10 @@ mod tests {
         assert!(brain_dodge_ghosts(269).is_empty(), "lerp > 1 gates off");
         assert!(brain_dodge_ghosts(-5).is_empty());
         let start = brain_dodge_ghosts(300);
-        assert_eq!(start.len(), 6, "the π/3 accumulator steps six times");
+        // `LegacyPlayerRenderer.cs:462` accumulates π/3 in f32: the sixth sum
+        // is 6.2831853 < the f32 2π (6.2831855), so the loop takes a seventh
+        // step — the source's float quirk, not six exact iterations.
+        assert_eq!(start.len(), 7, "the f32 π/3 accumulator takes seven steps");
         for g in &start {
             assert_eq!(g.shadow, 0.0, "lerp(300) = 0");
             assert!((g.offset.length() - 2.0).abs() < 1e-4, "y = Lerp(2,120,0)");
@@ -343,7 +346,7 @@ mod tests {
         assert!((start[0].offset.x).abs() < 1e-4);
         assert!((start[0].offset.y - 2.0).abs() < 1e-4);
         let end = brain_dodge_ghosts(270);
-        assert_eq!(end.len(), 6);
+        assert_eq!(end.len(), 7, "the f32 accumulator's seventh step");
         for g in &end {
             assert_eq!(g.shadow, 1.0, "lerp(270) = 1");
             assert!((g.offset.length() - 120.0).abs() < 1e-3);
@@ -353,7 +356,7 @@ mod tests {
         assert!((end[0].offset.y + 120.0).abs() < 1e-3);
         // Mid-window: lerp 0.5 → radius 61, every ghost equidistant.
         let mid = brain_dodge_ghosts(285);
-        assert_eq!(mid.len(), 6);
+        assert_eq!(mid.len(), 7);
         for g in &mid {
             assert!((g.shadow - 0.5).abs() < 1e-6);
             assert!((g.offset.length() - 61.0).abs() < 1e-3);

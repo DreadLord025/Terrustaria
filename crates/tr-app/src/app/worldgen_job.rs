@@ -357,11 +357,19 @@ mod tests {
         // `Lang.gen[87]`, WorldGen.cs:22489) — resolved or the raw key.
         assert!(!snap.message.is_empty());
         // W4-f23 closeout item 1: the debug driver's per-step feed — every
-        // executed step completed, none running after the task lands.
+        // REGISTERED step completed, none running after the task lands.
+        // `GenPassResults` gets one row per applied pass (`WorldGenerator.cs:
+        // 507`); a gate-closed pass is never `AddGenerationPass`ed and appends
+        // nothing (`:488-495`). A classic world never registers the Dual
+        // Dungeons Dither Snake (`WorldGen.cs:14753-14755`), so the pass-list
+        // row for it is a row the loop never runs — count the registered rows.
+        let registered = tr_core::worldgen::pipeline::executed_steps(micro_flags)
+            .iter()
+            .filter(|s| s.enabled && s.vanilla != "Dual Dungeons Dither Snake")
+            .count();
         assert_eq!(
-            snap.completed_steps,
-            tr_core::worldgen::pipeline::executed_steps(micro_flags).len(),
-            "every executed step appended a GenPassResult"
+            snap.completed_steps, registered,
+            "every registered step appended a GenPassResult"
         );
         assert!(snap.current_step.is_empty(), "no pass runs after completion");
         // The saved world loads.

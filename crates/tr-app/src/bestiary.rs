@@ -2147,18 +2147,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Eater of Worlds",
     },
-    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four
-    // wired kinds' own entries — the populator registers all four
-    // (`BestiaryDatabaseNPCsPopulator.cs:1174`/`:1180`/`:1282`/`:1413`
-    // find their entries by id).
-    BestiaryEntryDef {
-        credit_id: "BlazingWheel",
-        net_id: 72,
-        kind: NpcKind::BlazingWheel,
-        variant: None,
-        quick_unlock: false,
-        name: "Blazing Wheel",
-    },
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the BlazingWheel
+    // 72 has NO bestiary entry - `NPCBestiaryDrawOffset[72].Hide` is true
+    // (`NPCID.cs:1718-1722`), so `GetExclusions`
+    // (`BestiaryDatabaseNPCsPopulator.cs:869-885`) drops it from the
+    // automated pass (`FindEntryByNPCID(72)` at `:1180` hits the trash
+    // entry). The other wired kinds register by id (`:1282`/`:1413`).
     BestiaryEntryDef {
         credit_id: "AngryNimbus",
         net_id: 250,
@@ -2663,14 +2657,11 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Diabolist",
     },
-    BestiaryEntryDef {
-        credit_id: "ForceBubble",
-        net_id: 384,
-        kind: NpcKind::ForceBubble,
-        variant: None,
-        quick_unlock: false,
-        name: "Force Bubble",
-    },
+    // The Force Bubble 384 has NO entry: `NPCBestiaryDrawOffset[384].Hide`
+    // is true (`NPCID.cs:3766-3770`), so `GetExclusions`
+    // (`BestiaryDatabaseNPCsPopulator.cs:869-885`) drops it from the
+    // automated pass; its kill credit folds onto the Martian Officer via
+    // the provider map (`:688-702`).
     // W4-d37 — the NPCID 211-280 band's own bestiary entries (the automated
     // populator registers every non-Hide, non-town id; the names ride
     // `Lang.GetNPCName`, en-US NPCs.json). The three Hide=true ids (230 the
@@ -3854,6 +3845,37 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Lightning Bug",
     },
+    // `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) IS the Prismatic
+    // Lacewing (`NPC.cs:17351-17366`). The automated pass registers it as
+    // a CRITTER (`CountsAsACritter`: 5 HP / 0 damage, `NPC.cs:6887-6897`;
+    // `BestiaryDatabaseNPCsPopulator.cs:851-868`), and `FillNpcRarities`
+    // overrides the 4-star formula row to 3 (`ContentSamples.cs:1153`).
+    // Credit `NPCID.Search.GetName(661)` = "EmpressButterfly"
+    // (`ContentSamples.cs:862-873`; no remap). The row's kind is the
+    // d125 machine kind (the shared `kind_from_net_id(661)` resolution,
+    // `npc/data.rs:11274`); the butterfly twin folds onto it.
+    BestiaryEntryDef {
+        credit_id: "EmpressButterfly",
+        net_id: 661,
+        kind: NpcKind::PrismaticLacewing,
+        variant: None,
+        quick_unlock: false,
+        name: "Prismatic Lacewing",
+    },
+    // `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`): the automated Enemy
+    // pass (`BestiaryDatabaseNPCsPopulator.cs:851-868`; the 676 draw
+    // offset is not Hide) reads the default credit "ShimmerSlime"
+    // (`ContentSamples.cs:862-873`), `FillNpcRarities` pins it at 5
+    // (`ContentSamples.cs:1180`), and the name is "Shimmer Slime"
+    // (en-US NPCs.json:713).
+    BestiaryEntryDef {
+        credit_id: "ShimmerSlime",
+        net_id: 676,
+        kind: NpcKind::ShimmerSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmer Slime",
+    },
     BestiaryEntryDef {
         credit_id: "Shimmerfly",
         net_id: 677,
@@ -4115,6 +4137,26 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Cyborg",
+    },
+    // `NPCID.HallowBoss` (636, `NPCID.cs:11949`) - the Empress of Light.
+    // The automated pass registers `BestiaryEntry.Enemy(636)`
+    // (`BestiaryDatabaseNPCsPopulator.cs:851-868`; no exclusion row - the
+    // draw offset `NPCID.cs` 636 is not Hide). `boss = true`
+    // (`NPC.cs:17202`), so the factory provider is quickUnlock:true
+    // (`BestiaryEntry.cs:37-41`), and the credit id is the default
+    // `NPCID.Search.GetName(636)` = "HallowBoss"
+    // (`ContentSamples.cs:862-873`; no `ModifyNPCIds` remap). Name
+    // `Lang.GetNPCName(636)` = "Empress of Light" (en-US NPCs.json:698).
+    // Stars: the boss formula (`ContentSamples.cs:1245-1306`) on the
+    // `NPC.cs:17190-17205` sample (70000 HP / 80 damage / 50 defense) ->
+    // 1 + 0.5 + 3.5 = cap 5.
+    BestiaryEntryDef {
+        credit_id: "HallowBoss",
+        net_id: 636,
+        kind: NpcKind::EmpressOfLight,
+        variant: None,
+        quick_unlock: true,
+        name: "Empress of Light",
     },
     // ---- The town PETS (the W4-g10 roster, `NPCID.Sets.IsTownPet`
     // `NPCID.cs:10118`: 637/638/656/670/678-684). The populator's
@@ -5959,7 +6001,6 @@ mod tests {
             (668, 3), // Deerclops
             (107, 3), // GoblinTinkerer
             (13, 3), // EaterofWorldsHead
-            (72, 2), // BlazingWheel
             (250, 3), // AngryNimbus
             (288, 2), // DungeonSpirit
             (31, 2), // AngryBones
@@ -6012,7 +6053,6 @@ mod tests {
             (283, 2), // Necromancer
             (284, 2), // NecromancerArmored
             (285, 2), // DiabolistRed
-            (384, 2), // ForceBubble
             (217, 3), // CochinealBeetle
             (218, 3), // CyanBeetle
             (219, 3), // LacBeetle
@@ -6179,6 +6219,8 @@ mod tests {
             (615, 3), // Dolphin
             (355, 2), // Firefly
             (358, 3), // LightningBug
+            (661, 3), // EmpressButterfly
+            (676, 5), // ShimmerSlime
             (677, 5), // Shimmerfly
             (606, 1), // Maggot
             (175, 2), // AngryTrapper
@@ -6207,6 +6249,7 @@ mod tests {
             (160, 5), // Truffle
             (178, 3), // Steampunker
             (209, 3), // Cyborg
+            (636, 5), // HallowBoss
             (638, 3), // TownDog
             (637, 3), // TownCat
             (656, 3), // TownBunny

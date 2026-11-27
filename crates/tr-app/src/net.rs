@@ -8594,13 +8594,16 @@ impl SectionRange {
                 rec.liquid = r.u8()?;
                 rec.liquid_kind = r.u8()?;
             }
-            if f2 & 0x01 != 0 {
+            // `MessageBuffer.cs:1379-1384` / `:1422`: `wire` = b1[4],
+            // `wire2` = b2[0], `wire3` = b2[1], `wire4` = b2[7]. The port's
+            // wire bits are the colour ids (red 1, blue 2, green 4, yellow 8).
+            if f1 & 0x10 != 0 {
                 rec.wires |= 1;
             }
-            if f2 & 0x02 != 0 {
+            if f2 & 0x01 != 0 {
                 rec.wires |= 2;
             }
-            if f1 & 0x10 != 0 {
+            if f2 & 0x02 != 0 {
                 rec.wires |= 4;
             }
             if f2 & 0x80 != 0 {
@@ -11933,8 +11936,9 @@ mod tests {
         };
         let f = C2s::PlaceObject(left).encode();
         assert_eq!(*f.last().unwrap(), 0);
-        // A truncated direction byte must not decode.
-        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+        // A truncated direction byte must not decode (the body is 11 bytes;
+        // drop the trailing direction).
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..10])).is_none());
     }
 
     /// W4-g49 F21-TAIL `48 LiquidUpdate` — byte-pin transplanted verbatim
@@ -16888,8 +16892,9 @@ mod tests {
         };
         let f = C2s::PlaceObject(left).encode();
         assert_eq!(*f.last().unwrap(), 0);
-        // A truncated direction byte must not decode.
-        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+        // A truncated direction byte must not decode (the body is 11 bytes;
+        // drop the trailing direction).
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..10])).is_none());
     }
 
 

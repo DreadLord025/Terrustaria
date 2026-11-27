@@ -1394,10 +1394,20 @@ mod tests {
     #[test]
     fn w4_f25_holy_water_splash_rides_the_c3_ladder() {
         let mut w = empty_world();
-        // The torch (4) at the centre, style 0 — the default-set row.
+        // Torches are frame-important (`Main.tileFrameImportant[4]`, the
+        // `Framing`/`torch` seam): without the table the trailing
+        // `SquareTileFrame` reframes the torch as an 18-grid block instead of
+        // running `CheckTorch` (`WorldGen.cs:56287-56310`).
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        w.frame_important[4] = true;
+        // The torch (4) at the centre, style 0 — the default-set row. The
+        // floor below keeps `CheckTorch` from killing it (`:86160-86175`).
         let i = w.index(30, 300);
         w.tiles[i] = tr_core::tile::Tile { kind: 4, frame_y: 0, ..Default::default() };
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let floor = w.index(30, 301);
+        w.tiles[floor] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[floor].flags |= tr_core::tile::FLAG_ACTIVE;
         // The golf grass 477 one cell right (Manhattan 1 < 6).
         let g = w.index(31, 300);
         w.tiles[g] = tr_core::tile::Tile { kind: 477, ..Default::default() };

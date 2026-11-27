@@ -1121,7 +1121,10 @@ mod s1_d_4b_12_tests {
         let mut census2 = CensusRng { ranges: Vec::new(), floats: 0 };
         proj2.companion_cube_tick(&w, Some(&mut p), &mut census2, Some((1.0, 1.0)));
         assert_eq!(proj2.local_ai[1], 49.0, "the lit decay");
-        assert!(census2.ranges.is_empty(), "no threshold draw when lit");
+        // The threshold draw is UNCONDITIONAL inside the owner block
+        // (`:49538`): it runs whether the cube is lit or dark, and only the
+        // comparison gates the bite.
+        assert_eq!(census2.ranges, vec![(30, 120)], "the threshold draw still runs when lit");
     }
 
     /// W4-d7 F3 — the Rainbow Boulder Pet's flight steering (`:49807-49819`):

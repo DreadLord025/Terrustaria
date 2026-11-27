@@ -3674,7 +3674,8 @@ mod tests {
 
     /// The ManageControls (`Main.cs:50686`) and Steam-join (`:50726`) Hint
     /// rows play 10 before their unported bodies; the Main page's
-    /// ResourcePacks Hint row stays cue-less (g22's window, recorded).
+    /// ResourcePacks row is NOT a Hint row — it plays 10 (`:48954`) and opens
+    /// the real pack screen (`OpenResourcePacksMenu(null)`, `:48955`).
     #[test]
     fn w4_g23_union_the_manage_controls_and_steam_hint_rows_play_ten() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -3687,9 +3688,9 @@ mod tests {
         assert!(m.hint.is_some());
         assert_eq!(m.take_cue(), Some("Menu_Open"));
         let mut m = menu(Page::Main);
-        m.activate(3); // ResourcePacks — g22's window, cue-less there
-        assert!(m.hint.is_some());
-        assert_eq!(m.take_cue(), None);
+        m.activate(3); // ResourcePacks (`:48951-48956`)
+        assert!(m.hint.is_none(), "the real pack screen, not a hint");
+        assert_eq!(m.take_cue(), Some("Menu_Open")); // `:48954`
     }
 
     /// The union queue contract: an ACTIVATION cue lands on `pending_cue`

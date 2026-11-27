@@ -891,7 +891,12 @@ mod tests {
         line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n1\n");
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("the bread-only v7 still reads");
-        assert!(s.ate_artisan_bread, "the bread line parses");
+        // Pre-fold this lone post-dye flag was g90's bread; the merged
+        // superset reader cannot self-identify it and maps the FIRST flag
+        // line to the aegis slot (the documented 103-persist-v7-layout
+        // ambiguity, pinned by `g90s_bread_only_v7_loads_into_the_first_flag_slot`).
+        assert!(!s.ate_artisan_bread, "the lone flag is not read as bread");
+        assert!(s.used_aegis_fruit, "the pre-fold lone flag rides the aegis slot");
         assert!(!s.used_aegis_crystal, "the absent lines load false");
         assert!(!s.used_arcane_crystal);
         assert!(!s.used_galaxy_pearl);

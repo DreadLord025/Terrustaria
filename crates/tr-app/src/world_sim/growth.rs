@@ -569,15 +569,16 @@ mod tests {
     /// hand through `update_world_ts` + the gate, proving the draw counts match.
     #[test]
     fn the_walker_seam_queues_and_drains_on_the_phase_stream() {
-        let freeze = |app: &mut crate::app::App| {
-            app.creative_powers.set(
-                crate::creative::PowerId::FreezeTime,
-                crate::creative::PowerState::Toggle(true),
-            );
-            app.town_spawn.npc_spawn_period = 1;
+        // The C# re-arms `npcSpawnPeriod = 20 * worldUpdateRate` at `:71549`,
+        // so a fixture-set period is overwritten by the 4 picks this
+        // 400x300 world produces. Start the delay 4 short of 20 so the last
+        // pick fires (`:74871-74873`), resets the counter and queues one
+        // request for the drain.
+        let arm = |app: &mut crate::app::App| {
+            app.town_spawn.npc_spawn_delay = 16;
         };
         let mut app = fresh_app();
-        freeze(&mut app);
+        arm(&mut app);
         update_growth(&mut app, 1.0 / 60.0);
         // The gate fired on the inactive picks: the queue drained (empty now)
         // and the counter reset per fire.
@@ -586,19 +587,19 @@ mod tests {
 
         // The twin: the same picks through the seam, counting the pushes.
         let mut twin = fresh_app();
-        freeze(&mut twin);
+        arm(&mut twin);
         let raining = twin.rain.is_raining();
         let day_time = twin.world.day_time;
         let allowed = twin.creative_powers.allowed_to_spread_infections();
         let mut stream = UnifiedRandom::new(twin.world.seed as i32);
-        let mut delay = 0;
+        let mut delay = 16;
         let mut requests: Vec<(i32, i32)> = Vec::new();
         {
             let mut walker = tr_core::growth::TownSpawnWalker {
                 invasion_type: twin.world.invasion_type,
                 eclipse: twin.world.eclipse,
                 npc_spawn_delay: &mut delay,
-                npc_spawn_period: 1,
+                npc_spawn_period: 20,
                 requests: &mut requests,
             };
             tr_core::growth::update_world_ts(

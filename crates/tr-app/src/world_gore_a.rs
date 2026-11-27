@@ -300,8 +300,11 @@ pub fn larva_gores(
             }
         }
     }
-    // `:53253-53256`.
-    if num14 < 4800.0 && !game_menu {
+    // `:53253-53256`. The C# calls `SpawnOnPlayer(plr, 222)` with `plr = 0`
+    // and `num14 = -1` when no live player was found (SP's slot 0 is always
+    // active, so that never happens there); the port's `players` IS the live
+    // roster, so an empty roster means there is no player to spawn on.
+    if num14 >= 0.0 && num14 < 4800.0 && !game_menu {
         Some(plr)
     } else {
         None

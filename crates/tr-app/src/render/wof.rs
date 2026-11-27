@@ -469,7 +469,8 @@ mod tests {
     /// no GPU in the test harness).
     #[test]
     fn the_pass_gates_on_a_living_wall_and_orders_the_pieces() {
-        let src = include_str!("wof.rs");
+        let raw = include_str!("wof.rs");
+        let src = raw.replace("\r\n", "\n");
         let body = &src[src.find("pub(crate) fn draw_wof(").unwrap()..];
         let body = &body[..body.find("\n}\n").unwrap()];
         let gate = body.find("wof_npc_index < 0").expect("the wall gate");
