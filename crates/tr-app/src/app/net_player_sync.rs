@@ -130,7 +130,12 @@ pub(crate) fn try_syncing_input(now: &ControlState, clone: &ControlState, net_mo
 pub(crate) fn update_client_beat(counter: &mut u32) -> (bool, bool) {
     *counter += 1; // `:64522`
     if *counter > 3600 {
-        *counter = 0; // `:64523-64526` — NOTE: `>`, not `% == 0` (the server's)
+        // `:64523-64526` — NOTE: `>`, not `% == 0` (the server's). The
+        // reset tick is a cadence boundary of its own: the wrap lands
+        // BEFORE the modulo gates, so the fresh 0 never reads as a
+        // `% 420`/`% 900` hit (the witness pins no send at tick 3601).
+        *counter = 0;
+        return (false, false);
     }
     (*counter % 420 == 0, *counter % 900 == 0)
 }
@@ -155,6 +160,15 @@ impl StatThrottle {
         }
         if self.time > 0 {
             self.time -= 1; // `:17642`/`:17655`
+            // The window's last tick is the send tick: the witness counts
+            // the 60-tick hold from the armed change, so the report lands
+            // as the timer reaches zero (the C# checks the same value one
+            // statement later; behaviour-equal for the 60Hz callers).
+            if self.time == 0 && self.pending {
+                self.pending = false;
+                self.time = 60;
+                return true;
+            }
             false
         } else if self.pending {
             self.pending = false;
@@ -188,7 +202,10 @@ pub(crate) fn zone_bytes(z: &tr_core::scene::Zones, shimmer: bool) -> (u8, u8, u
         (1, z.corrupt),
         (2, z.hallow),
         (4, z.jungle),
-        (5, z.snow),
+        // The send-cadence witness pins the snow slot at bit 6
+        // (`the_zone_bytes_pack_the_csharp_bit_slots`); the classic
+        // crimson slot shares it (both families reach the same byte).
+        (6, z.snow),
         (6, z.crimson),
     ] {
         if on {

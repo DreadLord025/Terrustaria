@@ -3051,7 +3051,11 @@ mod tests {
     /// runs the same box maths as `wet_probe`.)
     #[test]
     fn w4_f47ds_the_box_is_wet_probe_uses_the_liquid_surface_offset() {
-        let mut w = ground();
+        // `Collision.WetCollision` clamps its scan bottom to
+        // `maxTilesY - 40` (`Collision.cs:1572-1651`); the module-local
+        // `ground()` is 32 tall, so the scan collapses to an empty range.
+        // Use a world tall enough for the clamp (real worlds are ≫ 40).
+        let mut w = World::new("items".into(), 32, 80);
         let j = w.index(10, 19);
         w.tiles[j] = Tile::default();
         w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);

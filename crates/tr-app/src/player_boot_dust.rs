@@ -475,16 +475,17 @@ mod tests {
             assert_eq!(d.alpha, 120);
             let num2 = if i == 0 { 2.0 } else { -2.0 };
             let rx = if i == 0 { 296.0 } else { 316.0 };
-            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 8, 8, 2.0);
+            let (pos, mut vel, mut sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 8, 8, 2.0);
             let kick = Vec2::new(-num2 - b.vx * 0.3, 2.0 - b.vy * 0.3);
-            let mut v = vel + kick;
-            let mut sc = sc;
-            if matches!(ty, 61 | 64 | 63) {
-                // The type-6-family tweak (`Dust.cs:214-219`).
+            if matches!(ty, 61 | 64 | 63 | 242) {
+                // The type-6-family tweak (`Dust.cs:214-219`; the list
+                // includes 242 as well as 59..=65). It runs INSIDE NewDust,
+                // i.e. on the jitter velocity BEFORE the kick fold.
                 let vy = rng.next_range(-10, 6) as f32 * 0.1;
-                v = Vec2::new(v.x * 0.3, vy);
+                vel = Vec2::new(vel.x * 0.3, vy);
                 sc *= 0.7;
             }
+            let v = vel + kick;
             assert_eq!(d.position, pos);
             assert_eq!(d.velocity, v * 0.1);
             assert_eq!(d.scale, sc);
@@ -719,9 +720,10 @@ mod tests {
         app.entity_lights.end_frame();
         let lights = app.entity_lights.visible();
         assert_eq!(lights.len(), 1);
+        let num4 = 0.4f32 * 0.5;
         assert_eq!(
             (lights[0].x, lights[0].y, lights[0].rgb),
-            (19, 38, [0.2, 0.18, 0.04])
+            (19, 38, [num4, num4 * 0.9, num4 * 0.2])
         );
     }
 

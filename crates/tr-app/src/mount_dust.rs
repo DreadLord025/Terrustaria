@@ -3055,6 +3055,7 @@ mod tests_union_b {
         let mut mirror = UnifiedRandom::new(7);
         let d = target - center;
         let num = (d.y as f64).atan2(d.x as f64) as f32;
+        let mut speeds = Vec::new();
         for _ in 0..2 {
             let side = if mirror.next_max(2) == 1 { -1.0 } else { 1.0 };
             let num2 = num + side * (std::f32::consts::PI / 2.0);
@@ -3063,6 +3064,7 @@ mod tests_union_b {
                 (num2 as f64).cos() as f32 * num3,
                 (num2 as f64).sin() as f32 * num3,
             );
+            speeds.push(v.length());
             let idx = mpool.new_dust(
                 &mut mirror, &c, &w, target, 0, 0, 230, v.x, v.y, 0, Color::default(), 1.0,
             );
@@ -3074,9 +3076,10 @@ mod tests_union_b {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).dust_type, 230);
             assert!(pool.slot(i).no_gravity);
-            // The speed is NextDouble()*2+2 in [2, 4).
-            let len = pool.slot(i).velocity.length();
-            assert!(len >= 2.0 && len < 4.01, "speed {len}");
+            // The ARGUMENT speed is NextDouble()*2+2 in [2, 4) (`:3111`);
+            // the record adds NewDust's `Next(-20,21)*0.1` jitter on top.
+            let len = speeds[i];
+            assert!(len >= 2.0 && len < 4.0, "argument speed {len}");
         }
         assert_eq!(rng.next(), mirror.next(), "the streams stay aligned");
     }
@@ -3746,10 +3749,12 @@ mod tests_union_b {
         let c = ctx();
         let pos4 = Vec2::new(500.0, 500.0);
         let pos5 = Vec2::new(552.0, 494.0);
-        // vel_len 0 -> num12 = 0.1; find a seed whose first NextFloat <= 0.1.
+        // vel_len 0 -> num12 = 0.1. The impl's FIRST NextFloat is the pos4
+        // jitter (`:4835`, inert at facing 0); the gate is the SECOND.
         let mut seed = 0;
         loop {
             let mut probe = UnifiedRandom::new(seed);
+            let _ = probe.next_float(); // the pos4 jitter
             if probe.next_float() <= 0.1 {
                 break;
             }
@@ -3760,7 +3765,8 @@ mod tests_union_b {
         assert!(broom_trinket_trail(pos4, 0, |v| v, pos5, 0.0, 0.0, &mut rng, &mut pool, &c, &w));
         let mut mpool = DustPool::new();
         let mut mirror = UnifiedRandom::new(seed);
-        let _ = mirror.next_float(); // the gate
+        let _ = mirror.next_float(); // the pos4 jitter (`:4835`)
+        let _ = mirror.next_float(); // the gate (`:4839`)
         let num13 = mirror.next_float();
         let mut num14 = 0.0f32;
         let mut fired = 0;
@@ -3790,10 +3796,12 @@ mod tests_union_b {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
         }
         assert_eq!(rng.next(), mirror.next());
-        // A failed gate (NextFloat > num12) spawns nothing, one draw.
+        // A failed gate (the SECOND NextFloat > num12) spawns nothing, two
+        // draws (the pos4 jitter + the gate).
         let mut fseed = seed;
         loop {
             let mut probe = UnifiedRandom::new(fseed);
+            let _ = probe.next_float(); // the pos4 jitter
             if probe.next_float() > 0.1 {
                 break;
             }
@@ -3804,7 +3812,8 @@ mod tests_union_b {
         assert!(!broom_trinket_trail(pos4, 0, |v| v, pos5, 0.0, 0.0, &mut frng, &mut fpool, &c, &w));
         assert!(active(&fpool).is_empty());
         let mut probe = UnifiedRandom::new(fseed);
-        let _ = probe.next_float();
+        let _ = probe.next_float(); // the pos4 jitter
+        let _ = probe.next_float(); // the gate
         assert_eq!(frng.next(), probe.next());
     }
 
@@ -4316,7 +4325,13 @@ mod tests_union_b {
         for i in active(&pool) {
             assert_eq!(pool.slot(i).velocity, dpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, dpool.slot(i).scale);
-            assert_eq!(pool.slot(i).scale, 0.7, "the Bat pins scale 0.7");
+            // `:6341-6347` pins 0.7, then the no-gravity coin (`:6358-6362`)
+            // may multiply it by 1.3 - the record holds either.
+            let s = pool.slot(i).scale;
+            assert!(
+                (s - 0.7).abs() < 1e-6 || (s - 0.91).abs() < 1e-6,
+                "the Bat's scale is 0.7 (or 0.7*1.3 after the coin): {s}"
+            );
         }
         assert_eq!(rng.next(), drng.next(), "the drain changes no draws");
     }

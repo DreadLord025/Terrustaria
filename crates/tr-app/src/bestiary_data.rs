@@ -49,15 +49,39 @@ pub enum Gate {
 }
 
 /// The Skeletron head's override (`BestiaryDatabaseNPCsPopulator.cs:677`):
-/// its own quick-unlock ladder OR the Clothier's chat (the Old Man 37 and
-/// the Skeletron hand 68 carry the wider triples at `:676`/`:678` — neither
-/// has a port entry).
+/// its own quick-unlock ladder OR the Clothier's chat. The Skeletron hand
+/// 68 / Old Man 37 wider triples live at `:676`/`:678` (`gate` below).
 const SKELETRON_GATES: &[Gate] = &[
     Gate::Common {
         credit_net: 35,
         quick: true,
     },
     Gate::Town { credit_net: 54 },
+];
+
+/// The Dungeon Guardian's override (`BestiaryDatabaseNPCsPopulator.cs:676`):
+/// `HighestOfMultiple(own 68 quick, 35 quick, Clothier 54 town)`.
+const DUNGEON_GUARDIAN_GATES: &[Gate] = &[
+    Gate::Common {
+        credit_net: 68,
+        quick: true,
+    },
+    Gate::Common {
+        credit_net: 35,
+        quick: true,
+    },
+    Gate::Town { credit_net: 54 },
+];
+
+/// The Old Man's override (`BestiaryDatabaseNPCsPopulator.cs:678`):
+/// `HighestOfMultiple(own 37 town, Clothier 54 town, 35 quick)`.
+const OLD_MAN_GATES: &[Gate] = &[
+    Gate::Town { credit_net: 37 },
+    Gate::Town { credit_net: 54 },
+    Gate::Common {
+        credit_net: 35,
+        quick: true,
+    },
 ];
 
 /// The town-NPC roster the populator registers by hand
@@ -117,8 +141,9 @@ const GOLD_CRITTER_PEERS: &[(i32, &[i32])] = &[
 /// Unported override families (no `ENTRIES` row rides them, recorded for
 /// the roster waves): the Salamander/Shelly/Dad 494-506 world-roster gate
 /// (`:649-652`, `SalamanderShellyDadUICollectionInfoProvider.cs:18-66`),
-/// the Tortured Soul 534 (`:653`) and the Skeletron hand 68 / Old Man 37
-/// triples (`:676`/`:678`). The gold-critter collection gate (`:703-720`)
+/// the Tortured Soul 534 (`:653`); the Dungeon Guardian / Old Man triples
+/// (`:676`/`:678`) are tabled below. The gold-critter collection gate
+/// (`:703-720`)
 /// and the four critter-twin folds (`:721-730`) are TABLED below (the
 /// W4-c8 census compose) — their ids await the c8/d42 roster waves.
 pub fn gate(net_id: i32) -> Gate {
@@ -181,6 +206,9 @@ pub fn gate(net_id: i32) -> Gate {
                 quick: true,
             };
         } // Cultist minions -> AncientCultist
+        // The Dungeon Guardian and Old Man triples (`:676`/`:678`).
+        68 => return Gate::Highest(DUNGEON_GUARDIAN_GATES),
+        37 => return Gate::Highest(OLD_MAN_GATES),
         35 => return Gate::Highest(SKELETRON_GATES),
         _ => {}
     }
@@ -287,6 +315,18 @@ pub fn rarity(net_id: i32) -> i32 {
         216 => 1, // PirateCaptain (`:11786`)
         399 => 1, // MartianProbe (`:14080`)
         471 => 1, // GoblinSummoner (`:15740`)
+        // The C# `this.rarity` rows the first pass missed (the 1.4.5.8
+        // `SetDefaults` blocks; the negative slime variants ride
+        // `SetDefaultsFromNetId` and are untouched above).
+        73 | 109 | 217 | 218 | 219 | 221 | 244 | 287 | 292 | 293 | 477 | 480 | 586 | 587
+        | 618 | 620 | 621 | 624 => 1,
+        220 | 243 | 251 | 290 | 583 | 584 | 585 => 2,
+        // The gold critters (`:14260-14345` 442-448, `:15896` 539,
+        // `:16692`/`:16705` 592/593, `:16733` 601, `:16774` 605,
+        // `:16871` 613, `:17062` 627) - rarity 3 -> 5 stars.
+        442 | 443 | 444 | 445 | 446 | 447 | 448 | 592 | 601 | 605 | 613 | 627 => 3,
+        85 | 375 | 629 => 4,
+        473 | 474 | 475 | 476 => 5,
         _ => 0,
     }
 }

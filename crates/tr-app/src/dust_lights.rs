@@ -695,9 +695,12 @@ mod tests {
             [n * (n * 0.5), n * (n * 0.9), n * n]
         );
         // 156 (`:785-794`): torch 12 at scale*0.6, no cap. Scale 2 -> 1.2.
+        // `TorchID.cs:150` seeds Ultra Bright green at 1.3499999f (one f32
+        // ULP below 1.35, the palette's W4-d66 witness) - read the table.
+        let torch = tr_core::tile_light::torch_color(12, &p);
         assert_eq!(
             dust_light(&dust(156, 2.0, Vec2::ZERO), &p).unwrap().2,
-            [0.75 * 1.2, 1.35 * 1.2, 1.5 * 1.2]
+            [torch[0] * 1.2, torch[1] * 1.2, torch[2] * 1.2]
         );
         // 325 (`:488-498`) DOES cap: scale 2 -> num4 = 1.
         assert_eq!(

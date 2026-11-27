@@ -36,9 +36,9 @@ impl ApplicationHandler for App {
         }
 
         let mut attrs = Window::default_attributes()
-            .with_title("Terraria-Rust")
+            .with_title(format!("Terraria {} (Rust port)", crate::GAME_VERSION))
             .with_inner_size(PhysicalSize::new(1600, 900));
-        // Window/taskbar icon, generated from the game logo by `build.rs`.
+        // Window/taskbar icon, extracted from the repo-root `app.ico` by `build.rs`.
         if let Ok(img) =
             image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/icon.png")))
         {

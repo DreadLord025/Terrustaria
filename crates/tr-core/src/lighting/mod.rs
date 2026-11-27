@@ -82,6 +82,15 @@ pub struct LightMap {
     pub y0: i32,
     pub w: i32,
     pub h: i32,
+    /// The caller's visible rect (the pre-padding `compute` args), as the
+    /// half-open `[x, x + w)` / `[y, y + h)` C# Rectangle the engine exports
+    /// (`LightingEngine.cs:252-269`). `x0/y0/w/h` above are the padded
+    /// computation rect; consumers that mirror the engine's `area` (the map
+    /// export) read this pair.
+    pub visible_x0: i32,
+    pub visible_y0: i32,
+    pub visible_w: i32,
+    pub visible_h: i32,
     colors: Vec<[f32; 3]>,
     mask: Vec<Mask>,
     /// Tiles that actually received light (debug/statistics).
@@ -115,6 +124,10 @@ impl LightMap {
             y0: 0,
             w: 0,
             h: 0,
+            visible_x0: 0,
+            visible_y0: 0,
+            visible_w: 0,
+            visible_h: 0,
             colors: Vec::new(),
             mask: Vec::new(),
             lit_tiles: 0,
@@ -344,6 +357,17 @@ impl LightMap {
     ) {
         let mut key = params.key(world.revision);
         key.lights = lights_key;
+        // The caller's visible rect (half-open, the C# `Rectangle` shape),
+        // clamped to the world. Consumers mirroring `LightingEngine`'s
+        // `area` export (`:252-269`) read this, not the padded compute rect.
+        let vx0 = x0.clamp(0, world.width - 1);
+        let vy0 = y0.clamp(0, world.height - 1);
+        let vx1 = x1.clamp(0, world.width - 1);
+        let vy1 = y1.clamp(0, world.height - 1);
+        self.visible_x0 = vx0;
+        self.visible_y0 = vy0;
+        self.visible_w = (vx1 - vx0).max(0);
+        self.visible_h = (vy1 - vy0).max(0);
         // `TR_NOCACHE=1` forces the full compute every frame so benchmarks can
         // measure the uncached path (D2 is otherwise almost always a hit).
         static NO_CACHE: OnceLock<bool> = OnceLock::new();

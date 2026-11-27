@@ -918,28 +918,42 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             buff_type,
             buff_time,
         } => {
-            // W4-e28 + W4-f34 — the seven station-buff arms
-            // (`Player.cs:32594-32635`): `AddBuff(id, time)` THEN the cue at
-            // `base.position` — the PLAYER's position, not the tile's (the
-            // generic cue mapping below plays at the cell, so this arm owns
-            // its own play). The click is consumed (`flag2 = true`). The
-            // cue per arm: 29/348/150 → Item4 (:32598/:32610/:32628),
-            // 192 → Item2 (:32604), 366 → Item179 (:32616, the style's own
-            // `WithVolume(0.6f)`, `SoundID.cs:1563`), 159 → Item37 (:32622,
-            // the case-2 ×0.5 volume tweak, `LegacySoundPlayer.cs:564-565`),
-            // 93 → Item149 (:32634). The plain `play_at` path keeps the
-            // e28-recorded unpitched stand-in (no case-2 pitch roll); the
-            // STATIC volume halves ride the volume_scale argument.
-            let (cue, volume) = match *buff_type {
-                192 => ("Item_2", 1.0),
-                366 => ("Item_179", 0.6),
-                159 => ("Item_37", 0.5),
-                93 => ("Item_149", 1.0),
-                _ => ("Item_4", 1.0), // 29 / 348 / 150
+            // W4-e10 + W4-f41 — the seven station-buff arms
+            // (`Player.cs:32594-32635`): `AddBuff(id, time)` THEN the
+            // `SoundID.ItemNN` style façade at `base.position` (the
+            // player's TOP-LEFT, not the tile). The style is the soundid
+            // row's own: the façade consumes the audio-only
+            // `GetRandomPitch` NextFloat, then case 2's ONE
+            // `Next(-6, 7) * 0.01` pitch draw on `UpdatePlayers` after the
+            // attenuation gate (`LegacySoundPlayer.cs:632`), its static
+            // tweaks (37 ×0.5, 179's `WithVolume(0.6)`) folding into the
+            // gain. The click is consumed (`flag2 = true`).
+            let style_name = match *buff_type {
+                192 => "Item2",     // the Slice of Cake — Sugar Rush (:32604)
+                366 => "Item179",   // Dead Cells Potion Station (:32616)
+                159 => "Item37",    // Sharpening Station (:32622)
+                93 => "Item149",    // Ammo Box (:32634)
+                _ => "Item4",       // 29 / 348 / 150 (:32598/:32610/:32628)
             };
+            let (plx, ply) = app
+                .player
+                .as_ref()
+                .map(|p| (p.x, p.y))
+                .unwrap_or((0.0, 0.0));
             if let Some(p) = app.player.as_mut() {
                 p.buffs.add_buff(*buff_type, *buff_time);
-                app.audio.play_at(cue, p.x, p.y, volume);
+            }
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == style_name)
+            {
+                app.audio.play_use_sound(
+                    idx as u16,
+                    plx,
+                    ply,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             app.world_key = None;
             return true;
@@ -975,18 +989,25 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     app.wiring
                         .switch_fountain(&mut app.world, *x, *y, frame.0, frame.1)
                 }
-                // `:32276`: `WorldGen.SwitchMonolith` (the
-                // `GamepadEnableGrappleCooldown` at `:32275` is a gamepad
-                // input seam — no port).
+                // `:32276`: `WorldGen.SwitchMonolith` — and `:32275`'s
+                // `GamepadEnableGrappleCooldown` (`_quickGrappleCooldown = 3`,
+                // `Player.cs:24157-24160`) arms the quick-grapple lock.
                 410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733 => {
+                    if let Some(p) = app.player.as_mut() {
+                        p.gamepad_enable_grapple_cooldown();
+                    }
                     app.wiring
                         .switch_monolith(&mut app.world, *x, *y, *kind, frame.0, frame.1)
                 }
                 // `:32283`: `BirthdayParty.ToggleManualParty`
                 // (`BirthdayParty.cs:145-163`): the flag flip, then the
                 // up-state edge credits THROW_A_PARTY (25) — the same
-                // request the wiring case-455 arm drains.
+                // request the wiring case-455 arm drains. The `:32282`
+                // `GamepadEnableGrappleCooldown` rides it too.
                 455 => {
+                    if let Some(p) = app.player.as_mut() {
+                        p.gamepad_enable_grapple_cooldown();
+                    }
                     let was_up = crate::world_events::party_is_up(&app.world_events);
                     app.world_events.manual_party = !app.world_events.manual_party;
                     if !was_up && crate::world_events::party_is_up(&app.world_events) {
@@ -2070,24 +2091,29 @@ mod tests {
 
     #[test]
     fn w4_e28_the_station_grants_draw_no_rng() {
-        // RNG-free verify: the C# arms call only `AddBuff` + `PlaySound`
-        // (the plain `play_at` path draws no pitch roll) — no stream moves.
+        // The C# arms call `AddBuff` then the `SoundID.Item4` style façade
+        // (`Player.cs:32597-32598`): the `GetRandomPitch` NextFloat rides
+        // the audio-only stream, case 2's ONE `Next(-6, 7) * 0.01` pitch
+        // draw rides `UpdatePlayers` (`LegacySoundPlayer.cs:632`) per
+        // audible click. The global stream never moves.
         let mut app = station_app(125);
-        let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7); // click 1's case-2 pitch
         let global0 = app.rngs.global().clone();
         assert!(interact_tile(&mut app, 10, 19));
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-            players0,
-            "UpdatePlayers untouched"
+            mirror,
+            "the one case-2 pitch draw, nothing else"
         );
         assert_eq!(*app.rngs.global(), global0, "global untouched");
-        // The re-click refreshes the time, still no draws (the AddBuff
-        // update-in-place path, `Player.cs:5402-5426`).
+        // The re-click refreshes the time in place (`Player.cs:5402-5426`)
+        // and draws its own pitch roll.
+        let _ = mirror.next_range(-6, 7); // click 2's case-2 pitch
         assert!(interact_tile(&mut app, 10, 19));
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-            players0
+            mirror
         );
         let p = app.player.as_ref().unwrap();
         let slot = p.buffs.find_buff_index(29).unwrap();
@@ -2136,17 +2162,23 @@ mod tests {
         // RNG-free verify (the e28 pattern): the C# arms call only `AddBuff`
         // + `PlaySound` — the plain `play_at` seam draws no pitch roll. The
         // re-click refreshes in place (`AddBuff_TryUpdatingExistingBuffTime`,
-        // `Player.cs:5402-5426`), never stacks; the cake's 7200 stays 7200.
+        // The C# arms call `AddBuff` + the `SoundID.ItemNN` style façade —
+        // one case-2 `Next(-6, 7)` pitch roll per audible click on
+        // `UpdatePlayers` (the e10 witness). The re-click refreshes in place
+        // (`AddBuff_TryUpdatingExistingBuffTime`, `Player.cs:5402-5426`),
+        // never stacks; the cake's 7200 stays 7200.
         for (kind, buff, time) in [(621u16, 192, 7_200), (699u16, 366, 108_000)] {
             let mut app = station_app(kind);
-            let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let _ = mirror.next_range(-6, 7); // click 1
             let global0 = app.rngs.global().clone();
             assert!(interact_tile(&mut app, 10, 19));
+            let _ = mirror.next_range(-6, 7); // the re-click's own roll
             assert!(interact_tile(&mut app, 10, 19), "the re-click");
             assert_eq!(
                 *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                players0,
-                "tile {kind}: UpdatePlayers untouched"
+                mirror,
+                "tile {kind}: one case-2 pitch draw per click"
             );
             assert_eq!(*app.rngs.global(), global0, "tile {kind}: global untouched");
             let p = app.player.as_ref().unwrap();
@@ -2510,25 +2542,28 @@ mod tests {
 
     #[test]
     fn w4_e28_the_station_grants_draw_no_rng_union_b() {
-        // RNG-free verify for the UNPITCHED rows: the plain `play_at` path
-        // draws no pitch roll — no stream moves. (The cake 621's faithful
-        // case-2 play DOES draw; its own witness pins that below.)
+        // The C# station arms end with the `SoundID.Item4` style façade
+        // (`Player.cs:32597-32598`): ONE case-2 `Next(-6, 7)` pitch roll per
+        // audible click on `UpdatePlayers` (`LegacySoundPlayer.cs:632`); the
+        // global stream never moves.
         let mut app = station_app(125);
-        let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7); // click 1
         let global0 = app.rngs.global().clone();
         assert!(interact_tile(&mut app, 10, 19));
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-            players0,
-            "UpdatePlayers untouched"
+            mirror,
+            "the one case-2 pitch draw"
         );
         assert_eq!(*app.rngs.global(), global0, "global untouched");
-        // The re-click refreshes the time, still no draws (the AddBuff
-        // update-in-place path, `Player.cs:5402-5426`).
+        // The re-click refreshes the time in place (`Player.cs:5402-5426`)
+        // and draws its own pitch roll.
+        let _ = mirror.next_range(-6, 7); // click 2
         assert!(interact_tile(&mut app, 10, 19));
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-            players0
+            mirror
         );
         let p = app.player.as_ref().unwrap();
         let slot = p.buffs.find_buff_index(29).unwrap();
@@ -2537,24 +2572,24 @@ mod tests {
 
 
 
-    /// W4-f34's neighbour no-draw witness, RE-DERIVED for the pitched-cue
-    /// follow-up (research/70 §1f): the cake 621 left the RNG-free loop —
-    /// its faithful case-2 play draws one pitch roll per audible click (the
-    /// `w4_f41_the_cake_click_draws_the_pitched_case2_roll` witness pins
-    /// that). The unpitched rows keep the e28 contract: no stream moves,
-    /// the re-click refreshes in place, never stacks.
+    /// W4-f34's neighbour witness, RE-DERIVED for the pitched-cue follow-up:
+    /// every station's faithful case-2 play draws ONE pitch roll per audible
+    /// click (`LegacySoundPlayer.cs:632`), the re-click refreshes in place
+    /// (never stacks) while drawing again.
     #[test]
     fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack_union_b() {
         for (kind, buff, time) in [(699u16, 366, 108_000), (464, 348, 108_000)] {
             let mut app = station_app(kind);
-            let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let _ = mirror.next_range(-6, 7); // click 1
             let global0 = app.rngs.global().clone();
             assert!(interact_tile(&mut app, 10, 19));
+            let _ = mirror.next_range(-6, 7); // the re-click's own roll
             assert!(interact_tile(&mut app, 10, 19), "the re-click");
             assert_eq!(
                 *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                players0,
-                "tile {kind}: UpdatePlayers untouched"
+                mirror,
+                "tile {kind}: one case-2 pitch draw per click"
             );
             assert_eq!(*app.rngs.global(), global0, "tile {kind}: global untouched");
             let p = app.player.as_ref().unwrap();

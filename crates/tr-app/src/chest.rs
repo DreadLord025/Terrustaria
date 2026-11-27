@@ -1642,8 +1642,6 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 ox as f32 * 16.0,
                 oy as f32 * 16.0,
             );
-            app.audio
-                .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
             // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
             inventory_unlock_dust = true;
             if consumes {
@@ -1697,8 +1695,6 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                     ox as f32 * 16.0,
                     oy as f32 * 16.0,
                 );
-                app.audio
-                    .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
                 // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
                 void_unlock_dust = true;
                 if consumes {
@@ -3246,7 +3242,17 @@ mod tests {
 
     /// A full 2×2 chest: the left column carries `origin_frame_x`, the right
     /// column `+18` (the 18 px sheet pitch); the bottom row is `frameY` 18.
+    /// The kind is marked frame-important, like every real placement path
+    /// (`WorldGen.PlaceChest` → `TileObjectData`'s `frame_important`, mirrored
+    /// into `World.frame_important` by `edit::place`); a bare `World::new`
+    /// leaves the table empty and `framing` would re-frame the chest as a
+    /// block on the first wire wake.
     fn place_chest(w: &mut World, x: i32, y: i32, kind: u16, origin_frame_x: i16) {
+        let k = kind as usize;
+        if w.frame_important.len() <= k {
+            w.frame_important.resize(k + 1, false);
+        }
+        w.frame_important[k] = true;
         for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             set_chest_tile(
                 w,
@@ -5454,8 +5460,14 @@ mod tests {
                 );
             }
         }
-        // The kind 475 is unported — no NPC (the roster gap).
-        assert!(app.npcs.is_empty(), "the big mimic is roster-gapped");
+        // The kind 475 (BigMimicHallow) row landed with the d40 roster
+        // (`NPC.cs:77594-77598` / `4860cd88b`): the summon now spawns it.
+        assert_eq!(app.npcs.len(), 1, "the big mimic spawned");
+        assert_eq!(
+            app.npcs[0].kind,
+            crate::npc::NpcKind::BigMimicHallow,
+            "the Light Key summons the Hallowed mimic (475)"
+        );
         // `lastChest` latched to the closed chest (-1).
         assert_eq!(app.player.as_ref().unwrap().last_chest, -1);
     }
@@ -5530,18 +5542,29 @@ mod tests {
         chest_change_events(&mut app);
         assert!(find_chest(&app.world_chests, 10, 18).is_none());
         assert!(!app.world.tile(10, 18).unwrap().active());
-        // The 474 row is d40's (not merged here) — the gate refuses with
-        // ZERO draws (the smoke only fires after a resolved kind).
-        assert!(app.npcs.is_empty(), "the crimson mimic row rides d40");
-        assert_eq!(
+        // The 474 row landed with the d40 roster: the crimson arm summons the
+        // crimson mimic (`NPC.cs:77594-77598`).
+        assert_eq!(app.npcs.len(), 1, "the crimson big mimic spawned");
+        assert_eq!(app.npcs[0].kind, crate::npc::NpcKind::BigMimicCrimson);
+        // `:77602` — `BigMimicSpawnSmoke` draws the `UpdatePlayers` stream
+        // (the 20× dust-54 + 3×2 gore-99 burst), so the summon is NOT
+        // draw-free; the old "refusal draws nothing" premise died with the
+        // d40 kind merge (the refusal now spawns).
+        assert_ne!(
             app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
             before,
-            "the refusal draws nothing"
+            "the spawn smoke draws the UpdatePlayers stream"
         );
         // The Light Key ignores the evil flag (`num7 = 475` first).
         let mut hallow = summon_app(vec![slot(3092, 1)]);
         hallow.world.crimson = true;
         chest_change_events(&mut hallow);
         assert!(find_chest(&hallow.world_chests, 10, 18).is_none());
+        assert_eq!(hallow.npcs.len(), 1);
+        assert_eq!(
+            hallow.npcs[0].kind,
+            crate::npc::NpcKind::BigMimicHallow,
+            "the Light Key is 475 regardless of the crimson flag"
+        );
     }
 }

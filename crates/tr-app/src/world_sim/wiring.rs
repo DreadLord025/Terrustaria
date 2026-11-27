@@ -1600,14 +1600,36 @@ mod tests {
                     app.world.tiles[i].flags |= FLAG_ACTIVE;
                 }
             }
-            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
+            // The C# flood pre-skips its SEED cells, so the device cell must
+            // be reached as a neighbour: wire the row and trip the rightmost
+            // cell (a stand-in switch).
+            for wx in [x, x + 1, x + 2] {
+                app.world.wires.set(wx, y, tr_core::wiring::WireColor::Red, true);
+            }
             stamp_wiring_entity_boxes(app);
-            app.wiring.trip_wire(&mut app.world, x, y, 1, 1);
-            app.world.tile(x, y).is_some_and(|t| t.active() && t.kind == 387)
+            app.wiring
+                .trip_wire(&mut app.world, x + 2, y, 1, 1);
+            // The 386 2x2 opens DOWNWARD: the closed 2x1 (387) lands on the
+            // BOTTOM row (`WorldGen.cs:51479-51485`), so probe there.
+            app.world
+                .tile(x, y + 1)
+                .is_some_and(|t| t.active() && t.kind == 387)
         };
-        assert!(!probe(&mut app, 2, 2), "the player box overlaps cell (2,2) — refused");
-        assert!(probe(&mut app, 4, 2), "x=64 is past the box's right edge — free");
-        assert!(probe(&mut app, 1, 2), "the cell [16,32] touches x=32 — free");
+        let mut put_player = |a: &mut App, px: f32| {
+            let mut pl = crate::player::Player::spawn(&a.world);
+            pl.x = px;
+            pl.y = 32.0;
+            a.player = Some(pl);
+        };
+        assert!(probe(&mut app, 4, 2), "x=64 is past the box's right edge - free");
+        let mut app2 = rig();
+        // Right edge of the (1..2) 2x2 at x=48, player from x=64: touching
+        // is free (XNA `Rectangle.Intersects`).
+        put_player(&mut app2, 64.0);
+        assert!(probe(&mut app2, 1, 2), "the 2x2 ends at x=48, left of the box - free");
+        let mut app3 = rig();
+        put_player(&mut app3, 32.0);
+        assert!(!probe(&mut app3, 2, 2), "the player box overlaps cell (2,2) - refused");
     }
 
     /// R-12-5 driver 4 (written, NOT run): the e21 pump/settle compose —
@@ -2311,17 +2333,16 @@ mod tests {
     #[test]
     fn dw_4_2_the_fountain_dedupe_blocks_the_anchor() {
         // `Wiring.cs:1526-1539`: the dedupe reads the pool's active fountains
-        // for the same `ai[0]/ai[1]` anchor. The fountains (419-422) have no
-        // ported data, so today the request drops at the spawn anyway; this
-        // pins the drain's current behaviour and the predicate on an empty
-        // pool — the anchored-block path activates with the aiStyle-73 family.
+        // for the same `ai[0]/ai[1]` anchor. The aiStyle-73 fountain family
+        // (419-422) is ported now (W4-d8), so the wired device spawns ONE
+        // live fountain and the anchored predicate sees it.
         let mut app = app_with(338, 0, 0);
         assert!(!fountain_anchored(&app, 10.0, 20.0), "an empty pool anchors nothing");
         trip_and_tick(&mut app);
         assert_eq!(
             app.projectiles.slots().iter().filter(|p| p.active).count(),
-            0,
-            "the fountain family is unported — dropped"
+            1,
+            "the ported fountain family spawns once"
         );
     }
 

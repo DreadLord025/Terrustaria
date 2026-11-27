@@ -753,12 +753,13 @@ fn heroicis_light_lum(app: &App, b: &WingFrameDust) -> f32 {
         app.light.get(tx, ty)
     };
     let brightness = if b.blind { 1.0 } else { tr_core::lighting::GLOBAL_BRIGHTNESS };
-    let bytes = [
-        (sample[0] * brightness) as u8,
-        (sample[1] * brightness) as u8,
-        (sample[2] * brightness) as u8,
-        255,
-    ];
+    // `Lighting.GetColor` returns BYTES: `(int)(v * brightness * 255)` clamped
+    // (`Lighting.cs:216-242`; the `main_dust::light_color_bytes` convention).
+    // The map stores normalised 0..1 floats, so the *255 is required - without
+    // it every lit sample truncates to 0/1 and the HSL luminance never leaves 0.
+    let num = brightness * 255.0;
+    let byte = |v: f32| ((v * num) as i32).clamp(0, 255) as u8;
+    let bytes = [byte(sample[0]), byte(sample[1]), byte(sample[2]), 255];
     let (_, _, l) = crate::ui::color::rgb_to_hsl(bytes);
     // `Utils.Remap(l, 0.2, 0.4, 0, 1)` (`Utils.cs:345-348`, clamped):
     // the lerp collapses to the clamped inverse lerp.
@@ -1494,7 +1495,10 @@ mod tests {
             let off = Vec2::new(ang.cos(), ang.sin()) * Vec2::new(-dir * 20.0, 20.0);
             let (_, _, sc) = default_block(&mut rng, center, 5, 5, 0.8);
             let pos = center + off;
-            let vel = off.normalize() * 2.0;
+            // `:29825` - `DirectionTo(dust.position)` is `Normalize(position -
+            // Center)`, i.e. the cancellation of the big centre is part of the
+            // C# float result (not a bare `off.normalize()`).
+            let vel = (pos - center).normalize() * 2.0;
             let fade = if rng.next_max(10) == 0 { 0.5 } else { 0.0 };
             expect.push((pos, vel, sc, fade));
         }

@@ -166,12 +166,17 @@ pub fn pan_target_step(pos: [f32; 2], target: [f32; 2], left_press: bool) -> ([f
         return (target, true);
     }
     // `:55377-55382`: the lerp amount.
-    let mut amount = 0.15f32;
+    let mut amount = 0.15f64;
     if dist * 0.15 < 1.0 {
-        amount = 1.0 / dist;
+        amount = 1.0 / dist as f64;
     }
+    // `Vector2.Lerp`'s `a + (b - a) * t`; the f64 product keeps the 15-tile
+    // step exact (the f32 product rounds one ULP high).
     (
-        [pos[0] + dx * amount, pos[1] + dy * amount],
+        [
+            (pos[0] as f64 + dx as f64 * amount) as f32,
+            (pos[1] as f64 + dy as f64 * amount) as f32,
+        ],
         false,
     )
 }
@@ -889,7 +894,14 @@ impl WorldMap {
         };
         // `LightingEngine.cs:252`: the processed area minus 28 tiles per side
         // (`Rectangle(X + 28, Y + 28, W - 56, H - 56)` — half-open edges).
-        let (ax, ay, aw, ah) = (light.x0, light.y0, light.w, light.h);
+        // The engine's exported `area` is the caller's visible rect
+        // (half-open), not the padded computation storage.
+        let (ax, ay, aw, ah) = (
+            light.visible_x0,
+            light.visible_y0,
+            light.visible_w,
+            light.visible_h,
+        );
         let mut x0 = ax + 28;
         let mut y0 = ay + 28;
         let mut x1 = ax + aw - 28;
@@ -917,6 +929,27 @@ impl WorldMap {
         y0 = y0.max(cy - zh / 2);
         x1 = x1.min(cx - zw / 2 + zw);
         y1 = y1.min(cy - zh / 2 + zh);
+        if x0 >= x1 || y0 >= y1 {
+            // The requested visible rect can fall inside the 28-tile inset
+            // at a world edge (a near-column spawn); the engine's padded
+            // compute rect still spans the playable area there, so retry
+            // with that (the e18 rect witness prefers the visible rect
+            // whenever it is live).
+            let bx0 = (light.x0 + 28).max(40).max(cx - zw / 2);
+            let by0 = (light.y0 + 28).max(40).max(cy - zh / 2);
+            let bx1 = (light.x0 + light.w - 28)
+                .min(world.width - 40)
+                .min(cx - zw / 2 + zw);
+            let by1 = (light.y0 + light.h - 28)
+                .min(world.height - 40)
+                .min(cy - zh / 2 + zh);
+            if bx0 < bx1 && by0 < by1 {
+                x0 = bx0;
+                y0 = by0;
+                x1 = bx1;
+                y1 = by1;
+            }
+        }
         // `Rectangle.Intersect`: an empty overlap has Left >= Right — XNA
         // returns `Rectangle.Empty` (0, 0, 0, 0), not the inverted rect
         // (W4-f46 salvage, research/84 §6.5). `LightingEngine.cs:269` arms

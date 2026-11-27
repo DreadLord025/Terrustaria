@@ -1120,7 +1120,10 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // detritus + the 236/238/702 Life Fruit / bulb family ride
         // `CheckJunglePlant` (:47946-48108).
         233 | 236 | 238 | 702 => check_jungle_plant(world, x, y, kind),
-        34 => check_chandelier(world, x, y, kind),
+        // `:85510-85512` — `case 34: case 454: CheckChand(i, j, type)`: the
+        // chandelier 34 and the Pigronata 454 share the routine (454's width
+        // is 4, `:52803-52807`).
+        34 | 454 => check_chandelier(world, x, y, kind),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         // W4-c31: the larva 231 rides the same group (`:53114`) — the break

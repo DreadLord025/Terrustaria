@@ -1088,9 +1088,13 @@ pub(crate) fn unspawn_travel_npc(
     }
     // `:5029`: `Lang.misc[35]` ("{0} has departed!", `Lang.cs:487-489` →
     // `LegacyMisc.35`) with `GetFullNetName`, in `ChatColors.NPCTravel` —
-    // the broadcast runs BEFORE the deactivation (`:5030-5031`).
+    // the broadcast runs BEFORE the deactivation (`:5030-5031`). The C#
+    // passes the LocalizedText's KEY to `NetworkText.FromKey`
+    // (`WorldGen.cs:5029`), so the template is looked up by key here too:
+    // formatting an already-resolved `Lang.misc(35)` string would leave the
+    // `{0}` placeholder unsubstituted.
     let announcement = crate::lang::text_args(
-        &crate::lang::misc(35),
+        "LegacyMisc.35",
         &[crate::npc_names::full_name(&npcs[idx])],
     );
     npcs.remove(idx);
@@ -1160,8 +1164,13 @@ mod tests {
         app.rain = Rain::with_forced(7, Some(0.8), false); // maxRaining 0.8
         // The forced pin materializes inside `Rain::tick` — run one drop-sim
         // tick so `max_raining()` really reads 0.8.
+        // A real-height probe world: `Player::solid_collision` clamps the
+        // bottom scan to `height - 40` (`Collision.cs:2700-2734`), so the
+        // 8x8 `flow_app` world cannot take the drop sim. The forced pin
+        // itself only needs the tick, not the app's world.
+        let probe_world = tr_core::World::new("flow".into(), 64, 128);
         app.rain.update(
-            &app.world,
+            &probe_world,
             &test_inputs(&app, 1),
             STEP,
             None,
@@ -1197,8 +1206,13 @@ mod tests {
         app.rain = Rain::with_forced(7, Some(0.8), false);
         // Materialize the forced pin (`Rain::tick` applies it) — see the 60×
         // test above.
+        // A real-height probe world: `Player::solid_collision` clamps the
+        // bottom scan to `height - 40` (`Collision.cs:2700-2734`), so the
+        // 8x8 `flow_app` world cannot take the drop sim. The forced pin
+        // itself only needs the tick, not the app's world.
+        let probe_world = tr_core::World::new("flow".into(), 64, 128);
         app.rain.update(
-            &app.world,
+            &probe_world,
             &test_inputs(&app, 1),
             STEP,
             None,
@@ -1776,6 +1790,10 @@ mod tests {
         // (the splitmix seed hunt is gone, S1-A-11 P2).
         app.world.downed_slime_king = true;
         app.world.hard_mode = false;
+        // `StartSlimeRain`'s `isThereAWorldSurface` gate (`:64744`,
+        // `Main.cs:2788`): a real world's surface sits past 50 tiles; the
+        // 8x8 `flow_app` fixture has none.
+        app.world.world_surface = 200.0;
         let mut rng = UnifiedRandom::new(42);
         let fired_at = (0..500_000usize)
             .find(|_| crate::world_sim::weather::slime_rain_roll(&app.world, true, &mut rng))
@@ -2206,6 +2224,9 @@ mod tests {
         // (a) The smash flag UP but no boss death: the draw runs, no raise.
         let mut app = flow_app(None, vec![], vec![]);
         app.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        // A real surface (`> 50`, `Main.cs:2788`) so the no-surface cancel
+        // below is the ONLY gate refusing the raise.
+        app.world.world_surface = 200.0;
         app.world.shadow_orb_smashed = true;
         app.world.downed_eow = false;
         let before = app.rngs.stream(crate::app::RngKey::UpdateTime).clone();
@@ -2222,6 +2243,7 @@ mod tests {
         // (b) The boss death armed: the same seed's hit raises the flag.
         let mut app2 = flow_app(None, vec![], vec![]);
         app2.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app2.world.world_surface = 200.0;
         app2.world.downed_eow = true;
         meteor_night_bookend(&mut app2);
         assert!(app2.world.spawn_meteor, "the 1/50 hit + downedBoss2 raises");

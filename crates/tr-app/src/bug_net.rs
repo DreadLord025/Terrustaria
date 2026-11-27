@@ -237,9 +237,6 @@ pub(crate) fn npc_catchable(npc_type: i32) -> bool {
             | 377
             | 539
             | 538
-            // W4-d41 — the party bunny (540): `NPC.cs:9346`'s
-            // `catchItem = 2019` (the bunny cage).
-            | 540
             | 671
             | 672
             | 673
@@ -813,21 +810,6 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
                 play_sound: &mut |_, _, _, _, _| {},
             };
             crate::npc_spawn_visuals::poof_of_smoke(&mut env, poof_at);
-            // with NO item. W4-f6 wiring: `Utils.PoofOfSmoke(Center -
-            // (20, 20))` (`NPC.cs:79912-79913`, site 1089) — the gore
-            // ARGUMENT draws + the 10-dust tail ride the same
-            // `UpdatePlayers` stream as the catch (the `NewGore` bodies
-            // stay d55's). The `23` despawn rides the net cadence's
-            // gone-diff, the `106` smoke broadcast has no port message.
-            let (ncx, ncy) = n.center();
-            let ctx = app.spawn_ctx();
-            crate::world_dust::poof_of_smoke(
-                Vec2::new(ncx - 20.0, ncy - 20.0),
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                &mut app.dust,
-                &ctx,
-                &app.world,
-            );
             true
         }
         CatchOutcome::Convert => {
@@ -1689,6 +1671,10 @@ mod tests {
         // gore allocator deactivates out-of-world spawns, Gore.cs:1457).
         app.world = tr_core::World::new("poof".into(), 40, 40);
         app.world.compute_column_surface();
+        // The live-frame dust gate: a fresh fixture's `maxDustToDraw` is 0
+        // (the adaptive gfx loop has not run), which makes `NewDust`'s
+        // pressure bands refuse almost every spawn. Pin the loaded value.
+        app.gfx_quality.max_dust_to_draw = 6000;
         // A statue-spawned goldfish (the one ported catchable kind) at a
         // known box; the catch anchor is its centre minus (20,20).
         let mut n = Npc::new(crate::npc::NpcKind::Goldfish, 100.0, 100.0, 1, 0.0);
@@ -1722,7 +1708,12 @@ mod tests {
         for d in live {
             assert_eq!(d.dust_type, 16);
             assert_eq!(d.alpha, 100);
-            assert_eq!(d.scale, 1.5);
+            // `NewDust`'s scale jitter is `1.5 * (1 + Next(-20,21)*0.01)`.
+            assert!(
+                (1.5 * 0.8 - 1e-4..=1.5 * 1.2 + 1e-4).contains(&d.scale),
+                "scale {}",
+                d.scale
+            );
         }
         // The 3-6 smoke gores (11-13) at scale 0.7.
         let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();

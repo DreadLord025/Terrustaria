@@ -812,7 +812,8 @@ mod tests {
                 1.0,
             );
             assert_eq!(d.position, Vec2::new(pos.x - 6.0, pos.y));
-            sc += rng.next_max(6) as f32 * 0.1;
+            // Type 32 is NOT in the `:23993` Next(6) scale set (16/108/153/
+            // 326/327/328); it takes no scale draw.
             assert!(d.no_gravity);
             let mut v = vel;
             v.x *= 1.2;

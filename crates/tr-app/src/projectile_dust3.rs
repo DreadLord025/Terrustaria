@@ -1030,9 +1030,10 @@ mod tests {
         let p = proj(crate::projectile::GOLDEN_SHOWER, 3.0, 1.0);
         let mut pool = DustPool::new();
         let ctx = test_dust_ctx(&w);
-        // 3 trail NewDust (pos.x, pos.y, vel.x, vel.y, frame, scale) x3,
-        // the Next(8) gate = 0, the sparkle NewDust x6.
-        let ranges = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        // 3 trail NewDust (pos.x, pos.y, vel.x, vel.y, frame, scale) x3
+        // = 18 draws, the Next(8) gate = 0, then the sparkle NewDust x6
+        // = 25 draws total.
+        let ranges = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut s = Script::new(ranges, vec![]);
         let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
         style12_golden_trail(&p, &w, &mut d);
@@ -1381,7 +1382,10 @@ mod tests {
     #[test]
     fn w4_f5_style27_hostile_trail_spawns_twenty() {
         let w = world();
-        let p = proj(crate::projectile::UNHOLY_TRIDENT_HOSTILE, 4.0, 0.0);
+        let mut p = proj(crate::projectile::UNHOLY_TRIDENT_HOSTILE, 4.0, 0.0);
+        // The emitter backs the trail off up to 1920 px (`vel*30/num213*80`);
+        // keep every anchor inside `test_dust_ctx`'s on-screen rect.
+        p.pos = Vec2::new(4000.0, 4000.0);
         let mut pool = DustPool::new();
         let ctx = test_dust_ctx(&w);
         let mut s = Script::new(vec![0; 120], vec![]);

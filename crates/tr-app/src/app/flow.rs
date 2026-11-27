@@ -1316,17 +1316,18 @@ impl FrontScreenBehaviours for FrontScreen {
                         ui::char_creation::Click::RandomizePlayer => {
                             // `Click_RandomizePlayer` runs on the front end —
                             // outside every world swap: the bare-`Main.rand`
-                            // stand-in (`app/rng.rs`'s `global`).
-                            app.audio.play("Menu_Tick"); // `:1547`
+                            // stand-in (`app/rng.rs`'s `global`). The single 12
+                            // rides `click_cue` (`:1547`), not a second play.
                             ui::char_creation::randomize_player(
                                 app.rngs.global(),
                                 &mut state.draft,
                                 &mut state.hair_picked,
                             );
                             // The tail (`:1653-1656`): `Click_CharClothStyle`'s
-                            // `UpdateSelectedGender` + the preview (W4-e10).
+                            // `UpdateSelectedGender` + the colour pickers. The
+                            // C# plays NO voice preview here (the only cue is
+                            // the 12 above), so the drain stays untouched.
                             ui::char_creation::randomize_player_voice_tail(state);
-                            voice_preview = ui::char_creation::play_voice_preview(state);
                             Nav::None
                         }
                         ui::char_creation::Click::None => Nav::None,

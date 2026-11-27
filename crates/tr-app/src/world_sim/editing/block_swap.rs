@@ -926,6 +926,12 @@ mod tests {
             ..Default::default()
         };
         app.world.tiles[i].flags |= FLAG_ACTIVE;
+        // `Main.tileFrameImportant[19] = true` (`Main.cs:7654`): the real
+        // world's table marks platforms frame-important, so the square-frame
+        // pass must NOT cosmetic-frame the cell (the C# platform arm,
+        // `WorldGen.cs:85368-85471`, writes only frameX). The bare fixture
+        // table is all-false.
+        app.world.frame_important[19] = true;
         // The platform is not tileNoFail — three 40-damage hits land.
         let mut out = SwapOutcome::Proceed;
         for _ in 0..3 {

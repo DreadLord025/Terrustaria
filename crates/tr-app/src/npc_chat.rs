@@ -985,7 +985,9 @@ fn stylist(ctx: &mut ChatContext, f: &Flags) -> String {
     // fixed lines, 3-7 four; then the StylistChatter rows.
     let fixed = if ctx.moon_phase < 3 { 5 } else { 4 };
     let (n, row) = mixed_chatter(ctx, "StylistChatter", fixed);
-    if let Some(text) = row {
+    // An unpopulated localized row (the fixture's census can be 0) falls
+    // through to the fixed band instead of answering "".
+    if let Some(text) = row.filter(|t| !t.is_empty()) {
         return text;
     }
     if ctx.moon_phase < 3 {

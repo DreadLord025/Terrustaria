@@ -410,6 +410,9 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         let n = app.rngs.global().next_range(1, 4);
         let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
         app.npc_chat_text = text.clone(); // `:43082`
+        // The pending row is consumed with the condition (`ConditionalDialogue.
+        // cs:58-66`): the early return skips the generic clear below.
+        app.npcs[i].next_dialogue = false;
         return Some(text);
     }
     // W4-f37 — `SetTalkNPC`'s shopping-settings capture
@@ -1975,9 +1978,10 @@ pub(crate) fn update_worms(app: &mut App) {
     let dust_ctx = crate::npc::permissive_dust_ctx(&app.world);
     update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id, Some(&mut app.dust), &dust_ctx);
     // W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
-    // `NPC.cs:52251-52271`), a post-pass after the chain movement (the
-    // pool-pass deviation — the C# interleaves it in slot order).
-    eow_spawn_fade(&app.world, &dust_ctx, &mut app.npcs, &mut app.dust, rng);
+    // `NPC.cs:52251-52271`) ALREADY ran per link inside `update_worms_ctx`
+    // (`eow_fade_tail`, in slot order after the chain movement). The union
+    // merge also called `eow_spawn_fade` here — a duplicate pass that burst
+    // the dust twice and stepped alpha 84/tick. The tail is the keeper.
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
     // the dig roars): the same drain as the per-NPC loop, after the
     // pass's draws on the same UpdateNPCs stream.
@@ -1988,16 +1992,17 @@ pub(crate) fn update_worms(app: &mut App) {
     }
 }
 
-/// W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
+/// W4-g59 DOC-SWEEP - the EoW spawn fade (`AI_006_Worms`'s tail,
 /// `NPC.cs:52251-52271`): the 13/14/15 family fades its `alpha = 255`
-/// SetDefaults start (`:8921`/`:8941`/`:8961`) 42 per MOVED tick. The
-/// port runs it as a post-pass after the chain movement (the pool-pass
-/// deviation — the C# interleaves it in slot order; the fade reads the
-/// leader's alpha, so the head's fade lands before its followers' gate).
-/// The dust rides the live pool on the same `UpdateNPCs` stream. The
-/// movement test reads the preamble's `old_x/old_y` stamp (`NPC.cs:92605`)
-/// vs the post-worm-pass position — the C#'s
-/// `(position - oldPosition).Length() > 2f`.
+/// SetDefaults start (`:8921`/`:8941`/`:8961`) 42 per MOVED tick, with the
+/// 2x type-14 dust while `alpha > 0` (a STATIONARY link still bursts - the
+/// C# dust gate is `alpha > 0 && life > 0` alone, `:52255`).
+///
+/// TEST-ONLY seam: the union merge called this whole-pool copy AFTER
+/// `update_worms_ctx`'s per-link `eow_fade_tail`, double-stepping the fade
+/// and the dust. Production keeps the in-pass tail; this wrapper lets the
+/// g59 witnesses drive the same body without the chain movement.
+#[cfg(test)]
 fn eow_spawn_fade(
     world: &tr_core::World,
     dust_ctx: &tr_core::particles::SpawnCtx,
@@ -2006,52 +2011,7 @@ fn eow_spawn_fade(
     rng: &mut UnifiedRandom,
 ) {
     for i in 0..npcs.len() {
-        if !matches!(
-            npcs[i].kind,
-            NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
-        ) || npcs[i].hp <= 0
-        {
-            continue;
-        }
-        // `:52251` — the gate: type 13 always passes; 14/15 pass only while
-        // their leader (`ai[1]` = the port's seg_index-1 link) is already
-        // half-visible (`alpha < 85`). A missing leader reads 255 (the C#'s
-        // fresh-slot default) → the follower holds its fade.
-        let is_head = npcs[i].kind == NpcKind::EaterOfWorldsHead;
-        let leader_alpha = if is_head {
-            0
-        } else {
-            let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
-            npcs.iter()
-                .find(|n| n.worm_id == wid && n.seg_index == seg.saturating_sub(1) && n.hp > 0)
-                .map(|n| n.alpha as i32)
-                .unwrap_or(255)
-        };
-        if !is_head && leader_alpha >= 85 {
-            continue;
-        }
-        // `:52255-52263` — while still fading AND alive: 2× type-14 dust at
-        // the position, alpha 100, scale 2, noGravity + noLight.
-        if npcs[i].alpha > 0 {
-            let (w, h) = npcs[i].size();
-            let pos = Vec2::new(npcs[i].x, npcs[i].y);
-            for _ in 0..2 {
-                let idx = dust.new_dust(
-                    rng, dust_ctx, world, pos, w as i32, h as i32, 14,
-                    0.0, 0.0, 100, tr_core::particles::Color::default(), 2.0,
-                );
-                let d = dust.slot_mut(idx);
-                d.no_gravity = true;
-                d.no_light = true;
-            }
-        }
-        // `:52264-52271` — the fade step is MOVEMENT-gated: only when the
-        // tick's displacement exceeds 2 px does `alpha -= 42` (floor 0).
-        let dx = npcs[i].x - npcs[i].old_x;
-        let dy = npcs[i].y - npcs[i].old_y;
-        if (dx * dx + dy * dy).sqrt() > 2.0 {
-            npcs[i].alpha = npcs[i].alpha.saturating_sub(42);
-        }
+        eow_fade_tail(npcs, i, dust, dust_ctx, world, rng);
     }
 }
 
@@ -7988,6 +7948,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 s = slope_at(row + 1);
                             }
                             n.frame_slope = if s == 1 || s == 2 { s } else { 0 };
+                        }
                         // W4-e26 — stamp `Main.windSpeedTarget` for the
                         // aiStyle-115 ladybug drift (`NPC.cs:47625`); the
                         // step reads it via `Npc::ladybug_wind`.
@@ -8088,7 +8049,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 },
                             );
                         }
-                    }
                     // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
                     // block, `NPC.cs:32742-32760`): TargetClosest + the
                     // 100:1 blend + the type-180 NewDust. It runs here at
@@ -10656,11 +10616,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     for (owner_slot, banner, (kind, sx, sy, svx, svy, dmg)) in shots {
-        #[cfg(test)]
-        eprintln!(
-            "[spawn-dbg] pool slots active: {}",
-            app.projectiles.slots().iter().filter(|p| p.active).count()
-        );
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
@@ -10759,12 +10714,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(slot) = spawned {
             app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
-        #[cfg(test)]
-        eprintln!(
-            "[after-dbg] spawn kind={} active_now={}",
-            kind,
-            app.projectiles.slots().iter().filter(|p| p.active).count()
-        );
     }
     // The shots that carry the C#'s `ai0`/`ai1` payload (`NewProjectile`'s
     // trailing arguments, `Projectile.cs:10862-10863`): the deathray's owner
@@ -24505,8 +24454,13 @@ mod worm_tests {
         assert_eq!(head.alpha, 255, "the SetDefaults 255 row (:8921)");
         head.worm_inited = true;
         head.worm_id = 4;
+        // The C# dig steer ACCELERATES to num45 by num46 per tick
+        // (`NPC.cs:52112-52199`, the W4-d22 faithful approach); the fade's
+        // >2 px gate (`:52264`) needs a moving head, so the witness seeds the
+        // steady-state dig speed (num45 = 10 for the EoW head).
+        head.vx = 10.0;
         // The follower keeps the head alive (`:51502-51509` kills a
-        // followerless EoW head). Its alpha is 0 — already faded — so its
+        // followerless EoW head). Its alpha is 0 - already faded - so its
         // own tail spawns nothing and the ledger isolates the head's.
         let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 160.0, 198.0, 1, 0.0);
         body.hp = body.max_hp;
@@ -24514,7 +24468,18 @@ mod worm_tests {
         body.worm_inited = true;
         body.worm_id = 4;
         body.seg_index = 1;
-        let mut npcs = vec![head, body];
+        // The chain needs a follower BEHIND the body too: a 2-link chain
+        // triggers `Transform(15)` on the body (`:51513-51519`), whose
+        // SetDefaults re-stamps alpha 255 and makes it burst - a stale
+        // fixture nuance the W4-f4 witness predates. The tail keeps the
+        // body a body; its own alpha 0 keeps it draw-free.
+        let mut tail = Npc::new(NpcKind::EaterOfWorldsTail, 160.0, 236.0, 1, 0.0);
+        tail.hp = tail.max_hp;
+        tail.alpha = 0;
+        tail.worm_inited = true;
+        tail.worm_id = 4;
+        tail.seg_index = 2;
+        let mut npcs = vec![head, body, tail];
         let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut rng = UnifiedRandom::new(17);
         let mut witness = rng.clone();
@@ -24642,7 +24607,9 @@ mod worm_tests {
 
     /// The fade is MOVEMENT-gated: a head that moved >2 px this tick drops
     /// alpha 42 (255 → 213) and spawns 2× type-14 fade dust; a stationary
-    /// head keeps its alpha and draws nothing.
+    /// head keeps its alpha — but the C# DUST gate is `alpha > 0 && life > 0`
+    /// alone (`NPC.cs:52255-52263`), so the still tick still bursts its pair
+    /// (the movement gate guards the alpha step only, `:52264`).
     #[test]
     fn w4_g59_the_eow_fade_steps_42_only_on_movement() {
         let w = World::new("t".into(), 200, 200);
@@ -24679,7 +24646,15 @@ mod worm_tests {
         let mut dust2 = tr_core::particles::DustPool::new();
         eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
         assert_eq!(npcs[0].alpha, 213, "the stationary tick holds the alpha");
-        assert!(dust2.slots().iter().all(|d| !d.active), "no dust when still");
+        let still: Vec<_> = dust2.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(
+            still.len(),
+            2,
+            "the C# dust gate is alpha>0 alone (:52255) - a still link still bursts"
+        );
+        for d in &still {
+            assert_eq!(d.dust_type, 14);
+        }
     }
 
     /// The follower gate (`:52251`): a body fades only while its leader's
@@ -24702,7 +24677,9 @@ mod worm_tests {
         head.alpha = 100; // still >= 85: the follower holds
         head.old_x = 100.0;
         head.old_y = 100.0;
-        head.x = 110.0;
+        // STATIONARY on this tick: the movement-gated step (`:52264`) keeps
+        // the leader at 100, so the follower's same-tick read sees >= 85.
+        head.x = 100.0;
         let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 100.0, 140.0, 1, 0.0);
         body.hp = body.max_hp;
         body.worm_id = 1;
@@ -24715,9 +24692,10 @@ mod worm_tests {
         let mut dust = tr_core::particles::DustPool::new();
         let mut rng = UnifiedRandom::new(193);
         eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
-        assert_eq!(npcs[0].alpha, 58, "the head fades (100 - 42)");
+        assert_eq!(npcs[0].alpha, 100, "the stationary head holds its alpha");
         assert_eq!(npcs[1].alpha, 255, "the body holds while the leader >= 85");
-        // Now the leader is half-visible (< 85): the body fades too.
+        // Now the leader is half-visible (< 85) and the body moves: the link
+        // reads the same-tick 58 (the C# pool order - head first) and fades.
         npcs[0].alpha = 58;
         npcs[0].old_x = npcs[0].x;
         npcs[0].old_y = npcs[0].y;
@@ -28436,7 +28414,18 @@ mod dw3_tests {
             "the kill path consumed loot -> coins -> heals in order"
         );
 
-        // The REVERSED order (the pre-final fold) lands elsewhere.
+        // The REVERSED order (the pre-final fold) is observable through the
+        // ITEM LIST: the C# kill path drops the loot (`:78855`) BEFORE the
+        // coins (`:78897`), so the gel leads production's drops; the reversed
+        // fold lands a coin first. (The old stream-state `assert_ne!` was
+        // unsatisfiable: `UnifiedRandom`'s state is a function of the SAMPLE
+        // COUNT alone, so two equal-count replays always compare equal.)
+        let is_coin = |k: Option<u16>| matches!(k, Some(71..=74));
+        assert!(
+            !is_coin(a.items.first().map(|d| d.kind)),
+            "the loot item leads the coin spread: {:?}",
+            a.items.first().map(|d| d.kind)
+        );
         let mut rev = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         rev.world = crate::test_world_helpers::ground();
         rev.world.compute_column_surface();
@@ -28445,10 +28434,10 @@ mod dw3_tests {
         spawn_coins(&mut rev, &slime, false);
         let _ = spawn_loot(&mut rev, &slime);
         spawn_heals(&mut rev, &slime);
-        assert_ne!(
-            *rev.rngs.stream(RngKey::UpdateNpcs),
-            after,
-            "coins-first is a DIFFERENT stream (the fold is observable)"
+        assert!(
+            is_coin(rev.items.first().map(|d| d.kind)),
+            "coins-first lands a coin before the gel (the fold is observable): {:?}",
+            rev.items.first().map(|d| d.kind)
         );
     }
 
@@ -28649,29 +28638,31 @@ mod dw3_tests {
     }
 
     /// W4-f35 LOOT FINAL: `DoDeathEvents_AdvanceSlimeRain`
-    /// (`NPC.cs:79078-79095`) counts ONLY the blue slime (`Main.slimeRainNPC`
-    /// sets only type 1, `Main.cs:8864`) — the other variants do NOT advance
-    /// the King Slime spawn counter. The pre-final port counted every slime.
+    /// (`NPC.cs:79078-79095`) counts EVERY slime death: `Main.slimeRainNPC`
+    /// sets only index 1 (`Main.cs:8864`), but every colour variant's
+    /// in-world `type` is 1 (`NPCID.FromNetId` at `NPC.cs:8432-8435` folds
+    /// the negative net ids -3/-4/-7/-9 onto 1 before `SetDefaults`), so
+    /// Blue/Green/Pink/Yellow all advance the King Slime counter.
     #[test]
-    fn w4_f35_slime_rain_counts_only_the_blue_slime() {
+    fn w4_f35_slime_rain_counts_every_slime_variant() {
         let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         a.world = crate::test_world_helpers::ground();
         a.world.compute_column_surface();
         a.player = Some(crate::player::Player::spawn(&a.world));
         a.world.slime_rain = true;
         a.world.slime_rain_kills = 0;
-        // A dead GREEN slime: does NOT count.
+        // A dead GREEN slime: counts (its in-world type is the folded 1).
         let mut green = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Green).unwrap();
         green.hp = 0;
         a.npcs.push(green);
         update_npcs(&mut a, 1.0 / 60.0);
-        assert_eq!(a.world.slime_rain_kills, 0, "a green slime does not count");
-        // A dead BLUE slime: counts.
+        assert_eq!(a.world.slime_rain_kills, 1, "a green slime counts (type 1)");
+        // A dead BLUE slime: counts too.
         let mut blue = Npc::spawn_slime_variant(&a.world, 32, SlimeVariant::Blue).unwrap();
         blue.hp = 0;
         a.npcs.push(blue);
         update_npcs(&mut a, 1.0 / 60.0);
-        assert_eq!(a.world.slime_rain_kills, 1, "a blue slime counts");
+        assert_eq!(a.world.slime_rain_kills, 2, "a blue slime counts");
     }
 
     /// DW-3.3: the spawner draws the persistent `SpawnNPC` stream — its
@@ -29089,7 +29080,7 @@ mod dw3_tests {
         );
     }
 
-    /// W4-f2 doc-sweep (research/94 §8b) — the lava strike/buff wiring
+    /// W4-f2 doc-sweep (research/94 §8b) - the lava strike/buff wiring
     /// (`NPC.cs:93325-93337` at the `:92526` Collision_LavaCollision
     /// position): a zombie standing in a lava pool takes the 420-tick
     /// OnFire + the defense-folded 50 strike (`strike_npc_damage(50, 6,
@@ -29125,6 +29116,7 @@ mod dw3_tests {
         z.max_hp = 500;
         z.hp = z.max_hp;
         let hp0 = z.hp;
+        assert_eq!(z.immune[255], 0, "fresh NPC: no lava i-frame");
         app.npcs.push(z);
         // The LavaSlime beside it — lava-immune, untouched.
         let mut ls = Npc::new(NpcKind::LavaSlime, 100.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
@@ -29530,10 +29522,25 @@ mod dw3_tests {
             true,
             a.npcs[0].shimmer_transparency,
             &mut twin_rng,
-            &mut |_, _, _| {},
+            // A HIT's `play_fighter_moan` draws case 14's slot pick
+            // (`critter_legacy_voice`: `Next(0, 3)`); the zombie sits
+            // ~1900 px out, inside the 2500-px attenuation radius, so the
+            // gate passes. Replay the slot roll draw-exactly.
+            &mut |_, _, rng| {
+                let _ = rng.next_range(0, 3);
+            },
         );
         let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
-        assert_eq!(after, twin_rng, "moan Next(1000) + bash Next(60), in order");
+        // `:60046` - the bash's `WorldGen.KillTile(fail: true)` thud:
+        // `play_place_sound((0, 1))` -> `dig_play` = the variation
+        // `Next(0, 3)` + the Dig family pitch `Next(-10, 11)` (2 samples).
+        let _thud_variation = twin_rng.next_range(0, 3);
+        let _thud_pitch = twin_rng.next_range(-10, 11);
+        assert_eq!(
+            after,
+            twin_rng,
+            "moan Next(1000) + bash Next(60) + the KillTile thud's dig pair, in order"
+        );
         // Outside the graveyard: the zone guard short-circuits — the
         // stream carries ONLY the moan roll (the legacy zero-draw bash).
         let mut b = build(false);
@@ -29547,8 +29554,15 @@ mod dw3_tests {
             true,
             b.npcs[0].shimmer_transparency,
             &mut twin_b,
-            &mut |_, _, _| {},
+            &mut |_, _, rng| {
+                let _ = rng.next_range(0, 3);
+            },
         );
+        // OUTSIDE the graveyard the `Next(60)` zone gate is closed, but the
+        // 60-tick door bash itself still fires (it is not graveyard-gated):
+        // its `KillTile(fail: true)` thud spends the dig pair (`:60046`).
+        let _thud_variation = twin_b.next_range(0, 3);
+        let _thud_pitch = twin_b.next_range(-10, 11);
         assert_eq!(after_b, twin_b, "no bash draw outside the graveyard");
     }
 
@@ -30798,10 +30812,10 @@ mod w4_d31_style83_wiring_tests {
         assert!(app.npcs[0].wants_ritual.is_none());
     }
     /// The resolve pass with the ritual-four request: the 379 archers and
-    /// 438 devotees have NO ported kind pre-merge (no bestiary row), so all
-    /// four spawns resolve to None and the tablet's ritual_uids stay 0 -
-    /// the summon gate reads them gone (the recorded roster-wave fold).
-    /// No boss, no TabletDestroyed.
+    /// 438 devotees are in the landed roster (W4-d40, `npc_ai_style83`'s
+    /// witness set), so all four spawns resolve and the tablet's
+    /// `ritual_uids` take the spawn-order uids (the summon gate reads them
+    /// live). No boss, no TabletDestroyed.
     #[test]
     fn the_resolve_pass_folds_the_unported_ritual_four() {
         let mut app = app_arena();
@@ -30828,10 +30842,19 @@ mod w4_d31_style83_wiring_tests {
         };
         app.npcs[0].wants_ritual = Some(out);
         resolve_ritual_requests(&mut app);
-        // No spawn landed (379/438 unported pre-merge).
-        assert_eq!(app.npcs.len(), 1, "the ritual four fold to None");
-        // The links stay 0 (unresolved) - the summon gate reads all-gone.
-        assert_eq!(app.npcs[0].ritual_uids, [0, 0, 0, 0]);
+        // The ritual four spawned (379 -> CultistArcherBlue, 438 -> CultistDevote).
+        assert_eq!(app.npcs.len(), 5, "the ritual four spawn");
+        assert_eq!(app.npcs[1].kind, NpcKind::CultistArcherBlue);
+        assert_eq!(app.npcs[2].kind, NpcKind::CultistDevote);
+        assert_eq!(app.npcs[3].kind, NpcKind::CultistDevote);
+        assert_eq!(app.npcs[4].kind, NpcKind::CultistArcherBlue);
+        // `next_npc_uid` starts at 1: the spawn-order uids 1..=4 link back.
+        assert_eq!(app.npcs[0].ritual_uids, [1, 2, 3, 4]);
+        assert_eq!(app.next_npc_uid, 5);
+        for m in &app.npcs[1..] {
+            assert_eq!(m.carrier_uid, 10, "the four link back to the tablet");
+            assert_eq!(m.despawn_timer, 937, "NewNPC's activeTime*1.25");
+        }
         assert_eq!(app.world_events.cultist_delay, 0, "no TabletDestroyed");
     }
     /// The 526 owner re-pin's channel-track tail (the d10 activation

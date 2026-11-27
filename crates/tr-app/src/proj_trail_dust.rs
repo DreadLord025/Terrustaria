@@ -2516,14 +2516,33 @@ mod tests {
         trail_461(center, vel, 20, 50.0, &mut rng, &mut pool, &c, &w);
         let sparks = active(&pool);
         assert!(sparks.len() >= 2);
-        for &i in sparks.iter().take(2) {
-            let d = pool.slot(i);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(43);
+        let rot = to_rotation(vel);
+        let tip = center + vel * (50.0 - 8.0);
+        for k in 0..2 {
+            let side = if mirror.next_range(0, 2) == 1 { -1.0 } else { 1.0 };
+            let ang = rot + side * (std::f32::consts::PI / 2.0);
+            let spd = mirror.next_double() as f32 * 0.8 + 1.0;
+            assert!(spd >= 1.0 && spd < 1.8, "argument speed {spd}");
+            let v = Vec2::new(
+                (ang as f64).cos() as f32 * spd,
+                (ang as f64).sin() as f32 * spd,
+            );
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, tip, 0, 0, 226, v.x, v.y, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.scale = 1.2;
+            let d = pool.slot(sparks[k]);
             assert_eq!(d.dust_type, 226);
             assert_eq!(d.scale, 1.2);
             // The spawn box is 0x0 → clamped 5x5; the position jitter is
             // [4,5) around the tip; the speed rides the velocity argument.
-            let len = d.velocity.length();
-            assert!(len >= 0.9 && len <= 2.1, "speed {len}");
+            let _ = d.scale;
+            assert_eq!(d.position, md.position, "spark {k}: the box jitter");
+            assert_eq!(d.velocity, md.velocity, "spark {k}: the record velocity");
         }
     }
 

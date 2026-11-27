@@ -449,9 +449,6 @@ mod tests {
         w.time = 53999.0;
         w.sundial_cooldown = 4;
         w.moondial_cooldown = 2;
-        // The roll in the 1-in-9 window with a 120+ player.
-        let mut rng = stream_with_first_roll(|r| r < 1.0 / 9.0);
-        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true, (6, 1));
         // The roll in the 1-in-9 window with a 120+ player (past the
         // NightSetup prefix — W4-d15 final).
         let mut rng = stream_with_dusk_roll(|r| r < 1.0 / 9.0);

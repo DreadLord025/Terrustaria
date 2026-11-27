@@ -2,6 +2,11 @@
 
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
+/// The original game version this port tracks. Cargo's SemVer form is
+/// `1.4.5+8` (four numeric components are not valid SemVer); user-visible
+/// strings and the exe's VERSIONINFO carry the full `1.4.5.8`.
+pub const GAME_VERSION: &str = "1.4.5.8";
+
 
 mod accessory_defense;
 mod ammo;

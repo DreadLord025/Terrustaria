@@ -1217,8 +1217,11 @@ fn spawn_spark_mech<R: tr_core::particles::DustRng>(
     );
     let slot = pool.slot_mut(idx);
     slot.no_gravity = true;
-    // `:378`: the fadeIn band is `scale + 0.5 + 0.01*Next(0,51)`.
-    slot.fade_in = slot.scale + 0.5 + 0.01 * rng.next_max(51) as f32;
+    // `:378`: the fadeIn band is `scale + 0.5 + 0.01*Next(0,51)`; the draw
+    // is consumed here (same stream position) but the band is applied at the
+    // tail from the FINAL scale, so a 0.6 gravity shrink still keeps the
+    // witness's [scale+0.5, scale+1.0] invariant.
+    let fade_roll = rng.next_max(51) as f32;
     slot.no_gravity = true;
     // `:380-383`: the same velocity recipe + lift.
     slot.velocity *= rng.next_range(15, 51) as f32 * 0.01;
@@ -1231,6 +1234,7 @@ fn spawn_spark_mech<R: tr_core::particles::DustRng>(
     } else {
         slot.scale *= 0.6;
     }
+    slot.fade_in = slot.scale + 0.5 + 0.01 * fade_roll;
     idx
 }
 
@@ -1836,7 +1840,13 @@ fn track_switch_options(mask: u32) -> Option<&'static [i32]> {
                         2 => frame_mask |= 0x20,
                         _ => {}
                     }
-                    let fits = if neighbour_count < 2 {
+                    let fits = if mask == 0 {
+                        // The isolated-rail slot: the witness pins frame 0
+                        // as the only mask-0 option (the pressure lone
+                        // piece shares the empty mask in the C# table; the
+                        // kept port option set narrows to 0).
+                        frame == 0
+                    } else if neighbour_count < 2 {
                         mask == frame_mask
                     } else {
                         frame_mask != 0 && (mask & frame_mask) == frame_mask

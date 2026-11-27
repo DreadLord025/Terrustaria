@@ -2845,6 +2845,10 @@ impl App {
             }
         } else if let Some(p) = self.remote_players.get_mut(&(subject as u32)) {
             p.hp = 0;
+            // `Player.KillMe` latches `dead = true` (`Player.cs:38908`); the
+            // host's copy of the sender must carry the flag for the peers'
+            // `13` snapshots even though it is not simulated.
+            p.dead = true;
         }
     }
 
@@ -5207,8 +5211,12 @@ impl App {
                     entry.name = format!("Player {}", ps.player_id);
                 }
                 if ps.x != 0.0 || ps.y != 0.0 {
-                    entry.off_x += ps.x - entry.x;
-                    entry.off_y += ps.y - entry.y;
+                    // `MessageBuffer.cs:1005`: `netOffset += position - vector6`
+                    // where `player13.position` is still the OLD body and
+                    // `vector6` the wire value — the offset points BACK at the
+                    // old sprite, so moving right accrues a NEGATIVE offset.
+                    entry.off_x += entry.x - ps.x;
+                    entry.off_y += entry.y - ps.y;
                     // `multiplayerNPCSmoothingRange` = 300 (`Main.cs:67007`):
                     // past it the offset snaps to zero.
                     if (entry.off_x * entry.off_x + entry.off_y * entry.off_y).sqrt()
@@ -8578,6 +8586,24 @@ impl App {
         if self.net_mode() != 1 || self.net_state < net::client_state::IN_WORLD {
             return;
         }
+        // W4-d115: the dodge handlers queue their `62 SyncDodge` sends
+        // (`Player.cs:38038/:38053/:38115/:38163`); drain them on the net
+        // tick, addressed to the sender (`MessageBuffer.cs:2885`).
+        let dodge_sends = self
+            .player
+            .as_mut()
+            .map(|p| p.take_dodge_sends())
+            .unwrap_or_default();
+        if !dodge_sends.is_empty() {
+            if let NetRole::Client(client) = &self.net {
+                for kind in dodge_sends {
+                    client.send(&C2s::SyncDodge(net::SyncDodge {
+                        player_id: self.local_id as u8,
+                        kind,
+                    }));
+                }
+            }
+        }
         // W4-c28: the `Hurt` client tail (`Player.cs:38369-38377`) — the
         // damage path queued the send at the hit moment (the PRE-subtraction
         // hp); drain it BEFORE the clone-compare so the 13/16 ride this
@@ -10819,8 +10845,10 @@ mod handshake_tests {
         pump(&mut host_app, &mut client_app, 12);
         let peer = client_app.remote_players.get(&0).expect("host peer stored");
         assert!((peer.x - (spawn.0 + 60.0)).abs() < 0.01);
+        // `MessageBuffer.cs:1005` accrues `old - wire` (negative for a +x
+        // step) — the offset points back at the lagged sprite.
         assert!(
-            (peer.off_x - 60.0).abs() < 0.01,
+            (peer.off_x + 60.0).abs() < 0.01,
             "the offset is the visual lag: {:.2}",
             peer.off_x
         );
@@ -11239,7 +11267,10 @@ mod handshake_tests {
         let (mut host_app, mut client_app) = in_world_pair();
         let _ = &mut client_app;
         let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0);
-        npc.buffs.add_buff(20, 600); // Poisoned
+        // Slimes are immune to Poisoned 20 (`NPCID.cs:6079-6084`, the
+        // `NpcBuffs::for_kind` immunity row), so use Confused 31 — the set
+        // under test is `CanBeRemovedByNetMessage`, not the immunity table.
+        npc.buffs.add_buff(31, 600);
         host_app.npcs.push(npc);
         let role = std::mem::replace(&mut host_app.net, NetRole::Off);
         if let NetRole::Host(server) = &role {
@@ -11249,14 +11280,14 @@ mod handshake_tests {
                     id: 1,
                     msg: C2s::NpcBuffRemovalRequest(net::NpcBuffRemovalRequest {
                         npc: 0,
-                        buff_type: 20,
+                        buff_type: 31,
                     }),
                 },
             );
         }
         host_app.net = role;
         assert!(
-            host_app.npcs[0].buffs.has_buff(20),
+            host_app.npcs[0].buffs.has_buff(31),
             "the empty CanBeRemovedByNetMessage set refuses the removal"
         );
     }
@@ -11525,12 +11556,13 @@ mod handshake_tests {
         host_app.player.as_mut().unwrap().x = 160.0;
         pump(&mut host_app, &mut client_app, 12);
         let first = client_app.remote_players[&0].off_x;
-        assert!(first > 50.0, "the 60 px step accrued a lag");
+        // `MessageBuffer.cs:1005` accrues `old - wire` → negative for +x.
+        assert!(first < -50.0, "the 60 px step accrued a lag");
         // One 60 Hz frame of the C#'s decay: `max(2, 10%)` toward zero.
         client_app.net_interp_tick(1.0 / 60.0);
         let second = client_app.remote_players[&0].off_x;
         assert!(
-            second < first && second > 0.0,
+            second > first && second < 0.0,
             "the lag decays, not jumps: {first} -> {second}"
         );
         // Enough frames and it is gone.
@@ -12267,7 +12299,10 @@ mod handshake_tests {
             "a stale-owner key never kills (`:1831` gates before TryGet's slot)"
         );
         // The owner's kill lands and the position rides the wire
-        // (`NetMessage.cs:852-855`, `Projectile.cs:77256`).
+        // (`NetMessage.cs:852-855`, `Projectile.cs:77256`). The owner killed
+        // its own copy locally; the `29` relay excludes it
+        // (`MessageBuffer.cs:1847`).
+        client_app.projectiles.kill_remote_at(3, owner, 1, 0.0, 0.0);
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::ProjectileDead {
                 key,
@@ -12371,7 +12406,10 @@ mod handshake_tests {
             !client_app.projectiles.slots()[7].active && !client_app.projectiles.slots()[8].active,
             "the break skipped the relay too (`:1760` is after the gate)"
         );
-        // The own friendly shot lands and relays (`:1729-1763`).
+        // The own friendly shot lands and relays (`:1729-1763`). The firing
+        // client created it locally at fire time (the `27` handler's host
+        // relay excludes the sender, `:1762`).
+        client_app.projectiles.upsert_remote(&base);
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::Projectile(Box::new(base)));
         }
@@ -12570,6 +12608,10 @@ mod handshake_tests {
         host_app
             .npcs
             .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        // The `23` fan-out skips a client whose section is inactive up to
+        // four times (`NetMessage.cs:1740-1744`); the C# client is in-world,
+        // so run the section-check pass once before counting decisions.
+        host_app.host_check_sections();
         let mut sends_by_tick: Vec<usize> = Vec::new();
         for tick in 0..40 {
             // Move the NPC every tick so the change-detect producer keeps it dirty.
@@ -13367,9 +13409,17 @@ mod message_family_tests {
         assert_eq!(client_app.net_pending_damages[0].damage, 40);
         assert_eq!(client_app.net_pending_damages[0].index, 0);
         // A `23` snap with wire life 1000 reconciles to 960 (the pending 40).
+        // The pending entry is keyed by the CLIENT's received generation
+        // (`net_npc_gen`, filled from the `23` body), not the host fixture's
+        // slot generation: read it back so the wire body matches the entry.
+        let client_gen = client_app
+            .net_npc_gen
+            .get(&0)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(1);
         let info = net::NpcInfo {
             slot: 0,
-            generation: 1,
+            generation: client_gen,
             spawn: false,
             kind: crate::npc::NpcKind::Slime.to_u16() as i16,
             x: 100.0,
@@ -13626,6 +13676,15 @@ mod message_family_tests {
             });
         let client_doll_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
         // Equip slot 2 takes item 100 (prefix 81).
+        // The client wrote its own doll before sending; the host relay skips
+        // the sender (`MessageBuffer.cs:3938`'s ignoreClient).
+        client_app.apply_doll_sync(net::DisplayDollSync {
+            player_id: 1,
+            entity_id: client_doll_id as i32,
+            item_index: 2,
+            command: 0,
+            data: net::DollSyncData::Item(net::TeItem { kind: 100, prefix: 81, stack: 1 }),
+        });
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
                 player_id: 0,
@@ -13656,15 +13715,21 @@ mod message_family_tests {
         } else {
             panic!("the client doll payload");
         }
-        // The pose command (2) sets the pose byte on both sides.
+        // The pose command (2) sets the pose byte on both sides. The client
+        // applies its own pose before sending (the relay skips the sender).
+        let pose = net::DisplayDollSync {
+            player_id: 0,
+            entity_id: doll_id as i32,
+            item_index: 0,
+            command: 2,
+            data: net::DollSyncData::Pose(7),
+        };
+        client_app.apply_doll_sync(net::DisplayDollSync {
+            entity_id: client_doll_id as i32,
+            ..pose
+        });
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
-                player_id: 0,
-                entity_id: doll_id as i32,
-                item_index: 0,
-                command: 2,
-                data: net::DollSyncData::Pose(7),
-            }));
+            client.send(&C2s::DisplayDollSync(pose));
         }
         pump(&mut host_app, &mut client_app, 20);
         let pose_of = |app: &App, id: u32| match &app.world.tile_entities.get_by_id(id).unwrap().data {
@@ -13817,7 +13882,14 @@ mod message_family_tests {
             tr_core::tile_entities::TeData::HatRack([None, None], [None, None]),
         );
         let client_rack_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
-        // wire slot 2 = dye slot 0 (the +2 fold).
+        // wire slot 2 = dye slot 0 (the +2 fold). The client folds its own
+        // rack first; the host relay skips the sender (`:4018`).
+        client_app.apply_hat_rack_item(
+            client_rack_id,
+            0,
+            true,
+            net::TeItem { kind: 3454, prefix: 0, stack: 1 },
+        );
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::HatRackItemSync(net::HatRackItemSync {
                 player_id: 0,
@@ -14183,6 +14255,9 @@ mod message_family_tests {
                 coat: 0,
             }));
         }
+        // The client paints locally first; the host relay skips the sender
+        // (`MessageBuffer.cs:2925`).
+        paint_tile(&mut client_app.world, 5, 4, 13);
         pump(&mut host_app, &mut client_app, 20);
         assert_eq!(
             host_app.world.tile(5, 4).map(|t| t.paint()),
@@ -14215,6 +14290,9 @@ mod message_family_tests {
                 coat: 0,
             }));
         }
+        // The client paints its own wall first; the relay skips the sender
+        // (`MessageBuffer.cs:2945`).
+        paint_wall(&mut client_app.world, 5, 4, 9);
         pump(&mut host_app, &mut client_app, 20);
         assert_eq!(host_app.world.wall_paint(5, 4), 9, "the host painted the wall (`:2937`)");
         assert_eq!(client_app.world.wall_paint(5, 4), 9, "the relay painted the client's wall (`:2945`)");
@@ -14600,16 +14678,28 @@ mod message_family_tests {
         }
         drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
         assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        // The placing client ran `WorldGen.PlaceObject` locally before the
+        // send; the host relay skips the sender (`MessageBuffer.cs:3212`).
+        let p = net::PlaceObject {
+            x: 100,
+            y: 119,
+            kind: 14, // a table (3×2, origin (1,1))
+            style: 0,
+            alternative: 0,
+            random: -1,
+            direction: true,
+        };
+        let _ = tr_core::edit::place_object(
+            &mut client_app.world,
+            p.x as i32,
+            p.y as i32,
+            p.kind.max(0) as u16,
+            p.style as i32,
+            p.random as i32,
+            1,
+        );
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::PlaceObject(net::PlaceObject {
-                x: 100,
-                y: 119,
-                kind: 14, // a table (3×2, origin (1,1))
-                style: 0,
-                alternative: 0,
-                random: -1,
-                direction: true,
-            }));
+            client.send(&C2s::PlaceObject(p));
         }
         pump(&mut host_app, &mut client_app, 20);
         // The table footprint: x 99-101, rows 118-119.
@@ -14631,7 +14721,7 @@ mod message_family_tests {
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::PlaceObject(net::PlaceObject {
                 x: 2, // inside the 10-tile border (`:3204`)
-                y: 4,
+                y: 2,
                 kind: 14,
                 style: 0,
                 alternative: 0,
@@ -14641,7 +14731,9 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 20);
         for app in [&host_app, &client_app] {
-            let t = app.world.tile(2, 4).expect("cell");
+            // (2,2) is empty before the refused placement (the y=4 dirt row
+            // is the fixture floor, not the probe cell).
+            let t = app.world.tile(2, 2).expect("cell");
             assert!(!t.active(), "the border placement was refused (`:3204`)");
         }
     }
@@ -14667,6 +14759,10 @@ mod message_family_tests {
                 liquid_type: 0,
             }));
         }
+        // The draining client already wrote the tile before it sent; the
+        // drained re-push itself skips the sender (`MessageBuffer.cs:2441`).
+        let ci = client_app.world.index(5, 4);
+        client_app.world.tiles[ci].liquid = 0;
         pump(&mut host_app, &mut client_app, 20);
         assert_eq!(host_app.world.tile(5, 4).unwrap().liquid, 0, "the host drained (`:2434`)");
         assert_eq!(client_app.world.tile(5, 4).unwrap().liquid, 0, "the drained re-push reached the client (`:2441`)");
@@ -14699,8 +14795,13 @@ mod message_family_tests {
     fn w4_g49_lock_and_unlock_chest_shifts_and_relays() {
         let (mut host_app, mut client_app) = in_world_pair();
         // A locked golden chest (kind 21, style 2 → frameX 72) at (5,4) on
-        // both sides (the 2×2 footprint).
+        // both sides (the 2×2 footprint). Chest frames are frame-important
+        // (`Main.tileFrameImportant[21]`), so latch it for the manual fixture.
         for app in [&mut host_app, &mut client_app] {
+            if app.world.frame_important.len() <= 21 {
+                app.world.frame_important.resize(22, false);
+            }
+            app.world.frame_important[21] = true;
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                 let i = app.world.index(5 + dx, 4 + dy);
                 app.world.tiles[i].kind = 21;
@@ -14731,8 +14832,12 @@ mod message_family_tests {
     fn w4_g49_lock_and_unlock_door_shifts_the_leaves() {
         let (mut host_app, mut client_app) = in_world_pair();
         // A locked golden door (kind 10) at x=5, leaves y=2..4 with frameY
-        // 594/612/630 on both sides.
+        // 594/612/630 on both sides. Door frames are frame-important.
         for app in [&mut host_app, &mut client_app] {
+            if app.world.frame_important.len() <= 10 {
+                app.world.frame_important.resize(11, false);
+            }
+            app.world.frame_important[10] = true;
             for (k, fy) in [(2, 594i16), (3, 612), (4, 630)] {
                 let i = app.world.index(5, k);
                 app.world.tiles[i].kind = 10;
@@ -14740,6 +14845,10 @@ mod message_family_tests {
                 app.world.tiles[i].frame_y = fy;
             }
         }
+        // The unlocking client shifted all three leaves locally before the
+        // send (the host's `52` patch is only the centered 2×2 at the bottom
+        // leaf, `MessageBuffer.cs:2551`).
+        let _ = unlock_door(&mut client_app.world, 5, 4);
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::LockAndUnlock(net::LockAndUnlock {
                 action: 2, // door unlock (`:2545-2552`)
@@ -14869,14 +14978,15 @@ mod message_family_tests {
             client_app.net_npcs[&0].extra_value, 750,
             "the client assigned the relayed TOTAL"
         );
-        // The moneyPing dust burst fired on the client (the 244-type row at
-        // a 750-copper credit — under the 10000 ladder step).
+        // The moneyPing dust burst fired on the client: 750 reaches the
+        // `>= 100` rung, so `moneyPing` picks 245 (`NPC.cs:90064-90067`); 244
+        // is only the below-100 default.
         assert!(
             client_app
                 .dust
                 .slots()
                 .iter()
-                .any(|d| d.active && d.dust_type == 244),
+                .any(|d| d.active && d.dust_type == 245),
             "the moneyPing burst spawned"
         );
     }
@@ -14887,7 +14997,9 @@ mod message_family_tests {
     /// carry it under the host's id.
     #[test]
     fn w4_g50_the_87_placement_answers_with_an_86_share() {
-        let (mut host_app, mut client_app) = in_world_pair();
+        // (10,4) is outside the 8-tile flow fixture; the wide world keeps it
+        // in bounds (the `:3300` in-world gate reads the real grid).
+        let (mut host_app, mut client_app) = big_world_pair();
         // An item-frame anchor tile (395, frameX/Y 0) on both sides.
         for app in [&mut host_app, &mut client_app] {
             let i = app.world.index(10, 4);
@@ -15377,7 +15489,14 @@ mod message_family_tests {
         // The 3x3 lock needs a world wider than the flow fixture.
         let (mut host_app, mut client_app) = big_world_pair();
         // A gem lock (440) at (10,4), off row (frameY 0), amethyst column 0.
+        // The 3x3 object is frame-important (`Main.tileFrameImportant[440]`),
+        // so the `20` record must carry frameY; the manual fixture has to set
+        // the world latch that `place_object` would otherwise set.
         for app in [&mut host_app, &mut client_app] {
+            if app.world.frame_important.len() <= 440 {
+                app.world.frame_important.resize(441, false);
+            }
+            app.world.frame_important[440] = true;
             for k in 10..13 {
                 for l in 4..7 {
                     let i = app.world.index(k, l);
@@ -15673,10 +15792,14 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_117_self_hurt_drops_the_local_hp() {
         let (mut host_app, mut client_app) = in_world_pair();
-        // The self-hurt's target is the local player (`Main.player[whoAmI]`).
-        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // The `117` reader runs `Main.player[num27].Hurt` on the HOST's copy
+        // of the sender (`MessageBuffer.cs:3879`); the sender already ran its
+        // own Hurt before sending, and the relay excludes it (`:3882`). The
+        // witness is therefore the host's peer snapshot.
         let me = client_app.local_id as u8;
-        let hp_before = client_app.player.as_ref().unwrap().hp;
+        let peer = host_app.remote_players.entry(me as u32).or_default();
+        peer.hp = 100;
+        peer.max_hp = 100;
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::PlayerHurtV2(net::PlayerHurtV2 {
                 player_id: me,
@@ -15689,8 +15812,8 @@ mod message_family_tests {
             }));
         }
         pump(&mut host_app, &mut client_app, 15);
-        let hp_after = client_app.player.as_ref().unwrap().hp;
-        assert!(hp_after < hp_before, "the self-hurt dropped the hp");
+        let hp_after = host_app.remote_players[&(me as u32)].hp;
+        assert_eq!(hp_after, 90, "the host's copy of the sender took the 10");
     }
 
     /// `case 118` (`MessageBuffer.cs:3887-3904`): the host forces the subject
@@ -15698,9 +15821,13 @@ mod message_family_tests {
     #[test]
     fn w4_g50_the_118_death_kills_the_local_player() {
         let (mut host_app, mut client_app) = in_world_pair();
-        // The forced subject is the local player (`Main.player[whoAmI]`).
-        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // The host forces the subject to the sender (`MessageBuffer.cs:3892`)
+        // and runs `KillMe` on its copy of that player (`:3898`); the sender's
+        // own copy already died locally and the relay excludes it.
         let me = client_app.local_id as u8;
+        let peer = host_app.remote_players.entry(me as u32).or_default();
+        peer.hp = 100;
+        peer.max_hp = 100;
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::PlayerDeathV2(net::PlayerDeathV2 {
                 player_id: 250, // the host overrides it (`:3892`)
@@ -15711,10 +15838,9 @@ mod message_family_tests {
             }));
         }
         pump(&mut host_app, &mut client_app, 15);
-        let p = client_app.player.as_ref().unwrap();
-        assert!(p.dead, "the local player died");
+        let p = &host_app.remote_players[&(me as u32)];
+        assert!(p.dead, "the host's copy died (`KillMe` sets dead, :38908)");
         assert_eq!(p.hp, 0);
-        assert!(p.respawn_timer > 0, "the respawn timer armed");
     }
 
     /// `case 120` (`MessageBuffer.cs:3905-3919`): the host bubbles the emote
@@ -16193,7 +16319,15 @@ mod message_family_tests {
             .collect();
         assert_eq!(texts.len(), 1, "one HealMana text for the peer");
         assert_eq!(texts[0].color, crate::combat_text::HEAL_MANA);
-        assert_eq!(texts[0].position[0], 100.0);
+        // `CombatText.NewText` places X at `rect.X + rect.Width*0.5 -
+        // measure.X*0.5` then adds the ±Width/2 jitter (`CombatText.cs:86,88`);
+        // the peer rect is the 20-wide body, so the point sits in 100..=120,
+        // not exactly on the body's left edge.
+        assert!(
+            (100.0..=120.0).contains(&texts[0].position[0]),
+            "the centred HealMana point: {}",
+            texts[0].position[0]
+        );
     }
 
     /// W4-c27 `84 PlayerStealth` — the host forces the subject to the sender
@@ -16202,6 +16336,12 @@ mod message_family_tests {
     #[test]
     fn w4_c27_player_stealth_relays_with_the_sender_id() {
         let (mut host_app, mut client_app) = in_world_pair();
+        // Let the join tail land first: the `139` push creates the own slot
+        // (`counts_as_host`), so snapshot only after it exists.
+        pump(&mut host_app, &mut client_app, 12);
+        // The own slot exists from the `139` join push; whatever it holds
+        // before the send must survive (the relay excludes the sender, `:3257`).
+        let before_self = client_app.remote_players.get(&1).map(|p| p.stealth);
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::PlayerStealth(net::PlayerStealth {
                 player_id: 200, // spoofed — the host must override it to 1
@@ -16211,13 +16351,13 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 12);
         let stored = host_app.remote_players.get(&1).expect("peer stored");
         assert_eq!(stored.stealth, 0.25, "the float stored under the sender");
-        // The relay excludes the sender, so no self-echo value (the own slot
-        // may exist from the `139` join push and keeps its default 0.0).
-        assert!(
-            client_app
-                .remote_players
-                .get(&1)
-                .map_or(true, |p| p.stealth == 0.0)
+        // `NetMessage.TrySendData(84, -1, this.whoAmI, …)` skips the sender
+        // (`MessageBuffer.cs:3257`), so no self-echo value lands on the own
+        // slot (`Player.stealth` defaults to 1f, so the default is not 0).
+        assert_eq!(
+            client_app.remote_players.get(&1).map(|p| p.stealth),
+            before_self,
+            "the sender never receives its own stealth relay"
         );
         // The host's own stealth value reaches the client's peer record
         // (the `netMode == 1` half keeps the wire id, `:3254`).
@@ -16631,8 +16771,10 @@ mod message_family_tests {
     #[test]
     fn the_cadence_quiesces_once_the_clone_matches() {
         let mut app = cadence_client();
-        // One pass seeds the clone (the extension `13` for the spawn
-        // position vs the all-zero snapshot, the mana 20-vs-0 report).
+        // `cadence_client` already pumped the join burst, which ran the
+        // cadence; rewind the extension snapshot to model the FIRST
+        // observation of the live body (the C# clone starts all-zero).
+        app.net_ps_last = Default::default();
         app.player_sync_cadence();
         assert!(
             app.net_player_outbox.contains(&PlayerSend::Controls),
@@ -16640,7 +16782,8 @@ mod message_family_tests {
         );
         app.net_player_outbox.clear();
         // 100 unchanged ticks: no input change, no stat change, no beat
-        // (the counter is far from 420) — the C# sends NOTHING.
+        // (park the counter away from the 420/900 boundaries).
+        app.net_client_counter = 0;
         for _ in 0..100 {
             app.player_sync_cadence();
         }
@@ -16689,8 +16832,16 @@ mod message_family_tests {
                 .count();
         }
         assert_eq!(reports, 1, "one report at the window boundary, not per tick");
-        // A fresh change right after the boundary parks (the window re-armed
-        // to 60) — the next few ticks send nothing.
+        // The 120-tick window has drained by now, so a fresh change reports
+        // at once and re-arms the 60-tick hold (`Main.cs:17646`); the next
+        // change during that window must park.
+        app.net_player_outbox.clear();
+        app.player.as_mut().unwrap().mana = 15;
+        app.player_sync_cadence();
+        assert!(
+            app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Mana { .. })),
+            "an expired window reports the new change immediately"
+        );
         app.net_player_outbox.clear();
         app.player.as_mut().unwrap().mana = 5;
         for _ in 0..5 {
@@ -17578,14 +17729,20 @@ mod g48_apply_tests {
             };
             app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         }
+        // The real client runs its own `17` body before sending (`Player.cs`
+        // EditTile → the `netMode == 1` reader path); the host relay excludes
+        // the sender (`MessageBuffer.cs:1285`'s `ignoreClient = whoAmI`), so
+        // the witness must model that local apply or its copy never changes.
+        let edit = net::TileEdit {
+            kind: 0,
+            x: 6,
+            y: 3,
+            value: 0,
+            style: 0,
+        };
+        crate::app::net_apply::client_tile_edit(&mut client_app, edit);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::TileEdit(net::TileEdit {
-                kind: 0,
-                x: 6,
-                y: 3,
-                value: 0,
-                style: 0,
-            }));
+            client.send(&C2s::TileEdit(edit));
         }
         let mut broken = false;
         for _ in 0..90 {
@@ -17613,14 +17770,18 @@ mod g48_apply_tests {
         // The `InWorld(x, y, 3)` gate (`MessageBuffer.cs:1127-1130`) needs the
         // 64x64 fixture; the 8-tile flow world refuses (7, 3).
         let (mut host_app, mut client_app) = roomy_pair();
+        // The client applies its own edit first (the relay skips the sender,
+        // `MessageBuffer.cs:1285`).
+        let place = net::TileEdit {
+            kind: 5, // PlaceWire (red)
+            x: 7,
+            y: 3,
+            value: 0,
+            style: 0,
+        };
+        crate::app::net_apply::client_tile_edit(&mut client_app, place);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::TileEdit(net::TileEdit {
-                kind: 5, // PlaceWire (red)
-                x: 7,
-                y: 3,
-                value: 0,
-                style: 0,
-            }));
+            client.send(&C2s::TileEdit(place));
         }
         let mut wired = false;
         for _ in 0..90 {
@@ -17636,14 +17797,16 @@ mod g48_apply_tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(wired, "the red wire landed on both sides");
+        let kill = net::TileEdit {
+            kind: 6, // KillWire (red)
+            x: 7,
+            y: 3,
+            value: 0,
+            style: 0,
+        };
+        crate::app::net_apply::client_tile_edit(&mut client_app, kill);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::TileEdit(net::TileEdit {
-                kind: 6, // KillWire (red)
-                x: 7,
-                y: 3,
-                value: 0,
-                style: 0,
-            }));
+            client.send(&C2s::TileEdit(kill));
         }
         let mut cut = false;
         for _ in 0..90 {
@@ -17673,11 +17836,15 @@ mod g48_apply_tests {
     #[test]
     fn g48_17_track_pound_edit_frames_and_replicates() {
         let (mut host_app, mut client_app) = roomy_pair();
-        // Three rails in a row at y=10: (9,10) front 1, (10,10) front 1
-        // back −1 (the hit), (11,10) front 1 — the mask is 2|16 = 18.
+        // The pound branch cycles through `_trackSwitchOptions[mask]`
+        // (`Minecart.cs:449-518`, `:1040-1108`). The mask 22 neighbours
+        // (left-level bit1, left-down bit2, right-level bit4) give a
+        // multi-option switch; from the level front 1/back −1 the cycle lands
+        // on front 1 / back 4 (the left-down link), which the old mask-18
+        // level straight (a single option) never could.
         for app in [&mut host_app, &mut client_app] {
-            for x in 9..=11i32 {
-                let i = app.world.index(x, 10);
+            for (x, y) in [(9i32, 10i32), (11, 10), (9, 11), (10, 10)] {
+                let i = app.world.index(x, y);
                 app.world.tiles[i] = tr_core::Tile {
                     kind: 314,
                     frame_x: 1,
@@ -17687,14 +17854,18 @@ mod g48_apply_tests {
                 app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
+        // The client frames its own track first (`Minecart.FrameTrack`, the
+        // shared `netMode == 1` reader body); the relay skips the sender.
+        let pound = net::TileEdit {
+            kind: 15,
+            x: 10,
+            y: 10,
+            value: 0,
+            style: 0,
+        };
+        crate::app::net_apply::client_tile_edit(&mut client_app, pound);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::TileEdit(net::TileEdit {
-                kind: 15,
-                x: 10,
-                y: 10,
-                value: 0,
-                style: 0,
-            }));
+            client.send(&C2s::TileEdit(pound));
         }
         let mut framed = false;
         for _ in 0..90 {
@@ -17702,20 +17873,27 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            framed = host_app.world.tile_frame_x(10, 10) == 5
-                && client_app.world.tile_frame_x(10, 10) == 5;
+            let hit = |app: &App| {
+                app.world
+                    .tile(10, 10)
+                    .map(|t| (t.frame_x, t.frame_y))
+            };
+            framed = hit(&host_app) == Some((1, 4)) && hit(&client_app) == Some((1, 4));
             if framed {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        assert!(framed, "the track switched to the up-slope frame on both sides");
+        assert!(
+            framed,
+            "the track cycled to front 1 / back 4 on both sides"
+        );
         for app in [&host_app, &client_app] {
             // The fail-tile tail (`flag4` true, mute false) did NOT kill
             // the track (`WorldGen.cs:63709-63737` — no removal).
             let t = app.world.tile(10, 10).unwrap();
             assert!(t.active() && t.kind == 314, "the track survives the fail tick");
-            assert_eq!(t.frame_y, -1, "no back connection on the mask");
+            assert_eq!((t.frame_x, t.frame_y), (1, 4), "the mask-22 cycle");
         }
     }
 
@@ -17724,22 +17902,32 @@ mod g48_apply_tests {
     /// direction to the other peers; the receiving client opens its copy.
     #[test]
     fn g48_19_door_open_toggle_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // A closed door (tile 10, 1x3) at (4, 1..3) above the dirt row (y 4),
-        // inside the `19` reader's `InWorld(x, y, 3)` box for the 8-tile flow
-        // world (3..=4), on both sides. `place_item_tile`'s y for the 1x3
-        // door is the MIDDLE cell (`edit/kill.rs`'s doorway fixture places at
-        // y=18 for cells 17..19), so the middle here is y=2.
+        // The 64x64 `roomy_pair` gives the canonical doorway fixture shape
+        // used by `edit.rs`'s `doorway_world`: floor row y=20, ceiling y=16,
+        // and the 1x3 door at cells 17..19 (the wire y is the middle leaf).
+        let (mut host_app, mut client_app) = roomy_pair();
         for app in [&mut host_app, &mut client_app] {
-            assert!(tr_core::edit::place_item_tile(&mut app.world, 4, 2, 10, 0, 1));
+            for x in 0..app.world.width {
+                let i = app.world.index(x, 16);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            assert!(tr_core::edit::place_item_tile(&mut app.world, 10, 18, 10, 0, 1));
         }
+        // The client runs `OpenDoor` locally before sending; the relay skips
+        // the sender (`MessageBuffer.cs:1330`).
+        let open = net::DoorToggle {
+            action: 0,
+            x: 10,
+            y: 18,
+            direction: 1,
+        };
+        crate::app::net_apply::client_door_toggle(&mut client_app, open);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::DoorToggle(net::DoorToggle {
-                action: 0,
-                x: 4,
-                y: 2,
-                direction: 1,
-            }));
+            client.send(&C2s::DoorToggle(open));
         }
         let mut opened = false;
         for _ in 0..90 {
@@ -17748,8 +17936,8 @@ mod g48_apply_tests {
             host_app.poll_net();
             client_app.poll_net();
             // The open door is tile 11 (the closed 10 became the open pair).
-            opened = host_app.world.tile(4, 2).is_some_and(|t| t.kind == 11)
-                && client_app.world.tile(4, 2).is_some_and(|t| t.kind == 11);
+            opened = host_app.world.tile(10, 18).is_some_and(|t| t.kind == 11)
+                && client_app.world.tile(10, 18).is_some_and(|t| t.kind == 11);
             if opened {
                 break;
             }
@@ -18047,14 +18235,19 @@ mod g48_apply_tests {
             };
             app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         }
+        // The client runs its own ReplaceTile first (the `netMode == 1` body
+        // with the drops gated off); the host relays to the others only
+        // (`MessageBuffer.cs:1285`).
+        let swap = net::TileEdit {
+            kind: 21, // ReplaceTile
+            x: 10,
+            y: 10,
+            value: 30, // wood — a valid solid target
+            style: 0,
+        };
+        crate::app::net_apply::client_tile_edit(&mut client_app, swap);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::TileEdit(net::TileEdit {
-                kind: 21, // ReplaceTile
-                x: 10,
-                y: 10,
-                value: 30, // wood — a valid solid target
-                style: 0,
-            }));
+            client.send(&C2s::TileEdit(swap));
         }
         let mut swapped = false;
         for _ in 0..90 {
@@ -18105,13 +18298,17 @@ mod g48_apply_tests {
                 }
             }
         }
+        // The client shifts its own trapdoor first; the relay skips the
+        // sender (`MessageBuffer.cs:1330`).
+        let shift = net::DoorToggle {
+            action: 3, // ShiftTrapdoor(..., onlyCloseOrOpen: 0) — open
+            x: 10,
+            y: 10,
+            direction: 1,
+        };
+        crate::app::net_apply::client_door_toggle(&mut client_app, shift);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::DoorToggle(net::DoorToggle {
-                action: 3, // ShiftTrapdoor(..., onlyCloseOrOpen: 0) — open
-                x: 10,
-                y: 10,
-                direction: 1,
-            }));
+            client.send(&C2s::DoorToggle(shift));
         }
         let mut opened = false;
         for _ in 0..90 {
@@ -18170,13 +18367,17 @@ mod g48_apply_tests {
                 app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
+        // The client shifts its own gate first; the relay skips the sender
+        // (`MessageBuffer.cs:1330`).
+        let shift = net::DoorToggle {
+            action: 4, // ShiftTallGate(closing: false, forced: true)
+            x: 10,
+            y: 11, // mid-column: frameY 20 → the walk steps one row up
+            direction: 0,
+        };
+        crate::app::net_apply::client_door_toggle(&mut client_app, shift);
         if let NetRole::Client(client) = &client_app.net {
-            client.send(&C2s::DoorToggle(net::DoorToggle {
-                action: 4, // ShiftTallGate(closing: false, forced: true)
-                x: 10,
-                y: 11, // mid-column: frameY 20 → the walk steps one row up
-                direction: 0,
-            }));
+            client.send(&C2s::DoorToggle(shift));
         }
         let mut opened = false;
         for _ in 0..90 {
@@ -18899,7 +19100,13 @@ mod w4_g52_relay_tests {
         // The host's KillTile removes the store entry (the C# cascade's
         // Chest.DestroyChest) and drops the chest item back (the host's
         // `Main.netMode != 1` drop gate, WorldGen.cs:63860).
-        assert!(host_app.world_chests.is_empty(), "the store entry was removed");
+        // The port tombstones a destroyed chest (`remove_chest` leaves the
+        // slot at the removed sentinel), so the live-store lookup is the
+        // faithful "entry removed" assertion (`Chest.DestroyChest`).
+        assert!(
+            crate::chest::find_chest(&host_app.world_chests, 100, 100).is_none(),
+            "the store entry was removed"
+        );
         assert_eq!(host_app.items.len(), 1, "the destroy dropped the chest item");
         assert_eq!(host_app.items[0].kind, 48, "registry::tile_drop(21) = 48");
     }
@@ -19000,7 +19207,18 @@ mod w4_g52_relay_tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert_eq!(second.net_state, net::client_state::IN_WORLD);
-        // The join burst arrived WITHOUT any cadence tick on the host.
+        // The join burst rides the `12` answer, so it can still be in flight
+        // when the client's state flips. Drain the sockets WITHOUT ticking
+        // the host (no cadence may produce the body).
+        let bundle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !second.net_npcs.values().any(|n| n.hp > 0)
+            && std::time::Instant::now() < bundle_deadline
+        {
+            second.poll_net();
+            first.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
         assert!(
             second.net_npcs.values().any(|n| n.hp > 0),
             "the live NPC reached the joiner in the bundle"

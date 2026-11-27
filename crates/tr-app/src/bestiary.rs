@@ -2296,7 +2296,13 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 68,
         kind: NpcKind::DungeonGuardian,
         variant: None,
-        quick_unlock: true,
+        // `BestiaryEntry.Enemy(68)`'s factory flag: `NPC.cs:9652-9665`
+        // never sets `boss` and 68 is absent from
+        // `ShouldBeCountedAsBossForBestiary` (`NPCID.cs:10481`), so the
+        // entry carries no Boss row and the factory provider is
+        // quickUnlock:false. The populator's `:676` override supplies the
+        // quick-unlock gate (ride `bestiary_data::gate`'s 68 arm).
+        quick_unlock: false,
         name: "Dungeon Guardian",
     },
     BestiaryEntryDef {
@@ -3488,14 +3494,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dreadnautilus",
     },
-    BestiaryEntryDef {
-        credit_id: "BloodSquid",
-        net_id: 619,
-        kind: NpcKind::BloodSquid,
-        variant: None,
-        quick_unlock: false,
-        name: "Blood Squid",
-    },
     // W4-d42 - the NPCID 620-624 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
     BestiaryEntryDef {
@@ -3695,14 +3693,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // `CountsAsACritter` set). The names ride the lang table
     // (`lang_tables.rs`'s 442/446/447 rows).
     BestiaryEntryDef {
-        credit_id: "GoldBird",
-        net_id: 442,
-        kind: NpcKind::GoldBird,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Bird",
-    },
-    BestiaryEntryDef {
         credit_id: "DiggerHead",
         net_id: 95,
         kind: NpcKind::DiggerHead,
@@ -3865,14 +3855,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Lightning Bug",
     },
     BestiaryEntryDef {
-        credit_id: "Lavafly",
-        net_id: 654,
-        kind: NpcKind::Lavafly,
-        variant: None,
-        quick_unlock: false,
-        name: "Lavafly",
-    },
-    BestiaryEntryDef {
         credit_id: "Shimmerfly",
         net_id: 677,
         kind: NpcKind::Shimmerfly,
@@ -3892,52 +3874,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // entries — the populator registers all six by id (the normal-enemy
     // kill ladder, no quick-unlock).
     BestiaryEntryDef {
-        credit_id: "ManEater",
-        net_id: 43,
-        kind: NpcKind::ManEater,
-        variant: None,
-        quick_unlock: false,
-        name: "Man Eater",
-    },
-    BestiaryEntryDef {
-        credit_id: "Snatcher",
-        net_id: 56,
-        kind: NpcKind::Snatcher,
-        variant: None,
-        quick_unlock: false,
-        name: "Snatcher",
-    },
-    BestiaryEntryDef {
-        credit_id: "Clinger",
-        net_id: 101,
-        kind: NpcKind::Clinger,
-        variant: None,
-        quick_unlock: false,
-        name: "Clinger",
-    },
-    BestiaryEntryDef {
         credit_id: "AngryTrapper",
         net_id: 175,
         kind: NpcKind::AngryTrapper,
         variant: None,
         quick_unlock: false,
         name: "Angry Trapper",
-    },
-    BestiaryEntryDef {
-        credit_id: "FungiBulb",
-        net_id: 259,
-        kind: NpcKind::FungiBulb,
-        variant: None,
-        quick_unlock: false,
-        name: "Fungi Bulb",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantFungiBulb",
-        net_id: 260,
-        kind: NpcKind::GiantFungiBulb,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Fungi Bulb",
     },
     // The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
     // entries — the populator registers all three by id (112/666 the
@@ -3974,46 +3916,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // 156 `:1673`, 158 `:1356`, 159 `:1465`, 226 `:1553`, 634 `:1950`);
     // 660's UI provider credits 657 (`:694`'s quick-unlock map) but its
     // entry + draw sheet ride its own id (the Sharkron precedent).
-    BestiaryEntryDef {
-        credit_id: "Harpy",
-        net_id: 48,
-        kind: NpcKind::Harpy,
-        variant: None,
-        quick_unlock: false,
-        name: "Harpy",
-    },
-    BestiaryEntryDef {
-        credit_id: "Demon",
-        net_id: 62,
-        kind: NpcKind::Demon,
-        variant: None,
-        quick_unlock: false,
-        name: "Demon",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantBat",
-        net_id: 93,
-        kind: NpcKind::GiantBat,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Bat",
-    },
-    BestiaryEntryDef {
-        credit_id: "Slimer",
-        net_id: 121,
-        kind: NpcKind::Slimer,
-        variant: None,
-        quick_unlock: false,
-        name: "Slimer",
-    },
-    BestiaryEntryDef {
-        credit_id: "IlluminantBat",
-        net_id: 137,
-        kind: NpcKind::IlluminantBat,
-        variant: None,
-        quick_unlock: false,
-        name: "Illuminant Bat",
-    },
     BestiaryEntryDef {
         credit_id: "IceBat",
         net_id: 150,
@@ -4067,14 +3969,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Vampire",
     },
     BestiaryEntryDef {
-        credit_id: "FlyingSnake",
-        net_id: 226,
-        kind: NpcKind::FlyingSnake,
-        variant: None,
-        quick_unlock: false,
-        name: "Flying Snake",
-    },
-    BestiaryEntryDef {
         credit_id: "SporeBat",
         net_id: 634,
         kind: NpcKind::SporeBat,
@@ -4095,14 +3989,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
     // names ride `en-US.NPCs.json`'s NPCName rows.
     BestiaryEntryDef {
-        credit_id: "Firefly",
-        net_id: 355,
-        kind: NpcKind::Firefly,
-        variant: None,
-        quick_unlock: false,
-        name: "Firefly",
-    },
-    BestiaryEntryDef {
         credit_id: "Butterfly",
         net_id: 356,
         kind: NpcKind::Butterfly,
@@ -4110,34 +3996,10 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Butterfly",
     },
-    BestiaryEntryDef {
-        credit_id: "LightningBug",
-        net_id: 358,
-        kind: NpcKind::LightningBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Lightning Bug",
-    },
-    BestiaryEntryDef {
-        credit_id: "Snail",
-        net_id: 359,
-        kind: NpcKind::Snail,
-        variant: None,
-        quick_unlock: false,
-        name: "Snail",
-    },
     // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
     // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
     // onto the Duck 362's entry (no row of its own, the DetonatingBubble
     // precedent); the credit ids ride the vanilla NPCID names.
-    BestiaryEntryDef {
-        credit_id: "GlowingSnail",
-        net_id: 360,
-        kind: NpcKind::GlowingSnail,
-        variant: None,
-        quick_unlock: false,
-        name: "Glowing Snail",
-    },
     BestiaryEntryDef {
         credit_id: "Frog",
         net_id: 361,
@@ -4161,14 +4023,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Scorpion",
-    },
-    BestiaryEntryDef {
-        credit_id: "TruffleWorm",
-        net_id: 374,
-        kind: NpcKind::TruffleWorm,
-        variant: None,
-        quick_unlock: false,
-        name: "Truffle Worm",
     },
     // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
     // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
@@ -4220,60 +4074,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Tumbleweed",
     },
     BestiaryEntryDef {
-        credit_id: "Vulture",
-        net_id: 61,
-        kind: NpcKind::Vulture,
-        variant: None,
-        quick_unlock: false,
-        name: "Vulture",
-    },
-    BestiaryEntryDef {
         credit_id: "Antlion",
         net_id: 69,
         kind: NpcKind::Antlion,
         variant: None,
         quick_unlock: false,
         name: "Antlion",
-    },
-    BestiaryEntryDef {
-        credit_id: "Mummy",
-        net_id: 78,
-        kind: NpcKind::Mummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "DarkMummy",
-        net_id: 79,
-        kind: NpcKind::DarkMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Dark Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "BloodMummy",
-        net_id: 630,
-        kind: NpcKind::BloodMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Blood Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightMummy",
-        net_id: 80,
-        kind: NpcKind::LightMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Light Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "WalkingAntlion",
-        net_id: 580,
-        kind: NpcKind::WalkingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Walking Antlion",
     },
     // W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
     // 822): the four town kinds' TownNPC entries; the names ride the
@@ -4917,7 +4723,9 @@ pub fn try_entry_for_npc(
         // Hide=true (`NPCID.cs:3398-3403`) — the credit folds onto the
         // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
         // NPC_328 through `texture_net_id`'s own row.
-        NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // (no PumpkingBlade fold: the credit id is its OWN
+        // `NPCID.Search.GetName(328)` and the port keeps the GAP-3 328
+        // ENTRIES row - the d38 ladder witness pins entry_for_npc 328.)
         // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
         // 3622`): the swimming form folds onto the walker Duck 362's
         // entry (one credit per waterfowl, the DetonatingBubble precedent).
@@ -5097,7 +4905,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // (`BestiaryDatabaseNPCsPopulator.cs:1655`) — the entry exists in
         // the vanilla DB but is hidden from the grid; the port's fold
         // keeps the credit on the boss row like every Hide=true rider.
-        NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // (no PumpkingBlade fold: the credit id is its OWN 328 row;
+        // `ContentSamples.cs:862-873` never remaps it and the port keeps
+        // the GAP-3 ENTRIES 328 row for the d38 ladder witness.)
         // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
         // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
         NpcKind::Duck2 => NpcKind::Duck,
@@ -5862,17 +5672,19 @@ mod tests {
         assert_eq!(unlock_state_gate(creeper, &t2), UnlockState::NotKnownAtAll);
     }
 
-    /// W4-c37: the override table beats the formula — the Eater of Worlds
+    /// W4-c37: the override table beats the formula - the Eater of Worlds
     /// head's bulk would read 5, the `FillNpcRarities` row pins 3
     /// (`ContentSamples.cs:1239`); the Eternia Crystal's fresh-Main sample
-    /// (1000 HP / 14 defense, `NPC.cs:16003-16004`) reads 3 — the runtime
-    /// post-Golem 5000/20 row would read 4.
+    /// (1000 HP / 14 defense / 0 damage, `NPC.cs:16000-16005`) reads
+    /// 0+14+1000/4 = 264 -> +1.5 -> 2.5 truncates to 2. It rides NO
+    /// `FillNpcRarities` override (`ContentSamples.cs:1106-1242` has no
+    /// 548 row; the star census below pins (548, 2)).
     #[test]
     fn w4_c37_the_override_rows_beat_the_formula() {
         let eow = ENTRIES.iter().find(|e| e.net_id == 13).unwrap();
         assert_eq!(crate::bestiary_data::rarity_stars(eow), 3);
         let crystal = ENTRIES.iter().find(|e| e.net_id == 548).unwrap();
-        assert_eq!(crate::bestiary_data::rarity_stars(crystal), 3);
+        assert_eq!(crate::bestiary_data::rarity_stars(crystal), 2);
         // The Lava Slime's sample keeps the non-remix 50/15/10 row
         // (`NPC.cs:9518-9523`) -> 1 star, same as the remix row's result.
         let lava = ENTRIES.iter().find(|e| e.net_id == 59).unwrap();
@@ -5963,6 +5775,7 @@ mod tests {
             (332, 3), // ZombieSweater
             (489, 1), // BloodZombie
             (490, 2), // Drippler
+            (619, 2), // BloodSquid
             (225, 2), // UmbrellaSlime
             (533, 2), // DesertDjinn
             (30, 1), // ChaosBall
@@ -6149,88 +5962,251 @@ mod tests {
             (72, 2), // BlazingWheel
             (250, 3), // AngryNimbus
             (288, 2), // DungeonSpirit
+            (31, 2), // AngryBones
+            (34, 2), // CursedSkull
+            (37, 2), // OldMan
+            (43, 2), // ManEater
+            (39, 2), // BoneSerpentHead
+            (47, 3), // CorruptBunny
+            (48, 2), // Harpy
+            (56, 1), // Snatcher
+            (57, 3), // CorruptGoldfish
+            (61, 1), // Vulture
+            (62, 2), // Demon
+            (63, 1), // BlueJellyfish
+            (67, 1), // Crab
+            (68, 4), // DungeonGuardian
+            (46, 1), // Bunny
+            (333, 3), // SlimeRibbonWhite
+            (334, 3), // SlimeRibbonYellow
+            (335, 3), // SlimeRibbonGreen
+            (336, 3), // SlimeRibbonRed
+            (337, 4), // BunnyXmas
+            (318, 3), // DemonEyeSpaceship
+            (322, 3), // SkeletonTopHat
+            (323, 3), // SkeletonAstonaut
+            (324, 3), // SkeletonAlien
+            (328, 3), // PumpkingBlade
+            (302, 3), // SlimeMasked
+            (303, 4), // BunnySlimed
+            (304, 2), // HoppinJack
+            (316, 3), // Ghost
+            (317, 3), // DemonEyeOwl
+            (297, 1), // BirdBlue
+            (298, 2), // BirdRed
+            (299, 1), // Squirrel
+            (300, 1), // Mouse
+            (301, 2), // Raven
+            (292, 4), // TacticalSkeleton
+            (293, 4), // SkeletonCommando
+            (294, 2), // AngryBonesBig
+            (295, 2), // AngryBonesBigMuscle
+            (296, 2), // AngryBonesBigHelmet
+            (286, 2), // DiabolistWhite
+            (287, 4), // BoneLee
+            (289, 2), // GiantCursedSkull
+            (290, 5), // Paladin
+            (291, 2), // SkeletonSniper
+            (281, 2), // RaggedCaster
+            (282, 2), // RaggedCasterOpenCoat
+            (283, 2), // Necromancer
+            (284, 2), // NecromancerArmored
+            (285, 2), // DiabolistRed
             (384, 2), // ForceBubble
+            (217, 3), // CochinealBeetle
+            (218, 3), // CyanBeetle
+            (219, 3), // LacBeetle
+            (220, 4), // SeaSnail
+            (221, 3), // Squid
+            (224, 2), // FlyingFish
+            (226, 2), // FlyingSnake
+            (229, 2), // Pirate
+            (231, 1), // HornetFatty
+            (232, 1), // HornetHoney
+            (233, 2), // HornetLeafy
+            (234, 1), // HornetSpikey
+            (235, 1), // HornetStingy
+            (237, 2), // JungleCreeperWall
+            (238, 2), // BlackRecluseWall
+            (240, 2), // BloodCrawlerWall
+            (241, 2), // BloodFeeder
+            (242, 2), // BloodJelly
+            (243, 5), // IceGolem
+            (244, 4), // RainbowSlime
+            (251, 5), // Eyezor
+            (252, 2), // Parrot
+            (253, 2), // Reaper
+            (254, 2), // ZombieMushroom
+            (255, 2), // ZombieMushroomHat
+            (256, 2), // FungoFish
+            (257, 2), // AnomuraFungus
+            (258, 2), // MushiLadybug
+            (259, 1), // FungiBulb
+            (260, 2), // GiantFungiBulb
+            (268, 2), // IchorSticker
+            (269, 2), // RustyArmoredBonesAxe
+            (270, 2), // RustyArmoredBonesFlail
+            (271, 2), // RustyArmoredBonesSword
+            (272, 2), // RustyArmoredBonesSwordNoArmor
+            (273, 2), // BlueArmoredBones
+            (274, 2), // BlueArmoredBonesMace
+            (275, 2), // BlueArmoredBonesNoPants
+            (276, 2), // BlueArmoredBonesSword
+            (277, 2), // HellArmoredBones
+            (278, 2), // HellArmoredBonesSpikeShield
+            (279, 2), // HellArmoredBonesMace
+            (280, 2), // HellArmoredBonesSword
+            (595, 1), // BlackDragonfly
+            (596, 1), // BlueDragonfly
+            (597, 1), // GreenDragonfly
+            (598, 1), // OrangeDragonfly
+            (599, 3), // RedDragonfly
+            (600, 1), // YellowDragonfly
+            (601, 5), // GoldDragonfly
+            (583, 4), // FairyCritterPink
+            (584, 4), // FairyCritterGreen
+            (585, 4), // FairyCritterBlue
+            (594, 2), // WindyBalloon
+            (437, 2), // CultistTablet
+            (438, 2), // CultistDevote
+            (440, 3), // CultistBossClone
+            (359, 1), // Snail
+            (360, 3), // GlowingSnail
+            (655, 2), // MagmaSnail
+            (444, 5), // GoldButterfly
+            (447, 5), // GoldMouse
             (362, 2), // Duck
             (363, 1), // Duck2
             (364, 2), // DuckWhite
             (365, 1), // DuckWhite2
-            (602, 1), // Seagull
-            (603, 1), // Seagull2
-            (608, 2), // Grebe
-            (609, 1), // Grebe2
             (357, 1), // Worm
-            (442, 1), // GoldBird
-            (443, 1), // GoldBunny
-            (444, 1), // GoldButterfly
-            (445, 1), // GoldFrog
-            (446, 1), // GoldGrasshopper
-            (447, 1), // GoldMouse
-            (448, 1), // GoldWorm
+            (374, 3), // TruffleWorm
+            (375, 5), // TruffleWormDigger
+            (453, 4), // SkeletonMerchant
+            (454, 3), // CultistDragonHead
+            (460, 2), // Butcher
+            (461, 2), // CreatureFromTheDeep
+            (462, 2), // Fritz
+            (463, 3), // Nailhead
+            (464, 3), // CrimsonBunny
+            (466, 2), // Psycho
+            (467, 2), // DeadlySphere
+            (468, 2), // DrManFly
+            (469, 2), // ThePossessed
+            (470, 3), // CrimsonPenguin
+            (472, 2), // ShadowFlameApparition
+            (473, 5), // BigMimicCorruption
+            (474, 5), // BigMimicCrimson
+            (654, 3), // Lavafly
+            (475, 5), // BigMimicHallow
+            (476, 5), // BigMimicJungle
+            (477, 5), // Mothron
+            (478, 2), // MothronEgg
+            (479, 2), // MothronSpawn
+            (480, 4), // Medusa
+            (481, 2), // GreekSkeleton
+            (482, 2), // GraniteGolem
+            (483, 2), // GraniteFlyer
+            (442, 5), // GoldBird
+            (443, 5), // GoldBunny
+            (445, 5), // GoldFrog
+            (446, 5), // GoldGrasshopper
+            (448, 5), // GoldWorm
             (484, 5), // EnchantedNightcrawler
             (485, 1), // Grubby
             (486, 2), // Sluggy
             (487, 3), // Buggy
-            (224, 2), // FlyingFish
+            (578, 2), // DD2LightningBugT3
+            (580, 2), // WalkingAntlion
+            (582, 1), // LarvaeAntlion
+            (586, 4), // ZombieMerman
+            (590, 1), // TorchZombie
             (509, 2), // GiantFlyingAntlion
-            (581, 1), // FlyingAntlion
-            (587, 2), // EyeballFlyingFish
-            (57, 3), // CorruptGoldfish
+            (581, 2), // FlyingAntlion
+            (587, 4), // EyeballFlyingFish
             (157, 2), // Arapaima
-            (241, 2), // BloodFeeder
             (465, 3), // CrimsonGoldfish
-            (592, 1), // GoldGoldfish
+            (592, 5), // GoldGoldfish
+            (602, 1), // Seagull
+            (608, 2), // Grebe
+            (610, 1), // Rat
+            (611, 3), // Owl
+            (612, 2), // WaterStrider
+            (613, 5), // GoldWaterStrider
+            (614, 4), // ExplosiveBunny
+            (616, 2), // Turtle
+            (617, 1), // TurtleJungle
+            (618, 5), // BloodNautilus
+            (620, 5), // GoblinShark
+            (621, 5), // BloodEelHead
+            (624, 3), // Gnome
+            (625, 1), // SeaTurtle
+            (626, 2), // Seahorse
+            (627, 5), // GoldSeahorse
+            (628, 2), // Dandelion
+            (629, 5), // IceMimic
+            (630, 2), // BloodMummy
+            (73, 3), // GoblinScout
+            (74, 1), // Bird
+            (75, 2), // Pixie
+            (77, 2), // ArmoredSkeleton
+            (78, 2), // Mummy
+            (79, 2), // DarkMummy
+            (80, 2), // LightMummy
+            (82, 2), // Wraith
+            (83, 2), // CursedHammer
+            (84, 2), // EnchantedSword
+            (85, 5), // Mimic
+            (86, 2), // Unicorn
+            (93, 2), // GiantBat
+            (94, 2), // Corruptor
+            (95, 2), // DiggerHead
+            (98, 2), // SeekerHead
+            (101, 2), // Clinger
+            (102, 2), // AnglerFish
+            (103, 2), // GreenJellyfish
+            (104, 2), // Werewolf
+            (109, 4), // Clown
+            (110, 2), // SkeletonArcher
+            (116, 2), // TheHungryII
+            (120, 2), // ChaosElemental
+            (121, 2), // Slimer
+            (122, 2), // Gastropod
+            (137, 2), // IlluminantBat
+            (140, 2), // PossessedArmor
+            (694, 1), // WaterBoltMimic
             (607, 2), // Pupfish
             (615, 3), // Dolphin
-            (688, 1), // Pufferfish
-            (692, 2), // Orca
-            (43, 2), // ManEater
-            (56, 1), // Snatcher
-            (101, 2), // Clinger
+            (355, 2), // Firefly
+            (358, 3), // LightningBug
+            (677, 5), // Shimmerfly
+            (606, 1), // Maggot
             (175, 2), // AngryTrapper
-            (259, 1), // FungiBulb
-            (260, 2), // GiantFungiBulb
             (112, 2), // VileSpit
             (666, 2), // VileSpitEaterOfWorlds
             (516, 2), // SolarFlare
-            (48, 2), // Harpy
-            (62, 2), // Demon
-            (93, 2), // GiantBat
-            (121, 2), // Slimer
-            (137, 2), // IlluminantBat
             (150, 1), // IceBat
             (151, 2), // LavaBat
             (152, 2), // GiantFlyingFox
             (156, 2), // RedDevil
             (158, 2), // VampireBat
             (159, 2), // Vampire
-            (226, 2), // FlyingSnake
             (634, 1), // SporeBat
             (660, 2), // QueenSlimeMinionPurple
-            (355, 2), // Firefly
             (356, 1), // Butterfly
-            (358, 3), // LightningBug
-            (359, 1), // Snail
-            (360, 3), // GlowingSnail
             (361, 1), // Frog
             (366, 2), // ScorpionBlack
             (367, 1), // Scorpion
-            (374, 3), // TruffleWorm
             (377, 1), // Grasshopper
             (378, 2), // ChatteringTeethBomb
             (379, 2), // CultistArcherBlue
             (430, 1), // ArmedZombie
             (546, 2), // Tumbleweed
-            (61, 1), // Vulture
             (69, 1), // Antlion
-            (78, 2), // Mummy
-            (79, 2), // DarkMummy
-            (630, 2), // BloodMummy
-            (80, 2), // LightMummy
-            (580, 2), // WalkingAntlion
-            // The town pets (`AddTownNPCs_Manual`,
-            // `BestiaryDatabaseNPCsPopulator.cs:833-843`): the
-            // `FillNpcRarities` override pins all eleven at 3 stars
-            // (`bestiary_data.rs:373`).
+            (142, 5), // SantaClaus
+            (160, 5), // Truffle
+            (178, 3), // Steampunker
+            (209, 3), // Cyborg
             (638, 3), // TownDog
             (637, 3), // TownCat
             (656, 3), // TownBunny
@@ -6242,10 +6218,10 @@ mod tests {
             (682, 3), // TownSlimeRed
             (683, 3), // TownSlimeYellow
             (684, 3), // TownSlimeCopper
-            (604, 3), // LadyBug (`FillNpcRarities`, `bestiary_data.rs:376`)
-            (605, 5), // GoldLadyBug (rarity 3 formula, `NPC.cs:16775-16778`)
-            (198, 2), // Lihzahrd (formula: 38+20+400/4 = 158 bulk step)
-            (206, 3), // IcyMerman (`ContentSamples.cs:1214`)
+            (604, 3), // LadyBug
+            (605, 5), // GoldLadyBug
+            (198, 2), // LihzahrdCrawler
+            (206, 3), // IcyMerman
         ];
         assert_eq!(EXPECTED.len(), ENTRIES.len());
         for (e, &(net, stars)) in ENTRIES.iter().zip(EXPECTED) {
@@ -6515,6 +6491,7 @@ mod w4_c7_seal_tests {
         assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == 593), "593 collection-only");
         let butterfly = GOLD_PEERS.iter().find(|(g, _)| *g == 444).unwrap();
         assert_eq!(butterfly.1, &[356], "the GoldButterfly peer contract");
+    }
     /// W4-d122 remainder census — `Chest.BestiaryGirl_IsFairyTorchAvailable`
     /// (`Chest.cs:3544-3559`): ALL THREE fairy-critter sightings needed,
     /// and the critter provider reads SIGHTS not kills
@@ -6532,5 +6509,4 @@ mod w4_c7_seal_tests {
         b.set_was_seen_directly("FairyCritterPink");
         assert!(fairy_torch_available(&b), "all three sighted");
     }
-}
 }

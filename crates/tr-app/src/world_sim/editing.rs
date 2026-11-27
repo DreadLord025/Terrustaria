@@ -3278,11 +3278,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.cursor_item_icon_push = push;
         }
     }
-    #[cfg(test)]
-    eprintln!(
-        "[flow-dbg] reached: kind={} mine_down={}",
-        held.kind, app.mine_down
-    );
     // `Player.Update`'s early-dismount head (`Player.cs:24992-24995`) +
     // `ItemCheck_ManageRightClickFeatures` (`:31695-31702`): using an item
     // dismounts the mounts that say so — the held item being the very same
@@ -8347,7 +8342,14 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
     // 60394`) run BETWEEN the sound and the drop. The type chain's
     // `genRand` rolls ride the `frame_rng` stand-in (borrow snapshot —
     // the dust body needs `&world`); the spawn blocks ride
-    // `UpdatePlayers` (W4-d54 batch 2).
+    // `UpdatePlayers` (W4-d54 batch 2). The fail arm's THREE-dust burst
+    // (`:60387-60390`) is the recorded dust-layer skip — the fail return
+    // precedes it so the refusal stays at the cue's two draws.
+    if matches!(outcome, edit::WallBreak::Failed(_)) {
+        // `:60395-60399` — the fail return: no drop, no wall write, no edit
+        // record.
+        return;
+    }
     {
         let ctx = app.spawn_ctx();
         let mut gen_rng = app.world.frame_rng.clone();
@@ -8356,11 +8358,6 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
             rng, &mut gen_rng, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
         );
         app.world.frame_rng = gen_rng;
-    }
-    if matches!(outcome, edit::WallBreak::Failed(_)) {
-        // `:60395-60399` — the fail return: no drop, no wall write, no edit
-        // record (the 3-dust burst is the recorded dust-layer skip).
-        return;
     }
     // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
     // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
@@ -9926,8 +9923,9 @@ pub(crate) fn break_drop_events(
     // folds the rect into the cell-origin pop (recorded, like the pot/pile
     // loot).
     for pig in &kill.pigronata_events {
+        let (ppx, ppy) = cell_px(pig.x, pig.y);
         for (id, count) in pigronata_loot(main_rng) {
-            events.push((id, count, pig.x as f32, pig.y as f32));
+            events.push((id, count, ppx, ppy));
         }
     }
     (events, portals)
@@ -13766,11 +13764,24 @@ mod tests {
             0,
             "the first swing's strike precedes the latch arming — no proc yet"
         );
-        // Run to the NEXT landed hit of the swing with the latch armed: the
-        // press tick's strike may already have landed (before the arm), so
-        // mirror the loop's `attackCD--` / `hurt_cd` decay to let the next
-        // in-swing hit through.
-        mine_frames_decay(&mut a, 24);
+        // Re-press for a NEW swing (the 971/795 rig shape): the 121's
+        // 40-tick animation and the per-NPC hit lock (`:44246`,
+        // `meleeNPCHitCooldown = itemAnimation`) keep the SAME swing from
+        // landing twice, so the proc needs the next use start.
+        mine_frames(&mut a, 40);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        // The sword's own hit adds NO debuff (`Item.buffType == 0`), so the
+        // pre-spawn state proves the 978's spawn adds nothing itself.
+        assert!(
+            a.npcs[0].buffs.find_buff_index(24).is_none(),
+            "no OnFire before the explosion"
+        );
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        mine_frames(&mut a, 1);
         // The spawn reads the POST-strike centre (`npc.Center`, `:44153`).
         let (ncx, ncy) = a.npcs[0].center();
         let boom = a
@@ -13792,9 +13803,14 @@ mod tests {
             !a.player.as_ref().unwrap().spawn_volcano_explosion,
             "the proc consumes the latch (:44156)"
         );
-        // NO StatusNPC at spawn — the OnFire 24 comes from the explosion's
-        // own damage walk, not the proc (:44155 has no StatusNPC call).
-        assert!(a.npcs[0].buffs.find_buff_index(24).is_none());
+        // NO StatusNPC at the proc's spawn — the OnFire 24 seen on the
+        // victim comes from the explosion's own damage walk
+        // (`Projectile.cs:11359-11362`), and the pre-spawn check above
+        // proved the spawn itself added nothing.
+        assert!(
+            a.npcs[0].buffs.find_buff_index(24).is_some(),
+            "the explosion's damage walk applies OnFire"
+        );
     }
 
     /// W4-d12 FINAL item 1 — the killing-blow contrast: the Volcano gate is
@@ -13811,12 +13827,17 @@ mod tests {
             a.player.as_ref().unwrap().spawn_volcano_explosion,
             "the use start arms the latch (:43478)"
         );
-        // The swing's first landed hit is the MIDDLE third (the START third
-        // misses this rig's victim). Park the victim at 1 HP so that hit —
-        // the one that kills — is the one that must fire the Volcano.
+        // The 121's START-third hit lands on the press tick, BEFORE the
+        // latch arms; the per-NPC lock holds the rest of the swing. Re-press
+        // for the next swing — its first landed hit is the killing blow.
+        mine_frames(&mut a, 40);
         a.npcs[0].hp = 1;
         a.npcs[0].hurt_cd = 0.0;
-        mine_frames_decay(&mut a, 24);
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp <= 0, "the swing's landed hit kills the slime");
         assert!(
             a.projectiles.slots().iter().any(|p| p.active && p.kind == 978),
@@ -13838,7 +13859,7 @@ mod tests {
         );
         b.npcs[0].hp = 1; // the swing's landed hit kills
         b.npcs[0].hurt_cd = 0.0;
-        mine_frames_decay(&mut b, 24);
+        mine_frames(&mut b, 10);
         assert!(b.npcs[0].hp <= 0);
         assert!(
             !b.projectiles.slots().iter().any(|p| p.active && p.kind == 971),
@@ -17540,8 +17561,11 @@ mod tests {
         // Hit 3 breaks the cell — the single-cell world has no 2x2 to
         // cascade, the smash flag stays down (CheckOrb needs the object).
         assert!(!app.world.tile(30, 260).unwrap().active(), "hit 3 breaks");
-        // No break burst here (d54's seam): still the 6 fail dusts.
-        assert_eq!(app.dust.slots().iter().filter(|d| d.active).count(), 6);
+        // The break tick adds `KillTile`'s 10-dust burst
+        // (`KillTile_GetTileDustAmount` default arm, `WorldGen.cs:66601-66606`;
+        // body `render::orb_draw::orb_break_burst`'s `fail: false` half) on
+        // top of the two fail ticks' 3+3 (`:63699-63703`).
+        assert_eq!(app.dust.slots().iter().filter(|d| d.active).count(), 16);
     }
 
     // ---- S1-P-i29: the pickaxe/drill mining interaction --------------------
@@ -23943,11 +23967,12 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     if !summon_item_check(app, item) {
         return false;
     }
-    // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
-    // 560 runs ungated). The mech trio swaps the biome for the clock:
-    // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
-    // variant's DisabledBossSummonVariant folds out (no variant system).
-    // The Deer Thing 5120 gates on ZoneSnow (`:43906`).
+    // The biome gates (`:43775`'s ZoneCorrupt arm's USE-START twin, `:52249`;
+    // 1133's ZoneJungle, `:52253`; 1331's ZoneCrimson in the use arm,
+    // `:43889`; 560 runs ungated). The mech trio swaps the biome for the
+    // clock (`:52239-52248`): `!Main.IsItDay()`; the 1.4.5 item variant's
+    // DisabledBossSummonVariant folds out (no variant system). The Deer
+    // Thing 5120 gates on ZoneSnow (`:52257` in both halves).
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
         1133 => app.scene_metrics.zone_jungle,
@@ -24076,12 +24101,6 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         // `PlaySound(15, x, y, 0)` — case 15, slot 0, the playing guard.
         app.audio.play_roar(0, plx, ply);
     }
-    // `Player.cs:43760` et al. — `PlaySound(15, (int)position.X,
-    // (int)position.Y, 0)`: the int overload, Style 0 → `Roar_0`, the
-    // TOP-LEFT position; case 15 draws NOTHING (the slot guard rides
-    // `play_roar`, research/32 D4).
-    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, rx, ry);
     // `NPC.SpawnBoss`'s MechaMayhem bookends (`NPC.cs:80664-80685`): a mech
     // type (127/134) runs `MechaMayhem_Clear` BEFORE the spawn and
     // `MechaMayhem_Start` AFTER it. The 544 arm ran its own per-eye bookends
@@ -24092,7 +24111,6 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         let ids: Vec<i32> = app.npcs.iter().filter(|n| n.hp > 0).map(|n| n.kind.net_id()).collect();
         app.achievements.mecha_mayhem_clear(ids.into_iter());
     }
-    app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -24194,10 +24212,6 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
         1,
         Some(crate::app::RngKey::UpdatePlayers),
     );
-    // `Player.cs:43926` — `PlaySound(15, pos, 0)`: Style 0, top-left,
-    // draw-free (case 15).
-    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -24277,10 +24291,6 @@ pub fn use_snow_globe(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
-    // `Player.cs:43943` — `PlaySound(15, pos, 0)`: Style 0, top-left,
-    // draw-free (case 15).
-    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -24314,10 +24324,6 @@ fn apply_moon_item(app: &mut App, kind: u16) {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
-    // `Player.cs:43977`/:44030 — `PlaySound(15, pos, 0)`: Style 0,
-    // top-left, draw-free (case 15).
-    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -24394,19 +24400,14 @@ pub(crate) fn use_blood_moon_starter(app: &mut App) -> bool {
 /// `Lang.misc[106]` variant reads the world's REMIX seed bit), the stack
 /// pay. No achievement hook on this arm (the C# fires none).
 pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
-    if !app.world.day_time || app.world.eclipse {
+    // `:43988`'s day/eclipse gate + `:52269`'s hardmode USE-START gate
+    // (`!Main.dayTime || Main.eclipse || !Main.hardMode`).
+    if !app.world.day_time || app.world.eclipse || !app.world.hard_mode {
         return false;
     }
-    // `:43990`: `PlaySound(15, (int)position.X, (int)position.Y, 0)` —
-    // case 15 slot 0 (the playing guard, no draws), at the top-left,
-    // BEFORE `ApplyItemTime` (`:43991`).
-    let (plx, ply) = app
-        .player
-        .as_ref()
-        .map(|p| (p.x, p.y))
-        .unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, plx, ply);
-    // `:43990-43991`: the roar + `ApplyItemTime` precede the flag block.
+    // `:43990-43991`: the roar (case 15, slot 0, draw-free) + the
+    // `ApplyItemTime` re-arm — both inside `apply_moon_item`, at the
+    // top-left, BEFORE the flag block.
     apply_moon_item(app, 2767);
     app.world.eclipse = true;
     let key = if app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
@@ -24601,10 +24602,6 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
-    // `Player.cs:43760` — `PlaySound(15, pos, 0)`: Style 0, top-left,
-    // draw-free (case 15).
-    let (rx, ry) = (player.x, player.y);
-    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -24740,12 +24737,14 @@ mod loot_summon_tests {
             kind: 4271, name: "Blood Moon Starter".into(), count: 1, prefix: 0,
         };
         assert!(!use_blood_moon_starter(&mut app));
-        // The Solar Tablet: night refuses, day raises the eclipse.
+        // The Solar Tablet: night refuses, day+hardmode raises the eclipse
+        // (`:52269`'s hardmode USE-START gate).
         app.inventory[app.selected] = ItemSlot {
             kind: 2767, name: "Solar Tablet".into(), count: 1, prefix: 0,
         };
         assert!(!use_solar_tablet(&mut app));
         app.world.day_time = true;
+        app.world.hard_mode = true;
         assert!(use_solar_tablet(&mut app));
         assert!(app.world.eclipse);
         assert_eq!(app.inventory[app.selected].count, 0);
@@ -25118,7 +25117,9 @@ mod loot_summon_tests {
             rng_before,
             "case 15 draws nothing"
         );
-        // The Abeemination: ONE case-2 pitch roll on UpdatePlayers.
+        // The Abeemination: ONE case-2 pitch roll on UpdatePlayers. Its
+        // USE-START gate needs ZoneJungle (`Player.cs:52253`).
+        app.scene_metrics.zone_jungle = true;
         app.inventory[app.selected] = ItemSlot {
             kind: 1133,
             name: "Abeemination".into(),
@@ -25212,8 +25213,9 @@ mod loot_summon_tests {
         player.x = 64.0;
         player.y = 64.0;
         app.player = Some(player);
-        // The Solar Tablet: day gate.
+        // The Solar Tablet: day + hardmode (`:52269`).
         app.world.day_time = true;
+        app.world.hard_mode = true;
         app.inventory[app.selected] = ItemSlot {
             kind: 2767,
             name: "Solar Tablet".into(),
@@ -25318,10 +25320,6 @@ pub fn use_pirate_map(app: &mut App) -> bool {
         .map(|p| (p.x, p.y))
         .unwrap_or((0.0, 0.0));
     app.audio.play_roar(0, plx, ply);
-    // `Player.cs:43960` — `PlaySound(15, pos, 0)`: Style 0, top-left,
-    // draw-free (case 15).
-    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -27219,6 +27217,54 @@ mod item_mechanics {
         app
     }
 
+    /// [`flat_app`] on a FULL-HEIGHT world: the biome place-style arms read
+    /// `position.Y > (Main.maxTilesY - 200) * 16` for the underworld
+    /// (`Player.cs:40252`/`:40368`), which the 40-tall `flat_world` inverts
+    /// (every y clears a negative line). The floor stays at row 20, so the
+    /// snow/jungle arms are the ones under test.
+    fn tall_flat_app() -> App {
+        let mut app = flat_app();
+        let mut w = World::new("items-tall".into(), 40, 800);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        app.world = w;
+        app
+    }
+
+    /// [`flat_app`] on a LARGER world with the player well inside it:
+    /// `WorldItem.CheckInWorld` (`WorldItem.cs:573-588`) airs out any drop
+    /// whose cell leaves a 20-tile border, so the 40-wide `flat_world` (player
+    /// at tile 10) can never satisfy it. The floor sits at row 40, the player
+    /// at (40, 38).
+    fn pickup_app() -> App {
+        let mut app = flat_app();
+        let mut w = World::new("items-pickup".into(), 80, 80);
+        for x in 0..80 {
+            let i = w.index(x, 40);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 40.0 * TILE_PX;
+        player.y = 38.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
     fn set(app: &mut App, x: i32, y: i32, kind: u16) {
         let i = app.world.index(x, y);
         app.world.tiles[i] = Tile {
@@ -27259,7 +27305,7 @@ mod item_mechanics {
         assert_eq!(registry::max_stack(3), MAX, "Item.CommonMaxStack");
         // Case 1: the merge fills slot 0 to the cap, the remainder 7 lands
         // in the next empty HOTBAR slot (the usable-kind arm `:39365`).
-        let mut app = flat_app();
+        let mut app = pickup_app();
         app.inventory[0] = slot(3, MAX - 3);
         let pc = app.player.as_ref().unwrap().center();
         let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
@@ -27272,7 +27318,7 @@ mod item_mechanics {
         assert!(app.items.is_empty(), "the drop was fully consumed");
         // Case 2: a grid with no room at all — the surplus stays on the
         // ground (`ReplaceWith`), never an over-full slot.
-        let mut app = flat_app();
+        let mut app = pickup_app();
         for s in app.inventory.iter_mut() {
             *s = slot(2, registry::max_stack(2));
         }
@@ -27417,7 +27463,7 @@ mod item_mechanics {
     /// (the `UsingBiomeTorches` property gate, `Player.cs:40129`).
     #[test]
     fn w4_f33_the_place_route_converts_the_plain_torch_and_the_toggle_gates() {
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(8, 5);
         let p = app.player.as_mut().unwrap();
         p.unlocked_biome_torches = true;
@@ -27430,12 +27476,14 @@ mod item_mechanics {
         app.player.as_mut().unwrap().builder_acc_status[11] = 0;
         assert!(use_tile_item(&mut app, 16, 19), "the second placement succeeds");
         assert_eq!(app.world.tile(16, 19).unwrap().frame_y, 198, "ice style 9");
-        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
-        let t = *app.world.tile(15, 19).unwrap();
+        // A fresh cell (14,19) so the same-kind cell at (15,19) never
+        // competes: the snow style is the placement itself.
+        assert!(use_tile_item(&mut app, 14, 19), "the placement succeeds");
+        let t = *app.world.tile(14, 19).unwrap();
         assert!(t.active() && t.kind == 4);
         assert_eq!(t.frame_y, 9 * 22, "the snow torch style (`:40272`)");
         // The toggle OFF: the property reads false, the torch stays plain.
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(8, 5);
         let p = app.player.as_mut().unwrap();
         p.unlocked_biome_torches = true;
@@ -27444,7 +27492,7 @@ mod item_mechanics {
         assert!(use_tile_item(&mut app, 15, 19));
         assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0, "plain torch");
         // No unlock: plain even in the biome (the `:40129` gate).
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(8, 5);
         app.player.as_mut().unwrap().zones.snow = true;
         assert!(use_tile_item(&mut app, 15, 19));
@@ -27567,7 +27615,7 @@ mod item_mechanics {
     /// rides verbatim.
     #[test]
     fn w4_f33c_the_place_route_converts_the_plain_campfire() {
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(966, 5);
         let p = app.player.as_mut().unwrap();
         p.unlocked_biome_torches = true;
@@ -27583,7 +27631,7 @@ mod item_mechanics {
         assert_eq!(t.frame_y, 18, "the bottom row of the lit pair (frameY < 36)");
         assert_eq!(app.inventory[app.selected].count, 4, "one campfire consumed");
         // The toggle OFF: the property reads false, the campfire stays plain.
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(966, 5);
         let p = app.player.as_mut().unwrap();
         p.unlocked_biome_torches = true;
@@ -27592,14 +27640,14 @@ mod item_mechanics {
         assert!(use_tile_item(&mut app, 15, 19));
         assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18, "plain campfire");
         // No unlock: plain even in the biome (the `:43426` gate).
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(966, 5);
         app.player.as_mut().unwrap().zones.snow = true;
         assert!(use_tile_item(&mut app, 15, 19));
         assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18);
         // The Frozen Campfire item (3048, placeStyle 3) rides its own style
         // even with the unlock ON in a converting biome (the body's gate).
-        let mut app = flat_app();
+        let mut app = tall_flat_app();
         app.inventory[app.selected] = slot(3048, 5);
         let p = app.player.as_mut().unwrap();
         p.unlocked_biome_torches = true;
@@ -28858,6 +28906,7 @@ mod s1_p_i08_throw_tests {
         let mut app = boomerang_app(5276, "Junimo Pet Item");
         // A pre-existing own 994 and a foreign-owner 994.
         let own = app.projectiles.spawn_with_data_ai(994, 600.0, 4200.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0).unwrap();
+        let own_generation = app.projectiles.slots()[own].generation;
         let foreign = app.projectiles.spawn_with_data_ai_owned(994, 1, 700.0, 4200.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0).unwrap();
         let held = app.inventory[app.selected];
         let def = registry::get(held.kind).unwrap();
@@ -28866,7 +28915,16 @@ mod s1_p_i08_throw_tests {
         assert!(fire_non_ammo_shot(
             &mut app, held, None, Vec2::new(cx + 80.0, cy), 994, def, Vec2::new(sw, sh),
         ));
-        assert!(!app.projectiles.slots()[own].active, "the own pet was culled");
+        // The killed slot is immediately recycled by the fresh spawn
+        // (spawn_with_data_ai takes the first INACTIVE slot) — the pooled
+        // generation is the identity proof that the OLD pet died
+        // (`ProjectilePool::kill` deactivates; `spawn_with_data_ai_owned`
+        // bumps `generation`).
+        assert_ne!(
+            app.projectiles.slots()[own].generation,
+            own_generation,
+            "the own pet was culled and its slot refilled"
+        );
         assert!(app.projectiles.slots()[foreign].active, "the foreign pet survives");
         let live: Vec<usize> = app.projectiles.slots().iter().enumerate()
             .filter(|(_, p)| p.active && p.kind == 994 && p.owner == 0).map(|(i, _)| i).collect();
@@ -29049,8 +29107,18 @@ mod s1_p_i08_throw_tests {
         w.peddlers_satchel_was_used = true;
         let grown = crate::shop::setup_travel_shop(&w, 0.0, &mut tr_core::UnifiedRandom::new(7));
         let base_rows = base.iter().filter(|v| **v != 0).count();
-        let grown_rows = grown.iter().filter(|v| **v != 0).count();
-        assert_eq!(grown_rows, base_rows + 1, "the satchel's +1 slot");
+        // The extra `num` slot adds ONE `_AddToShop` call, but the seed-7
+        // candidate is the 3637 staff family whose pair write
+        // (`Chest.cs:764-793`, 3633/3638) occupies TWO slots for one `added`
+        // — so the row count grows by two, exactly as the shop's own
+        // witness pins (`shop::tests::the_peddlers_satchel_adds_one_stock_slot`).
+        let base_seen: Vec<u16> = base.iter().copied().filter(|v| *v != 0).collect();
+        let grown_seen: Vec<u16> = grown.iter().copied().filter(|v| *v != 0).collect();
+        assert_eq!(grown_seen.len(), base_rows + 2, "the satchel's +1 slot (pair write)");
+        // The prefix rows are draw-identical; the extra pair lands ahead of
+        // the painting tail (whose own roll moves with the extra draws).
+        assert_eq!(&grown_seen[..base_rows - 1], &base_seen[..base_rows - 1], "the prefix");
+        assert_eq!(&grown_seen[base_rows - 1..base_rows + 1], &[3633, 3638], "the pair");
     }
 
     // ---- W4-g90 final: the artisan-loaf consumer chain (WRITTEN NOT RUN) ---
@@ -29857,11 +29925,19 @@ mod w4_d15_monk_staff_use_tests {
         app.mine_prev_down = false;
         app.place_down = true;
         let screen = app.screen_size().into();
-        let mut log = Vec::new();
         // The swing is 31 ticks (useAnimation 30 + the style-5 num bump);
         // hold past it — the latch must clear and the right-held repeat
-        // must fire a SECOND alt swing.
-        hold(&mut app, screen, 70, &mut log);
+        // must fire a SECOND alt swing. The raw left button stays UP every
+        // tick (`controlUseItem` is refreshed from the input each Update,
+        // `:42829` sets `releaseUseItem = !controlUseItem`), so the rig
+        // clears the forced `mine_down` before every tick.
+        for _ in 0..70 {
+            app.mine_down = false;
+            // The live loop's `attackCD--` (`Player.cs:24710-24712`) runs in
+            // `update_npcs`; the rig mirrors that single decrement.
+            app.attack_cd = (app.attack_cd - 1.0 / 60.0).max(0.0);
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
         let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
         assert!(fired.len() >= 2, "the repeated right click re-fires");
         assert!(fired.iter().all(|p| p.kind == 708), "every repeat is the alt ghost");
@@ -29948,7 +30024,10 @@ mod w4_e26_gnome_placement_tests {
         let top = *app.world.tile(10, 18).unwrap();
         assert!(bottom.active() && bottom.kind == 567, "bottom cell");
         assert!(top.active() && top.kind == 567, "top cell");
-        assert_eq!((bottom.frame_x, bottom.frame_y), (0, 18), "bottom row frameY 18");
+        // `TileObject.Place` (`TileObject.cs:98-108`): row stride =
+        // `CoordinateHeights[l] + CoordinatePadding` = 18 + 2, so the bottom
+        // row's frameY is 20 (the D_567 heights are [18, 18], padding 2).
+        assert_eq!((bottom.frame_x, bottom.frame_y), (0, 20), "bottom row frameY 18+2");
         assert_eq!((top.frame_x, top.frame_y), (0, 0), "top row frameY 0");
         assert!(app.world.frame_important[567], "frame_important mirrored");
         // A refused placement (no floor under the anchor) keeps the item.

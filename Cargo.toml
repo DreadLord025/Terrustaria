@@ -3,7 +3,10 @@ resolver = "3"
 members = ["crates/tr-core", "crates/tr-content", "crates/tr-render", "crates/tr-debug", "crates/tr-app"]
 
 [workspace.package]
-version = "0.1.0"
+# Cargo versions are SemVer (exactly major.minor.patch), so the game's 4th
+# component rides as build metadata. The user-visible string (window title and
+# the exe's VERSIONINFO) is the full "1.4.5.8" from tr-app's GAME_VERSION.
+version = "1.4.5+8"
 edition = "2024"
 rust-version = "1.89"
 

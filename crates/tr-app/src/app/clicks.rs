@@ -1435,7 +1435,12 @@ impl App {
         // focused-row attempt the ingredients no longer allow — the
         // g23c-menu-union co-lane census found the gap (W4-f23 closeout 3).
         // The cue is button-agnostic (`:42276`'s `flag2` feeds both arms).
-        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)
+        // W4-d79's case-7 play (ONE `Main.rand.Next(-10, 11) * 0.01` pitch
+        // draw + the single Grab voice, `LegacySoundPlayer.cs:717-727`) is the
+        // faithful form; `CraftingEffects.OnCraft` runs once per
+        // `CraftingRequests.CraftItem` call (`CraftingRequests.cs:119`), so
+        // this is the ONLY Grab here.
+        self.audio.play_grab_sound(-1.0, -1.0, self.rngs.global()); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)
         if !crafted.is_empty() {
             // The C# hands the result to the cursor (`Main.CraftItem_GrantItem`,
             // `Main.cs:42607-42612`); the port grants it into the inventory
@@ -1450,13 +1455,9 @@ impl App {
                         (self.inventory[i].count + made.count).min(crate::registry::max_stack(made.kind));
                 }
             }
-            // `SoundEngine.PlaySound(7)` — the grant sound
-            // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-            // W4-d79 — case-7 Grab pitch + pool; the craft runs in
-            // `UpdateInventory` outside every SwapRandom block, so the draw
-            // rides the bare-`Main.rand` stand-in (`rngs.global()`).
-            self.audio
-                .play_grab_sound(-1.0, -1.0, self.rngs.global());
+            // `SoundEngine.PlaySound(7)` already played above (the OnCraft
+            // cue); `SpawnEffects_AfterGrantingItem` is empty
+            // (`CraftingEffects.cs:55-57`) - no second Grab.
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
@@ -2537,6 +2538,13 @@ impl App {
         let game_menu = self.menu.is_some();
         let panel = ui::achievements::panel_rect(screen, game_menu);
         let list = ui::achievements::list_rect(&panel);
+        // `UserInterface.Update` dispatches the wheel to `GetElementAt`
+        // (`UserInterface.cs:219-221`): only a point over the inner list
+        // reaches `UIList.ScrollWheel` (`UIList.cs:107-114`); a wheel over
+        // the panel or the bar bubbles past the list - no scroll.
+        if !ui::achievements::wheel_target(&panel, self.mouse_pos) {
+            return;
+        }
         let rows = self
             .achievements
             .list
@@ -3206,9 +3214,10 @@ impl App {
                         // fullscreen map. `set_open(true)` already resets the
                         // scale to `2.5` and arms the recentre (`Main.cs:41101,
                         // 41104`, `crates/tr-app/src/map.rs:451-457`);
-                        // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
-                        // port counterpart.
+                        // `SetTalkNPC(-1)` (`:41098`) clears the dialog; the
+                        // `npcChatCornerItem = 0` write has no port state.
                         self.inventory_open = false;
+                        self.talk_npc = None;
                         // `SoundEngine.PlaySound(10)` (`:41100`) — AFTER the
                         // inventory close + `SetTalkNPC(-1)`, BEFORE the
                         // fullscreen-map state writes.
@@ -3220,15 +3229,11 @@ impl App {
                         // `Main.cs:41106-41120`: `k == 1/2/3` ->
                         // `Main.mapStyle = 0/1/2`, each followed by
                         // `SoundEngine.PlaySound(12)` (`:41109/:41114/:41119`).
+                        // NOTHING else: the style icons never close the
+                        // inventory nor open the fullscreen map (that is the
+                        // k == 0 arm only, `:41095-41104`).
                         self.map_style = k as i32 - 1;
                         self.audio.play("Menu_Tick");
-                        // `Main.cs:41095-41104`: the same open block as
-                        // `TryOpeningFullscreenMap` (`Player.cs:29103-29119`)
-                        // minus `buffString`/`releaseInventory` — close the
-                        // inventory (`:41097`, the helper's `:29107` write),
-                        // `SetTalkNPC(-1)`, `PlaySound(10)`, scale 2.5 +
-                        // recentre (both ride `set_open(true)`).
-                        self.try_open_fullscreen_map();
                     }
                     return;
                 }
@@ -6837,6 +6842,12 @@ mod tests {
             p.x = 20.0 * 16.0;
             p.y = 10.0 * 16.0;
         }
+        // A real world chest sits on a chest tile: `Chest.IsLocked` treats a
+        // missing tile as locked (`Chest.cs:301-306`), so the fixture grows
+        // the headless 8x8 world and plants the 2x2 chest tile before the
+        // quick-stack walk.
+        app.world = tr_core::World::new("qsg21".into(), 260, 200);
+        place_tile_chest(&mut app, 20, 10);
         app.inventory[10] = slot(9, 50); // storage wood
         // The quick-stack button's left press (498, 244).
         app.mouse_pos = Vec2::new(505.0, 250.0);
@@ -9142,7 +9153,7 @@ mod s1_h_7_tests {
     fn the_craft_cue_sits_outside_the_grant_gate() {
         let src = include_str!("clicks.rs");
         let cue = src
-            .find("self.audio.play(\"Grab\"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)")
+            .find("self.audio.play_grab_sound(-1.0, -1.0, self.rngs.global()); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)")
             .expect("the craft-attempt cue site exists");
         let gate = src
             .find("if !crafted.is_empty() {")

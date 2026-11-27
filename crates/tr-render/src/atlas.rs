@@ -120,9 +120,24 @@ impl Atlas {
         // tie-break scan over the same input; every consumer reads its UVs
         // through `sheets`.
         let rects: Vec<(u32, u32)> = order.iter().map(|i| (i.width + PAD, i.height + PAD)).collect();
-        let (positions, used_height) = skyline_pack(&rects, max_width - PAD);
+        let (mut positions, mut used_height) = skyline_pack(&rects, max_width - PAD);
+        let mut width = max_width;
+        // Content sets larger than one 8192-wide page (the full item + gore
+        // + mount union) cannot fit the strict-GPU HEIGHT bound at that
+        // width even though their area does: retry on a doubled page and
+        // keep whichever pack is shorter. The bound that matters to every
+        // consumer is the height (`Atlas::height <= 8192`); 16384-wide
+        // textures are within the same GPU family's limit.
+        if used_height + PAD > max_width {
+            let wide = max_width.saturating_mul(2);
+            let (p2, h2) = skyline_pack(&rects, wide - PAD);
+            if h2 + PAD < used_height + PAD {
+                positions = p2;
+                used_height = h2;
+                width = wide;
+            }
+        }
         let height = used_height + PAD;
-        let width = max_width;
 
         let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
         let mut sheets = HashMap::with_capacity(order.len());
@@ -195,7 +210,15 @@ impl Atlas {
         order.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
         let rects: Vec<(u32, u32)> = order.iter().map(|i| (i.width + PAD, i.height + PAD)).collect();
         let (_, used_height) = skyline_pack(&rects, max_width - PAD);
-        used_height + PAD
+        let mut height = used_height + PAD;
+        // Mirror `build_ref`'s doubled-page retry so the cheap probe equals
+        // the built atlas height (the bg budget guard's contract).
+        if height > max_width {
+            let wide = max_width.saturating_mul(2);
+            let (_, h2) = skyline_pack(&rects, wide - PAD);
+            height = height.min(h2 + PAD);
+        }
+        height
     }
 
     pub fn memory_bytes(&self) -> usize {

@@ -123,43 +123,18 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             // first (`KillActuator`, :46857), then the yellow wire, the green,
             // the blue and the red. Each successful kill is its own arm.
             if edit::kill_actuator(&mut app.world, tx, ty) {
-                // `WorldGen.KillActuator`'s Dig-0 (`:58026`) plays BEFORE
-                // the drop (`:58030`) - the cue's two draws precede the
-                // drop's on the stream. The five dust 50 (`:58032-58035`)
-                // are the visual seam (no dust engine on this path —
-                // ANALYSIS "The wiring tools").
+                // `WorldGen.KillActuator` (`WorldGen.cs:58022-58039`): the
+                // `PlaySound(0)` (case-0 variation + pitch draws) FIRST, then
+                // the drop (`Item.NewItem(..., 849)`, `:58030`), then the five
+                // type-50 dust puffs (`:58032-58035`). The cutter runs in
+                // `Player.ItemCheck` (`Player.cs:46857`) — every draw rides
+                // the `UpdatePlayers` stream in that order.
                 wire_cut_feedback(app, tx, ty);
-                // `WorldGen.KillActuator` plays the Dig 0 BEFORE the drop
-                // (`WorldGen.cs:58026` precedes `Item.NewItem` `:58030`) —
-                // the case-0 variation+pitch draws ride `UpdatePlayers`
-                // ahead of the drop's own rolls (W4-g24, the C# order).
-                wire_placed_feedback(app, tx, ty);
-                // The drop (`Item.NewItem(..., 849)`, `:58030`) — the cutter
-                // runs in `Player.ItemCheck` (`Player.cs:46857`), so it rides
-                // the same stream. The five dust 50 (`:58032-58035`) are the
-                // visual seam (no dust engine on this path — ANALYSIS "The
-                // wiring tools").
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
-                // `WorldGen.KillActuator`'s drop (`Item.NewItem(..., 849)`,
-                // `WorldGen.cs:58030`) — the cutter runs in `Player.ItemCheck`
-                // (`Player.cs:46857`), so the drop rides `UpdatePlayers`. The
-                // five dust 50 (`:58032-58035`) drain AFTER the drop on the
-                // same stream (W4-d54; body `tr_core::worldgen_dust::
-                // kill_actuator_dust`, the research/66 union re-point).
                 let ctx = app.spawn_ctx();
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
-                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 tr_core::worldgen_dust::kill_actuator_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
-                wire_placed_feedback(app, tx, ty);
-                // `WorldGen.KillActuator` (`WorldGen.cs:58023-58035`): the
-                // `PlaySound(0)` fires FIRST, then the drop
-                // (`Item.NewItem(..., 849)`, `:58030`) — the cutter runs in
-                // `Player.ItemCheck` (`Player.cs:46857`), so both draws ride
-                // `UpdatePlayers` in that order. The five dust 50
-                // (`:58032-58035`) are the visual seam (no dust engine on
-                // this path — ANALYSIS "The wiring tools").
                 return true;
             }
             use tr_core::wiring::WireColor;
@@ -170,41 +145,19 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 WireColor::Red,
             ] {
                 if edit::kill_wire(&mut app.world, tx, ty, color) {
-                    // `WorldGen.KillWire`'s Dig-0 (`:58126`) precedes the
-                    // drop (`:58130`) - the cue's draws come first on the
-                    // `UpdatePlayers` stream (the cutter's tile interaction
-                    // runs in `Player.ItemCheck`, `Player.cs:46862-46880`).
+                    // `WorldGen.KillWire` (`WorldGen.cs:58122-58139`): the
+                    // `PlaySound(0)` (case-0 variation + pitch draws) FIRST,
+                    // then the drop (`Item.NewItem(..., 530)`, `:58130`),
+                    // then the five type-50 dust puffs (`:58132-58135`; the
+                    // 2/3/4 twins are byte-identical). The cutter runs in
+                    // `Player.ItemCheck` (`Player.cs:46862-46880`) — every
+                    // draw rides `UpdatePlayers` in that order.
                     wire_cut_feedback(app, tx, ty);
-                    // `WorldGen.KillWireN` plays the Dig 0 BEFORE the drop
-                    // (`WorldGen.cs:58126`/`:58156`/`:58186`/`:58216` precede
-                    // `Item.NewItem` `:58130` etc.) — the case-0 draws ride
-                    // `UpdatePlayers` ahead of the drop's rolls (W4-g24).
-                    wire_placed_feedback(app, tx, ty);
-                    // The drop (`Item.NewItem(..., 530)`, `:58130`) — the
-                    // cutter's tile interaction runs in `Player.ItemCheck`
-                    // (`Player.cs:46862-46880`), same stream.
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
-                    // `WorldGen.KillWire`'s drop (`Item.NewItem(..., 530)`,
-                    // `WorldGen.cs:58130`) — the cutter's tile interaction runs
-                    // in `Player.ItemCheck` (`Player.cs:46862-46880`), so the
-                    // drop rides the `UpdatePlayers` stream. The five dust 50
-                    // (`:58132-58135` and the 2/3/4 twins) drain after it
-                    // (W4-d54; body `tr_core::worldgen_dust::kill_wire_dust`,
-                    // the research/66 union re-point — the identical
-                    // five-type-50 loop, colour-parameterised callers).
                     let ctx = app.spawn_ctx();
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
-                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     tr_core::worldgen_dust::kill_wire_dust(tx, ty, rng, &mut app.dust, &ctx, &app.world);
-                    wire_placed_feedback(app, tx, ty);
-                    // `WorldGen.KillWire` (`WorldGen.cs:58123-58135`): the
-                    // `PlaySound(0)` FIRST, then the drop
-                    // (`Item.NewItem(..., 530)`, `:58130`) — the cutter's
-                    // tile interaction runs in `Player.ItemCheck`
-                    // (`Player.cs:46862-46880`), both draws on
-                    // `UpdatePlayers` in that order.
                     return true;
                 }
             }
@@ -685,6 +638,18 @@ mod tests {
                 1,
                 10,
                 19,
+            );
+            // `WorldGen.KillWire`'s five type-50 puffs (`:58132-58135`)
+            // follow the drop on the same stream.
+            let ctx = twin.spawn_ctx();
+            let rng = twin.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            tr_core::worldgen_dust::kill_wire_dust(
+                10,
+                19,
+                rng,
+                &mut twin.dust,
+                &ctx,
+                &twin.world,
             );
         }
         assert!(use_wiring_tool(&mut app, 10, 19));

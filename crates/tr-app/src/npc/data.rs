@@ -2641,7 +2641,8 @@ impl NpcKind {
     pub fn is_town_npc(self) -> bool {
         matches!(
             self,
-            NpcKind::Merchant
+            NpcKind::PartyGirl
+                | NpcKind::Merchant
                 | NpcKind::Nurse
                 | NpcKind::ArmsDealer
                 | NpcKind::Dryad
@@ -6973,6 +6974,16 @@ impl NpcKind {
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 1.0,
             NpcKind::Vampire => 6.0,
+            // W4-f18 — the armed zombies (430-436): their own AI_003 arm
+            // (`NPC.cs:58265`: `num105 = 1f * (1f + (1f - scale))`, 1f at
+            // the default scale).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp
+            | NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => 1.0,
             _ => return None,
         })
     }
@@ -8367,6 +8378,13 @@ impl NpcKind {
             NpcKind::BoundTownSlimePurple => 686,
             NpcKind::BoundTownSlimeYellow => 687,
             NpcKind::Pufferfish => 688,
+            // Doc-sweep lane 36 / W4-d43 batch 9 — the ShimmerSlime's vanilla
+            // `NPCID` (`NPCID.cs:12029`, the `NPC.cs:17566-17578` row). The
+            // protocol id is also 676, but `cs_type` and the AI type gates
+            // read THIS table: without the explicit arm the default bestiary
+            // lookup misses (the ShimmerSlime owns no entry), `cs_id` fell to
+            // `u16::MAX`, and the `:61128-61150` 676 light/dust arm never ran.
+            NpcKind::ShimmerSlime => 676,
             NpcKind::YellowCockatiel => 674,
             NpcKind::GrayCockatiel => 675,
             NpcKind::Stinkbug => 669,
@@ -8645,6 +8663,13 @@ impl NpcKind {
             NpcKind::Worm => 357,
             NpcKind::TruffleWorm => 374,
             NpcKind::TruffleWormDigger => 375,
+            // W4-f18 — the CultistArcher pair's true `NPC.type` rows
+            // (`NPCID.cs:11435`/`:11437`, the `NPC.cs:13839-13855` arm).
+            // White is Hide=true in the bestiary (the credit folds onto
+            // 379), so without the explicit arm the fallback read 379 and
+            // the type gates lied about the variant.
+            NpcKind::CultistArcherBlue => 379,
+            NpcKind::CultistArcherWhite => 380,
             NpcKind::Maggot => 606,
             // The snail family + its shimmer target (W4-c9): the vanilla
             // `NPC.type` ids — the AI arms' type gates (the 359 scale
@@ -11243,6 +11268,17 @@ pub fn kind_from_net_id(net_id: i32) -> Option<(NpcKind, SlimeVariant)> {
         .iter()
         .find(|e| e.net_id == net_id)
         .map(|e| (e.kind, e.variant.unwrap_or(SlimeVariant::Blue)))
+        // The modern net records whose bestiary row has not landed still
+        // resolve through the shared id table (the wire id IS
+        // `NpcKind::to_u16` - the Pufferfish 688 family is the W4-c4 case).
+        .or_else(|| {
+            // `0` is the C# air sentinel (no kind), so the fallback starts
+            // at 1.
+            (net_id > 0)
+                .then(|| NpcKind::from_u16(net_id as u16))
+                .flatten()
+                .map(|kind| (kind, SlimeVariant::Blue))
+        })
 }
 
 /// `NPCID.FromLegacyName` (`LoadNPCs:2900`) narrowed to the port's family: the

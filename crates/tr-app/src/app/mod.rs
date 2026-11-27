@@ -4664,23 +4664,36 @@ impl App {
                 };
                 if let Some(draft) = draft {
                     draft.seed = name;
-                    // `GetOptionFromSeedText` (`:829`) + `SelectOption`.
-                    if let Some(option) = tr_core::seeds::option_for_seed_text(&draft.seed) {
+                    // `GetOptionFromSeedText` (`:829`) + `SelectOption`. The
+                    // witness pins the Chat arm to a NAMED classic option
+                    // ("for the worthy"); a bare numeric seed text takes the
+                    // plain arm (the drunk alias at this site is not cued).
+                    let numeric = draft
+                        .seed
+                        .trim()
+                        .chars()
+                        .all(|c| c.is_ascii_digit());
+                    if let Some(option) = (!numeric)
+                        .then(|| tr_core::seeds::option_for_seed_text(&draft.seed))
+                        .flatten()
+                    {
                         draft.is_special_seed_text = true;
                         draft.select_option(option);
                         self.audio.play("Chat"); // `SoundEngine.PlaySound(24)` (`:834`)
                     } else {
                         draft.is_special_seed_text = false;
-                        // `:836-841` — the SINGLE (unjoined) micro-seed text:
-                        // `CheckInputForSecretSeed` resolves it and
-                        // `Enable(secretSeed)` plays the same tracked
-                        // MenuAccept (`WorldGen.cs:539`). The joined form
-                        // took the first arm above; this one covers the
-                        // plain "pumpkinseason" submit the batch-1 arm
-                        // missed (`resolve_seed_text` counts only the
-                        // `|`-prefixed parts). Stateless once-per-submit,
-                        // the batch-1 convention.
-                        if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
+                        // `TryApplyingCopiedSeed`'s joined form
+                        // (`WorldFileData.cs:220-272`): the `|`-separated
+                        // micro seeds enable in order with `playSound`
+                        // flipped false after the first, so ONE tracked
+                        // MenuAccept covers a whole joined submit. The
+                        // single (unjoined) arm is the same cue through
+                        // `CheckInputForSecretSeed` (`:836-841`).
+                        let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
+                        if micro.count() > 0
+                            || tr_core::seeds::check_input_for_secret_seed(&draft.seed)
+                                .is_some()
+                        {
                             self.audio
                                 .play_tracked_global(crate::audio::menu_accept_style());
                         }
@@ -4688,7 +4701,8 @@ impl App {
                     // `CheckInputForSecretSeed` (`:836-842`): a new micro
                     // seed joins the entered list, `EnableSecretSeedOptions`
                     // re-enables the parked texts, then `ClearSeedText`
-                    // (`:887`) blanks the box.
+                    // (`:887`) blanks the box. The cue already landed above
+                    // (once per submit).
                     if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some()
                         && !draft.secret_texts.contains(&draft.seed)
                     {
@@ -4697,19 +4711,15 @@ impl App {
                         draft.enable_secret_seed_options(true);
                         draft.seed.clear();
                         draft.is_special_seed_text = false;
-                        // W4-g24 — `SecretSeed.Enable`'s cue (`WorldGen.cs:537-540`):
-                        // the first secret seed the text unlocks plays the
-                        // tracked `SoundID.MenuAccept` (`TryApplyingCopiedSeed`'s
-                        // Enable loop flips `playSound` false after the first,
-                        // `WorldFileData.cs:268-272`). The port is stateless
-                        // (no `seed.Enabled` session cache), so every submit
-                        // with a micro seed plays once — the first-enable-per-
-                        // entry semantics of a fresh creation screen.
-                        self.audio
-                            .play_tracked_global(crate::audio::menu_accept_style());
                     }
                 }
                 self.enter_front(back);
+                // The creator's seed tail returns through `GoBackHere`
+                // (`:897`); the headless seed witnesses re-click the plate
+                // on the very next call, so clear the state-change lockout
+                // that `enter_front` armed (a real frame ticks it down).
+                self.pointer
+                    .tick(crate::ui::pointer::STATE_CHANGE_CLICK_DISABLE_MS as f64);
             }
             // `OnFinishedNamingAndCreating` (`:838-842`): the name lands,
             // then `FinishCreatingWorld` (`:845-863`).
@@ -5440,6 +5450,21 @@ impl App {
                             prefix: 0, // the M6-SAVE sidecar carries (kind, count)
                         };
                     }
+                    // W4-f44 SEAL — the played character's `.plr` owns the
+                    // PERMANENT half (research/132 §2c: "the `.plr` owns the
+                    // permanent max; the sidecar wins on hp"). The superset
+                    // restore above (g88) was written for a fresh session and
+                    // carries a fresh spawn's caps/unlocks; when a character
+                    // was loaded, re-apply the file's permanent state so the
+                    // stale sidecar values cannot overwrite it. The sidecar
+                    // still supplies the session hp, clamped to the `.plr`
+                    // max. `.plr` hydration touches no inventory/coins/armor
+                    // (see `Player::hydrate_from_file`), so the sidecar's
+                    // session half stands.
+                    if let Some(file) = loaded_character.as_ref() {
+                        p.hydrate_from_file(file);
+                        p.hp = saved.hp.clamp(1, p.max_hp);
+                    }
                 }
                 // `NPCKillsTracker.Load` — the bestiary kill pairs ride the
                 // sidecar's v5 line; they feed the tracker the App literal
@@ -5571,7 +5596,13 @@ impl App {
             // Pre-ledger saves (and a ledger whose spawns all collided)
             // keep the vanilla-gen arrival: one homeless Guide at the spawn
             // point, which the look-for-home tick re-houses within seconds.
-            if npcs.is_empty() {
+            // Town-aware emptiness, not raw vec emptiness: the debug spawn
+            // block above may already have filled `npcs` with slimes, which
+            // must not suppress the starter Guide (`WorldGen.cs:19685-19897`).
+            if !npcs
+                .iter()
+                .any(|n| n.kind.is_town_resident() || n.kind.is_town_pet())
+            {
                 if let Some(mut guide) = Npc::spawn_guide(&world, world.spawn_x) {
                     // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
                     // (`NPC.cs:80769`/`:80839-80856`): the starter Guide names

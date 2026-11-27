@@ -201,8 +201,12 @@ pub(crate) fn snowing(
         d.velocity.y *= d.scale;
         if !i.raining {
             // `:13094-13095`: the dry drift — wind + Next(-10,10)*0.1
-            // (exclusive upper: -10..9), then the 15× wind lead.
-            d.velocity.x = i.wind_speed_current + rng.next_range(-10, 10) as f32 * 0.1;
+            // (exclusive upper: -10..9), then the 15× wind lead. The
+            // product is taken in f64 so the positive edge is the exact
+            // 0.9 the C# decimal spelling denotes (the f32 product rounds
+            // one ULP above it; the witness pins the inclusive bound).
+            d.velocity.x = i.wind_speed_current
+                + (rng.next_range(-10, 10) as f64 * 0.1) as f32;
             d.velocity.x += i.wind_speed_current * 15.0;
         } else {
             // `:13099-13100`: the storm drift — sqrt(|wind|)*sign(wind)*
@@ -367,9 +371,12 @@ mod tests {
 
     /// A flat snow world: rows 95+ snow (147) on dirt, no walls.
     fn snow_world() -> World {
-        let mut w = World::new("snow".into(), 200, 120);
+        // 200x200: `solid_collision` clamps its bottom scan to `height - 40`
+        // (`Collision.cs:2700-2734`), so the 95-row ground needs a world tall
+        // enough for the row to sit inside the scanned band.
+        let mut w = World::new("snow".into(), 200, 200);
         for x in 0..200 {
-            for y in 95..120 {
+            for y in 95..200 {
                 let i = w.index(x, y);
                 w.tiles[i].kind = 147;
                 w.tiles[i].flags |= FLAG_ACTIVE;

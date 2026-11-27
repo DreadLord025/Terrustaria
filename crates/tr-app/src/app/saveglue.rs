@@ -38,6 +38,16 @@ fn backup_path(path: &std::path::Path, i: usize) -> std::path::PathBuf {
     }
 }
 
+/// The v18 identity block's `LastPlayed` byte offset inside a written
+/// `.trwld` (`save.rs`'s writer order): the 115-byte head ends at
+/// [.. 115] with [107..115] the stamp, and the tail after the head is the
+/// 8-byte dungeon anchor, the packed `variants` block and the
+/// banner-claimable section (u32 count + 6 bytes per entry).
+#[cfg(test)]
+fn last_played_offset(len: usize, variants: usize, claimable: usize) -> usize {
+    len - 8 - variants - 4 - claimable * 6 - 115 + 107
+}
+
 /// `WorldFile.DoRollingBackups` (`WorldFile.cs:966-1004`): the numbered
 /// rotation — `.bak` shifts into `.bak1`, `.bak1` into `.bak2`, up to
 /// `keep.min(9)` slots, then the caller writes the previous world file into
@@ -1216,11 +1226,21 @@ mod tests {
         let two = std::fs::read(&path).expect("world written");
         let sidecar_two = std::fs::read(crate::persist::player_path(&path))
             .expect("the .trplayer sidecar written");
-        // The v18 tail's LastPlayed long (the final 8 bytes) is the only
-        // wall-clock field — normalize it, then demand byte equality.
+        // The v18 identity block's LastPlayed long is the only wall-clock
+        // field — normalize it, then demand byte equality. The head's
+        // [107..115] sits 115 bytes before the tail (the dungeon anchor,
+        // the packed variants block and the banner-claimable section ride
+        // after it in `save.rs`'s writer order), so the stamp is not the
+        // file's final long (the pre-v18 test's assumption).
+        let claimable = app.banners.claimable_pairs().count();
+        let stamp_at = last_played_offset(one.len(), app.world.variants.len(), claimable);
+        assert_eq!(
+            &one[stamp_at..stamp_at + 8],
+            &stamp_one.to_le_bytes(),
+            "the locator finds the first save's LastPlayed long"
+        );
         let mut two_norm = two.clone();
-        let n = two_norm.len();
-        two_norm[n - 8..].copy_from_slice(&stamp_one.to_le_bytes());
+        two_norm[stamp_at..stamp_at + 8].copy_from_slice(&stamp_one.to_le_bytes());
         assert_eq!(one, two_norm, "the world pair is byte-equal modulo LastPlayed");
         assert_eq!(sidecar_one, sidecar_two, "the sidecar pair is byte-equal");
         // The world round-trips through the native reader, and no `.wld`-only
@@ -2021,14 +2041,20 @@ mod chest_save_tests {
         );
         // The third save shifts `.bak` into `.bak2` (the C#'s numbering) and
         // writes the second save into `.bak`. The fresh file differs from the
-        // second only in the v18 tail's LastPlayed stamp (W4-c43: every save
+        // second only in the v18 head's LastPlayed stamp (W4-c43: every save
         // re-stamps `UtcNow`, `SaveWorldFlags:1251`).
         let stamp_second = app.world.last_played;
         app.save_world();
         let third = std::fs::read(&path).unwrap();
+        let claimable = app.banners.claimable_pairs().count();
+        let stamp_at = last_played_offset(second.len(), app.world.variants.len(), claimable);
+        assert_eq!(
+            &second[stamp_at..stamp_at + 8],
+            &stamp_second.to_le_bytes(),
+            "the locator finds the second save's LastPlayed long"
+        );
         let mut third_norm = third.clone();
-        let n = third_norm.len();
-        third_norm[n - 8..].copy_from_slice(&stamp_second.to_le_bytes());
+        third_norm[stamp_at..stamp_at + 8].copy_from_slice(&stamp_second.to_le_bytes());
         assert_eq!(
             third_norm,
             second,
@@ -2184,7 +2210,7 @@ mod chest_save_tests {
             .native
             .npcs
             .iter()
-            .find(|r| !r.given_name.is_empty())
+            .find(|r| r.kind == NpcKind::Merchant.to_u16())
             .expect("the given-name record is the Merchant");
         assert_eq!(record.given_name, "Bsmith");
         assert!(!record.homeless);
@@ -2423,9 +2449,20 @@ mod chest_save_tests {
     /// The port's `save_and_quit` funnels through `save_world`
     /// (`WorldGen.cs:6669-6677`'s `Player.SavePlayer` + `WorldFile.SaveWorld`
     /// pair), so the quit route writes the achievements file too.
+    ///
+    /// The partial-progress witness is the fishing "Finish" ladder, NOT an
+    /// `NpcKilled` id: every NPC id on `SLAYER_OF_WORLDS` also closes its own
+    /// single-condition row (13/14/15 close `WORM_FODDER`, `Achievement
+    /// Initializer.cs:52-54`; 4 closes `EYE_ON_YOU`; ... — the same table the
+    /// slayer row's 15 conditions reuse, `:287-291`), and
+    /// `Achievement.OnConditionComplete` fires `OnCompleted` the moment a
+    /// row's LAST condition closes (`Achievement.cs:91-107`), which saves
+    /// through `AchievementManager.OnAchievementCompleted` (`:180-187`). The
+    /// four "Finish" rows (10/25/50/200) share the counter but none is
+    /// reachable from one increment, so the row set stays open.
     #[test]
     fn w4_c36_save_and_quit_writes_the_achievement_state() {
-        use crate::achievements::{self, AchievementManager, CondKind};
+        use crate::achievements::{self, AchievementManager};
         let dir = ach_scratch("achievements-quit");
         let path = dir.join("world.trwld");
         let ach_path = dir.join("achievements.trdat");
@@ -2434,22 +2471,29 @@ mod chest_save_tests {
         app.player = None;
         app.settings.map_enabled = false;
         app.achievements.save_path = Some(ach_path.clone());
-        // Partial progress only — one of SLAYER_OF_WORLDS' 15 conditions,
-        // the row stays open so NO completion event fires; only the quit
-        // route's save call can persist this.
-        app.achievements.notify(CondKind::NpcKilled(13));
+        // Partial progress only — one fishing quest counts toward the
+        // 10/25/50/200 "Finish" rows, none of them closes, so NO completion
+        // event fires; only the quit route's save call can persist this.
+        app.achievements.notify_custom_int("Finish", 1);
         assert!(!ach_path.exists(), "no completion save fired");
         app.save_and_quit();
         assert!(ach_path.exists(), "the quit route wrote the achievements file");
         let mut fresh = AchievementManager::registry();
         achievements::load(&ach_path, &mut fresh);
-        let slayer = fresh
-            .list
-            .iter()
-            .find(|a| a.name == "SLAYER_OF_WORLDS")
-            .unwrap();
-        assert!(slayer.conditions[0].completed, "the partial condition rode the quit save");
-        assert!(!slayer.completed, "the row stays open");
+        let row = |name: &str| {
+            fresh
+                .list
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap_or_else(|| panic!("{name} in the registry"))
+        };
+        let trout = row("TROUT_MONKEY");
+        assert_eq!(trout.conditions[0].value, 1, "the partial count rode the quit save");
+        assert!(!trout.conditions[0].completed, "one of 25 is not a quest");
+        assert!(!trout.completed, "the row stays open");
+        // The far rungs share the counter and stay far from their maxima.
+        assert_eq!(row("SUPREME_HELPER_MINION").conditions[0].value, 1);
+        assert!(!row("SUPREME_HELPER_MINION").completed);
         crate::test_world_helpers::remove_scratch(&dir);
     }
     /// W4-g47 — the world-load settle hook (`WorldFile.cs:733-764`) rides

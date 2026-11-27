@@ -694,6 +694,16 @@ mod tests {
         let mut rng = UnifiedRandom::new(4);
         let mut mirror = UnifiedRandom::new(4);
         let want = mirror.next_range(-1, 2) as f32 * 1.5;
+        // `:25169-25200` — the X approach tail runs on the flee value
+        // (direction 1, want < the 4 cap): +0.1, with the extra -0.05 when
+        // the value is below zero.
+        let want = if want > 0.0 {
+            want + 0.1
+        } else if want < 0.0 {
+            want + 0.05
+        } else {
+            0.1
+        };
         let mut dust = DustPool::new();
         let mut op = 1.0;
         ai_022_arm(253, &mut n, &w, &ctx(&p), &mut rng, &mut dust, &dust_ctx(), &mut op);
@@ -713,7 +723,10 @@ mod tests {
     #[test]
     fn the_dwell_anchor_flips_into_the_dash() {
         let w = air();
-        let p = [cand(1400.0, 1000.0)];
+        // The player sits LEFT of the body: `:24762` `TargetClosest()`
+        // runs after the dash flip, so a right-hand player would re-face
+        // the body back to +1 and mask the `:24745` `direction *= -1`.
+        let p = [cand(600.0, 1000.0)];
         let mut n = body(82, 1000.0, 1000.0);
         n.ai[0] = 1000.0;
         n.ai[1] = 1000.0;
@@ -826,7 +839,11 @@ mod tests {
         n.ai[3] = 1.0;
         n.target = 0;
         let mut rng = UnifiedRandom::new(4);
-        let witness = rng.clone();
+        let mut witness = rng.clone();
+        // `:24714-24721` — the Ghost's fade sets `flag31`, and the flee
+        // branch with `velocity.X == 0` draws ONE `Next(-1, 2)` for the
+        // drift (the same arm as the Reaper), before the approach tail.
+        let _ = witness.next_range(-1, 2);
         let mut dust = DustPool::new();
         let mut op = 0.02;
         let fx = ai_022_arm(316, &mut n, &w, &ctx(&p), &mut rng, &mut dust, &dust_ctx(), &mut op);
@@ -834,7 +851,7 @@ mod tests {
         assert_eq!(n.local_ai[3], 1.0, "the one-shot latch");
         assert!(op <= 0.0);
         assert!(fx.deactivate, "the opacity-0 deactivation");
-        assert_eq!(rng, witness, "the fade draws nothing");
+        assert_eq!(rng, witness, "the fade's one drift draw, nothing else");
         // The second tick: no repeat cry.
         let fx2 = ai_022_arm(316, &mut n, &w, &ctx(&p), &mut rng, &mut dust, &dust_ctx(), &mut op);
         assert!(fx2.sounds.is_empty(), "the cry is one-shot");

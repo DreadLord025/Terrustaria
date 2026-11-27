@@ -11,9 +11,9 @@
 //! the protocol-id round-trip and the bestiary resolution. The folded
 //! kinds (the Duck2 363 / DuckWhite2 365 / TruffleWormDigger 375 /
 //! CultistArcherWhite 380 — Hide=true) resolve their bestiary credit onto
-//! the walker/head row, so their `cs_id`/`net_id` ride the FOLDED id (the
-//! s1_f_3 invariant); the render key + the draw sheet keep the true vanilla
-//! type (`render_key` / `texture_net_id`).
+//! the walker/head row for the CREDIT, while `cs_id` keeps the variant's
+//! own vanilla type (the s1_f_3 exemption the walk applies); the draw
+//! sheet keeps the true vanilla type (`render_key` / `texture_net_id`).
 //!
 //! The stat values are the `f18_stats.json` census (the exact `SetDefaults`
 //! fields, read arm-by-arm from `NPC.cs`); the citations below name each
@@ -56,9 +56,15 @@ fn pin(
     assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
     // The bestiary resolves (the entry_for_npc expect never panics).
     let entry = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
-    // The folded kinds' cs_id rides the FOLDED net id (the s1_f_3
-    // invariant: cs_id == the entry's net_id when an entry resolves).
-    assert_eq!(kind.cs_id() as i32, entry.net_id, "{kind:?} cs_id == entry net");
+    // The s1_f_3 invariant: cs_id == the entry's net_id only when the kind
+    // OWNS its entry. The Hide=true folded kinds (ArmedZombie 430, Duck2
+    // 363, DuckWhite2 365, CultistArcherWhite 380, TruffleWormDigger 375)
+    // keep their TRUE vanilla `NPC.type` in `cs_id` (the AI/type gates read
+    // it) while the bestiary credit folds onto the twin — the documented
+    // exemption the s1_f_3 walk applies too.
+    if entry.kind == kind {
+        assert_eq!(kind.cs_id() as i32, entry.net_id, "{kind:?} cs_id == entry net");
+    }
     let _ = ty; // the vanilla type is pinned per-kind below (the folds differ)
 }
 
@@ -141,10 +147,10 @@ fn w4_f18_duck_362_full_row() {
 fn w4_f18_duck2_363_full_row() {
     // `NPC.cs:13625-13636` — 28x22, aiStyle 68, the zero-stat row, kb 1,
     // value 0, NPCHit1/NPCDeath1, catchItem 2122. Hide=true: the bestiary
-    // folds onto the Duck 362, so cs_id/net_id ride 362; the render key +
-    // the draw sheet keep 363.
+    // folds onto the Duck 362 (the credit), while `cs_id` keeps the true
+    // NPC.type 363 (the s1_f_3 exemption); the draw sheet keeps 363.
     pin(NpcKind::Duck2, 363, 68, 28.0, 22.0, 0, 0, 5, 1.0, 0.0, "NPC_Hit_1", "NPC_Killed_1");
-    assert_eq!(NpcKind::Duck2.cs_id(), 362, "the folded credit");
+    assert_eq!(NpcKind::Duck2.cs_id(), 363, "the true NPC.type (the credit folds)");
     assert_eq!(crate::render::entities::texture_net_id(NpcKind::Duck2), 363, "the own draw sheet");
 }
 
@@ -162,9 +168,10 @@ fn w4_f18_duck_white_364_full_row() {
 fn w4_f18_duck_white2_365_full_row() {
     // `NPC.cs:13649-13660` — 28x22, aiStyle 68, the zero-stat row, kb 1,
     // value 0, NPCHit1/NPCDeath1, catchItem 2123. Hide=true: folds onto the
-    // DuckWhite 364; the render key + the draw sheet keep 365.
+    // DuckWhite 364 (the credit), while `cs_id` keeps 365; the draw sheet
+    // keeps 365.
     pin(NpcKind::DuckWhite2, 365, 68, 28.0, 22.0, 0, 0, 5, 1.0, 0.0, "NPC_Hit_1", "NPC_Killed_1");
-    assert_eq!(NpcKind::DuckWhite2.cs_id(), 364, "the folded credit");
+    assert_eq!(NpcKind::DuckWhite2.cs_id(), 365, "the true NPC.type (the credit folds)");
     assert_eq!(crate::render::entities::texture_net_id(NpcKind::DuckWhite2), 365);
 }
 
@@ -199,12 +206,14 @@ fn w4_f18_truffle_worm_digger_375_full_row() {
     // `NPC.cs:13777-13795` — 10x10, aiStyle 6 (the lone worm head), the
     // zero-stat row, kb 0, value 0, NPCHit1/NPCDeath1, catchItem 2673,
     // rarity 4, noGravity/noTileCollide/behindTiles. Hide=true: folds onto
-    // the TruffleWorm 374; the render key + the draw sheet keep 375. The
-    // strike-time no_gravity reads FALSE (kb 0 — the W3-i11 convention).
+    // the TruffleWorm 374 (the credit), while `cs_id` keeps 375; the draw
+    // sheet keeps 375. The
+    // strike-time `no_gravity` carries the true `:13787` row (the kb-0
+    // strike never reaches the Y-pop, so the flag is inert either way).
     pin(NpcKind::TruffleWormDigger, 375, 6, 10.0, 10.0, 0, 0, 5, 0.0, 0.0, "NPC_Hit_1", "NPC_Killed_1");
-    assert_eq!(NpcKind::TruffleWormDigger.cs_id(), 374, "the folded credit");
+    assert_eq!(NpcKind::TruffleWormDigger.cs_id(), 375, "the true NPC.type (the credit folds)");
     assert_eq!(crate::render::entities::texture_net_id(NpcKind::TruffleWormDigger), 375);
-    assert!(!NpcKind::TruffleWormDigger.no_gravity(), "kb 0 — the Y-pop never reaches it");
+    assert!(NpcKind::TruffleWormDigger.no_gravity(), "the :13787 noGravity row");
     assert!(NpcKind::TruffleWormDigger.behind_tiles(), "the behindTiles row");
     assert!(NpcKind::TruffleWormDigger.is_worm(), "the AI_006 lone head");
     assert!(!NpcKind::TruffleWormDigger.is_worm_head(), "no chain (the StardustWormHead precedent)");
@@ -240,7 +249,9 @@ fn w4_f18_cultist_archer_blue_379_full_row() {
     assert_eq!(NpcKind::CultistArcherBlue.cs_id(), 379);
     let shell = Npc::new(NpcKind::CultistArcherBlue, 0.0, 0.0, 1, 0.0);
     assert!(!shell.chaseable, "the chaseable = false row");
-    assert_eq!(NpcKind::CultistArcherBlue.ai3_walk_speed(), Some(1.0), "the shooter default");
+    // The 379/380 arm is EXCLUDED from the shared num107 walker
+    // (`NPC.cs:58336`), so it has no ai3 walk cap.
+    assert_eq!(NpcKind::CultistArcherBlue.ai3_walk_speed(), None, "the bespoke archer arm");
 }
 
 #[test]
@@ -248,9 +259,10 @@ fn w4_f18_cultist_archer_white_380_full_row() {
     // `NPC.cs:13839-13855` (the shared 379/380 arm) — 18x40, aiStyle 3,
     // dmg 45, def 14, lifeMax 210, kb 0.55, value 1000, NPCHit1/NPCDeath1,
     // lavaImmune, chaseable false, netAlways. Hide=true: folds onto the
-    // CultistArcherBlue 379; the render key + the draw sheet keep 380.
+    // CultistArcherBlue 379 (the credit), while `cs_id` keeps 380; the draw
+    // sheet keeps 380.
     pin(NpcKind::CultistArcherWhite, 380, 3, 18.0, 40.0, 45, 14, 210, 0.55, 1000.0, "NPC_Hit_1", "NPC_Killed_1");
-    assert_eq!(NpcKind::CultistArcherWhite.cs_id(), 379, "the folded credit");
+    assert_eq!(NpcKind::CultistArcherWhite.cs_id(), 380, "the true NPC.type (the credit folds)");
     assert_eq!(crate::render::entities::texture_net_id(NpcKind::CultistArcherWhite), 380);
     let shell = Npc::new(NpcKind::CultistArcherWhite, 0.0, 0.0, 1, 0.0);
     assert!(!shell.chaseable);

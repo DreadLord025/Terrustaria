@@ -898,15 +898,33 @@ impl Rain {
                 // The start arms in C# order — each gate short-circuits before
                 // its roll, exactly like the `&&` chains.
                 if self.range(0, ((num2 as f64) * 5.75) as u32) == 0 {
-                    self.start_rain(world, remix_world, player_luck); // `:64912-64914`
+                    self.start_rain_live(
+                        world,
+                        remix_world,
+                        player_luck,
+                        cloud_bg_active,
+                        num_clouds,
+                    ); // `:64912-64914`
                 } else if cloud_bg_active >= 1.0
                     && self.range(0, ((num2 as f64) * 4.25) as u32) == 0
                 {
                     // `:64916-64918`: `cloudBGActive >= 1f` — the live
                     // overcast state machine's value (`CloudField`, W4-g69).
-                    self.start_rain(world, remix_world, player_luck);
+                    self.start_rain_live(
+                        world,
+                        remix_world,
+                        player_luck,
+                        cloud_bg_active,
+                        num_clouds,
+                    );
                 } else if self.lady_bug_rain_boost > 0 && self.range(0, num2 as u32) == 0 {
-                    self.start_rain(world, remix_world, player_luck); // `:64920-64922`
+                    self.start_rain_live(
+                        world,
+                        remix_world,
+                        player_luck,
+                        cloud_bg_active,
+                        num_clouds,
+                    ); // `:64920-64922`
                 }
             }
         }
@@ -922,6 +940,32 @@ impl Rain {
         self.start_rain_with(world, remix_world, player_luck, false, None);
     }
 
+    /// The weather scheduler's `StartRain` (`Main.cs:64912/:64916/:64920`):
+    /// the tail `ChangeRain` reads the LIVE `Main.cloudBGActive`/
+    /// `Main.numClouds` (`:64730`), threaded from the caller's `CloudField`
+    /// snapshot (W4-g69). The parameterised power path keeps the pinned
+    /// stand-in via [`Rain::start_rain_with`].
+    pub(crate) fn start_rain_live(
+        &mut self,
+        world: &mut World,
+        remix_world: bool,
+        player_luck: f32,
+        cloud_bg_active: f32,
+        num_clouds: i32,
+    ) {
+        let coin = self.start_rain_impl(
+            world,
+            remix_world,
+            player_luck,
+            false,
+            None,
+            Some((cloud_bg_active, num_clouds)),
+        );
+        if let Some(coin) = coin {
+            world.coin_rain = coin;
+        }
+    }
+
     /// The parameterised `StartRain(instant, strengthOverride)` — the rain
     /// power's `UpdateInfoFromSliderValueCache` arm (`CreativePowers.cs:1328`).
     /// `cloud_bg_active`/`num_clouds` feed the `ChangeRain` tail (the live
@@ -933,6 +977,7 @@ impl Rain {
         player_luck: f32,
         instant: bool,
         strength_override: Option<f32>,
+        live_cloud: Option<(f32, i32)>,
     ) -> Option<i32> {
         let mut coin_out: Option<i32> = None;
         // `Main.cs:64661`.
@@ -1000,7 +1045,11 @@ impl Rain {
         // `Main.cs:64720-64723`: `IsRainingForever` has no save field — the
         // assignment always runs (the C# gate is skipped, cited).
         self.rain_time = (num4 as f32 * num5) as i32; // `:64722` `(int)((float)num4 * num5)`
-        self.change_rain_with(instant, strength_override); // `:64724`
+        if let Some((cloud_bg_active, num_clouds)) = live_cloud {
+            self.change_rain_live_with(instant, strength_override, cloud_bg_active, num_clouds);
+        } else {
+            self.change_rain_with(instant, strength_override); // `:64724`
+        }
         self.raining = true; // `:64725`
         coin_out
     }
@@ -1016,7 +1065,7 @@ impl Rain {
         instant: bool,
         strength_override: Option<f32>,
     ) {
-        let coin = self.start_rain_impl(world, remix_world, player_luck, instant, strength_override);
+        let coin = self.start_rain_impl(world, remix_world, player_luck, instant, strength_override, None);
         if let Some(coin) = coin {
             world.coin_rain = coin;
         }
@@ -1033,7 +1082,7 @@ impl Rain {
         instant: bool,
         strength_override: Option<f32>,
     ) {
-        let _ = self.start_rain_impl(world, remix_world, player_luck, instant, strength_override);
+        let _ = self.start_rain_impl(world, remix_world, player_luck, instant, strength_override, None);
     }
 
     /// `Main.ChangeRain` (`Main.cs:64728-64740`). The `instant`/`strengthOverride`
@@ -1090,8 +1139,7 @@ impl Rain {
     /// stand-ins until the pool went live). The compares are the C#'s
     /// `(double)numClouds > 150.0` / `> 100.0`.
     pub(crate) fn change_rain_live(&mut self, cloud_bg_active: f32, num_clouds: i32) {
-        let val = if cloud_bg_active >= 1.0 || (num_clouds as f64) > 150.0 {
-            // `Main.cs:64730` band 1: `Next(40,91)` / `Next(20,91)` ×0.01.
+        let val = if cloud_bg_active >= 1.0 || (num_clouds as f64) > 150.0 {            // `Main.cs:64730` band 1: `Next(40,91)` / `Next(20,91)` ×0.01.
             if self.range(0, 3) != 0 {
                 self.range(40, 91) as f32 * 0.01
             } else {
@@ -1116,6 +1164,27 @@ impl Rain {
         // `Main.cs:64731-64734`: the `IsRainingForever` `max(val, 0.1f)` floor —
         // no save field, skipped (cited).
         self.target = val; // `:64735` `Main.maxRaining = val`
+    }
+
+    /// The live `ChangeRain` tail with the power-path parameters: the
+    /// `strengthOverride` arm still replaces the whole band ladder
+    /// (`Main.cs:64730`), the `instant` arm snaps `cloudAlpha`
+    /// (`:64736-64739`), and without an override the live static ladder runs.
+    fn change_rain_live_with(
+        &mut self,
+        instant: bool,
+        strength_override: Option<f32>,
+        cloud_bg_active: f32,
+        num_clouds: i32,
+    ) {
+        if let Some(v) = strength_override {
+            self.target = v;
+        } else {
+            self.change_rain_live(cloud_bg_active, num_clouds);
+        }
+        if instant {
+            self.intensity = self.target;
+        }
     }
 
     /// `StopRain(instant: true)` — the rain power's cache-0 arm
@@ -3627,9 +3696,10 @@ mod tests {
         assert!(d.active);
         assert_eq!(d.position, Vec2::new(500.0, 299.0), "the :477 move first");
         // Arm: alpha 40, scale 0.615, rot 0.7, vel (0, -0.85); then the
-        // tail's ×0.92 damp and fadeIn-gated −0.04.
+        // fadeIn-0 burn-out `-0.01` (`:2119-2129`, 33 is not 213/260) and
+        // the tail's ×0.92 damp + −0.04 shrink.
         assert_eq!(d.alpha, 40);
-        assert!((d.scale - (0.615 - 0.04)).abs() < 1e-6, "arm + tail shrink");
+        assert!((d.scale - (0.615 - 0.01 - 0.04)).abs() < 1e-6, "arm + tail shrink");
         assert!((d.velocity.y - (-0.85 * 0.92)).abs() < 1e-6, "the tail damp");
         // The scale floor: a 0.11 splash with moving X shrinks under 0.1 in
         // one tick (arm −0.005 + 0.03 = +0.025, tail −0.04 → net −0.015).

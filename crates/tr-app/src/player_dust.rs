@@ -1627,13 +1627,16 @@ mod tests {
 
     /// `:20874-20891` / `:20902-20919` / `:20930-20947` — the mount rings:
     /// one phase draw, then 5×14 dusts; the Unicorn rolls its type per dust
-    /// (9 draws), Goat/Basilisk are fixed (8 draws). The rotated ring
+    /// (9 draws), Goat is fixed type 6 (9 draws - the `:214-219` tweak) and
+    /// Basilisk fixed (8 draws). The rotated ring
     /// position/velocity is deterministic; scale/fadeIn ride the stream.
     #[test]
     fn w4_d51_the_mount_rings_rotate_from_one_phase_draw() {
         for (kind, fixed_ty, per_dust) in [
             (ExtraJump::Unicorn, None, 9usize),
-            (ExtraJump::WallOfFleshGoat, Some(6), 8),
+            // Type 6 is in the `Dust.cs:214-219` tweak set: one extra
+            // Next(-10,6) per dust inside NewDust -> 9 draws.
+            (ExtraJump::WallOfFleshGoat, Some(6), 9),
             (ExtraJump::Basilisk, Some(31), 8),
         ] {
             let mut app = rig(0x5EED);
@@ -1661,6 +1664,13 @@ mod tests {
                     let _ = rng.next_range(-20, 21);
                     let _ = rng.next_max(3);
                     let _ = rng.next_range(-20, 21);
+                    // The Goat's fixed type 6 is in the `Dust.cs:214-219`
+                    // tweak set: the extra Next(-10,6) draw rides inside
+                    // NewDust before the scale/fadeIn rolls (the ring then
+                    // overwrites velocity/scale, so only the draw matters).
+                    if ty == 6 {
+                        let _ = rng.next_range(-10, 6);
+                    }
                     let angle =
                         (num13 as f32) * (std::f32::consts::PI * 2.0) / 14.0 + phase;
                     let mut v3 =
@@ -1970,7 +1980,10 @@ mod tests {
             drain_dash_dust(&mut app, b);
             let slots = live(&app);
             assert_eq!(slots.len(), 1, "the even puff deactivates");
-            assert_eq!(app.dust.slot(0).active, false);
+            // The freed slot 0 is reused by the odd puff (`Dust.NewDust`
+            // scans the lowest free slot), so only slot 1 never gets used.
+            assert!(app.dust.slot(0).active, "the odd puff reuses slot 0");
+            assert!(!app.dust.slot(1).active, "the even puff never survives");
             let mut rng = UnifiedRandom::new(0x5EED);
             // Puff 0: six default draws + the scale roll, then deactivated.
             for _ in 0..6 {
@@ -2628,6 +2641,10 @@ mod tests {
         let num5 = b.vx.clamp(-6.0, 6.0);
         for d in &slots {
             assert_eq!(d.dust_type, 76);
+            // Recover the spawn X exactly: the first two NewDust draws are the
+            // box jitter (`Dust.cs:170-171`), then default_six replays the rest.
+            let mut probe = rng.clone();
+            let spawn_x = b.x + probe.next_max((b.width as i32).max(5) - 4) as f32 + 4.0;
             let (v, mut scale) = default_six(&mut rng, b.width as i32, 6, 0.0, 0.0, 1.0);
             scale += rng.next_max(3) as f32 * 0.1; // the 76 arm
             // The falling post-arms (`:24019-24031`).
@@ -2637,7 +2654,9 @@ mod tests {
             vel.y -= 1.0;
             vel *= 0.8;
             scale += rng.next_max(3) as f32 * 0.1;
-            vel.x = (d.position.x - (b.x + b.width * 0.5)) * 0.2;
+            // `:24026` reads `dust.position.X` BEFORE the trailing
+            // `position.X -= num5` (`:24037`), i.e. the spawn X.
+            vel.x = (spawn_x - (b.x + (b.width as i32 / 2) as f32)) * 0.2;
             if vel.y > 0.0 {
                 vel.y *= -1.0;
             }

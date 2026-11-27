@@ -4913,11 +4913,23 @@ mod tests {
         let mut sd = ProjDust { pool: &mut spool, ctx: &c, rng: &mut srng };
         style4_fade_burst(&s, &w, &mut sd);
         assert_eq!(active(&spool).len(), 8);
+        // The mirror replays the FULL draw sequence: the Next(68,71) pick
+        // first, then the pool internals, then the post-arms.
         for i in 0..8 {
             let t = smirror.next_range(68, 71);
+            let mi = mpool.new_dust(
+                &mut smirror, &c, &w, s.pos, 10, 10, t,
+                s.vel.x * 0.025, s.vel.y * 0.025, 200, Color::default(), 1.3,
+            );
+            let md = mpool.slot_mut(mi);
+            md.no_gravity = true;
+            md.velocity *= 0.5;
             assert_eq!(spool.slot(i).dust_type, t, "the type arg precedes the internals");
+            assert_eq!(spool.slot(i).position, md.position);
+            assert_eq!(spool.slot(i).velocity, md.velocity);
             assert!(spool.slot(i).no_gravity);
         }
+        assert_eq!(srng.next(), smirror.next(), "the streams stay aligned");
     }
 
 
@@ -5275,19 +5287,42 @@ mod tests {
         let mut rng = UnifiedRandom::new(271);
         let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
         style6_burst(&p, &w, &mut d, 0, 50, true, true);
-        // d1's count-only stream: 50 bare Next(3) picks, nothing else.
+        // The FULL parallel replay: the Next(3) pick FIRST per dust, then the
+        // pool internals, then the flag2 post-arms (the emitter's exact draw
+        // order). d1's count-only stream keeps ONLY the bare picks, so only
+        // the FIRST pick can be compared directly (`:24132` is both streams'
+        // first draw); the merge adds the internals BETWEEN the picks.
         let mut d1 = UnifiedRandom::new(271);
+        let first_pick = d1.next_range(0, 3);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(271);
         for i in 0..50 {
-            let pick = d1.next_range(0, 3);
+            let pick = mirror.next_range(0, 3);
+            if i == 0 {
+                assert_eq!(pick, first_pick, "the first pick is the first draw");
+            }
             let want = if pick == 0 { 309 } else { 0 };
+            let mi = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 10, 10, want,
+                p.vel.x, p.vel.y, 50, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(mi);
+            md.no_gravity = i % 3 != 0;
+            if !md.no_gravity {
+                md.scale *= 1.25;
+                md.velocity /= 2.0;
+                md.velocity.y -= 2.2;
+            } else {
+                md.scale *= 1.75;
+                md.velocity += p.vel * 0.65;
+            }
             assert_eq!(pool.slot(i).dust_type, want, "dust {i}: the pick order");
+            assert_eq!(pool.slot(i).velocity, md.velocity, "dust {i}: the post-arm");
+            assert_eq!(pool.slot(i).scale, md.scale, "dust {i}: the scale");
+            assert_eq!(pool.slot(i).no_gravity, md.no_gravity);
         }
-        // The first pick is the FIRST draw on the emitter's stream too —
-        // replay it: seed 271's first Next(3) equals d1's first pick.
-        let mut probe = UnifiedRandom::new(271);
-        let first = if probe.next_range(0, 3) == 0 { 309 } else { 0 };
-        assert_eq!(pool.slot(0).dust_type, first);
         assert_eq!(active(&pool).len(), 50);
+        assert_eq!(rng.next(), mirror.next(), "the full replay stays aligned");
     }
 
     /// W4-e3 batch 4 — `:24259-24300`: the WaterBolt's lava burst (4 dust-31

@@ -6533,7 +6533,16 @@ impl Npc {
             // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
             // Sleeping Angler's own arm (`:13798`).
             // W4-d40: the `chaseable = false` SetDefaults rows (`NPC.cs:14193`/`:14210`/`:14245`).
-            chaseable: !matches!(kind, NpcKind::CultistTablet | NpcKind::CultistDevote | NpcKind::CultistBossClone),
+            // W4-f18: the CultistArcher 379/380 pair writes `chaseable = false`
+            // (`NPC.cs:13853`).
+            chaseable: !matches!(
+                kind,
+                NpcKind::CultistTablet
+                    | NpcKind::CultistDevote
+                    | NpcKind::CultistBossClone
+                    | NpcKind::CultistArcherBlue
+                    | NpcKind::CultistArcherWhite
+            ),
             // W4-d40: the `immortal = true` SetDefaults row (`NPC.cs:14602`).
             immortal: matches!(kind, NpcKind::TargetDummy),
             friendly: kind.is_town_resident()
@@ -9505,6 +9514,17 @@ impl Npc {
             // RESTORE-4c: knockback rows recovered from HEAD.
             NpcKind::Tumbleweed => 0.8,
             NpcKind::GoldLadyBug => 1.0,
+            // W4-f18 rows: the ChatteringTeethBomb 378's 0.5 (`NPC.cs:13833`)
+            // and the CultistArcher 379/380 pair's 0.55 (`:13849`); the
+            // critter rows 356/361/366/367/377 write NO knockBackResist, so
+            // the class default 1f (`:8533`) stands.
+            NpcKind::ChatteringTeethBomb => 0.5,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 0.55,
+            NpcKind::Butterfly
+            | NpcKind::Frog
+            | NpcKind::Grasshopper
+            | NpcKind::Scorpion
+            | NpcKind::ScorpionBlack => 1.0,
             _ => 0.4,
         }
     }
@@ -10102,6 +10122,11 @@ impl Npc {
             NpcKind::BartenderUnconscious => 15,
             NpcKind::WalkingAntlion => 10,
             NpcKind::LarvaeAntlion => 2,
+            // W4-f18 rows: the ChatteringTeethBomb 378's defense 30
+            // (`NPC.cs:13829`) and the CultistArcher 379/380 pair's 14
+            // (`:13844`).
+            NpcKind::ChatteringTeethBomb => 30,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 14,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::ZombieMerman => 20,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
@@ -10768,6 +10793,11 @@ impl Npc {
             NpcKind::BartenderUnconscious => 0.0,
             NpcKind::WalkingAntlion => 80.0,
             NpcKind::LarvaeAntlion => 40.0,
+            // W4-f18 rows: the ChatteringTeethBomb 378's 450
+            // (`NPC.cs:13834`) and the CultistArcher 379/380 pair's 1000
+            // (`:13850`).
+            NpcKind::ChatteringTeethBomb => 450.0,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 1000.0,
             // W4-d42 - the NPCID 583-587 SetDefaults rows.
             NpcKind::ZombieMerman => 1000.0,
             // W4-d42 - the NPCID 590-594 SetDefaults rows.
@@ -31999,22 +32029,34 @@ mod tests {
         // The Hornet: the wall blocks the move and the velocity bounces.
         let mut hornet = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
         hornet.vx = 12.0;
+        // W4-d22: the bounce reads the PREVIOUS tick's `collideX` latch and
+        // `oldVelocity` (`NPC.cs:50656-50688` consumes `:92538`'s capture),
+        // so the integration tail must latch the wall hit first.
+        hornet.integrate_flyer_collision(&w);
+        assert!(hornet.collide_x, "the wall latches collideX");
+        assert_eq!(hornet.old_vx, 12.0, "the oldVelocity capture");
+        assert_eq!(hornet.vx, 0.0, "the blocked axis zeroes");
         let target = target_for(&hornet);
         crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
         assert!(hornet.vx < 0.0, "the hornet bounced ({})", hornet.vx);
         // The approach first trims the 12 px velocity to the snapped aim
         // (8 px at the Hornet's 3.5 speed → 3.5, the 0.021 step), then the
         // bounce flips it with `num14` = 0.7.
-        let expected = -(12.0 - 0.021) * 0.7;
+        let expected = -12.0 * 0.7;
         assert!(
             (hornet.vx - expected).abs() < 0.01,
             "the ×0.7 bounce ({})",
             hornet.vx
         );
         assert_eq!(hornet.x, 260.0, "the wall blocks the move");
-        // The Eater of Souls flies through the same wall.
+        // The noTileCollide Eater of Souls never latches `collideX` (the
+        // `:50656` bounce list excludes 6/23), so the raw integration tail
+        // carries it through the wall and the bounce arm stays inert.
         let mut eater = Npc::new(NpcKind::EaterOfSouls, 260.0, 32.0 * 16.0, 1, 0.0);
         eater.vx = 12.0;
+        eater.integrate_no_tile_collide();
+        assert!(!eater.collide_x, "the noTileCollide kind never latches");
+        assert_eq!(eater.x, 272.0, "the eater passed through the wall");
         let target = target_for(&eater);
         crate::npc_ai::hover_step(
             &mut eater,
@@ -32022,7 +32064,7 @@ mod tests {
             target,
             crate::npc_ai::HoverParams::EATER_OF_SOULS,
         );
-        assert!(eater.x > 260.0, "the eater passed through ({})", eater.x);
+        assert!(eater.vx > 0.0, "no bounce for the eater ({})", eater.vx);
     }
 
     #[test]
@@ -34052,7 +34094,13 @@ mod tests {
         dev.worm_inited = true;
         dev.worm_id = 3;
         let mut npcs3 = vec![dev];
-        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs3, &mut rng, &mut next_id);
+        // Park the player in the Devourer's OWN column (`:51997-52002`
+        // snap the aim raw): the branch select reads the PRE-override
+        // |num48|/|num66|, so a horizontally-offset player would pick the
+        // X-dominant arm (`:52155-52176`) instead of the Y-dominant nudge
+        // this witness pins (`:52177-52198`).
+        let pc_dev = (40.0 * 16.0 + 8.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc_dev), &mut npcs3, &mut rng, &mut next_id);
         assert!(
             (npcs3[0].vx + 0.1).abs() < 1e-4,
             "the X slow-speed nudge: {}",
@@ -37054,12 +37102,29 @@ mod tests {
             ALL_KINDS.len(),
             "two kinds encode to the same protocol id"
         );
+        // The protocol space covers the WHOLE enum roster (688 kinds - the
+        // train's authoritative `enum 688 / ALL_KINDS 512` split), not just
+        // the 512-kind curated spine `ALL_KINDS` walks above. Check the
+        // inverse half over the full space: every decodable id must be the
+        // id its kind encodes to (no phantom arm, no mis-keyed decode), and
+        // the count must match the enum's 688 kinds.
+        for v in 0..=u16::MAX {
+            if let Some(kind) = NpcKind::from_u16(v) {
+                assert_eq!(
+                    kind.to_u16(),
+                    v,
+                    "{kind:?} decodes from {v} but encodes to {}",
+                    kind.to_u16()
+                );
+            }
+        }
         let decodable = (0..=u16::MAX)
             .filter(|v| NpcKind::from_u16(*v).is_some())
             .count();
+        // 688 = the `NpcKind` enum's variant count (`S1-F-1` bijection over
+        // the roster; ALL_KINDS stays the 512-kind spine by design).
         assert_eq!(
-            decodable,
-            ALL_KINDS.len(),
+            decodable, 688,
             "from_u16 decodes an id no kind encodes to"
         );
     }
@@ -48541,14 +48606,22 @@ mod s1_f_13d_tests {
         // Arm the windup so the next step lands on the shoot tick (ai[1]==25):
         // `update_caster` mirrors `caster_counter`/`cast_windup` into ai[0]/ai[1]
         // (`NPC.cs:21113-21116`: ai[1] 26 decrements to 25, then `== 25` fires).
-        n.caster_counter = 100;
+        // The counter must NOT sit on a 50-spaced trigger (`:21011-21022`:
+        // 100/150/200/250/300 rewrite ai[1] = 30 before the countdown), so
+        // 101 keeps the windup armed.
+        n.caster_counter = 101;
         n.cast_windup = 26;
         let mut rng = tr_core::UnifiedRandom::new(7);
         let mut witness = tr_core::UnifiedRandom::new(7);
         let _ = witness.next_range(-30, 31);
         let _ = witness.next_range(-30, 31);
+        // `:21329-21336` — the every-tick dust tail draws Next(2) AFTER the
+        // shot (the 173 body is the DustRng skip); seed 7 misses the gate,
+        // so the stream ends at the three draws.
+        let gate = witness.next_max(2);
+        assert_ne!(gate, 0, "the dust gate misses (the body would draw)");
         n.update_caster(&w, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
-        assert_eq!(rng.peek(), witness.peek(), "the two jitter draws");
+        assert_eq!(rng, witness, "the two jitter draws + the dust gate");
         assert_eq!(n.wants_hostile_shot.len(), 1, "one 290 bolt");
         let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
         assert_eq!(kind, 290, "the necromancer bolt");
@@ -51935,14 +52008,22 @@ mod w4_d32_seal_tests {
         // Arm the windup so the next step lands on the shoot tick (ai[1]==25):
         // `update_caster` mirrors `caster_counter`/`cast_windup` into ai[0]/ai[1]
         // (`NPC.cs:21113-21116`: ai[1] 26 decrements to 25, then `== 25` fires).
-        n.caster_counter = 100;
+        // The counter must NOT sit on a 50-spaced trigger (`:21011-21022`:
+        // 100/150/200/250/300 rewrite ai[1] = 30 before the countdown), so
+        // 101 keeps the windup armed.
+        n.caster_counter = 101;
         n.cast_windup = 26;
         let mut rng = tr_core::UnifiedRandom::new(7);
         let mut witness = tr_core::UnifiedRandom::new(7);
         let _ = witness.next_range(-30, 31);
         let _ = witness.next_range(-30, 31);
+        // `:21329-21336` — the every-tick dust tail draws Next(2) AFTER the
+        // shot (the 173 body is the DustRng skip); seed 7 misses the gate,
+        // so the stream ends at the three draws.
+        let gate = witness.next_max(2);
+        assert_ne!(gate, 0, "the dust gate misses (the body would draw)");
         n.update_caster(&w, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
-        assert_eq!(rng.peek(), witness.peek(), "the two jitter draws");
+        assert_eq!(rng, witness, "the two jitter draws + the dust gate");
         assert_eq!(n.wants_hostile_shot.len(), 1, "one 290 bolt");
         let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
         assert_eq!(kind, 290, "the necromancer bolt");

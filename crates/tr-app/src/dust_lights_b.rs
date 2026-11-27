@@ -183,11 +183,11 @@ fn ramp_scale(d: &Dust, s: f32) -> f32 {
 }
 
 /// The 27/45 arm's pre-light scale replay (`Dust.cs:1647-1692`, d50
-/// `type_chain` `:612-642`): the 27 fadeIn>=100 burn-down, the +0.002 grow,
-/// then the noLight double −0.06. The light's `num66` reads the scale AFTER
-/// all of these (the C# computes it at `:1670`, post-mutation); the noLight
-/// ×0.1 dim and the cap 1 ride [`dust_chain_light`]'s 27/45 arm. The player
-/// push (`:1679-1686`) is a POSITION mutation — [`light_position`].
+/// `type_chain` `:612-642`): the 27 fadeIn>=100 burn-down, then the +0.002
+/// grow. The light's `num66` is snapshotted HERE (`:1670`), BEFORE the
+/// noLight `*0.1` dim and the two `-= 0.06` scale writes; only the dim feeds
+/// [`dust_chain_light`]'s 27/45 arm (the scale writes are d50's physics). The
+/// player push (`:1679-1686`) is a POSITION mutation — [`light_position`].
 #[inline]
 fn arm_27_45_scale(d: &Dust) -> f32 {
     let mut s = d.scale;
@@ -206,12 +206,10 @@ fn arm_27_45_scale(d: &Dust) -> f32 {
         }
     }
     s += 0.002; // `:1669`
-    if d.no_light {
-        s -= 0.06; // `:1674`
-        if s < 1.0 {
-            s -= 0.06; // `:1675-1678`
-        }
-    }
+    // `:1670` — `num66 = dust.scale` is snapshotted HERE, BEFORE the noLight
+    // scale shrink at `:1674-1678`; only `num66 *= 0.1f` (`:1673`) feeds the
+    // light. The two `dust.scale -= 0.06f` writes are d50's physics column and
+    // never reach `num66`.
     s
 }
 
@@ -462,7 +460,11 @@ pub(crate) fn dust_chain_light(
         // `:1647-1692` — 27/45: num66 = post-burn scale (×0.1 if noLight) cap 1,
         // (0.6, 0.2, 1). The anchor rides the player push ([`light_position`]).
         27 | 45 => {
-            let n = cap(if d.no_light { s * 0.1 } else { s }, 1.0);
+            let mut n = s; // `:1670` — the snapshot before the noLight shrink
+            if d.no_light {
+                n *= 0.1; // `:1673`
+            }
+            n = cap(n, 1.0); // `:1688-1691`
             [n * 0.6, n * 0.2, n]
         }
         // `:1694-1733` — 55/56/73/74: gate `!noLightEmittance`; num67 =
@@ -870,22 +872,26 @@ mod tests {
 
     #[test]
     fn the_27_45_burn_down_and_no_light_dim_and_push() {
-        // 45 (no fadeIn burn): num66 = (scale+0.002) cap 1, (0.6, 0.2, 1).
-        let n = 1.0f32 + 0.002;
+        // 45 (no fadeIn burn): num66 = (scale+0.002), cap 1 at `:1688-1691`.
+        // Scale 1 -> 1.002 -> 1 (the cap), (0.6, 0.2, 1).
+        let n = 1.0f32; // cap(1.002, 1.0)
         assert_eq!(light(&dust(45, 1.0, Vec2::ZERO)).unwrap().2, [n * 0.6, n * 0.2, n]);
-        // 27 fadeIn >= 100, scale 1.6: burn -0.01 (>=1.5), then +0.002.
+        // 27 fadeIn >= 100, scale 1.6: burn -0.01 (>=1.5), then +0.002 ->
+        // 1.592 -> cap 1.
         let mut d = dust(27, 1.6, Vec2::ZERO);
         d.fade_in = 100.0;
-        let s = 1.6f32 - 0.01 + 0.002;
+        let s = 1.592f32;
+        let s = if s > 1.0 { 1.0 } else { s };
         assert_eq!(light(&d).unwrap().2, [s * 0.6, s * 0.2, s]);
         // 27 fadeIn >= 100, scale 0.6: burn -0.05 (<1.5), then <=0.5? 0.55 no;
-        // +0.002 -> 0.552.
+        // +0.002 -> 0.552 (under the cap).
         let mut d = dust(27, 0.6, Vec2::ZERO);
         d.fade_in = 100.0;
         let s = 0.6f32 - 0.05 + 0.002;
         assert_eq!(light(&d).unwrap().2, [s * 0.6, s * 0.2, s]);
-        // noLight: num66 *= 0.1, scale -= 0.06 twice (post-grow < 1), and the
-        // anchor rides the player push. Dry player velocity (3, 4).
+        // noLight: `:1670` snapshots num66 = scale+0.002 BEFORE the scale
+        // shrink; only `num66 *= 0.1` (`:1673`) feeds the light. The anchor
+        // still rides the player push. Dry player velocity (3, 4).
         let mut d = dust(45, 1.0, Vec2::new(160.0, 176.0));
         d.no_light = true;
         let lc = |_: i32, _: i32| (255u8, 255u8, 255u8);
@@ -897,9 +903,9 @@ mod tests {
             wet_collision: &wet,
         };
         let got = dust_chain_light(&d, &params(), &env).unwrap();
-        // scale 1 + 0.002 - 0.06 - 0.06 = 0.882; num66 = 0.0882.
-        let s = 1.0f32 + 0.002 - 0.06 - 0.06;
-        let n = s * 0.1;
+        // num66 = (1 + 0.002) * 0.1 = 0.1002 (the `:1674-1678` scale shrink
+        // does not affect it).
+        let n = (1.0f32 + 0.002) * 0.1;
         assert_eq!(got.2, [n * 0.6, n * 0.2, n]);
         // position (160,176) + (3,4) = (163,180) -> tile (10, 11).
         assert_eq!((got.0, got.1), (10, 11));
@@ -956,7 +962,8 @@ mod tests {
         d.alpha = 256;
         let n = (0.0f32 - 0.01) * 0.3 + 0.4;
         assert_eq!(light(&d).unwrap().2, [n, n * 0.5, n * 0.3]);
-        // Dry probe: scale = 0 -> same 0.397 floor.
+        // Dry probe: `:1955-1957` sets scale = 0 (the `-0.01` shrink only runs
+        // in the WET else-arm at `:1974`) -> num73 = 0*0.3+0.4 = 0.4.
         let lc = |_: i32, _: i32| (255u8, 255u8, 255u8);
         let dry = |_: Vec2, _: f32, _: f32| false;
         let env = ChainLightEnv {
@@ -967,7 +974,7 @@ mod tests {
         };
         let mut d = dust(35, 1.0, Vec2::ZERO);
         d.no_gravity = false;
-        let n = (0.0f32 - 0.01) * 0.3 + 0.4;
+        let n = 0.4f32;
         assert_eq!(dust_chain_light(&d, &params(), &env).unwrap().2, [n, n * 0.5, n * 0.3]);
     }
 
@@ -977,7 +984,10 @@ mod tests {
         assert_eq!(light(&dust(67, 1.0, Vec2::ZERO)).unwrap().2, [0.0, 0.8, 1.0]);
         let mut d = dust(92, 1.0, Vec2::ZERO);
         d.no_light = true;
-        assert_eq!(light(&d).unwrap().2, [0.0, 0.08, 0.1]);
+        // num70 = 1 * 0.1 (f32) then the green is num70 * 0.8f — the f32
+        // product is 0.080000006, not the 0.08 literal.
+        let n = 0.1f32;
+        assert_eq!(light(&d).unwrap().2, [0.0, n * 0.8, n]);
         // 185 (`:1939`): (0.1, 0.7, 1); noLight ×0.1.
         assert_eq!(light(&dust(185, 1.0, Vec2::ZERO)).unwrap().2, [0.1, 0.7, 1.0]);
         // 107 (`:1950`): num72 = scale*0.5 cap 1, gate !noLightEmittance.

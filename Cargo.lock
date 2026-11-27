@@ -2649,7 +2649,7 @@ dependencies = [
 
 [[package]]
 name = "tr-app"
-version = "0.1.0"
+version = "1.4.5+8"
 dependencies = [
  "aes",
  "anyhow",
@@ -2674,14 +2674,14 @@ dependencies = [
 
 [[package]]
 name = "tr-content"
-version = "0.1.0"
+version = "1.4.5+8"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "tr-core"
-version = "0.1.0"
+version = "1.4.5+8"
 dependencies = [
  "anyhow",
  "glam",
@@ -2692,14 +2692,14 @@ dependencies = [
 
 [[package]]
 name = "tr-debug"
-version = "0.1.0"
+version = "1.4.5+8"
 dependencies = [
  "glam",
 ]
 
 [[package]]
 name = "tr-render"
-version = "0.1.0"
+version = "1.4.5+8"
 dependencies = [
  "anyhow",
  "bytemuck",

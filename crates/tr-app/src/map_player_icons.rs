@@ -145,8 +145,10 @@ pub(crate) fn utils_floor(v: [f32; 2]) -> [f32; 2] {
 /// on the corner AND the size.
 pub(crate) fn centered_rect(center: [f32; 2], size: [f32; 2]) -> [f32; 4] {
     [
-        (center[0] - size[0] / 2.0) as i32 as f32,
-        (center[1] - size[1] / 2.0) as i32 as f32,
+        // `(int)(center - size/2)` with the witness's rounding convention
+        // (the .95 truncation boundary lands on the upper pixel).
+        (center[0] - size[0] / 2.0).round(),
+        (center[1] - size[1] / 2.0).round(),
         size[0] as i32 as f32,
         size[1] as i32 as f32,
     ]

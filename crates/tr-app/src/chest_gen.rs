@@ -2397,8 +2397,22 @@ mod tests {
         let mut rng = tr_core::UnifiedRandom::new(3);
         let mahog = stock_chest_at(&mut stock, &w, 100, 198, false, 25, 467, 0, &mut rng);
         assert!(
-            mahog.iter().any(|r| matches!(r.kind, 2766 | 2767)),
-            "the 21 temple tablet"
+            !mahog.iter().any(|r| matches!(r.kind, 2766 | 2767)),
+            "the kind-467 block carries no flag13 tablet row: {:?}",
+            mahog.iter().map(|r| r.kind).collect::<Vec<_>>()
+        );
+        // The positive: the SAME style row on a kind-21 anchor takes the
+        // flag13 tablet pair (`WorldGen.cs:37457-37469`, gated on
+        // `chestTileType == 21 && num9 == 16`, `:36159-36162`).
+        let mut w21 = rig();
+        put_chest(&mut w21, 100, 198);
+        let mut stock = ChestStock::new(3, false);
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        let wood = stock_chest_at(&mut stock, &w21, 100, 198, false, 16, 21, 0, &mut rng);
+        assert!(
+            wood.iter().any(|r| matches!(r.kind, 2766 | 2767)),
+            "the 21 temple tablet: {:?}",
+            wood.iter().map(|r| r.kind).collect::<Vec<_>>()
         );
         let mut stock = ChestStock::new(3, false);
         let mut rng = tr_core::UnifiedRandom::new(3);
@@ -2539,13 +2553,24 @@ mod tests {
             }
         }
         assert!(saw_surface_consumable, "the surface consumables roll at depth");
-        // The style-0 negative: no flag11, the deep band keeps its weapon.
-        let mut stock = ChestStock::new(42, false);
-        let mut rng = tr_core::UnifiedRandom::new(42);
-        let rows = stock_chest_at(&mut stock, &w, 100, 340, false, 0, 21, 934, &mut rng);
+        // The style-0 negative: no flag11, so the deep band takes its natural
+        // `num10 == 0` weapon ladder (`WorldGen.cs:36879-36948`). A preset
+        // main (the old 934 feed) would skip that ladder inside the
+        // `num10 > 0` arm, so the witness uses a mainless chest and sweeps
+        // the streams (the lava/extractinator branches can steal a seed).
+        let mut saw_deep_weapon = false;
+        for seed in 1u64..40 {
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 340, false, 0, 21, 0, &mut rng);
+            if rows.iter().any(|r| deep_weapons.contains(&r.kind)) {
+                saw_deep_weapon = true;
+                break;
+            }
+        }
         assert!(
-            rows.iter().any(|r| deep_weapons.contains(&r.kind)),
-            "a style-0 chest keeps its natural deep rows"
+            saw_deep_weapon,
+            "a style-0 chest keeps its natural deep weapon ladder"
         );
     }
 
@@ -2804,7 +2829,11 @@ mod tests {
         let mut main_prefix = 0;
         for seed in 1u64..400 {
             let mut stock = ChestStock::new(seed, false);
-            let slots = stock_anchor(&mut stock, &w, 40, 199, 13, 21, 159);
+            // The shim's `rng` was pinned to seed 7, so the sweep re-rolled
+            // the SAME stream 399 times and the 1/3 gate never varied. Drive
+            // the per-seed stream explicitly (the other row witnesses' shape).
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let slots = stock_chest_at(&mut stock, &w, 40, 199, true, 13, 21, 159, &mut rng);
             assert_eq!(slots[0].kind, 159, "the balloon rides slot 0");
             main_prefix += (slots[0].prefix != 0) as u32;
             for s in &slots[1..] {

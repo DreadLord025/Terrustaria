@@ -329,6 +329,10 @@ mod tests {
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
         w.compute_column_surface();
+        // The witness's temple gate reads the player BELOW the surface
+        // (`:45508`); pin the surface above the aim row (the fixture's
+        // documented 50).
+        w.world_surface = 50.0;
         app.world = w;
         let mut p = Player::spawn(&app.world);
         p.x = 60.0 * TILE_PX;
@@ -445,7 +449,10 @@ mod tests {
             Some(DotDeath::Teleport) | Some(DotDeath::TeleportGendered)
         ));
         assert_eq!(p.regen.life_regen_count, 0, "the reset still lands");
-        // Exactly ONE Next(2) draw on the stream (the reason roll).
+        // The fresh start plays the rod's `UseSound` first (`Item8`'s case-2
+        // default pitch draw `Next(-6, 7)` on UpdatePlayers), then the chaos
+        // reason roll `Next(2)`; replay both in that order.
+        let _ = witness.next_range(-6, 7);
         let _ = witness.next_max(2);
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
@@ -494,8 +501,13 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!((p.x, p.y), (old_x, old_y), "SolidCollision refused (`:45508`)");
         // Clear the solid, set the temple wall 87 instead — below the
-        // surface (world_surface = 50), PlantBoss not downed → refused.
-        app.world.tiles[i] = Tile { wall: 87, ..Default::default() };
+        // surface (world_surface = 50), PlantBoss not downed → refused. The
+        // gate reads `(int)(point / 16)` of the aim point `(950, 1558)` —
+        // tile (59, 97), not the player's own (60, 99). The solid cell is
+        // cleared with it so the downed-boss arm below is not re-blocked.
+        app.world.tiles[i] = Tile::default();
+        let ai = app.world.index(59, 97);
+        app.world.tiles[ai] = Tile { wall: 87, ..Default::default() };
         app.swing = 0.0;
         app.item_time = 0.0;
         press(&mut app);

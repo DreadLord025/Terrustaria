@@ -38,5 +38,6 @@ wgpu.workspace = true
 winit.workspace = true
 
 [build-dependencies]
-tr-content = { path = "../tr-content" }
-image.workspace = true
+# The build script uses only std: it reads the repo-root `app.ico`, slices its
+# PNG entry and writes the `.rc` for `rc.exe`. The old `tr-content`/`image`
+# deps existed only for the `Logo.xnb` path.
