@@ -1815,7 +1815,9 @@ mod tests {
         let world = World::new("t".into(), 32, 32);
         let mut p = Player::spawn(&world);
         p.ate_artisan_bread = true;
-        let dir = crate::test_world_helpers::test_scratch("persist-bread");
+        // A distinct scratch dir: the sibling bread test owns `persist-bread`,
+        // and both run in parallel in one pid (the shared dir raced).
+        let dir = crate::test_world_helpers::test_scratch("persist-bread-union");
         let path = dir.join("tr-persist-bread.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
         let s = load(&path).expect("v11 sidecar");

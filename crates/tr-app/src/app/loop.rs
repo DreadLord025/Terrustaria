@@ -1235,21 +1235,24 @@ impl App {
     }
 
     /// `Player.TryOpeningFullscreenMap` (`Player.cs:29103-29119`): the open
-    /// arm behind `Main.mapEnabled` — close the inventory, `CloseSign(quiet)`
-    /// (the sign editor has no port state, `chest.rs`'s precedent),
-    /// `SetTalkNPC(-1)` + `npcChatCornerItem = 0` (no port counterpart),
-    /// `PlaySound(10)`, scale 2.5 + `resetMapFull` (both ride `set_open`),
-    /// `Main.MapPylonTile = (-1,-1)` (the overlay pick's pylon-click state —
-    /// cleared on its seam; the union's `set_open` re-arm feeds `recentre`,
-    /// which clears `pan_target` per `Main.cs:55418`), `buffString = ""`
-    /// (no port counterpart). The key path (`Player.cs:24976-24979`) and
-    /// the inventory icon row (`Main.cs:41095-41104`) both ride it.
+    /// arm behind `Main.mapEnabled` — close the inventory, `CloseSign(quiet:
+    /// true)` (`:29108`), `SetTalkNPC(-1)` + `npcChatCornerItem = 0` (no port
+    /// counterpart), `PlaySound(10)`, scale 2.5 + `resetMapFull` (both ride
+    /// `set_open`), `Main.MapPylonTile = (-1,-1)` (the overlay pick's
+    /// pylon-click state — cleared on its seam; the union's `set_open` re-arm
+    /// feeds `recentre`, which clears `pan_target` per `Main.cs:55418`),
+    /// `buffString = ""` (no port counterpart). The key path
+    /// (`Player.cs:24976-24979`) and the inventory icon row
+    /// (`Main.cs:41095-41104`) both ride it.
     pub(crate) fn try_open_fullscreen_map(&mut self) {
         if !self.settings.map_enabled {
             return; // `:29105`
         }
         self.inventory_open = false; // `:29107`
-        // `CloseSign(quiet: true)` (`:29108`) — no sign state in the port.
+        // `CloseSign(quiet: true)` (`:29108`) — the latch clears and the
+        // chat text empties with NO cue; the map's own 10 (`:29111`) is the
+        // only sound.
+        crate::signs::close_sign(self, true); // `:29108`
         self.talk_npc = None; // `:29109` — `SetTalkNPC(-1)`
         self.npc_chat_text.clear(); // the chat text the dialog leaves
         // `SoundEngine.PlaySound(10)` (`:29111`).
@@ -1289,18 +1292,14 @@ impl App {
                 } else if self.emotes.menu_open {
                     self.emotes.close();
                 } else if self.map.as_ref().is_some_and(|m| m.open) {
-                    // `Player.ToggleInv`'s first arm: Escape closes the
-                    // fullscreen map and consumes the press — no inventory
-                    // toggle this frame, like the source's `return`.
-                    // `SoundEngine.PlaySound(11)` (`Player.cs:4976`).
-                    self.audio.play("Menu_Close");
+                    // `Player.ToggleInv`'s first arm (`Player.cs:4972-4976`):
+                    // `Main.mapFullscreen = false`, `releaseInventory = false`,
+                    // then ONE `SoundEngine.PlaySound(11)` — the press is
+                    // consumed, no inventory toggle.
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
-                    // W4-e10 — `Player.ToggleInv`'s map-close arm plays the
-                    // menu close (`SoundEngine.PlaySound(11)`,
-                    // `Player.cs:4976`).
-                    self.audio.play("Menu_Close");
+                    self.audio.play("Menu_Close"); // `:4976`
                 } else if self.talk_npc.is_some() {
                     // W4-e10 — `ToggleInv`'s talk arm (`Player.cs:5005-
                     // 5015`): `SetTalkNPC(-1)`, the chat text clears,
@@ -1312,14 +1311,10 @@ impl App {
                     self.audio.play("Menu_Close");
                     self.inventory_open = false;
                 } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
-                    // W4-e10 gap census — `ToggleInv`'s sign arm
-                    // (`Player.cs:5017-5020`): `CloseSign()` — the latch
-                    // clears, the chat text empties, `PlaySound(11)`
-                    // (`:33537`); the press is consumed (no toggle).
-                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
                     // `Player.ToggleInv`'s sign arm (`Player.cs:5017-5020`):
-                    // `CloseSign()` — sound 11, the dialog closes, no
-                    // inventory toggle (W4-f22).
+                    // `CloseSign()` — the latch clears (`:33532`), the chat
+                    // text empties (`:33534`) and ONE `PlaySound(11)`
+                    // (`:33537`); no inventory toggle (W4-f22).
                     crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
@@ -1369,36 +1364,19 @@ impl App {
             }
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Player.cs:24967-24986` (`cMapFull`, default `M`,
-                // `Main.cs:67192`): the close arm plays `PlaySound(11)`
-                // (`:24973`), the open arm rides `TryOpeningFullscreenMap`
-                // (`Player.cs:29103-29119`) behind `Main.mapEnabled`.
+                // `Main.cs:67192`): with `Main.mapFullscreen` up the close
+                // plays ONE `PlaySound(11)` (`:24973`) and clears the flag
+                // (`:24974`); otherwise the open arm is
+                // `TryOpeningFullscreenMap` (`:24978` → `Player.cs:29103-
+                // 29119`), whose `PlaySound(10)` (`:29111`) is the single
+                // open cue behind `Main.mapEnabled` (`:29105`).
                 if self.map.as_ref().is_some_and(|m| m.open) {
-                    // `SoundEngine.PlaySound(11)` (`:24973`), the port's 11 cue.
-                    self.audio.play("Menu_Close");
-                    // The toggle's target, read before the mutable borrow below.
-                    let open = self.map.as_ref().is_some_and(|m| !m.open);
-                    if open {
-                        // W4-e10 gap census — the open prologue
-                        // (`TryOpeningFullscreenMap`,
-                        // `Player.cs:29107-29110`): the inventory
-                        // closes, `CloseSign(quiet: true)` (NO cue),
-                        // the talk latch + the chat text clear — then
-                        // the `PlaySound(10)` (`:29111`).
-                        self.inventory_open = false;
-                        crate::signs::close_sign(self, true); // `:29108`
-                        self.talk_npc = None;
-                        self.npc_chat_text.clear();
-                    }
+                    self.audio.play("Menu_Close"); // `:24973`
                     if let Some(m) = self.map.as_mut() {
-                        m.set_open(open);
+                        m.set_open(false); // `:24974`
                     }
-                    // W4-e10 — the close arm plays 11
-                    // (`Player.cs:24973`); the open arm rides
-                    // `TryOpeningFullscreenMap`'s `PlaySound(10)`
-                    // (`Player.cs:29111`).
-                    self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
                 } else {
-                    self.try_open_fullscreen_map();
+                    self.try_open_fullscreen_map(); // `:24978`
                 }
             }
             _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
@@ -1451,9 +1429,7 @@ impl App {
                 // play the same Menu_Tick cue; the port's single press-edge play
                 // covers the pair (the hold mode's state tracks the key, the
                 // release arm in `window_event` clears it).
-                self.audio.play("Menu_Tick");
-                // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
-                self.audio.play_menu("Menu_Tick");
+                self.audio.play_menu("Menu_Tick"); // `:28820`/`:28827`
                 if self.settings.smart_cursor_toggle {
                     self.smart_cursor_used = !self.smart_cursor_used;
                 } else {

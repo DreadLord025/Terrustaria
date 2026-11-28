@@ -179,19 +179,23 @@ fn closed_door_10_vertical_line_skip_3_decodes_the_frame_pair() {
 fn open_door_11_line_skip_2_remainder_selects_the_leaf_alternates() {
     // Kind 11 (open door): VERTICAL, wrap 36, multiplier 1, line_skip 2,
     // full_w = 2*18 = 36. :5237-5238: style = num/2*36 + num2, remainder =
-    // num%2. Alternates A1/A2 (Style 0, origins (0,1)/(0,2)) then A3/A4/A5
-    // (Style 1, origins (1,1)/(1,2)/(1,0)) — the remainder picks the leaf.
+    // num%2. Alternates in ADD order (:2262-2285): A1/A2 (Style 0, origins
+    // (0,1)/(0,2)) then A3/A4/A5 (Style 1, origins (1,0)/(1,1)/(1,2)) — the
+    // remainder picks the first alternate whose Style band contains it
+    // (:5251-5257), so remainder 1 -> A3 (origin (1,0), the right leaf's TOP
+    // row; the per-row origins (1,1)/(1,2) are placement-addressed, never
+    // frame-decoded because the row rides `num2`, not the remainder).
     let base = def_for_tile(11).unwrap();
     assert_eq!(base.style_line_skip, 2);
     // Left leaf top cell (fx 0, fy 0): num 0 rem 0 -> A1 (origin (0,1)).
     let d = get_tile_data_for_tile(&framed(11, 0, 0)).unwrap();
     assert_eq!((d.origin.x, d.origin.y), (0, 1));
-    // Right leaf top cell (fx 54, fy 0): num 1 rem 1 -> A3 (origin (1,1)).
+    // Right leaf top cell (fx 54, fy 0): num 1 rem 1 -> A3 (origin (1,0)).
     let d = get_tile_data_for_tile(&framed(11, 54, 0)).unwrap();
-    assert_eq!((d.origin.x, d.origin.y), (1, 1));
+    assert_eq!((d.origin.x, d.origin.y), (1, 0));
     // fx 36 is still num 1 (full_w 36) -> the right leaf again.
     let d = get_tile_data_for_tile(&framed(11, 36, 0)).unwrap();
-    assert_eq!((d.origin.x, d.origin.y), (1, 1));
+    assert_eq!((d.origin.x, d.origin.y), (1, 0));
     // fx 72 -> num 2 rem 0 -> back to the left-leaf band.
     let d = get_tile_data_for_tile(&framed(11, 72, 0)).unwrap();
     assert_eq!((d.origin.x, d.origin.y), (0, 1));

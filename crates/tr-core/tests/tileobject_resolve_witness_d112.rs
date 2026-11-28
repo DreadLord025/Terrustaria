@@ -135,28 +135,34 @@ fn w4_d112_stalactite_override_thresholds_36_72_90() {
 #[test]
 fn w4_d112_chair_multiplier_and_alternate_window() {
     // Kind 15: StyleMultiplier 2 (:4145), horizontal, wrap 2 (:4144),
-    // base alternate D_15_A1 style 1 range 0 (addAlternate(1), PlaceRight).
-    // Place(style s, alt 0, random -1): frameX = 18 * (2s % 2) = 0,
-    // frameY = 40 * (2s / 2) = 40s (CFH = 16+2 + 18+2 + fix 2 = 40).
+    // base alternate D_15_A1 style 1 range 0 (addAlternate(1) :4150,
+    // PlaceRight). Place(style s, alt a): num4 = 2s + a.Style
+    // (CalculatePlacementStyle :1990-1998), then wrap: frameX =
+    // 18 * (num4 % 2), frameY = 40 * (num4 / 2) (TileObject.cs:62-76), so the
+    // right-facing alternate (Style 1) lands at frameX = 18 for every s.
     let base = def_for_tile(15).unwrap();
     assert_eq!(base.style_multiplier, 2);
-    // style 3 -> num4 = 6 -> num5 = 3, num6 = 0: no sub-tile 3, no alternate
-    // window at 0 -> the base def (PlaceLeft).
+    // Left-facing style 3 -> num4 = 6 -> num5 = 3, num6 = 0: no sub-tile 3,
+    // no alternate window at 0 -> the base def (PlaceLeft, frameX 0).
     let r = resolve_tile_def(&framed(15, 0, 120)).unwrap();
     assert_eq!(r.direction, base.direction);
-    // The bottom cell of that chair: frameY = 120 + 18 = 138 -> num2 = 3,
-    // num4 = 7 -> num5 = 3, num6 = 1 -> D_15_A1 (style 1 <= 1 <= 1+0).
-    let r = resolve_tile_def(&framed(15, 0, 138)).unwrap();
+    // Its right-facing alternate's bottom cell: num4 = 2*3 + 1 = 7, so
+    // frameX = 18*(7%2) = 18 and frameY = 40*3 + 18 = 138 -> num2 = 3,
+    // num4 = 3*2 + 1 = 7, num6 = 1 -> D_15_A1 (style 1 <= 1 <= 1+0).
+    let r = resolve_tile_def(&framed(15, 18, 138)).unwrap();
     assert_eq!(r.style, 1);
     assert_ne!(r.direction, base.direction, "alternate flips to PlaceRight");
-    // Sub-tile 16 (toilet, addSubTile(16, 47...)): place style 16 -> num4 =
-    // 32 -> frameY = 40 * 16 = 640 -> decode num4 = 32, num5 = 16, num6 = 0.
+    // Sub-tile 16 (toilet, addSubTile(16, 47...) :4155): place style 16 ->
+    // num4 = 32 -> frameX = 18*(32%2) = 0, frameY = 40 * 16 = 640 -> decode
+    // num4 = 32, num5 = 16, num6 = 0.
     let r = resolve_tile_def(&framed(15, 0, 640)).unwrap();
     assert_eq!(r.lava_death, false, "D_15_S16 LavaDeath=false");
     assert_eq!(r.direction, base.direction, "S16 keeps PlaceLeft");
-    // Its bottom cell frameY = 658 -> num4 = 33 -> num6 = 1 -> S16's OWN
-    // alternate (:5249 reads the RESOLVED sub-tile's alternates).
-    let r = resolve_tile_def(&framed(15, 0, 658)).unwrap();
+    // Its right-facing alternate's bottom cell (:4165-4170, Style 1):
+    // num4 = 16*2 + 1 = 33 -> frameX = 18, frameY = 640 + 18 = 658 ->
+    // num4 = 33, num6 = 1 -> S16's OWN alternate (:5249 reads the RESOLVED
+    // sub-tile's alternates).
+    let r = resolve_tile_def(&framed(15, 18, 658)).unwrap();
     assert_eq!(r.style, 1);
     assert_ne!(r.direction, base.direction);
 }
@@ -247,34 +253,38 @@ fn w4_d112_lamp_line_skip_with_zero_wrap() {
 
 #[test]
 fn w4_d112_sunflower_alternate_range_windows() {
-    // Kind 20: horizontal, wrap 0 (-> 1), mult 1, CFH = 16+2 + 18+2 = 38.
-    // Ten alternates, styles 3/6/.../30, each RandomStyleRange 3 (:4878-4908,
-    // addAlternate(3k)). num2 = frameY/38 is the offset; windows [3k, 3k+3]
-    // overlap at the upper bound — the FIRST match in list order wins
-    // (:5251-5257). Offset 0..2 matches nothing -> the base def (:5260).
+    // Kind 20: horizontal, wrap 0 (-> 1), mult 1 (:4878 sets only
+    // RandomStyleRange; StyleMultiplier keeps the base 1, :1802), CFH =
+    // 16+2 + 18+2 = 38. Ten alternates, styles 3/6/.../30, each
+    // RandomStyleRange 3 (:4879-4908, addAlternate(3k)).
+    // :5220-5221 splits the frame index into style = num4 / StyleMultiplier
+    // and remainder = num4 % StyleMultiplier. With StyleMultiplier 1 the
+    // remainder is ALWAYS 0, so the [Style, Style + RandomStyleRange] bands —
+    // every one of which starts at 3 — can never match a frame-decoded tile:
+    // all offsets answer the base def (:5260). The alternates are
+    // placement-addressed (GetTileData(type, style, alternate) :5126-5160),
+    // pinned at the end through the index-based overload.
     let base = def_for_tile(20).unwrap();
     assert_eq!(base.alternates.len(), 10);
     assert_eq!(base.random_style_range, 3);
-    // offset 0 -> no alternate window starts below 3 -> the base def.
-    let r = resolve_tile_def(&framed(20, 0, 0)).unwrap();
-    assert_eq!(r.style, 0);
-    assert_eq!(r.random_style_range, 3, "the base def itself");
-    // offset 3 -> A1 [3,6].
-    let r = resolve_tile_def(&framed(20, 0, 3 * 38)).unwrap();
-    assert_eq!(r.style, 3);
-    // offset 6: A1's inclusive upper bound 3+3=6 wins over A2 [6,9].
-    let r = resolve_tile_def(&framed(20, 0, 6 * 38)).unwrap();
-    assert_eq!(r.style, 3, "inclusive upper bound + list order (:5254)");
-    // offset 7 -> A2 [6,9].
-    let r = resolve_tile_def(&framed(20, 0, 7 * 38)).unwrap();
-    assert_eq!(r.style, 6);
-    // offset 33 -> A10 [30,33] (last window's upper bound).
-    let r = resolve_tile_def(&framed(20, 0, 33 * 38)).unwrap();
-    assert_eq!(r.style, 30);
-    // offset 34 -> past every window -> the base def (:5260).
-    let r = resolve_tile_def(&framed(20, 0, 34 * 38)).unwrap();
-    assert_eq!(r.style, 0);
-    assert_eq!(r.random_style_range, 3);
+    assert_eq!(base.style_multiplier, 1);
+    for (i, alt) in base.alternates.iter().enumerate() {
+        assert_eq!(alt.style, 3 * (i as i32 + 1), "A{} style", i + 1);
+        assert_eq!(alt.random_style_range, 3, "A{} range", i + 1);
+    }
+    for offset in 0..=34 {
+        let r = resolve_tile_def(&framed(20, 0, offset * 38)).unwrap();
+        assert_eq!(
+            (r.kind, r.style, r.alternates.len()),
+            (20, 0, 10),
+            "offset {offset}: the base def, remainder 0"
+        );
+    }
+    // The windows exist but only the placement-time lookup reaches them.
+    let a1 = get_tile_data(base, 3, 1).unwrap();
+    assert_eq!((a1.style, a1.random_style_range), (3, 3));
+    let a10 = get_tile_data(base, 30, 10).unwrap();
+    assert_eq!((a10.style, a10.random_style_range), (30, 3));
 }
 
 #[test]
