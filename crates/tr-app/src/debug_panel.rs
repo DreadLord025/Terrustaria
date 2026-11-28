@@ -88,7 +88,7 @@ const NPC_LIST: [(NpcKind, &str, &str); 35] = [
     (NpcKind::Princess, "Princess", "NPC_663"),
 ];
 
-const BOSS_LIST: [(NpcKind, &str, &str); 12] = [
+const BOSS_LIST: [(NpcKind, &str, &str); 13] = [
     (NpcKind::KingSlime, "King Slime", "NPC_50"),
     (NpcKind::EyeOfCthulhu, "Eye of Cthulhu", "NPC_4"),
     (NpcKind::BrainOfCthulhu, "Brain of Cthulhu", "NPC_266"),
