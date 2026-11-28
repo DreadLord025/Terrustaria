@@ -440,7 +440,13 @@ The doc set is large; read **targeted** slices, not whole files.
   use `rustfmt` on the touched files only. Never hand-edit `tiledata/` — fix
   `tools/GenTileData` and regenerate (it matches the current decompilation since
   2026-11-01; a regen must produce an empty diff).
-- `assets/test/`, `target/`, `decompiled/` and `.qoder_tmp/` are local.
+- `assets/test/`, `target/`, `decompiled/` and `.qoder_tmp/` are local. The five
+  test fixtures under `assets/test/` are **generated, not tracked**:
+  `pwsh tools/ensure_fixtures.ps1` (idempotent; `-Force` regenerates all five)
+  or `pwsh tools/test.ps1` (ensures them, then runs cargo). They are
+  `include_bytes!` compile-time inputs, so a fresh checkout needs them before its
+  first test build. The generators are deterministic; `parity_tiles.bin` is
+  DIFF-mode output only.
 - Prefer extending the existing modules (see the architecture map) over adding parallel
   implementations; extract a shared helper or trait when a second copy of a mechanic
   appears.

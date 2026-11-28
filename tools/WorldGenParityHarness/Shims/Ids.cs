@@ -50,6 +50,9 @@ namespace Terraria.ID
         public const short LunarTowerNebula = 507;
         public const short LunarTowerStardust = 493;
         public const short LunarTowerSolar = 517;
+        // The reused tracker save path resolves the AnglerFish name
+        // (`WldFixtureHarness/Shims/Globals.cs:223`); `NPCID.cs:10881`.
+        public const short AnglerFish = 102;
         public static class Sets
         {
             public static readonly bool[] SavesAndLoads =
@@ -64,6 +67,11 @@ namespace Terraria.ID
         {
             public static readonly bool[] ItemsThatShouldNotBeInInventory =
                 new SetFactory(Count).CreateBoolSet(false, 58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136);
+            // The reused tracker save path reads the banner table
+            // (`Generated/TrackerSave.cs:196`); `ItemID.cs:1303-1304`.
+            public static int DefaultKillsForBannerNeeded = 50;
+            public static readonly int[] KillsToBanner =
+                new SetFactory(Count).CreateIntSet(DefaultKillsForBannerNeeded, 3838, 1000, 3845, 200, 3837, 500, 3844, 200, 3843, 50, 3839, 150, 3840, 100, 3842, 200, 3841, 100, 3846, 50, 2971, 150, 2982, 150, 2931, 100, 2961, 100, 2994, 100, 2985, 10, 4541, 10, 2969, 10, 2986, 10, 2915, 10, 4602, 10, 4542, 25, 4543, 25, 4546, 25, 4545, 25, 2901, 25, 2902, 25, 1631, 25, 2913, 25, 4688, 25, 3390, 25, 4973, 25, 4974, 25, 4975, 25, 2934, 25, 1670, 25, 1694, 25, 2958, 25, 2960, 25, 3441, 25, 3780, 25, 3397, 25, 3403, 25);
         }
     }
 

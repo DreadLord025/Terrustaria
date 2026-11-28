@@ -146,7 +146,11 @@ internal class Program
         GenVars.mudWall = false;
 
         // --- dump the raw post-runner tile array (the field-by-field oracle) --
-        DumpTiles(Path.Combine(outDir, "parity_tiles.bin"));
+        // DIFF only: `parity_tiles.bin` is the port-stream replay's oracle; the
+        // REAL mode runs the vanilla Knuth stream, so its tiles are not
+        // comparable with the port (README "Two modes"). Writing it in REAL
+        // mode would overwrite the DIFF oracle when both modes run in sequence.
+        if (mode == "diff") DumpTiles(Path.Combine(outDir, "parity_tiles.bin"));
 
         // --- write the .wld through the REAL save path ------------------------
         SetupSaveIdentity(mode);
