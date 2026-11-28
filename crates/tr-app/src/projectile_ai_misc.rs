@@ -758,20 +758,21 @@ pub(crate) fn nebula_blaze_death_draws(kind: u16, rng: &mut dyn DropRng) {
     // `:71997`/`:72008` — the leading SelectRandom (5 choices for 634, 3 for 635).
     let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
     for _ in 0..40 {
-        // `:72023`/`:72026` — the per-step type pick (same choice count).
+        // `:72023`/`:72026` - the per-step type pick (same choice count).
         let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
-        // `:72029-72032` — first dust: RotatedByRandom(2) + NextDouble + NextFloat.
-        let _ = (rng.next_float(), rng.next_float());
+        // `:72029-72033` - first dust: `RotatedByRandom(2)` is ONE float,
+        // `NextDouble` the radius, `NextFloat` the velocity boost.
+        let _ = rng.next_float();
         let _ = rng.next_double();
         let _ = rng.next_float();
-        // `:72034-72040` — second dust: same shape.
-        let _ = (rng.next_float(), rng.next_float());
+        // `:72034-72040` - second dust: same shape.
+        let _ = rng.next_float();
         let _ = rng.next_double();
         let _ = rng.next_float();
     }
     for _ in 0..20 {
-        // `:72045-72048` — RotatedByRandom(2) + NextFloat velocity.
-        let _ = (rng.next_float(), rng.next_float());
+        // `:72045-72048` - RotatedByRandom (ONE float) + the 0.6+0.6*NextFloat.
+        let _ = rng.next_float();
         let _ = rng.next_float();
     }
 }

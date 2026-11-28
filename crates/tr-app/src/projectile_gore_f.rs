@@ -145,7 +145,40 @@ pub fn goblin_bomb_gores(
     }
 }
 
-/// Site 58 — `Kill()`'s 645 gore (`Projectile.cs:72118-72124`): the wave-C
+/// Sites 18b - `Kill()`'s 29-family dynamite boulder gores (`Projectile.cs:
+/// 78418-78436`): two iterations x four gores at `centre - (24,24)`, each
+/// `Gore.NewGore(..., default, Next(61,64))` (the ctor's `Next(10,31)` /
+/// `Next(-20,21)` kicks ride the pool's `new_gore`), scale 1.5 and the
+/// (+,+)/(-,+)/(+,-)/(-,-) ±1.5 sign pairs. The 50×31 + 80×2 dust loops
+/// (`:78405-78417`) are the dust lane's.
+pub fn dynamite_boulder_gores(
+    p: &Projectile,
+    gore: &mut GorePool,
+    rng: &mut dyn DropRng,
+    world: &World,
+) {
+    let base = Vec2::new(p.pos.x + p.w * 0.5 - 24.0, p.pos.y + p.h * 0.5 - 24.0);
+    let signs = [(1.5f32, 1.5f32), (-1.5, 1.5), (1.5, -1.5), (-1.5, -1.5)];
+    for _ in 0..2 {
+        for (sx, sy) in signs {
+            let ty = rng.next_range(61, 64);
+            let idx = gore.new_gore(
+                &mut crate::projectile::DynGoreRng(rng),
+                world,
+                base,
+                Vec2::ZERO,
+                ty,
+                1.0,
+            );
+            let g = gore.slot_mut(idx);
+            g.scale = 1.5;
+            g.velocity.x += sx;
+            g.velocity.y += sy;
+        }
+    }
+}
+
+/// Site 58 - `Kill()`'s 645 gore (`Projectile.cs:72118-72124`): the wave-C
 /// celeb2 row ×1, keep-one. The 645 Kill arm runs NO resize and NO `Damage()`
 /// (`:72094-72125`) — the gore reads the CURRENT box: the placed cloud's
 /// 140×140 (`:56983`) or the flight's 10×10 (`:6955-6956`). (The earlier

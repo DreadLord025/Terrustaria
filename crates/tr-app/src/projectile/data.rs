@@ -5254,7 +5254,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DRYADS_WARD_CIRCLE => (26.0, 26.0, 111, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, alpha 255,
             // `penetrate = 3`, local-immunity with the 8-tick cooldown
-            // (`ignoreWater`/`drawLayer` dropped).
+            // (`ignoreWater` rides the oracle below, `:6651`; `drawLayer`
+            // dropped — no port field).
             NEBULA_ARCANUM => (32.0, 32.0, 118, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 8, false, -1, 255, 1.0)),
             // `:6658-6670` NebulaArcanumSubshot — 18x30, aiStyle 119,
             // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
@@ -7896,6 +7897,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d12 DOC-SWEEP item 7 — `Projectile.cs:9260`: the Volcano
             // explosion's `ignoreWater = true`.
             || kind == VOLCANO
+            // Arcanum follow-up — `Projectile.cs:6651`: the Nebula Arcanum
+            // bolt (617) sets `ignoreWater = true` (the row comment's old
+            // "dropped" note was stale; the AI's blocked-axis reflect at
+            // `:18267-18276` is the consumer). The 618 subshot / 620 shard
+            // set nothing (`:6658-6670`/`:6681-6690`).
+            || kind == NEBULA_ARCANUM
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
@@ -9643,6 +9650,58 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// The Nebula Arcanum family's `SetDefaults` census (`Projectile.cs
+    /// :6644-6690`) — the 617 bolt, its 618 subshot and the 620 death shard.
+    /// W4-d78's Kill arm (`:72278-72373`) resizes the 617 to its 176 box,
+    /// sweeps the keyed 618s and spawns the 620 fans; all three rows are the
+    /// spawns' only gate (`spawn_with_data` declines rowless kinds), so this
+    /// pins every ported field against the source.
+    #[test]
+    fn the_nebula_arcanum_family_rows_are_verbatim() {
+        // `:6644-6657` — 617: 32x32, aiStyle 118, friendly, alpha 255,
+        // `ignoreWater` (`:6651`), magic, penetrate 3, local immunity 8.
+        let bolt = proj_data(NEBULA_ARCANUM).expect("the 617 row");
+        assert_eq!((bolt.w, bolt.h), (32.0, 32.0));
+        assert_eq!(bolt.ai_style, 118, ":6648");
+        assert_eq!(bolt.penetrate, 3, ":6654");
+        assert_eq!(bolt.time_left, TIME_LEFT_DEFAULT, "the stock :787");
+        assert!(bolt.tile_collide, "the stock :775");
+        assert!(!bolt.arrow && !bolt.trap);
+        assert_eq!(bolt.alpha, 255, ":6650");
+        assert!(bolt.ignore_water, ":6651");
+        assert!(bolt.uses_local_immunity && bolt.local_hit_cooldown == 8, ":6655-6656");
+        assert!(bolt.magic && !bolt.melee && !bolt.ranged, ":6653");
+        assert!(!bolt.minion && !bolt.sentry);
+        // `:6658-6670` — 618: tileCollide false, 18x30, aiStyle 119,
+        // penetrate -1, timeLeft 420, magic, local immunity 20.
+        let sub = proj_data(NEBULA_ARCANUM_SUBSHOT).expect("the 618 row");
+        assert_eq!((sub.w, sub.h), (18.0, 30.0));
+        assert_eq!(sub.ai_style, 119, ":6663");
+        assert_eq!(sub.penetrate, -1, ":6664");
+        assert_eq!(sub.time_left, 420, ":6665");
+        assert!(!sub.tile_collide, ":6660");
+        assert_eq!(sub.alpha, 0, "the stock :779 — no alpha write");
+        assert!(!sub.ignore_water, ":6658-6670 sets none");
+        assert!(sub.uses_local_immunity && sub.local_hit_cooldown == 20, ":6668-6669");
+        assert!(sub.magic && !sub.melee && !sub.ranged, ":6666");
+        // `:6681-6690` — 620: 8x8, aiStyle 29, alpha 255, magic,
+        // penetrate 1; the stock tileCollide true / 3600 life.
+        let shard = proj_data(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD).expect("the 620 row");
+        assert_eq!((shard.w, shard.h), (8.0, 8.0));
+        assert_eq!(shard.ai_style, 29, ":6685");
+        assert_eq!(shard.penetrate, 1, ":6688");
+        assert_eq!(shard.time_left, TIME_LEFT_DEFAULT, "the stock :787");
+        assert!(shard.tile_collide, "the stock :775");
+        assert_eq!(shard.alpha, 255, ":6686");
+        assert!(!shard.ignore_water, ":6681-6690 sets none");
+        assert!(shard.magic && !shard.melee && !shard.ranged, ":6687");
+        assert!(!shard.uses_local_immunity && shard.local_hit_cooldown == -2);
+        // The spawns' data gate: all three pack their sheets.
+        for k in [NEBULA_ARCANUM, NEBULA_ARCANUM_SUBSHOT, NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD] {
+            assert!(spawnable_kinds().contains(&k), "kind {k}");
+        }
     }
 
     /// W4-d18 — the seven solution-spray rows (`Projectile.cs:2350-2397`
