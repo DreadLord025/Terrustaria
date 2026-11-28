@@ -6940,15 +6940,27 @@ mod w4_d16_159_tests {
         w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let mut npcs: Vec<Npc> = Vec::new();
-        // The foreign owner (1 ╤В╨Щ╨░ local 0).
+        // The foreign owner. C#'s gate is `owner == Main.myPlayer`
+        // (`:76086`); 255 is never a player index, so a 255-owned plane is
+        // foreign on every client. It is also the only foreign owner the
+        // pool's documented simulation gate runs on the host/single-player
+        // (`owner == 255 && hostile_local`, `projectile.rs:33516-33517`) —
+        // owner 1 would be skipped entirely and never reach the wall.
         let mut pool = ProjectilePool::new();
         let s = pool
-            .spawn_with_data_ai_owned(PAPER_AIRPLANE_A, 1, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .spawn_with_data_ai_owned(PAPER_AIRPLANE_A, 255, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
             .unwrap();
-        pool.update(
-            &mut w, &mut npcs, None, None, None,
-            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
-        );
+        // One 5-px sub-step cannot reach the tile-101 edge (1616) from
+        // x 1600 with the 10-wide box: tick until the block kill.
+        for _ in 0..6 {
+            pool.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, true,
+            );
+            if !pool.slots()[s].active {
+                break;
+            }
+        }
         assert!(!pool.slots()[s].active);
         assert!(pool.drain_item_drops().is_empty(), "the owner gate");
         assert!(
@@ -6961,10 +6973,15 @@ mod w4_d16_159_tests {
             .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
             .unwrap();
         pool2.slots_mut()[s2].no_drop_item = true;
-        pool2.update(
-            &mut w, &mut npcs, None, None, None,
-            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
-        );
+        for _ in 0..6 {
+            pool2.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+            );
+            if !pool2.slots()[s2].active {
+                break;
+            }
+        }
         assert!(!pool2.slots()[s2].active);
         assert!(pool2.drain_item_drops().is_empty(), "the noDropItem gate");
     }
@@ -7129,8 +7146,15 @@ mod w4_d18_172_tests {
         let mut w = World::new("t".into(), 300, 200);
         let mut pool = ProjectilePool::new();
         let mut npcs: Vec<Npc> = Vec::new();
+        // The 871 row is the Empress's hostile pellet-storm core; on the
+        // host/single-player the server-owned shot is owner 255 and the
+        // pool only simulates it with `hostile_local` (`owner == 255 &&
+        // hostile_local`, `projectile.rs:33516-33517`). `spawn_with_data`
+        // writes owner 0, which would be skipped by the `255` update args.
         let slot = pool
-            .spawn_with_data(HALLOW_BOSS_SPLIT_SHOT_CORE, 1600.0, 800.0, 0.0, 0.0, 0, 0.0)
+            .spawn_with_data_ai_owned(
+                HALLOW_BOSS_SPLIT_SHOT_CORE, 255, 1600.0, 800.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0,
+            )
             .unwrap();
         let mut rng = census();
         pool.update(
@@ -7142,7 +7166,7 @@ mod w4_d18_172_tests {
             YoyoInputs::default(),
             FlailInputs::default(),
             &mut rng,
-            255,
+            0,
             true,
         );
         let p = &pool.slots()[slot];

@@ -11138,7 +11138,10 @@ impl Npc {
 
     /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
     /// melee `hurt_cd` gate (the projectile's right to hit rides the three
-    /// C# immunity systems, `Projectile.cs:12577-12624`).
+    /// C# immunity systems, `Projectile.cs:12577-12624`). `StrikeNPC_Inner`
+    /// carries the `hitDirection` (`NPC.cs:81235`) and the `immortal` gate
+    /// (`:81368-81386`); both live in [`Self::strike_pooled`], so a
+    /// projectile hit on a TargetDummy knocks/comments but never loses life.
     pub fn strike_projectile(
         npcs: &mut [Npc],
         idx: usize,
@@ -11175,14 +11178,20 @@ impl Npc {
         // crawltipede's tail (414) takes ten times the damage
         // (`NPC.cs:15316`).
         let amount = (amount as f32 * npcs[idx].kind.taken_damage_multiplier()) as i32;
-        // The pool arm.
-        match Npc::carrier_index(npcs, idx) {
-            Some(carrier) => {
-                npcs[carrier].hp -= amount;
-                npcs[idx].hp = npcs[carrier].hp;
-                npcs[idx].max_hp = npcs[carrier].max_hp;
+        // `NPC.cs:81368-81386` — the immortal gate (`StrikeNPC_Inner`):
+        // an immortal target (the TargetDummy, `:14602`) never loses life,
+        // and the `realLife` mirror is part of the same skipped block. The
+        // interaction / `justHit` / knockback / HitEffect writes below
+        // still land.
+        if !npcs[idx].immortal {
+            match Npc::carrier_index(npcs, idx) {
+                Some(carrier) => {
+                    npcs[carrier].hp -= amount;
+                    npcs[idx].hp = npcs[carrier].hp;
+                    npcs[idx].max_hp = npcs[carrier].max_hp;
+                }
+                None => npcs[idx].hp -= amount,
             }
-            None => npcs[idx].hp -= amount,
         }
         // `NPC.StrikeNPC_Inner`'s interaction block (`NPC.cs:81266-81273`),
         // ahead of the knockback like the C#: `owner == Main.myPlayer` sets
@@ -11206,6 +11215,13 @@ impl Npc {
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
         n.just_hit = true;
         let (w, _) = n.size();
+        // `StrikeNPC_Inner`'s `hitDirection` (`:81235` param; used for the
+        // knockback X sign `:81473` and HitEffect `:81488`). The port
+        // spells it as the hit SOURCE's side of the struck centre; the
+        // projectile lane's C# caller passes `num23 = base.direction`
+        // (`Projectile.cs:13598`, `:13649`) and the melee lane the
+        // attacker's side — both resolve to this same comparison for the
+        // ported single-player callers.
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
         // W4-c12: the strike side for the death feed's HitEffect draws.
         n.last_hit_dir = dir;

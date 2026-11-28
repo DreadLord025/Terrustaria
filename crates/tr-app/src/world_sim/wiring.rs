@@ -584,6 +584,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             // actuation site keeps g78's centre-accurate `spawn_item_drop_centre`
             // drain (the box-centre convention, the exact-centre witness).
             let (cx, cy) = drop.spawn_center_px();
+            // `spawn_item_drop_centre` subtracts `SIZE/2` with `x_bias = 0`
+            // (`items.rs`), so the 16×16 `WorldItem` box's centre lands on
+            // the C# rect centre exactly (`Item.cs:49651`: `X + Width/2`);
+            // no +1 px tile-entry fudge applies on this entry.
             crate::world_sim::items::spawn_item_drop_centre(
                 &mut app.items,
                 rng,
@@ -591,13 +595,6 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 1,
                 glam::Vec2::new(cx, cy),
             );
-            // `spawn_item_drop_centre` still routes the position through the
-            // tile-entry px helper, whose `+1` px top-left fudge shifts the
-            // box centre +1. Undo it here so the drop lands on the exact C#
-            // rect centre (`Item.cs:49651`: `center = X + Width/2`).
-            if let Some(d) = app.items.last_mut() {
-                d.pos.x -= 1.0;
-            }
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with

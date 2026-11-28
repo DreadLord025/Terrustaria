@@ -134,11 +134,14 @@ impl PotionDelayTimes {
 /// 5 ride their own times AND reset hunger (`:51869-51880`); everything
 /// else rides `potionDelayTime` (`:51881-51885`).
 ///
-/// W4-e10 — returns the hunger transition flag: true when the reset's
-/// `UpdateHungerBuffs` fired the 333-expiry arm, whose `PlaySound(
-/// SoundID.Hungry)` (`Player.cs:12138`, UNPOSITIONED) the app-level caller
-/// plays (the Player has no audio device — the `pending_hurt_sound`
-/// handoff pattern, folded to a return value on this pure path).
+/// W4-e10 — returns the hunger transition flag: true when the passed-through
+/// `UpdateHungerBuffs` fired the 333-expiry arm (`Player.cs:12127-12139`).
+/// The Eggnog/Mushroom `TryToResetHungerToNeutral` call is SILENT: it zeroes
+/// the 332/333/334 timers first (`:12088`), so its follow-up ladder skips
+/// every one of them (`:12102-12105`) — no 334 grant, no
+/// `PlaySound(SoundID.Hungry)`. The chime belongs to the per-tick frame
+/// ladder (`buff_effects_frame::update_hunger_buffs_frame`); these `false`
+/// returns keep the source shape.
 pub fn apply_potion_delay(
     p: &mut Player,
     def: &ItemDef,
@@ -249,9 +252,11 @@ pub fn apply_life_and_or_mana(
 /// the world seed flags the caller hands in; the emote half is a UI seam.
 /// NOTE: like the C#, the follow-up `UpdateHungerBuffs` skips every slot
 /// whose timer was just zeroed (`:12102-12105`) — the call is a structural
-/// no-op on the reset slots, kept for the source shape. W4-e10: returns
-/// the 333-expiry flag (the `SoundID.Hungry` play, `:12138`) for the
-/// app-level caller.
+/// no-op on the reset slots, kept for the source shape. The reset is
+/// therefore SILENT: no 334 grant and no `SoundID.Hungry` play on this path
+/// (`Player.cs:12081-12096` + `:12102-12105`); the chime is the per-tick
+/// frame ladder's (`buff_effects_frame`). W4-e10 keeps the bool return (the
+/// 333-expiry flag) for shape, always `false` here.
 pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
     let mut flag = false;
     for i in 0..crate::buffs::MAX_BUFFS {
@@ -579,12 +584,13 @@ pub fn use_potion_item(app: &mut App, held: ItemSlot) -> bool {
             false
         }
     };
-    // W4-e10 — the Eggnog/Mushroom reset's 333-expiry arm fired inside
-    // `ApplyPotionDelay` (`Player.cs:12138`: `PlaySound(SoundID.Hungry)` —
-    // UNPOSITIONED, `SoundEngine.cs:93`'s x=-1/y=-1 defaults, the case-42
-    // trackable façade: the `GetRandomPitch` NextFloat is audio-only, no
-    // gameplay draw). Played HERE — after the delay phase, before the
-    // swing seam — the C#'s position in the call chain.
+    // W4-e10 — the Eggnog reset's 333-expiry gate. It is always false here:
+    // `TryToResetHungerToNeutral` zeroes the 333 timer (`Player.cs:12088`)
+    // before its `UpdateHungerBuffs` call, whose `buffTime <= 0` skip
+    // (`:12102-12105`) leaves the ladder nothing to expire — no 334, no
+    // `PlaySound(SoundID.Hungry)` (`:12138`) on the drink path. The play
+    // below stays for the source shape (the per-tick `buff_effects_frame`
+    // ladder owns the actual chime).
     if hungry {
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
@@ -898,11 +904,11 @@ pub fn quick_heal(app: &mut App) -> bool {
         let drowning = def.id == 126 && p.breath == 0; // `:5543-5546`
         (heal_text, drowning, hungry)
     };
-    // W4-e10 — the reset's 333-expiry arm fired (`Player.cs:12138`:
-    // `PlaySound(SoundID.Hungry)` — UNPOSITIONED, the case-42 trackable
-    // façade, no gameplay draw). The Player-only block above cannot reach
-    // the audio device; the flag rides out and plays here, before the
-    // heal text — the C#'s position inside the use call.
+    // W4-e10 — the reset's 333-expiry gate. Always false: the reset zeroes
+    // the 333 timer (`Player.cs:12088`) before its ladder call, whose
+    // `buffTime <= 0` skip (`:12102-12105`) expires nothing — no chime from
+    // this path (the per-tick `buff_effects_frame` ladder owns it). Kept for
+    // the source shape.
     if hungry {
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
@@ -997,9 +1003,10 @@ pub fn quick_mana_on(app: &mut App, key: crate::app::RngKey) -> bool {
         };
         (apply_life_and_or_mana(p, def, rng), hungry) // `:5618`
     };
-    // W4-e10 — the reset's 333-expiry arm fired (`Player.cs:12138`), the
-    // unpositioned case-42 Hungry trackable, no gameplay draw (the QuickHeal
-    // twin's contract).
+    // W4-e10 — the reset's 333-expiry gate. Always false (the reset zeroes
+    // the timer before its ladder call, `Player.cs:12088` + `:12102-12105`);
+    // no chime on this path (the per-tick `buff_effects_frame` ladder owns
+    // it). Kept for the source shape.
     if hungry {
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
@@ -2638,13 +2645,17 @@ mod tests {
         assert!(!update_hunger_buffs(&mut r, false, false), "the 332 tier is silent");
     }
 
-    /// W4-e10 — the Eggnog drink's reset fires the Hungry chime
-    /// (`Player.cs:12138` via `ApplyPotionDelay` `:51873`): the audible
-    /// listener plays it UNPOSITIONED (case-42 trackable), the gameplay
-    /// stream sees only the Item3 use-sound pitch draw + the heal rolls —
-    /// the façade adds NO gameplay draw. The silent twin plays nothing.
+    /// W4-e10 — the Eggnog drink's reset is SILENT (`Player.cs:12081-12096`
+    /// + `:12102-12105`): `TryToResetHungerToNeutral` zeroes the 333 timer
+    /// (`:12088`) BEFORE its `UpdateHungerBuffs` call, so the ladder's
+    /// `buffTime <= 0` skip expires nothing — no 334 grant, no
+    /// `SoundID.Hungry` (`:12138`). The audible listener hears only the
+    /// Item3 use sound; the gameplay stream sees the use-sound pitch draw +
+    /// the heal jitter pair. (The chime is the per-tick frame ladder's —
+    /// `buff_effects_frame::update_hunger_buffs_frame`.) The silent twin
+    /// plays nothing.
     #[test]
-    fn w4_e10_the_eggnog_reset_plays_the_hungry_chime_draw_free() {
+    fn w4_e10_the_eggnog_reset_is_silent_and_draw_free() {
         // The audible rig: a live 333 at time 2, the listener on the player.
         let mut app = drink_app();
         let (px, py) = {
@@ -2671,27 +2682,40 @@ mod tests {
         // the fixed 80 (`ApplyLifeAndOrMana` rolls ONLY for the Strange
         // Brew 3001) — the gameplay draws are the Item128 use-sound's
         // case-2 default pitch (`:51680`), then the heal text's jitter
-        // pair; the Hungry façade between them draws NOTHING here.
+        // pair. The silent reset adds NOTHING.
         let held = app.inventory[0];
         assert!(use_potion_item(&mut app, held));
         assert_eq!(
             app.audio.played_count(),
-            before + 2,
-            "the Item use sound + the Hungry chime"
+            before + 1,
+            "the Item use sound only — the reset is silent"
         );
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.potion_delay, EGGNOG_DELAY);
-        assert!(p.buffs.find_buff_index(334).is_some(), "the 333 expired");
+        // `:12088`: the live 333's timer is zeroed in place — the slot keeps
+        // its type, but `FindBuffIndex`'s `buffTime >= 1` read misses it
+        // (`:12102-12105`); the reset grants NO 334.
+        let zeroed = p
+            .buffs
+            .buff_type
+            .iter()
+            .position(|&t| t == 333)
+            .expect("the zeroed 333 slot survives the reset");
+        assert_eq!(p.buffs.buff_time[zeroed], 0, "the reset zeroed the timer");
         assert!(p.buffs.find_buff_index(333).is_none());
+        assert!(
+            p.buffs.find_buff_index(334).is_none(),
+            "no 334: the zeroed slot never reaches the expiry arm"
+        );
         // The gameplay stream twin: pitch draw, then the heal-text jitter
-        // pair — NO draw for the trackable façade.
+        // pair — NO draw for the silent reset.
         let _ = mirror.next_range(-6, 7); // the Item128 use pitch (default arm)
         let _ = mirror.next_range(-10, 11); // the heal text jitter x
         let _ = mirror.next_range(-21, 22); // the heal text jitter y
         assert_eq!(
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             mirror,
-            "the Hungry façade adds no gameplay draw"
+            "the reset adds no gameplay draw"
         );
         // The silent twin: the gate refuses both plays, the stream matches
         // the draw-free chain (no pitch, the jitter pair only).
@@ -2714,11 +2738,15 @@ mod tests {
         );
     }
 
-    /// W4-e10 — the QuickHeal Mushroom path (`Player.cs:5522-5525` →
-    /// `TryToResetHungerToNeutral` → `UpdateHungerBuffs` `:12138`): the
-    /// reset's expiry chime plays once, unpositioned, draw-free.
+    /// W4-e10 — the QuickHeal Mushroom path (`Player.cs:5517-5525` →
+    /// `TryToResetHungerToNeutral` → `UpdateHungerBuffs` `:12138`) is
+    /// SILENT: both reset calls (`:5519` via `ApplyPotionDelay` `:51879` and
+    /// the explicit `:5524`) zero the 333 timer first (`:12088`), so the
+    /// ladder's `buffTime <= 0` skip (`:12102-12105`) grants no 334 and
+    /// plays no chime. Only the Mushroom use sound plays. (The chime is the
+    /// per-tick `buff_effects_frame` ladder's.)
     #[test]
-    fn w4_e10_the_quick_heal_mushroom_reset_plays_hungry() {
+    fn w4_e10_the_quick_heal_mushroom_reset_is_silent() {
         let mut app = drink_app();
         let (px, py) = {
             let p = app.player.as_ref().unwrap();
@@ -2741,12 +2769,21 @@ mod tests {
         assert!(quick_heal(&mut app));
         assert_eq!(
             app.audio.played_count(),
-            before + 2,
-            "the Mushroom use sound + the Hungry chime"
+            before + 1,
+            "the Mushroom use sound only — the reset is silent"
         );
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.potion_delay, 1800, "the mushroom delay row");
-        assert!(p.buffs.find_buff_index(334).is_some());
+        // The reset zeroed the live 333 in place (`:12088`) and granted no
+        // 334 (`:12102-12105` skips the zeroed slot).
+        let zeroed = p
+            .buffs
+            .buff_type
+            .iter()
+            .position(|&t| t == 333)
+            .expect("the zeroed 333 slot survives the reset");
+        assert_eq!(p.buffs.buff_time[zeroed], 0, "the reset zeroed the timer");
+        assert!(p.buffs.find_buff_index(334).is_none());
     }
 
     // ---- W4-f49: the mana-flower auto-drink lane + the sickness stacking ----

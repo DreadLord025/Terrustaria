@@ -3001,8 +3001,8 @@ pub(crate) fn set_defaults_glow_mask(kind: u16) -> i16 {
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
 /// aiStyle 37) carries its faithful row since W4-d4 (the arm landed with
-/// it — the f19 F3 fix); the flame jet (187, aiStyle 38) stays a
-/// passthrough until its own W4-d4 commit. The magic (caster) families'
+/// it — the f19 F3 fix); the flame jet (187, aiStyle 38) landed in the same
+/// round with its `ai_flame_jet` arm. The magic (caster) families'
 /// (M4-PROJ-6) rows sit in
 /// `ProjectileID` order at the end of the match: their `aiStyle` values
 /// declare the dispatch arm Phases 3-4 add.
@@ -8362,6 +8362,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NAIL_FRIENDLY | TOXIC_BUBBLE
             // W4-d80 — the Phantom Phoenix shot (706, `:7469`).
                 | PHANTOM_PHOENIX
+            // W4-d78 batch 2 — the Kill child-spawn family's ranged kinds the
+            // first census pass missed: the Stynger bolt (246, `Projectile.cs
+            // :3295`), its shrapnel (249, `:3320`) and the Bone Shard (1124,
+            // `:10523`). All three rows carry the C# `this.ranged = true`.
+                | STYNGER | STYNGER_SHRAPNEL | BONE_SHARD
         ),
         magic: matches!(
             kind,

@@ -15328,6 +15328,11 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        // The row text resolves through the shipped en-US tables; the
+        // singleton starts EMPTY in a filtered run, so initialize English
+        // under the lock (the `w4_c46_the_drowned_text...` twin does the
+        // same). `Lang.cs`'s `CreateDeathMessage` is the table source.
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // DW-1.3 — the death collection resolves the DoT table text when the
         // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
         // Slain row for any other death (`Lang.cs` CreateDeathMessage).

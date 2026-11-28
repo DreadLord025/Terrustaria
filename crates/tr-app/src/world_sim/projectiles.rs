@@ -2920,6 +2920,15 @@ mod w4_c19_ai_light_drain_tests {
     /// — the gate draws ride `UpdateProjectiles` ONLY (the `item_lights`
     /// named-stream precedent), every other stage stream stays pristine,
     /// and the intents land in slot + sub-step order with the C# colour.
+    ///
+    /// The gate is `Main.rand.Next(3) == 0` (`Projectile.cs:30358`), with no
+    /// guarantee for any given window: seed 0's first three `Next(3)` draws
+    /// are 2, 2, 2 (the `UnifiedRandom` golden vector's 1/3 cuts), so ONE
+    /// update (three sub-steps, `extraUpdates = 2`) can never take the gate
+    /// on this rig. The fixture therefore runs TWO updates — six sub-steps,
+    /// whose gates are 2, 2, 2, 1, 0, 2, taking the gate on the fifth. The
+    /// twin below replays the same six draws (with the taken branch's dust
+    /// pairs interleaved) and is the census witness.
     #[test]
     fn the_typhoon_intents_drain_into_the_entity_lights_pair() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -2941,22 +2950,24 @@ mod w4_c19_ai_light_drain_tests {
             .spawn_with_data_ai_owned(TYPHOON, 0, 32.0, 32.0, 0.0, 0.0, 40, 5.0, 0.0, 0.0)
             .expect("a free slot");
         app.projectiles.slots_mut()[slot].local_ai[1] = 10.0;
+        // Two update calls = six AI sub-steps (`extraUpdates = 2`).
         update_projectiles(&mut app, 1.0 / 60.0);
-        // The drain emptied the pool seam.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain emptied the pool seam (the pass tail ran each call).
         assert!(app.projectiles.drain_ai_lights().is_empty());
         // The lights: swap the pair, then read the frame's sources. Every
         // intent is the typhoon's (0.1, 0.4, 0.6) at the truncated centre.
         app.entity_lights.end_frame();
         let lights = app.entity_lights.visible();
-        assert!(!lights.is_empty(), "at least one gate taken on seed 0");
+        assert_eq!(lights.len(), 1, "the fifth of the six gates is taken");
         for l in lights {
             assert_eq!(l.rgb, [0.1, 0.4, 0.6]);
         }
-        // The twin: replay the three sub-steps' gate draws (the taken
-        // branches add the 6 × (NextDouble, Next(3,8)) dust-ring pairs).
+        // The twin: replay the six sub-steps' gate draws (the taken branch
+        // adds the 6 × (NextDouble, Next(3,8)) dust-ring pairs).
         let mut twin = UnifiedRandom::new(0);
         let mut taken = 0;
-        for _ in 0..3 {
+        for _ in 0..6 {
             if twin.next_range(0, 3) == 0 {
                 taken += 1;
                 for _ in 0..6 {
@@ -2965,6 +2976,7 @@ mod w4_c19_ai_light_drain_tests {
                 }
             }
         }
+        assert_eq!(taken, 1, "the seed-0 window's taken-gate census");
         assert_eq!(lights.len(), taken, "one light per taken gate");
         assert_eq!(
             *app.rngs.stream(RngKey::UpdateProjectiles),
